@@ -318,10 +318,22 @@ requirements.
 
 The Apple reference app includes an opt-in physical-device runner that keeps
 all probe endpoints in the generated test-only `.xctestrun`, drives HTTPS and
-UDP traffic from the device, samples provider RSS/threads/TUN/connection
-telemetry, closes active flows, tears the tunnel down, and retains an
-Instruments Activity Monitor trace. A formal run requires a clean worktree and
-defaults to six hours:
+DNS-over-UDP traffic from the device, samples provider
+RSS/threads/TUN/connection telemetry, closes active flows, tears the tunnel
+down, and retains an Instruments Activity Monitor trace. The UDP probe is a
+round trip: a send-only datagram is not accepted. The response must carry the
+probe transaction ID, the DNS response bit, and a successful response code.
+Before the first run on a development-signed iPhone, enable Developer Mode and
+`Settings > Developer > Enable UI Automation`, keep the device unlocked, and
+verify that Safari can reach `https://ppq.apple.com`. Launch the reference app
+once and approve the system VPN-configuration prompt with the device passcode.
+The campaign deliberately does not automate security consent; if the prompt is
+still pending, the UI test fails immediately with `VPNApprovalRequired`. A
+device reboot can reset Automation Mode. If XCTest times out while enabling it,
+turn UI Automation off, reboot, enable it again, and confirm with the device
+passcode before retrying.
+
+A formal run requires a clean worktree and defaults to six hours:
 
 ```sh
 python3 scripts/run-apple-device-campaign.py \
@@ -333,7 +345,28 @@ python3 scripts/run-apple-device-campaign.py \
   --udp-port 53
 ```
 
+Use a stable external DNS endpoint for the formal TUN campaign. For a bounded
+LAN reachability rehearsal, start the repository-owned oracle on the Mac:
+
+```sh
+python3 scripts/run-apple-device-probe-server.py \
+  --bind-host 0.0.0.0 \
+  --port 53053
+```
+
+Then pass the Mac's LAN address as `--udp-host` and `53053` as `--udp-port`.
+The server emits one JSON line for every validated query and response and
+returns the documentation-only address `203.0.113.1`. A LAN probe proves TUN
+carriage only when the tested VPN profile explicitly includes the local
+subnet; otherwise iOS may route it directly on Wi-Fi. The HTTPS probe and TUN
+packet counters remain mandatory in either case.
+
 Use `--rehearsal --duration-seconds 30` for a short dirty-worktree check.
+After one successful `build-for-testing`, a rehearsal may also pass
+`--skip-test-build` with the same `--derived-data` directory to reuse the
+signed `.xctestrun` products. Formal campaigns reject this shortcut and always
+build the exact clean candidate.
+
 While a campaign is active, record each physical action immediately after it
 with `scripts/mark-apple-device-transition.py`; markers contain only scenario
 IDs, attempt numbers, phases, and non-secret notes. The runner writes

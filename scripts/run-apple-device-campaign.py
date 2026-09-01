@@ -309,6 +309,7 @@ def main() -> int:
     )
     parser.add_argument("--rehearsal", action="store_true")
     parser.add_argument("--skip-xcframework-build", action="store_true")
+    parser.add_argument("--skip-test-build", action="store_true")
     parser.add_argument("--skip-instruments", action="store_true")
     args = parser.parse_args()
 
@@ -341,6 +342,8 @@ def main() -> int:
         raise CampaignError("--sample-interval-seconds must be between 5 and 60")
     if not args.rehearsal and args.skip_instruments:
         raise CampaignError("formal campaigns cannot skip Instruments")
+    if not args.rehearsal and args.skip_test_build:
+        raise CampaignError("formal campaigns cannot skip the Xcode test build")
     if args.campaign_dir.exists():
         raise CampaignError(f"campaign directory already exists: {args.campaign_dir}")
 
@@ -390,23 +393,24 @@ def main() -> int:
                 ) != 0:
                     raise CampaignError("Apple XCFramework build failed")
 
-            build_arguments = [
-                "xcodebuild",
-                "build-for-testing",
-                "-project",
-                str(root / "platform/apple/XrayClient/XrayClient.xcodeproj"),
-                "-scheme",
-                "XrayClient",
-                "-configuration",
-                "Debug",
-                "-destination",
-                f"id={args.device_id}",
-                "-derivedDataPath",
-                str(args.derived_data),
-                "-only-testing:XrayClientUITests/XrayClientUITests/testPhysicalDeviceCampaign",
-            ]
-            if stream_command(build_arguments, root, log, secrets) != 0:
-                raise CampaignError("Xcode test build failed")
+            if not args.skip_test_build:
+                build_arguments = [
+                    "xcodebuild",
+                    "build-for-testing",
+                    "-project",
+                    str(root / "platform/apple/XrayClient/XrayClient.xcodeproj"),
+                    "-scheme",
+                    "XrayClient",
+                    "-configuration",
+                    "Debug",
+                    "-destination",
+                    f"id={args.device_id}",
+                    "-derivedDataPath",
+                    str(args.derived_data),
+                    "-only-testing:XrayClientUITests/XrayClientUITests/testPhysicalDeviceCampaign",
+                ]
+                if stream_command(build_arguments, root, log, secrets) != 0:
+                    raise CampaignError("Xcode test build failed")
 
             generated_xctestrun = prepare_xctestrun(
                 find_xctestrun(args.derived_data),

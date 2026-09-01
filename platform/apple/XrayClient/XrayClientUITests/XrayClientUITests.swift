@@ -58,7 +58,17 @@ final class XrayClientUITests: XCTestCase {
         }
 
         trafficTask.cancel()
-        _ = await trafficTask.result
+        let trafficSummary = await trafficTask.value
+        XCTAssertGreaterThan(
+            trafficSummary.httpSuccesses,
+            0,
+            "campaign did not complete an HTTPS probe"
+        )
+        XCTAssertGreaterThan(
+            trafficSummary.udpSuccesses,
+            0,
+            "campaign did not complete a round-trip UDP probe"
+        )
         try await sleep(seconds: 2)
         let finalSample = try await drainConnections(
             app,
@@ -90,7 +100,16 @@ final class XrayClientUITests: XCTestCase {
 
         let connect = app.buttons["Connect"]
         XCTAssertTrue(connect.waitForExistence(timeout: 5), "Connect button is missing")
+        try waitUntilEnabled(connect, timeout: 5, operation: "connect")
         connect.tap()
+        let systemAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            .alerts.firstMatch
+        if systemAlert.waitForExistence(timeout: 3) {
+            throw CampaignError.VPNApprovalRequired
+        }
+        if status.value as? String == "Connected" {
+            return
+        }
         let connected = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", "Connected"),
             object: status
@@ -106,6 +125,7 @@ final class XrayClientUITests: XCTestCase {
     private func disconnect(_ app: XCUIApplication) throws {
         let disconnect = app.buttons["Disconnect"]
         XCTAssertTrue(disconnect.waitForExistence(timeout: 5), "Disconnect button is missing")
+        try waitUntilEnabled(disconnect, timeout: 10, operation: "disconnect")
         disconnect.tap()
         let status = app.descendants(matching: .any)["xray.connection.status"]
         let disconnected = XCTNSPredicateExpectation(
@@ -146,8 +166,18 @@ final class XrayClientUITests: XCTestCase {
 
         var sample: CampaignSample?
         for _ in 0 ..< 5 {
+            try waitUntilEnabled(
+                closeConnections,
+                timeout: 10,
+                operation: "close active flows"
+            )
             closeConnections.tap()
-            try await sleep(seconds: 1)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            try waitUntilEnabled(
+                closeConnections,
+                timeout: 10,
+                operation: "close active flows"
+            )
             try await refresh(app)
             sample = try readSample(
                 app,
@@ -160,6 +190,24 @@ final class XrayClientUITests: XCTestCase {
             }
         }
         return try XCTUnwrap(sample)
+    }
+
+    @MainActor
+    private func waitUntilEnabled(
+        _ element: XCUIElement,
+        timeout: TimeInterval,
+        operation: String
+    ) throws {
+        guard !element.isEnabled else {
+            return
+        }
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: element
+        )
+        guard XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed else {
+            throw CampaignError.UIOperationTimedOut(operation)
+        }
     }
 
     @MainActor
@@ -246,12 +294,13 @@ final class XrayClientUITests: XCTestCase {
     }
 
     @MainActor
-    private func pumpTraffic(configuration: CampaignConfiguration) async {
+    private func pumpTraffic(configuration: CampaignConfiguration) async -> TrafficProbeSummary {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         sessionConfiguration.timeoutIntervalForRequest = 15
         let session = URLSession(configuration: sessionConfiguration)
         defer { session.invalidateAndCancel() }
+        var summary = TrafficProbeSummary()
 
         while !Task.isCancelled {
             do {
@@ -263,10 +312,17 @@ final class XrayClientUITests: XCTestCase {
                 else {
                     throw CampaignError.HTTPProbeFailed
                 }
+                summary.httpSuccesses += 1
+                if summary.httpSuccesses == 1 {
+                    print("XRAY_DEVICE_PROBE kind=http result=passed")
+                }
             } catch is CancellationError {
-                return
+                return summary
             } catch {
-                print("XRAY_DEVICE_PROBE kind=http result=failed")
+                print(
+                    "XRAY_DEVICE_PROBE kind=http result=failed "
+                        + "error=\(Self.probeErrorCode(error))"
+                )
             }
 
             do {
@@ -274,37 +330,118 @@ final class XrayClientUITests: XCTestCase {
                     host: configuration.UDPHost,
                     port: configuration.UDPPort
                 )
+                summary.udpSuccesses += 1
+                if summary.udpSuccesses == 1 {
+                    print("XRAY_DEVICE_PROBE kind=udp result=passed")
+                }
             } catch is CancellationError {
-                return
+                return summary
             } catch {
-                print("XRAY_DEVICE_PROBE kind=udp result=failed")
+                print(
+                    "XRAY_DEVICE_PROBE kind=udp result=failed "
+                        + "error=\(Self.probeErrorCode(error))"
+                )
             }
 
             do {
                 try await sleep(seconds: 5)
             } catch {
-                return
+                return summary
             }
         }
+        return summary
     }
 
     private func sendUDPProbe(host: NWEndpoint.Host, port: NWEndpoint.Port) async throws {
+        let queue = DispatchQueue(label: "org.xrayrust.device-campaign.udp")
         let connection = NWConnection(host: host, port: port, using: .udp)
-        connection.start(queue: DispatchQueue(label: "org.xrayrust.device-campaign.udp"))
         defer { connection.cancel() }
-        try await withCheckedThrowingContinuation { (
-            continuation: CheckedContinuation<Void, Error>
-        ) in
-            connection.send(
-                content: Self.DNSQuery,
-                completion: .contentProcessed { error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume()
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (
+                continuation: CheckedContinuation<Void, Error>
+            ) in
+                let completion = UDPProbeCompletion(continuation: continuation)
+                completion.scheduleTimeout(on: queue, seconds: 5)
+                connection.stateUpdateHandler = { state in
+                    switch state {
+                    case .ready:
+                        connection.stateUpdateHandler = nil
+                        connection.send(
+                            content: Self.DNSQuery,
+                            completion: .contentProcessed { error in
+                                if let error {
+                                    completion.finish(.failure(error))
+                                    return
+                                }
+                                connection.receiveMessage {
+                                    response, _, _, receiveError in
+                                    if let receiveError {
+                                        completion.finish(.failure(receiveError))
+                                    } else if let response,
+                                              Self.isValidDNSResponse(response)
+                                    {
+                                        completion.finish(.success(()))
+                                    } else {
+                                        completion.finish(
+                                            .failure(CampaignError.UDPProbeInvalidResponse)
+                                        )
+                                    }
+                                }
+                            }
+                        )
+                    case let .failed(error):
+                        completion.finish(.failure(error))
+                    case .cancelled:
+                        completion.finish(.failure(CancellationError()))
+                    default:
+                        break
                     }
                 }
-            )
+                connection.start(queue: queue)
+            }
+        } onCancel: {
+            connection.cancel()
+        }
+    }
+
+    private static func isValidDNSResponse(_ response: Data) -> Bool {
+        guard response.count >= 12 else {
+            return false
+        }
+        return response[0] == DNSQuery[0]
+            && response[1] == DNSQuery[1]
+            && response[2] & 0x80 != 0
+            && response[3] & 0x0f == 0
+    }
+
+    private static func probeErrorCode(_ error: Error) -> String {
+        if let networkError = error as? NWError {
+            switch networkError {
+            case let .posix(code):
+                return "nw-posix-\(code.rawValue)"
+            case let .dns(code):
+                return "nw-dns-\(code)"
+            case let .tls(code):
+                return "nw-tls-\(code)"
+            case .wifiAware:
+                return "nw-wifi-aware"
+            @unknown default:
+                return "nw-unknown"
+            }
+        }
+        if let URLFailure = error as? URLError {
+            return "url-\(URLFailure.code.rawValue)"
+        }
+        switch error {
+        case CampaignError.HTTPProbeFailed:
+            return "http-status"
+        case CampaignError.UDPProbeInvalidResponse:
+            return "udp-invalid-response"
+        case CampaignError.UDPProbeTimedOut:
+            return "udp-timeout"
+        default:
+            return String(describing: type(of: error))
         }
     }
 
@@ -397,9 +534,59 @@ private struct CampaignSample: Codable {
     let unrecoveredTransitions: UInt64
 }
 
+private struct TrafficProbeSummary: Sendable {
+    var httpSuccesses = 0
+    var udpSuccesses = 0
+}
+
 private enum CampaignError: Error {
     case invalidConfiguration(String)
     case invalidAccessibilityValue(String)
     case missingTelemetry(String)
+    case UIOperationTimedOut(String)
+    case VPNApprovalRequired
     case HTTPProbeFailed
+    case UDPProbeInvalidResponse
+    case UDPProbeTimedOut
+}
+
+private final class UDPProbeCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var timeout: DispatchWorkItem?
+
+    init(continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+    }
+
+    func scheduleTimeout(on queue: DispatchQueue, seconds: TimeInterval) {
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.finish(.failure(CampaignError.UDPProbeTimedOut))
+        }
+        lock.withLock {
+            timeout = workItem
+        }
+        queue.asyncAfter(deadline: .now() + seconds, execute: workItem)
+    }
+
+    func finish(_ result: Result<Void, Error>) {
+        let pending: CheckedContinuation<Void, Error>? = lock.withLock {
+            guard let continuation else {
+                return nil
+            }
+            self.continuation = nil
+            timeout?.cancel()
+            timeout = nil
+            return continuation
+        }
+        guard let pending else {
+            return
+        }
+        switch result {
+        case .success:
+            pending.resume()
+        case let .failure(error):
+            pending.resume(throwing: error)
+        }
+    }
 }

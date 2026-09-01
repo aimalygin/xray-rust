@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Contract checks for rehearsal-only Apple campaign build reuse."""
+
+from __future__ import annotations
+
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+
+def run(arguments: list[str], root: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(root / "scripts/run-apple-device-campaign.py"), *arguments],
+        cwd=root,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def main() -> int:
+    root = pathlib.Path(__file__).resolve().parents[2]
+    help_result = run(["--help"], root)
+    if help_result.returncode != 0 or "--skip-test-build" not in help_result.stdout:
+        raise AssertionError("campaign help does not expose --skip-test-build")
+
+    with tempfile.TemporaryDirectory(prefix="xray-apple-campaign-contract-") as raw:
+        temporary = pathlib.Path(raw)
+        common = [
+            "--device-id",
+            "contract-device",
+            "--http-url",
+            "https://127.0.0.1/probe",
+            "--udp-host",
+            "127.0.0.1",
+            "--udp-port",
+            "53",
+            "--derived-data",
+            str(temporary / "derived"),
+            "--skip-test-build",
+        ]
+
+        formal = run(
+            [
+                *common,
+                "--campaign-id",
+                "formal-skip",
+                "--campaign-dir",
+                str(temporary / "formal"),
+            ],
+            root,
+        )
+        if formal.returncode == 0 or (
+            "formal campaigns cannot skip the Xcode test build" not in formal.stderr
+        ):
+            raise AssertionError(f"formal skip was not rejected: {formal.stderr}")
+        if (temporary / "formal").exists():
+            raise AssertionError("formal skip created a campaign directory")
+
+        rehearsal = run(
+            [
+                *common,
+                "--campaign-id",
+                "rehearsal-skip",
+                "--campaign-dir",
+                str(temporary / "rehearsal"),
+                "--duration-seconds",
+                "30",
+                "--rehearsal",
+                "--skip-xcframework-build",
+                "--skip-instruments",
+            ],
+            root,
+        )
+        expected = "expected one arm64 XrayClient xctestrun"
+        if rehearsal.returncode == 0 or expected not in rehearsal.stderr:
+            raise AssertionError(
+                "rehearsal did not reuse/validate DerivedData: " + rehearsal.stderr
+            )
+        if "Xcode test build failed" in rehearsal.stderr:
+            raise AssertionError("rehearsal unexpectedly attempted an Xcode test build")
+
+    print("Apple device campaign build-reuse contract test passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
