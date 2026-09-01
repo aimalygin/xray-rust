@@ -42,12 +42,17 @@ release series.
   the nested protected stream. Protocol-layer/UDP/DNS, REALITY, and XHTTP
   HTTP/3 chain shapes fail closed while those lifecycle boundaries remain
   unsupported.
-- Added the core-owned connection-management foundation for routed SOCKS and
-  HTTP TCP flows. Revisioned typed snapshots expose opening/active flows,
-  addressable host close cancels both dial and relay work, and cumulative
-  per-outbound counters retain live uplink/downlink bytes across normal,
-  failed, and host-closed completion. TUN/UDP registration and the mobile C
-  ABI surface remain the next layer.
+- Added core-owned connection management for routed SOCKS TCP/UDP, HTTP TCP,
+  and TUN TCP/UDP flows. ABI 1.3 plus equivalent Swift/Kotlin models expose
+  revisioned opening/active inventory, addressable close, and cumulative
+  per-outbound accounting. Swift and Kotlin also expose the seven typed TUN
+  diagnostic queues under the existing diagnostic capability bit.
+- Added managed encrypted DNS transports for strict routed `tls://` DoT and
+  routed/provider-local HTTP/2 DoH (`https://` / `https+local://`). Both use
+  non-recursive bootstrap resolution, certificate/name verification, bounded
+  operations, and mobile preflight pinning; the TUN anchor supports both UDP
+  and length-prefixed TCP clients. DoH currently opens one HTTP/2 connection
+  per exchange.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

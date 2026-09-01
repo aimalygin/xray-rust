@@ -685,26 +685,27 @@ impl Core {
                 )
             })
             .map(|mapper| Arc::new(Mutex::new(mapper)));
+        let query_transport = self.managed_dns_resolver.then(|| {
+            Arc::new(dns::RoutedDnsQueryTransport::with_direct_executor(
+                Arc::clone(outbound_router),
+                Arc::clone(&bootstrap),
+                Arc::clone(&self.transport_dialer),
+                forbidden_servers.clone(),
+                Arc::clone(&direct_executor),
+                dns_limits.max_concurrent_operations,
+            )) as Arc<dyn DnsQueryTransport>
+        });
         let destination = if self.managed_dns_resolver {
             let fallback: Arc<dyn DnsResolver> = match self.tun_runtime_options.dns_bootstrap {
                 DnsBootstrapMode::System => system_dns_resolver(),
                 DnsBootstrapMode::StaticOnly => Arc::new(FailClosedDnsResolver),
             };
-            let query_transport: Arc<dyn DnsQueryTransport> =
-                Arc::new(dns::RoutedDnsQueryTransport::with_direct_executor(
-                    Arc::clone(outbound_router),
-                    Arc::clone(&bootstrap),
-                    Arc::clone(&self.transport_dialer),
-                    forbidden_servers.clone(),
-                    Arc::clone(&direct_executor),
-                    dns_limits.max_concurrent_operations,
-                ));
             let resolver = configured_dns_resolver_from_config_with_transport(
                 config.as_ref(),
                 fallback,
                 None,
                 self.dns_rules.clone(),
-                Some(query_transport),
+                query_transport.clone(),
                 transport_dns_query_strategy(config.dns.query_strategy),
             );
             Arc::new(CachingDnsResolver::new(resolver)) as Arc<dyn DnsResolver>
@@ -724,6 +725,7 @@ impl Core {
             destination,
             bootstrap,
             outbound,
+            query_transport,
         }
     }
 
@@ -859,6 +861,7 @@ impl Core {
                 Arc::clone(&runtime_dns_resolvers.destination),
                 Some(Arc::clone(&runtime_dns_resolvers.bootstrap)),
                 Arc::clone(&runtime_dns_resolvers.outbound),
+                runtime_dns_resolvers.query_transport.clone(),
                 Arc::clone(&self.transport_dialer),
                 Arc::clone(&self.connection_registry),
                 tun_runtime_options,
@@ -1013,6 +1016,8 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 ConfigDnsServerTransport::TcpRouted => NameServerTransport::TcpRouted,
                 ConfigDnsServerTransport::TcpLocal => NameServerTransport::TcpLocal,
                 ConfigDnsServerTransport::TlsRouted => NameServerTransport::TlsRouted,
+                ConfigDnsServerTransport::HttpsRouted => NameServerTransport::HttpsRouted,
+                ConfigDnsServerTransport::HttpsLocal => NameServerTransport::HttpsLocal,
             };
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
@@ -1034,6 +1039,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 server: name_server,
                 tag: Some(tag),
                 transport,
+                https_path: server.https_path().map(str::to_owned),
                 domains,
                 expected_ips,
                 unexpected_ips,
@@ -1633,7 +1639,9 @@ mod tests {
                 "192.0.2.53",
                 "tcp://resolver.example:5353",
                 "tcp+local://[2001:db8::53]",
-                "tls://secure-resolver.example"
+                "tls://secure-resolver.example",
+                "https://doh.example/dns-query",
+                "https+local://192.0.2.54:8443/custom?profile=mobile"
               ]
             },
             "inbounds": [],
@@ -1653,8 +1661,12 @@ mod tests {
                 NameServerTransport::TcpRouted,
                 NameServerTransport::TcpLocal,
                 NameServerTransport::TlsRouted,
+                NameServerTransport::HttpsRouted,
+                NameServerTransport::HttpsLocal,
             ]
         );
+        assert_eq!(policies.https_path(4), Some("/dns-query"));
+        assert_eq!(policies.https_path(5), Some("/custom?profile=mobile"));
     }
 
     #[test]

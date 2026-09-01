@@ -204,9 +204,8 @@ adding unfinished Phase 2 features.
 
 ### DNS
 
-- Keep the implemented routed managed DoT path hardened; add DoH, followed by
-  DoQ where the existing QUIC stack can be reused without increasing lifecycle
-  risk.
+- Keep the implemented routed managed DoT and DoH paths hardened; add DoQ where
+  the existing QUIC stack can be reused without increasing lifecycle risk.
 - Add negative caching and bounded stale-while-revalidate behavior.
 - Provide an injectable platform system resolver and explicit bootstrap route
   behavior.
@@ -249,6 +248,12 @@ capability bit. Routed `tls://` managed name servers now use port 853 by
 default and layer certificate-verified DNS-over-TLS over the selected
 Freedom/VLESS/chained TCP carrier; the TUN raw-DNS proxy applies the same
 bootstrap, socket-protection, bounded pooling, and cancellation rules.
+Routed `https://` and provider-local `https+local://` managed name servers now
+use port 443 by default, preserve path/query, negotiate certificate-verified
+HTTP/2, and exchange bounded RFC 8484 POST messages. Both the UDP and TCP sides
+of the TUN DNS anchor translate through the same managed operation cap; DoH
+currently opens one HTTP/2 connection per exchange rather than retaining a
+pool.
 
 ### Mobile SDK and management API
 

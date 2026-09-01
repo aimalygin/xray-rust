@@ -989,24 +989,28 @@ platform route-capability provider; it is not silently treated as `UseIP`.
 
 `dns.servers` accepts at most eight string or object entries. String shorthand
 accepts IP addresses, socket addresses, domain names with an optional nonzero
-port, `tcp://host[:port]` / `tcp+local://host[:port]`, and routed
-`tls://host[:port]`. Schemes are case-insensitive, TCP defaults to port `53`,
-TLS defaults to port `853`, bracketed IPv6 literals are supported, and these
-transports are used from the first query rather than as a truncation retry.
-`tcp://` and `tls://` enter normal outbound routing; `tcp+local://` bypasses
-routing and opens a protected direct socket. DoT wraps the selected carrier in
-certificate-verified TLS and derives SNI/verification name from the configured
-domain or IP literal. The accepted URI subset is deliberately authority-only:
-userinfo, paths, queries, fragments, whitespace, scoped IPv6, and zero ports
-fail closed. In an object entry, the port embedded in the TCP/TLS URI is
-authoritative and the separate `port` field is ignored after validation,
+port, `tcp://host[:port]` / `tcp+local://host[:port]`, routed
+`tls://host[:port]`, and `https://host[:port][/path][?query]` /
+`https+local://host[:port][/path][?query]`. Schemes are case-insensitive, TCP
+defaults to port `53`, TLS to `853`, and HTTPS to `443`; bracketed IPv6
+literals are supported, and these transports are used from the first query
+rather than as a truncation retry. `tcp://`, `tls://`, and `https://` enter
+normal outbound routing; the `+local` forms bypass routing and open protected
+direct sockets. DoT and DoH wrap the selected carrier in certificate-verified
+TLS and derive SNI/verification identity from the configured domain or IP
+literal. DoH negotiates HTTP/2 and sends bounded RFC 8484 POST messages; an
+omitted path becomes `/`, while a query-only suffix is attached to that path.
+TCP/TLS URLs are authority-only. HTTPS permits an ASCII path/query but rejects
+userinfo, fragments, backslashes, whitespace/control characters, scoped or
+unbracketed IPv6, and zero ports. In an object entry, the port embedded in the
+stream URI is authoritative and the separate `port` field is ignored after validation,
 matching Xray-core's effective behavior. The Xray object subset requires `address`, supports
 `port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
 `queryStrategy`, `finalQuery`, `tag`, and `timeoutMs`. `domains` may be an array or one
 comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
 Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
-Special `localhost`/`fakedns` clients, DoH/DoQ URL transports, `clientIp`,
+Special `localhost`/`fakedns` clients, DoQ URL transport, `clientIp`,
 cache/stale controls, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
 
@@ -1386,7 +1390,7 @@ SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
 is restored before routing. VLESS carries that domain for remote resolution;
 Freedom resolves it through the managed routed resolver, including in mobile
 `StaticOnly` mode. Managed `dns.servers`
-DoH/DoQ transports, `clientIp`, negative/stale caching, and the broader
+DoQ transport, `clientIp`, negative/stale caching, and the broader
 Xray DNS feature set are not implemented. This does not limit the DNS
 outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled

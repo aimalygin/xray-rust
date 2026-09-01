@@ -15,9 +15,9 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr};
 use xray_transport::{
-    dns_response_matches_query, protect_udp_socket, BoxedTransportStream, ConnectorConfig,
-    DnsQueryDispatch, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind, DnsResolver,
-    HappyEyeballsConfig, NameServer, TlsClientConfig, TlsConnector, TransportDialer,
+    dns_response_matches_query, exchange_dns_https_h2, protect_udp_socket, BoxedTransportStream,
+    ConnectorConfig, DnsQueryDispatch, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind,
+    DnsResolver, HappyEyeballsConfig, NameServer, TlsClientConfig, TlsConnector, TransportDialer,
 };
 
 use crate::dns_outbound_runtime::DnsDirectExecutor;
@@ -47,6 +47,7 @@ pub(crate) struct RuntimeDnsResolvers {
     pub(crate) destination: Arc<dyn DnsResolver>,
     pub(crate) bootstrap: Arc<dyn DnsResolver>,
     pub(crate) outbound: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
+    pub(crate) query_transport: Option<Arc<dyn DnsQueryTransport>>,
 }
 
 /// DNS wire transport routed through the same outbound policy as application
@@ -313,6 +314,29 @@ impl RoutedDnsQueryTransport {
         exchange_dns_tcp_message(&mut stream, query).await
     }
 
+    async fn exchange_https(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+        query: &[u8],
+    ) -> io::Result<Vec<u8>> {
+        let https_path = metadata.https_path.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "DNS-over-HTTPS exchange is missing its request path",
+            )
+        })?;
+        let stream = self.open_tcp_stream(server, metadata).await?;
+        let tls_connector = self.tls_connector.as_deref().map_err(|message| {
+            io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+        })?;
+        let stream = tls_connector
+            .connect_stream(stream, &dns_https_tls_client_config(server))
+            .await
+            .map_err(io::Error::other)?;
+        exchange_dns_https_h2(stream, server, https_path, query).await
+    }
+
     async fn open_tcp_stream(
         &self,
         server: &NameServer,
@@ -411,6 +435,12 @@ pub(crate) fn dns_tls_client_config(server: &NameServer) -> TlsClientConfig {
         alpn: Vec::new(),
         fingerprint: None,
     }
+}
+
+pub(crate) fn dns_https_tls_client_config(server: &NameServer) -> TlsClientConfig {
+    let mut config = dns_tls_client_config(server);
+    config.alpn = vec!["h2".to_owned()];
+    config
 }
 
 fn untrusted_dns_outbound_error() -> io::Error {
@@ -830,6 +860,7 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
             DnsQueryTransportKind::Udp => self.exchange_udp(server, metadata, query).await,
             DnsQueryTransportKind::Tcp => self.exchange_tcp(server, metadata, query).await,
             DnsQueryTransportKind::Tls => self.exchange_tls(server, metadata, query).await,
+            DnsQueryTransportKind::Https => self.exchange_https(server, metadata, query).await,
         }
     }
 }
@@ -939,6 +970,8 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use bytes::{Bytes, BytesMut};
+    use http::{header, Method, Response};
     use rcgen::{generate_simple_self_signed, CertifiedKey};
     use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1206,6 +1239,19 @@ mod tests {
         (Arc::new(client_config), Arc::new(server_config))
     }
 
+    fn dns_https_tls_configs(
+        server_name: &str,
+    ) -> (Arc<rustls::ClientConfig>, Arc<rustls::ServerConfig>) {
+        let (client_config, server_config) = dns_tls_configs(server_name);
+        let mut client_config =
+            Arc::try_unwrap(client_config).expect("DNS HTTPS client config should have one owner");
+        client_config.alpn_protocols = vec![b"h2".to_vec()];
+        let mut server_config =
+            Arc::try_unwrap(server_config).expect("DNS HTTPS server config should have one owner");
+        server_config.alpn_protocols = vec![b"h2".to_vec()];
+        (Arc::new(client_config), Arc::new(server_config))
+    }
+
     async fn spawn_dns_tls_server(
         server_config: Arc<rustls::ServerConfig>,
         expected_query: Vec<u8>,
@@ -1238,6 +1284,68 @@ mod tests {
                 .write_all(&response)
                 .await
                 .expect("write DNS TLS response");
+        });
+        (address, task)
+    }
+
+    async fn spawn_dns_https_server(
+        server_config: Arc<rustls::ServerConfig>,
+        expected_path: &'static str,
+        expected_query: Vec<u8>,
+    ) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind DNS HTTPS test server");
+        let address = listener.local_addr().expect("read DNS HTTPS test address");
+        let acceptor = TlsAcceptor::from(server_config);
+        let task = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept DNS HTTPS client");
+            let stream = acceptor
+                .accept(stream)
+                .await
+                .expect("accept DNS HTTPS TLS stream");
+            assert_eq!(stream.get_ref().1.alpn_protocol(), Some(b"h2".as_slice()));
+            let mut connection = h2::server::handshake(stream)
+                .await
+                .expect("accept DNS HTTPS h2 connection");
+            let (request, mut respond) = connection
+                .accept()
+                .await
+                .expect("DNS HTTPS client should open one request")
+                .expect("DNS HTTPS request should be valid");
+            let connection_driver =
+                tokio::spawn(async move { while connection.accept().await.is_some() {} });
+            assert_eq!(request.method(), Method::POST);
+            assert_eq!(
+                request.uri().path_and_query().unwrap().as_str(),
+                expected_path
+            );
+            assert_eq!(
+                request.headers().get(header::CONTENT_TYPE).unwrap(),
+                "application/dns-message"
+            );
+            let mut body = request.into_body();
+            let mut query = BytesMut::new();
+            while let Some(chunk) = body.data().await {
+                let chunk = chunk.expect("read DNS HTTPS request DATA");
+                query.extend_from_slice(&chunk);
+                body.flow_control()
+                    .release_capacity(chunk.len())
+                    .expect("release DNS HTTPS request capacity");
+            }
+            assert_eq!(query.as_ref(), expected_query);
+            let response = dns_response(&query);
+            let response_headers = Response::builder()
+                .status(200)
+                .header(header::CONTENT_TYPE, "application/dns-message")
+                .body(())
+                .unwrap();
+            let mut send = respond
+                .send_response(response_headers, false)
+                .expect("send DNS HTTPS response HEADERS");
+            send.send_data(Bytes::from(response), true)
+                .expect("send DNS HTTPS response DATA");
+            connection_driver.await.unwrap();
         });
         (address, task)
     }
@@ -2836,5 +2944,77 @@ mod tests {
         assert_eq!(bootstrap.calls.load(Ordering::Relaxed), 1);
         assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
         server.await.expect("join managed DNS-over-TLS server");
+    }
+
+    #[tokio::test]
+    async fn managed_dns_over_https_uses_bootstrap_routed_tls_and_h2() {
+        let server_domain = "managed-doh.test";
+        let query = dns_query(0xD048, "answer-over-doh.test");
+        let expected_response = dns_response(&query);
+        let (client_config, server_config) = dns_https_tls_configs(server_domain);
+        let (server_addr, server) =
+            spawn_dns_https_server(server_config, "/dns-query?profile=mobile", query.clone()).await;
+        let bootstrap = Arc::new(CandidateBootstrapResolver {
+            expected_domain: server_domain,
+            expected_port: server_addr.port(),
+            candidates: vec![server_addr],
+            calls: AtomicUsize::new(0),
+        });
+        let protector = Arc::new(CountingSocketProtector::default());
+        let dialer = Arc::new(
+            TransportDialer::system_with_socket_protector(Some(protector.clone()))
+                .expect("build protected DNS-over-HTTPS dialer"),
+        );
+        let config = Arc::new(CoreConfig {
+            inbounds: Vec::new(),
+            outbounds: vec![OutboundConfig {
+                tag: Some("direct".to_owned()),
+                proxy_settings: None,
+                stream: StreamSettings {
+                    network: Network::Tcp,
+                    transport: StreamTransport::Raw,
+                    security: StreamSecurity::None,
+                    quic_params: None,
+                    socket_options: None,
+                },
+                settings: OutboundSettings::Freedom,
+            }],
+            default_outbound_tag: Some("direct".to_owned()),
+            routing: RoutingConfig::default(),
+            observatory: None,
+            dns: DnsConfig::default(),
+            policy: PolicyConfig::default(),
+        });
+        let transport = RoutedDnsQueryTransport::new(
+            Arc::new(OutboundRouter::new(config)),
+            bootstrap.clone(),
+            dialer,
+            Vec::new(),
+        )
+        .with_tls_connector(Arc::new(TlsConnector::with_pinned_client_config(
+            client_config,
+        )));
+
+        let response = timeout(
+            Duration::from_secs(2),
+            transport.exchange(
+                &NameServer::Domain {
+                    domain: server_domain.to_owned(),
+                    port: server_addr.port(),
+                },
+                DnsQueryTransportKind::Https,
+                DnsQueryMetadata::new(Some("managed-dns"))
+                    .with_https_path("/dns-query?profile=mobile"),
+                &query,
+            ),
+        )
+        .await
+        .expect("managed DNS-over-HTTPS exchange should not stall")
+        .expect("managed DNS-over-HTTPS exchange should succeed");
+
+        assert_eq!(response, expected_response);
+        assert_eq!(bootstrap.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
+        server.await.expect("join managed DNS-over-HTTPS server");
     }
 }

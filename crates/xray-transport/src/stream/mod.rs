@@ -37,6 +37,8 @@ mod websocket;
 mod websocket_frame;
 mod xhttp;
 
+pub(crate) use xhttp::connect_h2;
+
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
 /// and nothing else should. The five gRPC names on the line below are the
 /// transport's whole *supported* surface. `grpc::test_only` says what is

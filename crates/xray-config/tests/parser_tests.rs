@@ -2355,6 +2355,7 @@ fn parses_tcp_dns_string_shorthand_as_default_policy() {
         [DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 53))),
             transport: DnsServerTransport::TcpRouted,
+            https_path: None,
             domains: DomainMatcherSet::default(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
@@ -2453,6 +2454,119 @@ fn parses_dns_over_tls_authority_forms_with_port_853_default() {
             ),
         ]
     );
+}
+
+#[test]
+fn parses_dns_over_https_urls_with_path_query_and_port_443_default() {
+    let raw = raw_with_dns_servers(
+        r#"
+          "https://resolver.example/dns-query",
+          "HTTPS+LOCAL://192.0.2.53:8443/custom?profile=mobile",
+          "https://[2001:db8::53]",
+          "https://resolver.example?dns=wire"
+        "#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("DNS-over-HTTPS URLs should parse");
+    let actual = parsed
+        .config
+        .dns
+        .servers
+        .iter()
+        .map(|server| {
+            (
+                server.transport(),
+                server.endpoint(),
+                server.https_path().map(str::to_owned),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual,
+        [
+            (
+                DnsServerTransport::HttpsRouted,
+                DnsServerEndpoint::Domain {
+                    domain: "resolver.example".to_owned(),
+                    port: 443,
+                },
+                Some("/dns-query".to_owned()),
+            ),
+            (
+                DnsServerTransport::HttpsLocal,
+                DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 8443))),
+                Some("/custom?profile=mobile".to_owned()),
+            ),
+            (
+                DnsServerTransport::HttpsRouted,
+                DnsServerEndpoint::Ip(SocketAddr::new(
+                    IpAddr::V6("2001:db8::53".parse().unwrap()),
+                    443,
+                )),
+                Some("/".to_owned()),
+            ),
+            (
+                DnsServerTransport::HttpsRouted,
+                DnsServerEndpoint::Domain {
+                    domain: "resolver.example".to_owned(),
+                    port: 443,
+                },
+                Some("/?dns=wire".to_owned()),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn rejects_malformed_dns_over_https_urls() {
+    for address in [
+        "https://",
+        "https:/resolver.example/dns-query",
+        "https://user@resolver.example/dns-query",
+        "https://resolver.example:0/dns-query",
+        "https://resolver.example:65536/dns-query",
+        "https://2001:db8::53/dns-query",
+        "https://[192.0.2.53]/dns-query",
+        "https://resolver.example/dns-query#fragment",
+        "https://resolver example/dns-query",
+        "https://198.18.0.1/dns-query",
+        "https+local://[::ffff:198.18.0.2]/dns-query",
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
+
+        assert_parse_error_path(&raw, "$.dns.servers[0]");
+    }
+}
+
+#[test]
+fn dns_over_https_object_ignores_sibling_port_and_keeps_policy_fields() {
+    let raw = raw_with_dns_servers(
+        r#"{
+          "address": "https://resolver.example:8443/dns-query",
+          "port": 5353,
+          "domains": ["full:internal.example"],
+          "tag": "dns-doh",
+          "skipFallback": true
+        }"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("DNS-over-HTTPS object should parse");
+    let DnsServerConfig::Policy(server) = &parsed.config.dns.servers[0] else {
+        panic!("DNS-over-HTTPS object must remain a policy server");
+    };
+    assert_eq!(server.transport, DnsServerTransport::HttpsRouted);
+    assert_eq!(
+        server.endpoint,
+        DnsServerEndpoint::Domain {
+            domain: "resolver.example".to_owned(),
+            port: 8443,
+        }
+    );
+    assert_eq!(server.https_path.as_deref(), Some("/dns-query"));
+    assert!(server.domains.matches("internal.example"));
+    assert_eq!(server.tag, "dns-doh");
+    assert!(server.skip_fallback);
 }
 
 #[test]
@@ -2645,6 +2759,7 @@ fn parses_xray_dns_server_objects_and_fallback_policy() {
                 port: 53,
             },
             transport: DnsServerTransport::Classic,
+            https_path: None,
             domains: second.domains.clone(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),

@@ -14,6 +14,7 @@ pub use config::{
     XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
     XhttpSessionIdConfig, XhttpUplinkDataPlacement,
 };
+pub(crate) use h2::connect_h2;
 pub use h3::{H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig};
 pub use transport::{XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy};
 

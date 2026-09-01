@@ -29,6 +29,8 @@ xray-transport = { path = "../xray-transport" }
 xray-tun = { path = "../xray-tun" }
 
 [dev-dependencies]
+h2.workspace = true
+http.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 serde_json.workspace = true

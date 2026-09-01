@@ -78,8 +78,9 @@ applicable `dns.hosts` rule. Bare host keys use Xray's exact/full semantics.
 
 `XrayVpnService` uses the stricter mobile policy automatically. Before calling
 `Builder.establish()`, it resolves domain-valued VLESS server addresses and
-domain-valued `dns.servers` with Android's system resolver. This includes both
-`tcp://host[:port]` and `tcp+local://host[:port]`; an IP-literal URL needs no
+domain-valued `dns.servers` with Android's system resolver. This includes
+`tcp://`, `tcp+local://`, `tls://`, `https://`, and `https+local://` endpoints;
+an IP-literal URL needs no
 bootstrap lookup. It preserves every usable A/AAAA result in resolver order,
 removes duplicates, and writes a nonempty exact `full:` IP array under
 `dns.hosts`, then creates the core with `XrayDnsBootstrapMode.StaticOnly`. The
@@ -87,15 +88,15 @@ original VLESS address, DNS server URI, and DNS object policy fields remain
 unchanged, so TLS/REALITY server names, DNS tags, and domain routing are not
 changed.
 
-`tcp://` is routed DNS-over-TCP: normal Freedom/VLESS selection and an object
-server's `tag` apply. `tcp+local://` is deliberately different: it bypasses the
-Xray router and opens a system/local TCP socket that is passed through
-`VpnService.protect(fd)`. Both modes still use mobile bootstrap pinning for a
-domain host. Their schemes are case-insensitive and their strict URL subset
-allows only an authority containing IPv4, a domain, or bracketed IPv6 plus an
-optional port from 1 through 65535 (default 53). Userinfo, path, query,
-fragment, percent encoding, unbracketed IPv6, whitespace/control characters,
-and malformed brackets fail preflight. For an object server the URL port wins.
+`tcp://`, `tls://`, and `https://` use normal Freedom/VLESS selection and an
+object server's `tag`. A `+local` URL instead bypasses the Xray router and opens
+a system/local TCP socket passed through `VpnService.protect(fd)`. Every domain
+host still uses mobile bootstrap pinning. Schemes are case-insensitive; default
+ports are 53 for TCP, 853 for TLS, and 443 for HTTPS. TCP/TLS accept only an
+IPv4/domain/bracketed-IPv6 authority with an optional nonzero port. HTTPS also
+accepts an ASCII path/query (default `/`) but rejects userinfo, fragments,
+backslashes, unbracketed IPv6, whitespace/control characters, and malformed
+brackets. For an object server the URL port wins.
 A sibling `port` is still validated as an integer from 0 through 65535 and
 preserved in the config, but is ignored when selecting that endpoint. A TCP URL
 pointing directly to, or pinning a domain onto, a tunnel-owned address is
@@ -139,8 +140,9 @@ When enabled `dns.fakeIp` or a non-empty `dns.servers` list activates the core's
 local DNS endpoint, the reference service also installs `198.18.0.1` with
 `Builder.addDnsServer`. Apps that override `buildTunnel()` retain control of all
 other addresses, routes, and application exclusions. The endpoint accepts UDP
-and length-prefixed TCP queries. For either TCP URL form it frames UDP client
-messages onto DNS-over-TCP; a TCP client remains on DNS-over-TCP.
+and length-prefixed TCP queries. UDP clients are translated to the configured
+TCP, DoT, or DoH transport. TCP clients remain length-prefixed for TCP/DoT and
+are translated frame-by-frame into bounded HTTP/2 DoH POST requests for HTTPS.
 
 Fake-IP does not itself provide the real address needed by a Freedom outbound.
 When `dns.fakeIp.enabled` is true and `dns.servers` is empty, the reference

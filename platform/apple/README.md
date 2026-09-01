@@ -106,11 +106,17 @@ preflight described below. Domains restored from fake-IP and sent through
 Freedom resolve through the routed `dns.servers` list without a system-DNS
 fallback.
 
-TCP URL schemes are case-insensitive, but the mobile parser intentionally
-accepts only an authority: IPv4, a domain, or bracketed IPv6, followed by an
-optional port from 1 through 65535 (default 53). Userinfo, path, query,
-fragment, percent encoding, unbracketed IPv6, whitespace/control characters,
-and malformed brackets are rejected before network settings are applied. In an
+`tls://host[:port]` uses the same routed carrier with certificate-verified DoT
+and defaults to port 853. `https://host[:port][/path][?query]` adds
+certificate-verified HTTP/2 DoH over the routed carrier; `https+local://...`
+uses the provider-local protected socket instead. HTTPS defaults to port 443
+and path `/`.
+
+Stream URL schemes are case-insensitive. TCP/TLS intentionally accept only an
+authority: IPv4, a domain, or bracketed IPv6, followed by an optional nonzero
+port. HTTPS additionally accepts an ASCII path/query but rejects userinfo,
+fragments, backslashes, unbracketed IPv6, whitespace/control characters, and
+malformed brackets before network settings are applied. In an
 object server, the URL's embedded/default port is authoritative. A sibling
 `port` is still validated as an integer from 0 through 65535 and preserved, but
 is ignored when selecting that endpoint. A TCP URL pointing directly to, or
@@ -139,9 +145,10 @@ IPv4 `198.18.0.1`. Invalid explicit values fail startup, and start options take
 precedence over persistent provider configuration. The local anchor proxies
 both UDP and TCP/53. A `tcp://` upstream uses the configured outbound route;
 `tcp+local://` is the explicit routing exception described above. UDP client
-messages sent to either TCP URL are framed onto DNS-over-TCP, while TCP clients
-remain length-prefixed TCP. Fake-IP profiles keep local synthesis precedence
-for both transports at the anchor.
+messages are translated onto configured TCP, DoT, or DoH upstreams. TCP clients
+remain length-prefixed for TCP/DoT and are translated frame-by-frame into
+bounded HTTP/2 DoH POST requests for HTTPS. Fake-IP profiles keep local
+synthesis precedence for every transport at the anchor.
 
 The checked-in `directTunConfigJSON` intentionally has no fake-IP DNS. Direct
 profiles are not automatically migrated to fake-IP; when used unchanged they
@@ -189,9 +196,9 @@ The selected test mode, transport, and trusted upstream remain selected when a
 new VLESS URL is imported; choose `Config JSON` to disable the override.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS server and every domain-valued classic, `tcp://`, or
-`tcp+local://` DNS endpoint. An IP-literal TCP URL needs no system lookup. Both
-TCP URL modes use the URL port for endpoint safety checks and pin a domain host
+domain VLESS server and every domain-valued classic, TCP, DoT, or DoH DNS
+endpoint. An IP-literal stream URL needs no system lookup. URL modes use their
+embedded/default port for endpoint safety checks and pin a domain host
 into `dns.hosts`; the original server URI, object policy fields, and `tag` stay
 unchanged. Existing bare or `full:<domain>` exact `dns.hosts` mappings are
 canonicalized and followed for at most eight mapping steps; cycles and deeper

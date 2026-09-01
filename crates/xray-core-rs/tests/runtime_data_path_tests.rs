@@ -158,6 +158,7 @@ fn tagged_dns_server_with_transport(
     DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
         endpoint,
         transport,
+        https_path: None,
         domains: DomainMatcherSet::default(),
         expected_ips: Default::default(),
         unexpected_ips: Default::default(),
@@ -6032,6 +6033,7 @@ async fn run_tun_dns_hijack_udp_matched_policy_scenario() {
         DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(matched.addr()),
             transport: xray_config::DnsServerTransport::Classic,
+            https_path: None,
             domains: compile_dns_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
                 .unwrap(),
             expected_ips: Default::default(),
@@ -7416,6 +7418,7 @@ async fn run_tun_dns_hijack_tcp_mixed_pipeline_scenario() {
         DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint: DnsServerEndpoint::Ip(hijack_upstream.addr()),
             transport: xray_config::DnsServerTransport::Classic,
+            https_path: None,
             domains: compile_dns_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
                 .unwrap(),
             expected_ips: Default::default(),

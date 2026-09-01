@@ -21,8 +21,8 @@ use xray_config::{
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     dns_response_matches_query, protect_udp_socket, BoxedTransportStream, DnsLookup,
-    DnsQueryStrategy as TransportDnsQueryStrategy, DnsResolver, TlsConnector, TransportDialer,
-    TransportError,
+    DnsQueryStrategy as TransportDnsQueryStrategy, DnsQueryTransport, DnsResolver, TlsConnector,
+    TransportDialer, TransportError,
 };
 use xray_tun::{
     TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
@@ -836,6 +836,7 @@ pub(crate) async fn serve_tun_endpoint(
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
+    dns_query_transport: Option<Arc<dyn DnsQueryTransport>>,
     transport_dialer: Arc<TransportDialer>,
     connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
@@ -883,6 +884,7 @@ pub(crate) async fn serve_tun_endpoint(
         dns_resolver,
         dns_bootstrap_resolver,
         dns_outbound_runtime,
+        dns_query_transport,
         dns_tls_connector,
         transport_dialer,
         connection_registry,
@@ -1424,6 +1426,7 @@ struct TunRuntimeContext {
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
+    dns_query_transport: Option<Arc<dyn DnsQueryTransport>>,
     dns_tls_connector: Result<Arc<TlsConnector>, Arc<str>>,
     transport_dialer: Arc<TransportDialer>,
     connection_registry: Arc<ConnectionRegistry>,
@@ -2486,6 +2489,13 @@ async fn open_tcp_bridge_stream(
     context: &TunRuntimeContext,
 ) -> Result<BoxedTransportStream, crate::CoreError> {
     if let Some(upstream) = dns_upstream {
+        if matches!(
+            upstream.transport(),
+            xray_config::DnsServerTransport::HttpsRouted
+                | xray_config::DnsServerTransport::HttpsLocal
+        ) {
+            return dns_proxy::open_dns_https_tcp_bridge(upstream, context);
+        }
         if upstream.is_local() {
             let candidates = dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;
             return Ok(crate::dns::open_local_dns_tcp_stream(

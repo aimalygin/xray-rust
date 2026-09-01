@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use bytes::Bytes;
+use http::{header, Method, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tokio::sync::Notify;
@@ -189,6 +191,7 @@ const DNS_DEFAULT_TTL: Duration = Duration::from_secs(300);
 const DNS_STATIC_HOST_TTL: Duration = Duration::from_secs(10);
 const DNS_CACHE_MAX_ENTRIES: usize = 256;
 const MAX_DNS_UDP_RESPONSE_SIZE: usize = 4096;
+const MAX_DNS_HTTPS_RESPONSE_SIZE: usize = u16::MAX as usize;
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(5);
 const DNS_LOCAL_TCP_FALLBACK_DELAY: Duration = Duration::from_millis(300);
 const MAX_DNS_ALIAS_DEPTH: usize = 8;
@@ -591,6 +594,8 @@ pub enum DnsQueryTransportKind {
     Tcp,
     /// DNS over TLS with RFC 7858 length-prefixed DNS messages.
     Tls,
+    /// DNS over HTTPS with RFC 8484 POST messages.
+    Https,
 }
 
 /// Determines whether a DNS exchange enters the routing layer.
@@ -612,6 +617,8 @@ pub enum DnsQueryDispatch {
 pub struct DnsQueryMetadata<'a> {
     pub inbound_tag: Option<&'a str>,
     pub dispatch: DnsQueryDispatch,
+    /// HTTP path and optional query for an HTTPS exchange.
+    pub https_path: Option<&'a str>,
 }
 
 impl<'a> DnsQueryMetadata<'a> {
@@ -620,6 +627,7 @@ impl<'a> DnsQueryMetadata<'a> {
         Self {
             inbound_tag,
             dispatch: DnsQueryDispatch::Routed,
+            https_path: None,
         }
     }
 
@@ -628,7 +636,14 @@ impl<'a> DnsQueryMetadata<'a> {
         Self {
             inbound_tag,
             dispatch: DnsQueryDispatch::Local,
+            https_path: None,
         }
+    }
+
+    /// Attaches the request path used by a DNS-over-HTTPS exchange.
+    pub const fn with_https_path(mut self, https_path: &'a str) -> Self {
+        self.https_path = Some(https_path);
+        self
     }
 }
 
@@ -645,6 +660,10 @@ pub enum NameServerTransport {
     TcpLocal,
     /// Start immediately with routed DNS over TLS.
     TlsRouted,
+    /// Start immediately with routed DNS over HTTPS.
+    HttpsRouted,
+    /// Start immediately with local DNS over HTTPS.
+    HttpsLocal,
 }
 
 /// Exchanges already encoded DNS messages with a configured name server.
@@ -713,7 +732,7 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
         &self,
         server: &NameServer,
         transport: DnsQueryTransportKind,
-        _metadata: DnsQueryMetadata<'_>,
+        metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
         let server_addrs = self.server_addrs(server).await?;
@@ -742,7 +761,99 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
                 )
                 .await
             }
+            DnsQueryTransportKind::Https => {
+                let https_path = metadata.https_path.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "DNS-over-HTTPS exchange is missing its request path",
+                    )
+                })?;
+                let connector = self.tls_connector.as_deref().map_err(|message| {
+                    io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+                })?;
+                let stream =
+                    open_direct_tcp_candidates(&server_addrs, self.socket_protector.as_deref())
+                        .await?;
+                let stream = connector
+                    .connect_stream(stream, &dns_https_tls_client_config(server))
+                    .await
+                    .map_err(io::Error::other)?;
+                exchange_dns_https_h2(stream, server, https_path, query).await
+            }
         }
+    }
+}
+
+/// Exchanges one RFC 8484 POST over an already authenticated HTTP/2 stream.
+pub async fn exchange_dns_https_h2(
+    stream: BoxedTransportStream,
+    server: &NameServer,
+    https_path: &str,
+    query: &[u8],
+) -> io::Result<Vec<u8>> {
+    if query.len() > usize::from(u16::MAX) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "DNS-over-HTTPS query is too large",
+        ));
+    }
+    let authority = dns_https_authority(server);
+    let uri = format!("https://{authority}{https_path}")
+        .parse::<http::Uri>()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid DNS-over-HTTPS URI"))?;
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/dns-message")
+        .header(header::ACCEPT, "application/dns-message")
+        .header(header::CONTENT_LENGTH, query.len())
+        .body(())
+        .map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid DNS-over-HTTPS request",
+            )
+        })?;
+    let client = crate::stream::connect_h2(stream)
+        .await
+        .map_err(io::Error::other)?;
+    let body = client
+        .send_fixed(request, Bytes::copy_from_slice(query))
+        .await
+        .map_err(io::Error::other)?;
+    let content_type = body
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    if content_type != Some("application/dns-message") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "DNS-over-HTTPS response has an invalid content type",
+        ));
+    }
+    let mut response = Vec::new();
+    body.take((MAX_DNS_HTTPS_RESPONSE_SIZE + 1) as u64)
+        .read_to_end(&mut response)
+        .await?;
+    if response.len() > MAX_DNS_HTTPS_RESPONSE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "DNS-over-HTTPS response is too large",
+        ));
+    }
+    Ok(response)
+}
+
+fn dns_https_authority(server: &NameServer) -> String {
+    match server {
+        NameServer::Socket(address) => match address {
+            SocketAddr::V4(address) if address.port() == 443 => address.ip().to_string(),
+            SocketAddr::V4(_) => address.to_string(),
+            SocketAddr::V6(address) if address.port() == 443 => format!("[{}]", address.ip()),
+            SocketAddr::V6(_) => address.to_string(),
+        },
+        NameServer::Domain { domain, port: 443 } => domain.clone(),
+        NameServer::Domain { domain, port } => format!("{domain}:{port}"),
     }
 }
 
@@ -756,6 +867,7 @@ pub struct NameServerPolicy {
     /// Inbound tag presented by this DNS client to the routing layer.
     pub tag: Option<String>,
     pub transport: NameServerTransport,
+    pub https_path: Option<String>,
     pub domains: DomainMatcherSet,
     pub expected_ips: DnsIpFilter,
     pub unexpected_ips: DnsIpFilter,
@@ -772,6 +884,7 @@ impl NameServerPolicy {
             server,
             tag: None,
             transport: NameServerTransport::Classic,
+            https_path: None,
             domains: DomainMatcherSet::default(),
             expected_ips: DnsIpFilter::default(),
             unexpected_ips: DnsIpFilter::default(),
@@ -806,6 +919,7 @@ impl CompiledNameServerPolicies {
                     server,
                     tag,
                     transport,
+                    https_path,
                     domains,
                     expected_ips,
                     unexpected_ips,
@@ -820,6 +934,7 @@ impl CompiledNameServerPolicies {
                     server,
                     tag,
                     transport,
+                    https_path,
                     domains,
                     expected_ips,
                     unexpected_ips,
@@ -860,6 +975,13 @@ impl CompiledNameServerPolicies {
     /// Returns the wire and dispatch behavior at a selected policy index.
     pub fn transport(&self, index: usize) -> Option<NameServerTransport> {
         self.policies.get(index).map(|policy| policy.transport)
+    }
+
+    /// Returns the HTTP path and optional query for a selected HTTPS policy.
+    pub fn https_path(&self, index: usize) -> Option<&str> {
+        self.policies
+            .get(index)
+            .and_then(|policy| policy.https_path.as_deref())
     }
 
     /// Returns the configured timeout override at a selected policy index.
@@ -933,6 +1055,7 @@ struct CompiledNameServerPolicy {
     server: NameServer,
     tag: Option<String>,
     transport: NameServerTransport,
+    https_path: Option<String>,
     domains: DomainMatcherSet,
     expected_ips: DnsIpFilter,
     unexpected_ips: DnsIpFilter,
@@ -1209,6 +1332,28 @@ impl ConfiguredDnsResolver {
                 DnsQueryTransportKind::Tls,
                 DnsQueryMetadata::new(name_server.tag.as_deref()),
             ),
+            NameServerTransport::HttpsRouted => (
+                DnsQueryTransportKind::Https,
+                DnsQueryMetadata::new(name_server.tag.as_deref()).with_https_path(
+                    name_server.https_path.as_deref().ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "DNS-over-HTTPS policy is missing its request path",
+                        )
+                    })?,
+                ),
+            ),
+            NameServerTransport::HttpsLocal => (
+                DnsQueryTransportKind::Https,
+                DnsQueryMetadata::local(name_server.tag.as_deref()).with_https_path(
+                    name_server.https_path.as_deref().ok_or_else(|| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "DNS-over-HTTPS policy is missing its request path",
+                        )
+                    })?,
+                ),
+            ),
         };
         let result = match query_strategy {
             DnsQueryStrategy::UseIp => {
@@ -1295,9 +1440,9 @@ impl ConfiguredDnsResolver {
             | ParsedDnsResponse::NameError
             | ParsedDnsResponse::ServerFailure(_)) => Ok((response, observed_at)),
             ParsedDnsResponse::Truncated => {
-                if initial_transport == DnsQueryTransportKind::Tcp {
+                if initial_transport != DnsQueryTransportKind::Udp {
                     return Err(invalid_dns_response(
-                        "DNS TCP response must not be truncated",
+                        "stream DNS response must not be truncated",
                     ));
                 }
                 let response = time::timeout_at(
@@ -1816,6 +1961,12 @@ fn dns_tls_client_config(server: &NameServer) -> TlsClientConfig {
     }
 }
 
+fn dns_https_tls_client_config(server: &NameServer) -> TlsClientConfig {
+    let mut config = dns_tls_client_config(server);
+    config.alpn = vec!["h2".to_owned()];
+    config
+}
+
 async fn open_direct_tcp_candidates(
     server_addrs: &[SocketAddr],
     socket_protector: Option<&dyn SocketProtector>,
@@ -2302,6 +2453,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
+    use bytes::{Bytes, BytesMut};
+    use http::{header, Method, Response};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
     use tokio::sync::{oneshot, Barrier, Notify};
@@ -2311,7 +2464,7 @@ mod tests {
     };
 
     use super::{
-        build_dns_query_with_id, parse_dns_response, query_udp_dns_server,
+        build_dns_query_with_id, exchange_dns_https_h2, parse_dns_response, query_udp_dns_server,
         select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies,
         ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsHostTarget,
         DnsLookup, DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport,
@@ -2450,12 +2603,28 @@ mod tests {
     }
 
     #[test]
+    fn compiled_name_server_policy_preserves_https_path() {
+        let mut policy = policy(1);
+        policy.transport = NameServerTransport::HttpsRouted;
+        policy.https_path = Some("/dns-query?profile=mobile".to_owned());
+        let compiled = CompiledNameServerPolicies::new(vec![policy]);
+
+        assert_eq!(
+            compiled.transport(0),
+            Some(NameServerTransport::HttpsRouted)
+        );
+        assert_eq!(compiled.https_path(0), Some("/dns-query?profile=mobile"));
+        assert_eq!(compiled.https_path(1), None);
+    }
+
+    #[test]
     fn dns_query_metadata_defaults_to_routed_dispatch() {
         assert_eq!(
             DnsQueryMetadata::new(Some("dns-client")),
             DnsQueryMetadata {
                 inbound_tag: Some("dns-client"),
                 dispatch: DnsQueryDispatch::Routed,
+                https_path: None,
             }
         );
         assert_eq!(
@@ -2463,8 +2632,81 @@ mod tests {
             DnsQueryMetadata {
                 inbound_tag: Some("dns-client"),
                 dispatch: DnsQueryDispatch::Local,
+                https_path: None,
             }
         );
+    }
+
+    #[tokio::test]
+    async fn dns_over_https_h2_posts_wire_message_and_reads_bounded_response() {
+        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD048)
+            .expect("test query should encode");
+        let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 44));
+        let expected_query = query.clone();
+        let expected_response = dns_response.clone();
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let server_task = tokio::spawn(async move {
+            let mut connection = h2::server::handshake(server_io)
+                .await
+                .expect("server h2 handshake should complete");
+            let (request, mut respond) = connection
+                .accept()
+                .await
+                .expect("client should open one request")
+                .expect("request should be valid");
+            let connection_driver =
+                tokio::spawn(async move { while connection.accept().await.is_some() {} });
+            assert_eq!(request.method(), Method::POST);
+            assert_eq!(
+                request.uri().path_and_query().unwrap().as_str(),
+                "/dns-query?mobile=1"
+            );
+            assert_eq!(
+                request.headers().get(header::CONTENT_TYPE).unwrap(),
+                "application/dns-message"
+            );
+            assert_eq!(
+                request.headers().get(header::ACCEPT).unwrap(),
+                "application/dns-message"
+            );
+            let mut body = request.into_body();
+            let mut received = BytesMut::new();
+            while let Some(chunk) = body.data().await {
+                let chunk = chunk.expect("request body should be readable");
+                received.extend_from_slice(&chunk);
+                body.flow_control()
+                    .release_capacity(chunk.len())
+                    .expect("request flow-control capacity should release");
+            }
+            assert_eq!(received.as_ref(), expected_query);
+
+            let response = Response::builder()
+                .status(200)
+                .header(header::CONTENT_TYPE, "application/dns-message")
+                .body(())
+                .unwrap();
+            let mut send = respond
+                .send_response(response, false)
+                .expect("response headers should send");
+            send.send_data(Bytes::from(expected_response), true)
+                .expect("response body should send");
+            connection_driver.await.unwrap();
+        });
+
+        let actual = exchange_dns_https_h2(
+            Box::new(client_io),
+            &NameServer::Domain {
+                domain: "resolver.example".to_owned(),
+                port: 443,
+            },
+            "/dns-query?mobile=1",
+            &query,
+        )
+        .await
+        .expect("DNS-over-HTTPS exchange should complete");
+
+        assert_eq!(actual, dns_response);
+        server_task.await.unwrap();
     }
 
     #[test]
@@ -3960,7 +4202,9 @@ mod tests {
                     response.extend_from_slice(&query[12..]);
                     Ok(response)
                 }
-                DnsQueryTransportKind::Tcp | DnsQueryTransportKind::Tls => {
+                DnsQueryTransportKind::Tcp
+                | DnsQueryTransportKind::Tls
+                | DnsQueryTransportKind::Https => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 25)))
                 }
             }
@@ -4445,6 +4689,75 @@ mod tests {
                 dispatch: DnsQueryDispatch::Routed,
                 inbound_tag: Some("dns-tls".to_owned()),
                 domain: "tls-routed.test".to_owned(),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_https_local_preserves_path_and_dispatch() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct HttpsCall {
+            server: NameServer,
+            dispatch: DnsQueryDispatch,
+            inbound_tag: Option<String>,
+            https_path: Option<String>,
+        }
+
+        struct HttpsTransport {
+            calls: Mutex<Vec<HttpsCall>>,
+        }
+
+        #[async_trait::async_trait]
+        impl DnsQueryTransport for HttpsTransport {
+            async fn exchange(
+                &self,
+                server: &NameServer,
+                transport: DnsQueryTransportKind,
+                metadata: DnsQueryMetadata<'_>,
+                query: &[u8],
+            ) -> io::Result<Vec<u8>> {
+                assert_eq!(transport, DnsQueryTransportKind::Https);
+                self.calls.lock().unwrap().push(HttpsCall {
+                    server: server.clone(),
+                    dispatch: metadata.dispatch,
+                    inbound_tag: metadata.inbound_tag.map(str::to_owned),
+                    https_path: metadata.https_path.map(str::to_owned),
+                });
+                Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 77)))
+            }
+        }
+
+        let server = NameServer::Domain {
+            domain: "resolver.example".to_owned(),
+            port: 8443,
+        };
+        let mut policy = NameServerPolicy::new(server.clone());
+        policy.tag = Some("dns-doh-local".to_owned());
+        policy.transport = NameServerTransport::HttpsLocal;
+        policy.https_path = Some("/dns-query?profile=mobile".to_owned());
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(HttpsTransport {
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            DomainHostIndex::default(),
+            Vec::new(),
+            Arc::new(RejectingResolver),
+        )
+        .with_name_server_policies(vec![policy])
+        .with_query_strategy(DnsQueryStrategy::UseIpv4)
+        .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("https-local.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 77], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [HttpsCall {
+                server,
+                dispatch: DnsQueryDispatch::Local,
+                inbound_tag: Some("dns-doh-local".to_owned()),
+                https_path: Some("/dns-query?profile=mobile".to_owned()),
             }]
         );
     }
@@ -5185,7 +5498,9 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(7)).await;
             match transport {
                 DnsQueryTransportKind::Udp => Ok(build_test_truncated_response(query)),
-                DnsQueryTransportKind::Tcp | DnsQueryTransportKind::Tls => {
+                DnsQueryTransportKind::Tcp
+                | DnsQueryTransportKind::Tls
+                | DnsQueryTransportKind::Https => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 66)))
                 }
             }

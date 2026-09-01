@@ -337,6 +337,20 @@ class XrayTunBackendTest {
             dnsServerBootstrapUpstreamDomain("TLS://Secure.Example."),
         )
         assertNull(dnsServerBootstrapUpstreamDomain("tls://192.0.2.53"))
+        assertEquals(
+            AndroidDnsBootstrapDomain("doh.example", 443, rejectsTunnelOwnedAddress = true),
+            dnsServerBootstrapUpstreamDomain("https://DoH.Example./dns-query"),
+        )
+        assertEquals(
+            AndroidDnsBootstrapDomain("doh-local.example", 8443, rejectsTunnelOwnedAddress = true),
+            dnsServerBootstrapUpstreamDomain(
+                mapOf(
+                    "address" to "HTTPS+LOCAL://DoH-Local.Example.:8443/custom?profile=mobile",
+                    "port" to 0,
+                ),
+            ),
+        )
+        assertNull(dnsServerBootstrapUpstreamDomain("https://192.0.2.53/dns-query"))
     }
 
     @Test
@@ -364,6 +378,13 @@ class XrayTunBackendTest {
             "tcp+local://[fd00:7872::1]:5353",
             "tls://resolver.example/dns-query",
             "tls://$XRAY_TUN_DNS_ANCHOR",
+            "https:/resolver.example/dns-query",
+            "https://user@resolver.example/dns-query",
+            "https://resolver.example:0/dns-query",
+            "https://resolver.example/dns-query#fragment",
+            "https://2001:db8::53/dns-query",
+            "https://$XRAY_TUN_DNS_ANCHOR/dns-query",
+            "https+local://[fd00:7872::1]/dns-query",
             mapOf("address" to "tcp+local://resolver.example/path"),
             mapOf("address" to "tcp://resolver.example", "port" to "53"),
             mapOf("address" to "tcp://resolver.example", "port" to 65_536),

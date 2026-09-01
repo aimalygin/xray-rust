@@ -1319,7 +1319,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         let scheme = String(server[..<separator])
         return scheme.caseInsensitiveCompare("tcp") == .orderedSame ||
             scheme.caseInsensitiveCompare("tcp+local") == .orderedSame ||
-            scheme.caseInsensitiveCompare("tls") == .orderedSame
+            scheme.caseInsensitiveCompare("tls") == .orderedSame ||
+            scheme.caseInsensitiveCompare("https") == .orderedSame ||
+            scheme.caseInsensitiveCompare("https+local") == .orderedSame
     }
 
     private static func dnsTCPBootstrapUpstream(
@@ -1335,19 +1337,46 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return nil
         }
         let scheme = String(server[..<schemeSeparator])
-        let defaultPort: UInt16 = scheme.caseInsensitiveCompare("tls") == .orderedSame
-            ? 853
-            : 53
+        let isHTTPS = scheme.caseInsensitiveCompare("https") == .orderedSame ||
+            scheme.caseInsensitiveCompare("https+local") == .orderedSame
+        let defaultPort: UInt16
+        if isHTTPS {
+            defaultPort = 443
+        } else if scheme.caseInsensitiveCompare("tls") == .orderedSame {
+            defaultPort = 853
+        } else {
+            defaultPort = 53
+        }
         let authorityPrefix = server.index(after: schemeSeparator)
         guard server[authorityPrefix...].hasPrefix("//") else {
             return nil
         }
         let authorityStart = server.index(authorityPrefix, offsetBy: 2)
-        let authority = String(server[authorityStart...])
+        let remainder = String(server[authorityStart...])
+        let authorityEnd = isHTTPS
+            ? (remainder.firstIndex(where: { "/?".contains($0) }) ?? remainder.endIndex)
+            : remainder.endIndex
+        let authority = String(remainder[..<authorityEnd])
+        let pathAndQuery = String(remainder[authorityEnd...])
         guard !authority.isEmpty,
-              !authority.contains(where: { "/?#@\\%".contains($0) })
+              !authority.contains(where: { "@\\%".contains($0) })
         else {
             return nil
+        }
+        if isHTTPS {
+            guard !remainder.contains("#"),
+                  pathAndQuery.isEmpty || pathAndQuery.hasPrefix("/") || pathAndQuery.hasPrefix("?"),
+                  pathAndQuery.unicodeScalars.allSatisfy({ $0.value <= 0x7f }),
+                  !pathAndQuery.contains("\\")
+            else {
+                return nil
+            }
+        } else {
+            guard pathAndQuery.isEmpty,
+                  !authority.contains(where: { "/?#".contains($0) })
+            else {
+                return nil
+            }
         }
 
         let host: String

@@ -203,6 +203,126 @@ fn dns_query_strategies_overlap(global: DnsQueryStrategy, server: DnsQueryStrate
     global == DnsQueryStrategy::UseIp || server == DnsQueryStrategy::UseIp || global == server
 }
 
+fn parse_dns_https_server_uri(
+    address: &str,
+) -> Result<Option<(DnsServerTransport, DnsServerEndpoint, String)>, String> {
+    let Some((scheme, remainder)) = address.split_once(':') else {
+        return Ok(None);
+    };
+    let transport = if scheme.eq_ignore_ascii_case("https") {
+        DnsServerTransport::HttpsRouted
+    } else if scheme.eq_ignore_ascii_case("https+local") {
+        DnsServerTransport::HttpsLocal
+    } else {
+        return Ok(None);
+    };
+    let Some(rest) = remainder.strip_prefix("//") else {
+        return Err("dns HTTPS server URL must use `https://` or `https+local://`".to_owned());
+    };
+    if address
+        .chars()
+        .any(|character| character.is_whitespace() || character.is_control())
+    {
+        return Err(
+            "dns HTTPS server URL must not contain whitespace or control characters".to_owned(),
+        );
+    }
+    if address.contains('#') {
+        return Err("dns HTTPS server URL must not include a fragment".to_owned());
+    }
+    let authority_end = rest.find(['/', '?']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty() {
+        return Err("dns HTTPS server URL must include a host".to_owned());
+    }
+    if authority.contains('@') {
+        return Err("dns HTTPS server URL must not include userinfo".to_owned());
+    }
+    let suffix = &rest[authority_end..];
+    if !suffix.is_ascii() || suffix.contains('\\') {
+        return Err("dns HTTPS server URL contains an invalid path or query".to_owned());
+    }
+    let https_path = match suffix {
+        "" => "/".to_owned(),
+        suffix if suffix.starts_with('/') => suffix.to_owned(),
+        suffix if suffix.starts_with('?') => format!("/{suffix}"),
+        _ => return Err("dns HTTPS server URL contains an invalid path or query".to_owned()),
+    };
+
+    let endpoint = if let Some(bracketed) = authority.strip_prefix('[') {
+        let Some((host, suffix)) = bracketed.split_once(']') else {
+            return Err("dns HTTPS server URL contains a malformed bracketed IPv6 host".to_owned());
+        };
+        if host.is_empty() || host.contains(['[', ']']) {
+            return Err("dns HTTPS server URL contains a malformed bracketed IPv6 host".to_owned());
+        }
+        let port = match suffix {
+            "" => 443,
+            suffix => {
+                let Some(port) = suffix.strip_prefix(':') else {
+                    return Err(
+                        "dns HTTPS server URL authority contains unexpected data".to_owned()
+                    );
+                };
+                parse_dns_https_server_port(port)?
+            }
+        };
+        let socket = format!("[{host}]:{port}")
+            .parse::<SocketAddr>()
+            .map_err(|_| "dns HTTPS server URL contains an invalid IPv6 host".to_owned())?;
+        if !socket.is_ipv6() {
+            return Err("dns HTTPS server URL brackets are only valid for IPv6 hosts".to_owned());
+        }
+        DnsServerEndpoint::Ip(socket)
+    } else {
+        if authority.contains(['[', ']']) {
+            return Err("dns HTTPS server URL contains malformed host brackets".to_owned());
+        }
+        if authority.bytes().filter(|byte| *byte == b':').count() > 1 {
+            return Err("dns HTTPS server URL requires brackets around an IPv6 host".to_owned());
+        }
+        let (host, port) = match authority.split_once(':') {
+            Some((host, port)) => (host, parse_dns_https_server_port(port)?),
+            None => (authority, 443),
+        };
+        if host.is_empty() {
+            return Err("dns HTTPS server URL must include a host".to_owned());
+        }
+        if host.contains(['\\', '%']) {
+            return Err("dns HTTPS server URL contains an invalid host".to_owned());
+        }
+        match host.parse::<IpAddr>() {
+            Ok(IpAddr::V4(ip)) => DnsServerEndpoint::Ip(SocketAddr::new(ip.into(), port)),
+            Ok(IpAddr::V6(_)) => {
+                return Err("dns HTTPS server URL requires brackets around an IPv6 host".to_owned());
+            }
+            Err(_) => DnsServerEndpoint::Domain {
+                domain: host.to_owned(),
+                port,
+            },
+        }
+    };
+
+    if matches!(&endpoint, DnsServerEndpoint::Ip(address) if is_tun_reserved_ip(address.ip())) {
+        return Err("dns server cannot point at a tunnel-local DNS address".to_owned());
+    }
+
+    Ok(Some((transport, endpoint, https_path)))
+}
+
+fn parse_dns_https_server_port(port: &str) -> Result<u16, String> {
+    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("dns HTTPS server URL contains an invalid port".to_owned());
+    }
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| "dns HTTPS server URL contains an invalid port".to_owned())?;
+    if port == 0 {
+        return Err("dns server port must be greater than zero".to_owned());
+    }
+    Ok(port)
+}
+
 fn parse_dns_tcp_server_uri(
     address: &str,
 ) -> Result<Option<(DnsServerTransport, DnsServerEndpoint)>, String> {
@@ -321,13 +441,15 @@ fn parse_dns_tcp_server_port(port: &str) -> Result<u16, String> {
     Ok(port)
 }
 
-fn dns_tcp_server_policy(
+fn dns_stream_server_policy(
     transport: DnsServerTransport,
     endpoint: DnsServerEndpoint,
+    https_path: Option<String>,
 ) -> DnsServerConfig {
     DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
         endpoint,
         transport,
+        https_path,
         domains: DomainMatcherSet::default(),
         expected_ips: DnsIpFilter::default(),
         unexpected_ips: DnsIpFilter::default(),
@@ -907,12 +1029,20 @@ impl Parser<'_> {
             53
         };
         let port = if port == 0 { 53 } else { port };
-        let (transport, endpoint) = match parse_dns_tcp_server_uri(address) {
-            Ok(Some((transport, endpoint))) => (transport, endpoint),
-            Ok(None) => (
-                DnsServerTransport::Classic,
-                self.parse_dns_server_endpoint(address, port, &address_path)?,
-            ),
+        let (transport, endpoint, https_path) = match parse_dns_https_server_uri(address) {
+            Ok(Some((transport, endpoint, https_path))) => (transport, endpoint, Some(https_path)),
+            Ok(None) => match parse_dns_tcp_server_uri(address) {
+                Ok(Some((transport, endpoint))) => (transport, endpoint, None),
+                Ok(None) => (
+                    DnsServerTransport::Classic,
+                    self.parse_dns_server_endpoint(address, port, &address_path)?,
+                    None,
+                ),
+                Err(message) => {
+                    self.error(&address_path, message);
+                    return None;
+                }
+            },
             Err(message) => {
                 self.error(&address_path, message);
                 return None;
@@ -948,6 +1078,7 @@ impl Parser<'_> {
         Some(DnsServerConfig::Policy(Box::new(DnsNameServerConfig {
             endpoint,
             transport,
+            https_path,
             domains,
             expected_ips,
             unexpected_ips,
@@ -1179,9 +1310,24 @@ impl Parser<'_> {
             return None;
         }
 
+        match parse_dns_https_server_uri(server) {
+            Ok(Some((transport, endpoint, https_path))) => {
+                return Some(dns_stream_server_policy(
+                    transport,
+                    endpoint,
+                    Some(https_path),
+                ));
+            }
+            Ok(None) => {}
+            Err(message) => {
+                self.error(path, message);
+                return None;
+            }
+        }
+
         match parse_dns_tcp_server_uri(server) {
             Ok(Some((transport, endpoint))) => {
-                return Some(dns_tcp_server_policy(transport, endpoint));
+                return Some(dns_stream_server_policy(transport, endpoint, None));
             }
             Ok(None) => {}
             Err(message) => {

@@ -158,6 +158,10 @@ pub enum DnsServerTransport {
     TcpLocal,
     /// DNS over TLS dispatched through Xray routing.
     TlsRouted,
+    /// DNS over HTTPS dispatched through Xray routing.
+    HttpsRouted,
+    /// DNS over HTTPS dialed directly through the local network stack.
+    HttpsLocal,
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;
@@ -179,6 +183,8 @@ pub enum DnsServerConfig {
 pub struct DnsNameServerConfig {
     pub endpoint: DnsServerEndpoint,
     pub transport: DnsServerTransport,
+    /// HTTP path and optional query for DoH transports.
+    pub https_path: Option<String>,
     /// Compiled with [`compile_dns_domain_matchers`] semantics.
     pub domains: DomainMatcherSet,
     pub expected_ips: DnsIpFilter,
@@ -215,6 +221,14 @@ impl DnsServerConfig {
         match self {
             Self::Policy(server) => server.transport,
             Self::Ip(_) | Self::Domain { .. } => DnsServerTransport::Classic,
+        }
+    }
+
+    /// Returns the HTTP path and optional query used by a DoH server.
+    pub fn https_path(&self) -> Option<&str> {
+        match self {
+            Self::Policy(server) => server.https_path.as_deref(),
+            Self::Ip(_) | Self::Domain { .. } => None,
         }
     }
 

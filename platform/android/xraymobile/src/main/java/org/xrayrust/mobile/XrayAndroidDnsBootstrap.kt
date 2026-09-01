@@ -612,7 +612,9 @@ private fun hasDnsTcpUrlScheme(server: String): Boolean {
     val scheme = server.substring(0, separator)
     return scheme.equals("tcp", ignoreCase = true) ||
         scheme.equals("tcp+local", ignoreCase = true) ||
-        scheme.equals("tls", ignoreCase = true)
+        scheme.equals("tls", ignoreCase = true) ||
+        scheme.equals("https", ignoreCase = true) ||
+        scheme.equals("https+local", ignoreCase = true)
 }
 
 private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootstrapDomain? {
@@ -623,21 +625,44 @@ private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootst
     require(schemeSeparator > 0 && hasDnsTcpUrlScheme(server)) {
         "unsupported DNS TCP server URL scheme"
     }
-    val defaultPort = if (
-        server.substring(0, schemeSeparator).equals("tls", ignoreCase = true)
-    ) {
-        853
-    } else {
-        53
+    val scheme = server.substring(0, schemeSeparator)
+    val isHttps = scheme.equals("https", ignoreCase = true) ||
+        scheme.equals("https+local", ignoreCase = true)
+    val defaultPort = when {
+        isHttps -> 443
+        scheme.equals("tls", ignoreCase = true) -> 853
+        else -> 53
     }
     require(server.regionMatches(schemeSeparator + 1, "//", 0, 2)) {
         "DNS TCP server URL must use an authority"
     }
-    val authority = server.substring(schemeSeparator + 3)
-    require(
-        authority.isNotEmpty() && authority.none { it in "/?#@\\%" },
-    ) {
-        "DNS TCP server URL must contain only an authority host and optional port"
+    val remainder = server.substring(schemeSeparator + 3)
+    val authorityEnd = if (isHttps) {
+        listOf(remainder.indexOf('/'), remainder.indexOf('?'))
+            .filter { it >= 0 }
+            .minOrNull() ?: remainder.length
+    } else {
+        remainder.length
+    }
+    val authority = remainder.substring(0, authorityEnd)
+    val pathAndQuery = remainder.substring(authorityEnd)
+    require(authority.isNotEmpty() && authority.none { it in "@\\%" }) {
+        "DNS stream server URL must contain an authority host and optional port"
+    }
+    if (isHttps) {
+        require('#' !in remainder) { "DNS HTTPS server URL must not contain a fragment" }
+        require(
+            pathAndQuery.isEmpty() ||
+                pathAndQuery.startsWith('/') ||
+                pathAndQuery.startsWith('?'),
+        ) { "DNS HTTPS server URL contains an invalid path or query" }
+        require(pathAndQuery.all { it.code <= 0x7f } && '\\' !in pathAndQuery) {
+            "DNS HTTPS server URL contains an invalid path or query"
+        }
+    } else {
+        require(pathAndQuery.isEmpty() && authority.none { it in "/?#" }) {
+            "DNS TCP server URL must contain only an authority host and optional port"
+        }
     }
 
     val host: String
