@@ -2305,6 +2305,18 @@ async fn tun_tcp_inventory_close_and_accounting_share_runtime_state() {
 
         core.close_connection(connection.id).unwrap();
         wait_for_empty_connection_snapshot(&core).await;
+        let deadline = TokioInstant::now() + Duration::from_secs(1);
+        loop {
+            let stats = core.tun().stats().await;
+            if stats.active_tcp_flows == 0 {
+                break;
+            }
+            assert!(
+                TokioInstant::now() < deadline,
+                "host-closed TUN flow stayed active without a client FIN acknowledgement: {stats:?}"
+            );
+            tokio::task::yield_now().await;
+        }
         let accounting = core.outbound_accounting_snapshot();
         let direct = accounting
             .outbounds

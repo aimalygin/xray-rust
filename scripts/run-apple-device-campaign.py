@@ -35,6 +35,9 @@ SAMPLE_FIELDS = {
     "unrecoveredTransitions",
 }
 CAMPAIGN_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
+PASSED_PROBE = re.compile(
+    r"^XRAY_DEVICE_PROBE kind=(http|udp) result=passed sequence=([1-9][0-9]*)$"
+)
 
 
 class CampaignError(Exception):
@@ -141,6 +144,7 @@ def prepare_xctestrun(
     HTTP_url: str,
     UDP_host: str,
     UDP_port: int,
+    debug_logging_enabled: bool,
 ) -> pathlib.Path:
     destination = source.with_name(f"XrayClient_{campaign_id}_iphoneos-arm64.xctestrun")
     if destination.exists():
@@ -166,6 +170,9 @@ def prepare_xctestrun(
             "XRAY_DEVICE_CAMPAIGN_HTTP_URL": HTTP_url,
             "XRAY_DEVICE_CAMPAIGN_UDP_HOST": UDP_host,
             "XRAY_DEVICE_CAMPAIGN_UDP_PORT": str(UDP_port),
+            "XRAY_DEVICE_CAMPAIGN_DEBUG_LOGGING": (
+                "1" if debug_logging_enabled else "0"
+            ),
         }
     )
     target["DefaultTestExecutionTimeAllowance"] = duration_seconds + 600
@@ -286,6 +293,12 @@ def UTC_now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds").replace(
         "+00:00", "Z"
     )
+
+
+def elapsed_since(started_at: str, observed_at: str) -> int:
+    start = dt.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    observed = dt.datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    return max(0, int((observed - start).total_seconds()))
 
 
 def main() -> int:
@@ -420,6 +433,7 @@ def main() -> int:
                 args.http_url,
                 args.udp_host,
                 args.udp_port,
+                args.rehearsal,
             )
             test_arguments = [
                 "xcodebuild",
@@ -484,6 +498,22 @@ def main() -> int:
                             stdout=instrument_output,
                             stderr=subprocess.STDOUT,
                         )
+                probe = PASSED_PROBE.fullmatch(raw_line.rstrip("\r\n"))
+                if soak_started_at is not None and probe is not None:
+                    observed_at = UTC_now()
+                    append_json_line(
+                        timeline_path,
+                        {
+                            "event": "probe",
+                            "at": observed_at,
+                            "elapsedSeconds": elapsed_since(
+                                soak_started_at, observed_at
+                            ),
+                            "kind": probe.group(1),
+                            "result": "passed",
+                            "sequence": int(probe.group(2)),
+                        },
+                    )
                 sys.stdout.write(line)
                 sys.stdout.flush()
             test_return_code = test_process.wait()

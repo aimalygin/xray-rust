@@ -14,10 +14,24 @@ public struct XrayClientRootView: View {
         store: XrayClientProfileStore = XrayClientProfileStore(),
         tunnelController: (any XrayClientTunnelControlling)? = nil
     ) {
+        #if DEBUG
+        let debugLoggingOverride = ProcessInfo.processInfo.environment[
+            "XRAY_DEVICE_CAMPAIGN_DEBUG_LOGGING"
+        ].flatMap { value in
+            switch value {
+            case "1": true
+            case "0": false
+            default: nil
+            }
+        }
+        #else
+        let debugLoggingOverride: Bool? = nil
+        #endif
         _viewModel = StateObject(
             wrappedValue: XrayClientViewModel(
                 store: store,
-                tunnelController: tunnelController
+                tunnelController: tunnelController,
+                debugLoggingOverride: debugLoggingOverride
             )
         )
     }
@@ -100,6 +114,13 @@ public struct XrayClientRootView: View {
                 }
                 .accessibilityIdentifier("xray.runtime.closeConnections")
                 .disabled(viewModel.isBusy)
+                if let lastClosedConnections = viewModel.lastClosedConnections {
+                    statsRow(
+                        "Last close request",
+                        value: lastClosedConnections,
+                        identifier: "xray.runtime.lastClosedConnections"
+                    )
+                }
             }
 
             if let lastErrorMessage = viewModel.lastErrorMessage {

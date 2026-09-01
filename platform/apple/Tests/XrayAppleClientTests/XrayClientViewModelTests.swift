@@ -613,6 +613,7 @@ final class XrayClientViewModelTests: XCTestCase {
         await viewModel.closeActiveConnections()
 
         XCTAssertEqual(tunnelController.closeConnectionsRequests, 1)
+        XCTAssertEqual(viewModel.lastClosedConnections, 1)
         XCTAssertEqual(viewModel.runtimeStats, tunnelController.runtimeStatsResponse)
         XCTAssertFalse(viewModel.isBusy)
         XCTAssertNil(viewModel.lastErrorMessage)

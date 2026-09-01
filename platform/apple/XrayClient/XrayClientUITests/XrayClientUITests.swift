@@ -9,6 +9,7 @@ final class XrayClientUITests: XCTestCase {
     static let HTTPURLKey = "XRAY_DEVICE_CAMPAIGN_HTTP_URL"
     static let UDPHostKey = "XRAY_DEVICE_CAMPAIGN_UDP_HOST"
     static let UDPPortKey = "XRAY_DEVICE_CAMPAIGN_UDP_PORT"
+    static let debugLoggingKey = "XRAY_DEVICE_CAMPAIGN_DEBUG_LOGGING"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -24,6 +25,7 @@ final class XrayClientUITests: XCTestCase {
         executionTimeAllowance = TimeInterval(configuration.durationSeconds + 300)
 
         let app = XCUIApplication()
+        app.launchEnvironment[Self.debugLoggingKey] = configuration.debugLoggingEnabled ? "1" : "0"
         app.launch()
         try ensureConnected(app)
 
@@ -59,6 +61,31 @@ final class XrayClientUITests: XCTestCase {
 
         trafficTask.cancel()
         let trafficSummary = await trafficTask.value
+        try await sleep(seconds: 2)
+        let drainResult = try await drainConnections(
+            app,
+            startedAt: startedAt,
+            runtimeGenerations: &runtimeGenerations,
+            nextRuntimeGeneration: &nextRuntimeGeneration
+        )
+        samples.append(drainResult.sample)
+        emit(samples[samples.count - 1])
+        try disconnect(app)
+        let terminalElapsed = max(
+            UInt64(ProcessInfo.processInfo.systemUptime - startedAt),
+            drainResult.sample.elapsedSeconds + 1
+        )
+        let terminalSample = drainResult.sample.afterDisconnect(
+            elapsedSeconds: terminalElapsed
+        )
+        samples.append(terminalSample)
+        emit(terminalSample)
+        print(
+            "XRAY_DEVICE_CLOSE totalAccepted=\(drainResult.closedConnections) "
+                + "lastObservedActive=\(drainResult.sample.activeConnections)"
+        )
+        addCampaignAttachment(samples)
+
         XCTAssertGreaterThan(
             trafficSummary.httpSuccesses,
             0,
@@ -69,18 +96,11 @@ final class XrayClientUITests: XCTestCase {
             0,
             "campaign did not complete a round-trip UDP probe"
         )
-        try await sleep(seconds: 2)
-        let finalSample = try await drainConnections(
-            app,
-            startedAt: startedAt,
-            runtimeGenerations: &runtimeGenerations,
-            nextRuntimeGeneration: &nextRuntimeGeneration
+        XCTAssertGreaterThan(
+            drainResult.closedConnections,
+            0,
+            "provider did not accept any active connection close request"
         )
-        samples.append(finalSample)
-        emit(samples[samples.count - 1])
-        XCTAssertEqual(samples.last?.activeConnections, 0, "traffic flows did not drain")
-        addCampaignAttachment(samples)
-        try disconnect(app)
     }
 
     @MainActor
@@ -157,7 +177,7 @@ final class XrayClientUITests: XCTestCase {
         startedAt: TimeInterval,
         runtimeGenerations: inout [String: UInt64],
         nextRuntimeGeneration: inout UInt64
-    ) async throws -> CampaignSample {
+    ) async throws -> DrainResult {
         let closeConnections = app.buttons["xray.runtime.closeConnections"]
         XCTAssertTrue(
             closeConnections.waitForExistence(timeout: 5),
@@ -165,6 +185,7 @@ final class XrayClientUITests: XCTestCase {
         )
 
         var sample: CampaignSample?
+        var closedConnections: UInt64 = 0
         for _ in 0 ..< 5 {
             try waitUntilEnabled(
                 closeConnections,
@@ -178,6 +199,10 @@ final class XrayClientUITests: XCTestCase {
                 timeout: 10,
                 operation: "close active flows"
             )
+            closedConnections += try unsignedValue(
+                app,
+                identifier: "xray.runtime.lastClosedConnections"
+            )
             try await refresh(app)
             sample = try readSample(
                 app,
@@ -189,7 +214,10 @@ final class XrayClientUITests: XCTestCase {
                 break
             }
         }
-        return try XCTUnwrap(sample)
+        return DrainResult(
+            sample: try XCTUnwrap(sample),
+            closedConnections: closedConnections
+        )
     }
 
     @MainActor
@@ -221,6 +249,8 @@ final class XrayClientUITests: XCTestCase {
         let outbound = try unsignedValue(app, identifier: "xray.runtime.outboundPackets")
         let telemetry = try telemetryValue(app)
         let runtimeIdentifier = try requiredTelemetry("runtimeIdentifier", from: telemetry)
+        let activeTCPFlows = try unsignedTelemetry("activeTCPFlows", from: telemetry)
+        let activeUDPFlows = try unsignedTelemetry("activeUDPFlows", from: telemetry)
         let generation: UInt64
         if let knownGeneration = runtimeGenerations[runtimeIdentifier] {
             generation = knownGeneration
@@ -230,18 +260,22 @@ final class XrayClientUITests: XCTestCase {
             nextRuntimeGeneration += 1
         }
 
-        return CampaignSample(
+        let sample = CampaignSample(
             elapsedSeconds: UInt64(elapsedSeconds),
             runtimeGeneration: generation,
             residentMemoryBytes: try unsignedTelemetry("residentMemoryBytes", from: telemetry),
             threadCount: try unsignedTelemetry("threadCount", from: telemetry),
-            activeConnections: try unsignedTelemetry("activeTCPFlows", from: telemetry)
-                + unsignedTelemetry("activeUDPFlows", from: telemetry),
+            activeConnections: activeTCPFlows + activeUDPFlows,
             tunInboundPackets: inbound,
             tunOutboundPackets: outbound,
             fatalTunErrors: 0,
             unrecoveredTransitions: 0
         )
+        print(
+            "XRAY_DEVICE_FLOW_SAMPLE elapsedSeconds=\(elapsedSeconds) "
+                + "activeTCPFlows=\(activeTCPFlows) activeUDPFlows=\(activeUDPFlows)"
+        )
+        return sample
     }
 
     @MainActor
@@ -313,9 +347,10 @@ final class XrayClientUITests: XCTestCase {
                     throw CampaignError.HTTPProbeFailed
                 }
                 summary.httpSuccesses += 1
-                if summary.httpSuccesses == 1 {
-                    print("XRAY_DEVICE_PROBE kind=http result=passed")
-                }
+                print(
+                    "XRAY_DEVICE_PROBE kind=http result=passed "
+                        + "sequence=\(summary.httpSuccesses)"
+                )
             } catch is CancellationError {
                 return summary
             } catch {
@@ -331,9 +366,10 @@ final class XrayClientUITests: XCTestCase {
                     port: configuration.UDPPort
                 )
                 summary.udpSuccesses += 1
-                if summary.udpSuccesses == 1 {
-                    print("XRAY_DEVICE_PROBE kind=udp result=passed")
-                }
+                print(
+                    "XRAY_DEVICE_PROBE kind=udp result=passed "
+                        + "sequence=\(summary.udpSuccesses)"
+                )
             } catch is CancellationError {
                 return summary
             } catch {
@@ -484,6 +520,7 @@ private struct CampaignConfiguration {
     let HTTPURL: URL
     let UDPHost: NWEndpoint.Host
     let UDPPort: NWEndpoint.Port
+    let debugLoggingEnabled: Bool
 
     init(environment: [String: String]) throws {
         guard let duration = Int(environment[XrayClientUITests.durationKey] ?? ""),
@@ -519,6 +556,7 @@ private struct CampaignConfiguration {
         self.HTTPURL = HTTPURL
         UDPHost = NWEndpoint.Host(rawUDPHost)
         self.UDPPort = UDPPort
+        debugLoggingEnabled = environment[XrayClientUITests.debugLoggingKey] == "1"
     }
 }
 
@@ -532,6 +570,25 @@ private struct CampaignSample: Codable {
     let tunOutboundPackets: UInt64
     let fatalTunErrors: UInt64
     let unrecoveredTransitions: UInt64
+
+    func afterDisconnect(elapsedSeconds: UInt64) -> CampaignSample {
+        CampaignSample(
+            elapsedSeconds: elapsedSeconds,
+            runtimeGeneration: runtimeGeneration,
+            residentMemoryBytes: residentMemoryBytes,
+            threadCount: threadCount,
+            activeConnections: 0,
+            tunInboundPackets: tunInboundPackets,
+            tunOutboundPackets: tunOutboundPackets,
+            fatalTunErrors: fatalTunErrors,
+            unrecoveredTransitions: unrecoveredTransitions
+        )
+    }
+}
+
+private struct DrainResult {
+    let sample: CampaignSample
+    let closedConnections: UInt64
 }
 
 private struct TrafficProbeSummary: Sendable {

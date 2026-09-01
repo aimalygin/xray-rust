@@ -238,16 +238,29 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         generation &+= 1
         failureCircuitBreaker.stop()
         terminalFailureDelivery.stop()
+        let pendingReadCallbacks = activeReadCallbacks
+        let wasPollLoopActive = pollLoopActive
+        condition.unlock()
+        if shouldLog {
+            XrayMobileLog.info(
+                "PacketPump",
+                "Stop requested activeReadCallbacks=\(pendingReadCallbacks) pollLoopActive=\(wasPollLoopActive)"
+            )
+        }
+        condition.lock()
         while activeReadCallbacks > 0 {
             condition.wait()
         }
         condition.unlock()
         if shouldLog {
-            XrayMobileLog.info("PacketPump", "Stopping packet pump")
+            XrayMobileLog.info("PacketPump", "Read callbacks drained")
         }
         // The Rust poll has a bounded wait. Joining without a timeout guarantees
         // that the provider cannot call core.stop while poll/stats still use it.
         pollLoopGroup.wait()
+        if shouldLog {
+            XrayMobileLog.info("PacketPump", "Packet pump stopped")
+        }
     }
 
     private func readPackets(generation: UInt64) {

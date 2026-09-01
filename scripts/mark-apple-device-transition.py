@@ -9,9 +9,65 @@ import json
 import os
 import pathlib
 import re
+import runpy
 
 
 SCENARIO_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+
+
+def load_policy(root: pathlib.Path) -> tuple[set[str], set[str]]:
+    policy = runpy.run_path(str(root / "scripts/check-mobile-device-evidence.py"))
+    required = policy.get("REQUIRED_SCENARIOS")
+    probe_oracles = policy.get("APPLE_PROBE_ORACLE_SCENARIOS")
+    if not isinstance(required, dict) or not isinstance(probe_oracles, set):
+        raise ValueError("mobile evidence scenario policy is invalid")
+    return set(required), probe_oracles
+
+
+def load_timeline(path: pathlib.Path) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    with path.open("r", encoding="utf-8") as source:
+        for line_number, line in enumerate(source, start=1):
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as error:
+                raise ValueError(f"timeline line {line_number} is invalid") from error
+            if not isinstance(event, dict):
+                raise ValueError(f"timeline line {line_number} is not an object")
+            events.append(event)
+    return events
+
+
+def attempt_state(
+    events: list[dict[str, object]], scenario_id: str, attempt: int
+) -> tuple[str | None, int, dict[str, int]]:
+    state: str | None = None
+    begin_index = -1
+    latest_probe_indices: dict[str, int] = {}
+    for index, event in enumerate(events):
+        if (
+            event.get("event") == "probe"
+            and event.get("result") == "passed"
+            and event.get("kind") in {"http", "udp"}
+        ):
+            latest_probe_indices[str(event["kind"])] = index
+        if (
+            event.get("event") != "scenario"
+            or event.get("scenarioId") != scenario_id
+            or event.get("attempt") != attempt
+        ):
+            continue
+        phase = event.get("phase")
+        if phase == "begin" and state is None:
+            state = "running"
+            begin_index = index
+        elif phase == "note" and state == "running":
+            continue
+        elif phase in {"passed", "failed"} and state == "running":
+            state = str(phase)
+        else:
+            raise ValueError(f"timeline has an invalid state for attempt {attempt}")
+    return state, begin_index, latest_probe_indices
 
 
 def main() -> int:
@@ -25,6 +81,13 @@ def main() -> int:
 
     if not SCENARIO_ID.fullmatch(args.scenario_id):
         parser.error("scenario_id has invalid characters")
+    root = pathlib.Path(__file__).resolve().parent.parent
+    try:
+        required_scenarios, probe_oracle_scenarios = load_policy(root)
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+    if args.scenario_id not in required_scenarios:
+        parser.error("scenario_id is not a required release scenario")
     if args.attempt < 1:
         parser.error("--attempt must be positive")
     if (
@@ -40,6 +103,30 @@ def main() -> int:
         parser.error("campaign is not active")
     if timeline_path.is_symlink() or not timeline_path.is_file():
         parser.error("transition timeline is unavailable")
+    try:
+        events = load_timeline(timeline_path)
+        current_state, begin_index, latest_probe_indices = attempt_state(
+            events, args.scenario_id, args.attempt
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        parser.error(str(error))
+    if args.phase == "begin":
+        if current_state is not None:
+            parser.error("scenario attempt has already started")
+    elif current_state != "running":
+        parser.error("scenario attempt is not running")
+    if args.phase == "passed" and args.scenario_id in probe_oracle_scenarios:
+        missing = sorted(
+            kind
+            for kind in ("http", "udp")
+            if latest_probe_indices.get(kind, -1) <= begin_index
+        )
+        if missing:
+            parser.error(
+                "passing this scenario requires post-begin "
+                + "/".join(missing)
+                + " probe evidence"
+            )
     state = json.loads(state_path.read_text(encoding="utf-8"))
     if state.get("phase") != "running" or "startedAt" not in state:
         parser.error("campaign is building; wait for the first device sample")

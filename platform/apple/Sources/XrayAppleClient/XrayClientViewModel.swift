@@ -10,6 +10,7 @@ public final class XrayClientViewModel: ObservableObject {
     @Published public var profile: XrayClientProfile
     @Published public private(set) var connectionStatus: XrayClientConnectionStatus = .unknown
     @Published public private(set) var runtimeStats: XrayClientRuntimeStats?
+    @Published public private(set) var lastClosedConnections: UInt64?
     @Published public private(set) var lastErrorMessage: String?
     @Published public private(set) var isBusy = false
 
@@ -30,12 +31,16 @@ public final class XrayClientViewModel: ObservableObject {
         store: XrayClientProfileStore = XrayClientProfileStore(),
         tunnelController: (any XrayClientTunnelControlling)? = nil,
         geodataSearchDirectory: URL? = Bundle.main.resourceURL,
-        geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults
+        geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults,
+        debugLoggingOverride: Bool? = nil
     ) {
         self.store = store
         let loadedProfile = store.load()
         let migratedProfile = loadedProfile.migratingLegacyDefaultProviderBundleIdentifier()
-        let preparedProfile = migratedProfile.addingDefaultRealityVisionFlowIfMissing()
+        var preparedProfile = migratedProfile.addingDefaultRealityVisionFlowIfMissing()
+        if let debugLoggingOverride {
+            preparedProfile.debugLoggingEnabled = debugLoggingOverride
+        }
         if preparedProfile != loadedProfile {
             XrayAppleLog.info(
                 "ClientViewModel",
@@ -112,9 +117,10 @@ public final class XrayClientViewModel: ObservableObject {
             return
         }
         isBusy = true
+        lastClosedConnections = nil
         defer { isBusy = false }
         do {
-            _ = try await tunnelController.closeActiveConnections()
+            lastClosedConnections = try await tunnelController.closeActiveConnections()
             await refresh()
         } catch {
             lastErrorMessage = error.localizedDescription

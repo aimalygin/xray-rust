@@ -323,6 +323,13 @@ RSS/threads/TUN/connection telemetry, closes active flows, tears the tunnel
 down, and retains an Instruments Activity Monitor trace. The UDP probe is a
 round trip: a send-only datagram is not accepted. The response must carry the
 probe transaction ID, the DNS response bit, and a successful response code.
+The close gate records how many snapshot connections the provider accepted
+for closure and requires a nonzero total. It does not require an intermediate
+live-tunnel sample to stay at zero: iOS background services can open a new TCP
+flow immediately after the snapshot was closed. Assertions run only after the
+client has issued Disconnect and observed the `Disconnected` status. The final
+zero-connection sample is a terminal teardown record emitted after that
+status, with the last observed counters and resource values retained.
 Before the first run on a development-signed iPhone, enable Developer Mode and
 `Settings > Developer > Enable UI Automation`, keep the device unlocked, and
 verify that Safari can reach `https://ppq.apple.com`. Launch the reference app
@@ -362,6 +369,9 @@ subnet; otherwise iOS may route it directly on Wi-Fi. The HTTPS probe and TUN
 packet counters remain mandatory in either case.
 
 Use `--rehearsal --duration-seconds 30` for a short dirty-worktree check.
+Rehearsals enable provider debug logging through a Debug-only launch override;
+formal runs explicitly disable that override so logging overhead cannot distort
+the six-hour resource profile.
 After one successful `build-for-testing`, a rehearsal may also pass
 `--skip-test-build` with the same `--derived-data` directory to reuse the
 signed `.xctestrun` products. Formal campaigns reject this shortcut and always
@@ -379,6 +389,15 @@ directory will not be named `apple` relative to the eventual `campaign.json`.
 Keep the iPhone unlocked with Auto-Lock disabled for launch and recovery. Wait
 for the first `XRAY_DEVICE_SAMPLE` before recording a scenario; markers are
 rejected while the signed app is still building or launching.
+
+Every successful HTTPS and DNS/UDP round trip after that first sample is also
+written as a structured event in the checksum-verified transition timeline.
+Except for the log-only `credential-redaction` review, a `passed` marker is
+rejected until both probes have succeeded after that attempt's `begin` marker.
+This proves post-action traffic recovery; it does not by itself prove that the
+active profile uses the transport named by a scenario. Record only scenarios
+whose controlled profile and network setup match the scenario ID, and describe
+that non-secret setup in the marker notes.
 
 For example, bracket the first airplane-mode attempt with:
 

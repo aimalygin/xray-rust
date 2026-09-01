@@ -96,6 +96,7 @@ REQUIRED_SCENARIOS = {
     "credential-redaction": 1,
     "platform-lifecycle": 1,
 }
+APPLE_PROBE_ORACLE_SCENARIOS = set(REQUIRED_SCENARIOS) - {"credential-redaction"}
 REQUIRED_ARTIFACT_KINDS = {
     "resource-profile",
     "sanitized-log",

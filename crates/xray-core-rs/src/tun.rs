@@ -1625,6 +1625,12 @@ struct TcpBridgeCloseGuard {
     armed: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TcpBridgeTermination {
+    Graceful,
+    HostClosed,
+}
+
 impl TcpBridgeCloseGuard {
     fn new(handle: SocketHandle, generation: u64, stack_tx: mpsc::Sender<StackEvent>) -> Self {
         Self {
@@ -3110,6 +3116,7 @@ async fn bridge_tcp_flow_inner(
         let _ = await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
         return;
     }
+    let termination;
     if let (Some(start), Some(open_duration_ms)) = (tcp_timing_start, tcp_open_duration_ms) {
         let mut timing = TcpFirstByteTimingEnabled::new(
             start,
@@ -3117,7 +3124,7 @@ async fn bridge_tcp_flow_inner(
             open_duration_ms,
             outbound_tag.clone(),
         );
-        bridge_tcp_flow_loop(
+        termination = bridge_tcp_flow_loop(
             handle,
             generation,
             &client_target,
@@ -3137,7 +3144,7 @@ async fn bridge_tcp_flow_inner(
         .await;
     } else {
         let mut timing = TcpFirstByteTimingDisabled;
-        bridge_tcp_flow_loop(
+        termination = bridge_tcp_flow_loop(
             handle,
             generation,
             &client_target,
@@ -3156,7 +3163,16 @@ async fn bridge_tcp_flow_inner(
         )
         .await;
     }
-    let _ = await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
+    match termination {
+        TcpBridgeTermination::Graceful => {
+            let _ =
+                await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
+        }
+        TcpBridgeTermination::HostClosed => {
+            let _ =
+                await_with_optional_timeout(bridge_operation_timeout, close_guard.abort()).await;
+        }
+    }
     connection.finish();
 }
 
@@ -3241,7 +3257,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     client_upload_allowed: bool,
     mut connection_close: watch::Receiver<bool>,
     traffic: Arc<ConnectionTraffic>,
-) where
+) -> TcpBridgeTermination
+where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
     T: TcpFirstByteTiming,
@@ -3253,21 +3270,23 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     let idle_sleep = tokio::time::sleep(idle_timeout);
     tokio::pin!(idle_sleep);
 
-    loop {
+    let termination = loop {
         tokio::select! {
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
-                    break;
+                    break TcpBridgeTermination::Graceful;
                 }
             }
-            () = wait_for_connection_close(&mut connection_close) => break,
-            () = &mut idle_sleep => break,
+            () = wait_for_connection_close(&mut connection_close) => {
+                break TcpBridgeTermination::HostClosed;
+            }
+            () = &mut idle_sleep => break TcpBridgeTermination::Graceful,
             data = from_stack.recv() => {
                 let Some(data) = data else {
-                    break;
+                    break TcpBridgeTermination::Graceful;
                 };
                 if !client_upload_allowed {
-                    break;
+                    break TcpBridgeTermination::Graceful;
                 }
                 let write = await_with_optional_timeout(
                     operation_timeout,
@@ -3287,7 +3306,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                 .await;
                 if !matches!(write, Some(Ok(()))) {
                     context.tun.record_tcp_remote_write_error();
-                    break;
+                    break TcpBridgeTermination::Graceful;
                 }
                 idle_sleep
                     .as_mut()
@@ -3298,12 +3317,12 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                     Ok(read) => read,
                     Err(_) => {
                         context.tun.record_tcp_remote_read_error();
-                        break;
+                        break TcpBridgeTermination::Graceful;
                     }
                 };
                 if read == 0 {
                     context.tun.record_tcp_remote_closed();
-                    break;
+                    break TcpBridgeTermination::Graceful;
                 }
                 timing.record_first_byte(context.tun.as_ref(), target);
                 context.tun.record_tcp_remote_read(read);
@@ -3319,16 +3338,17 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                 )
                 .await;
                 if !matches!(delivered, Some(Ok(()))) {
-                    break;
+                    break TcpBridgeTermination::Graceful;
                 }
                 idle_sleep
                     .as_mut()
                     .reset(TokioInstant::now() + idle_timeout);
             }
         }
-    }
+    };
 
     timing.record_flow_summary(context.tun.as_ref(), target, true);
+    termination
 }
 
 fn record_tcp_open_error_event(

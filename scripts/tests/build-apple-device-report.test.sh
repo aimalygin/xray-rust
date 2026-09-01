@@ -55,6 +55,7 @@ events = [
     {"event": "campaign-start", "at": timestamp(0)},
 ]
 elapsed = 1
+probe_sequences = {"http": 0, "udp": 0}
 for scenario_id, minimum in required.items():
     attempts = 0 if mutation == "missing-scenario" and scenario_id == "airplane-mode" else minimum
     for attempt in range(1, attempts + 1):
@@ -70,6 +71,25 @@ for scenario_id, minimum in required.items():
             }
         )
         elapsed += 1
+        for kind in ("http", "udp"):
+            if (
+                mutation == "missing-probe-oracle"
+                and scenario_id == "airplane-mode"
+                and kind == "udp"
+            ):
+                continue
+            probe_sequences[kind] += 1
+            events.append(
+                {
+                    "event": "probe",
+                    "at": timestamp(elapsed),
+                    "elapsedSeconds": elapsed,
+                    "kind": kind,
+                    "result": "passed",
+                    "sequence": probe_sequences[kind],
+                }
+            )
+            elapsed += 1
         phase = (
             "failed"
             if mutation == "failed-only" and scenario_id == "airplane-mode"
@@ -181,6 +201,7 @@ expect_failure() {
 
 expect_failure missing-scenario "scenario airplane-mode has 0 passing attempt"
 expect_failure failed-only "scenario airplane-mode has 0 passing attempt"
+expect_failure missing-probe-oracle "has no post-begin udp probe"
 expect_failure rehearsal "only a formal schema-v1 Apple run"
 
 echo "Apple device report builder tests passed"

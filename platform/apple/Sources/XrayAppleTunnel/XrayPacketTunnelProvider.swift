@@ -2774,7 +2774,9 @@ private final class XrayPacketTunnelRuntime {
 
         timer?.setEventHandler {}
         timer?.cancel()
+        XrayAppleLog.info("PacketTunnelProvider", "Stopping packet pump")
         pump?.stop()
+        XrayAppleLog.info("PacketTunnelProvider", "Packet pump stopped; stopping XrayCore")
         do {
             try core.stop()
             XrayAppleLog.info("PacketTunnelProvider", "XrayCore stopped")
