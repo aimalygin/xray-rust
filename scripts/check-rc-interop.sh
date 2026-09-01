@@ -2,6 +2,7 @@
 set -euo pipefail
 
 readonly EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+readonly WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 if [[ -z "${XRAY_CORE_CHECKOUT:-}" ]]; then
   echo "XRAY_CORE_CHECKOUT must point at the pinned Xray-core checkout" >&2
@@ -33,6 +34,12 @@ env \
   GOWORK=off \
   CGO_ENABLED=0 \
   go -C "$XRAY_CORE_CHECKOUT" build -o "$xray_core_binary" ./main
+
+# Keep the configuration semantics tied to the same pinned Go reference as
+# the live interoperability suite. The Rust parser test asserts the model
+# produced from this exact document.
+"$xray_core_binary" run -test -format json \
+  < "$WORKSPACE_ROOT/tests/fixtures/configs/v05_phase2_oracle.json"
 
 # Keep the tag gate representative but bounded: classic and PQ REALITY,
 # reduced burst concurrency, and an XHTTP slice spanning all modes plus
@@ -76,6 +83,30 @@ done
 cargo test --locked -p xray-core-rs \
   --test runtime_data_path_tests \
   dns_outbound \
+  -- \
+  --nocapture \
+  --test-threads=1
+
+# Protocol-library oracles make the Phase 2 DNS wire contract explicit: TLS
+# length framing, HTTP/2 POST semantics, DoQ ALPN/stream framing, bootstrap
+# failover, negative caching, singleflight, and bounded stale refresh.
+cargo test --locked -p xray-transport --lib \
+  dns_over_ \
+  -- \
+  --nocapture \
+  --test-threads=1
+cargo test --locked -p xray-transport --lib \
+  caching_dns_ \
+  -- \
+  --nocapture \
+  --test-threads=1
+cargo test --locked -p xray-transport --lib \
+  configured_dns_ \
+  -- \
+  --nocapture \
+  --test-threads=1
+cargo test --locked -p xray-core-rs --lib \
+  managed_dns_over_ \
   -- \
   --nocapture \
   --test-threads=1

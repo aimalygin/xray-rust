@@ -1,0 +1,71 @@
+{
+  "dns": {
+    "disableCache": false,
+    "serveStale": true,
+    "serveExpiredTTL": 60,
+    "servers": [
+      "https+local://127.0.0.1:8443/dns-query",
+      "quic+local://127.0.0.1:8853",
+      "tcp+local://127.0.0.1:8053"
+    ]
+  },
+  "inbounds": [],
+  "outbounds": [
+    {
+      "tag": "entry",
+      "protocol": "freedom",
+      "proxySettings": {
+        "tag": "exit",
+        "transportLayer": true
+      }
+    },
+    {
+      "tag": "exit",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "proxy-a",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "proxy-b",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "balancers": [
+      {
+        "tag": "automatic",
+        "selector": [
+          "proxy-"
+        ],
+        "strategy": {
+          "type": "roundRobin",
+          "settings": {}
+        },
+        "fallbackTag": "direct"
+      }
+    ],
+    "rules": [
+      {
+        "type": "field",
+        "network": "tcp",
+        "port": "443",
+        "balancerTag": "automatic"
+      }
+    ]
+  },
+  "observatory": {
+    "subjectSelector": [
+      "proxy-"
+    ],
+    "probeURL": "https://www.google.com/generate_204",
+    "probeInterval": "10s",
+    "enableConcurrency": true
+  }
+}

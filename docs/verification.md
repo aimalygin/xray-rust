@@ -283,25 +283,33 @@ cargo test --locked -p xray-core-rs \
 
 These tests generate loopback server/client configurations and ephemeral TLS or
 REALITY test material. They cover VLESS TCP, TLS, TLS+Vision, REALITY+Vision,
-selected fingerprints, parallel flows, and the WebSocket, HTTPUpgrade and gRPC
-stream transports, plus the 15-case XHTTP H1/H2/H3 matrix below. They do not
-establish compatibility with every Xray-core revision or configuration.
+selected fingerprints, parallel flows, round-robin across two local Xray VLESS
+members, a two-hop transport-layer VLESS chain, and the WebSocket, HTTPUpgrade
+and gRPC stream transports, plus the 15-case XHTTP H1/H2/H3 matrix below. They
+do not establish compatibility with every Xray-core revision or configuration.
 
 The ordinary Rust CI job still excludes these `#[ignore]`d tests. An RC tag is
 different: the blocking `rc-interop` job runs every interop test function with
 two selected REALITY fingerprints, an eight-flow burst, and five XHTTP cases
-covering all three modes plus H1/H2/H3. It then runs bounded VLESS UDP and XUDP
-process-level workloads through both implementations and the end-to-end DNS
-outbound runtime slice. Reproduce that exact gate with:
+covering all three modes plus H1/H2/H3. Before the live suite, the pinned Xray
+binary validates `tests/fixtures/configs/v05_phase2_oracle.json`; the Rust
+parser test asserts the balancer, chain, observatory, encrypted-DNS transports,
+and stale-cache model produced from that exact document. The gate then runs
+bounded VLESS UDP and XUDP process-level workloads through both implementations,
+the end-to-end DNS outbound runtime slice, and explicit protocol-library oracle
+filters for DoT/DoH/DoQ framing and failover, configured-DNS policy/bootstrap,
+negative caching, singleflight, and bounded stale refresh. Reproduce that exact
+gate with:
 
 ```sh
 XRAY_CORE_CHECKOUT="$XRAY_CORE_CHECKOUT" \
   bash scripts/check-rc-interop.sh
 ```
 
-The DNS slice is an explicit Rust runtime/oracle gate rather than a claim of a
-cross-process DNS protocol test; the current harness has no compatible Xray
-process boundary for the DNS-outbound policy itself.
+The encrypted-DNS wire servers use the independent rustls, h2, and quinn
+protocol implementations as local oracles. This is explicit Rust wire/runtime
+evidence rather than a claim of a cross-process Xray DNS-policy test; the
+current process harness has no compatible Xray boundary for that policy.
 
 ### XHTTP interoperability
 

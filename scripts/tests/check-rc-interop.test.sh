@@ -46,7 +46,10 @@ done
   echo 'fake go build did not receive -o' >&2
   exit 91
 }
-printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$output"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf '\''xray|%s\n'\'' "$*" >>"$FAKE_CARGO_LOG"' \
+  'exit 0' >"$output"
 chmod +x "$output"
 EOF
 
@@ -154,6 +157,16 @@ PATH="$FAKE_BIN:$PATH" \
   echo 'RC interop gate did not run exactly one ignored interop suite' >&2
   exit 100
 }
+[[ "$(grep -c '^xray|run -test -format json$' "$FAKE_CARGO_LOG")" -eq 1 ]] || {
+  echo 'RC interop gate did not validate the Phase 2 fixture with Xray-core' >&2
+  exit 101
+}
+for oracle_filter in dns_over_ caching_dns_ configured_dns_ managed_dns_over_; do
+  if ! grep -Fq "$oracle_filter" "$FAKE_CARGO_LOG"; then
+    printf 'RC interop gate did not run DNS oracle filter %s\n' "$oracle_filter" >&2
+    exit 101
+  fi
+done
 
 MISMATCH_CARGO_LOG="$TEST_ROOT/mismatch-cargo.log"
 MISMATCH_OUTPUT="$TEST_ROOT/mismatch-output.log"
@@ -170,15 +183,15 @@ set -e
 
 if [[ "$mismatch_status" -eq 0 ]]; then
   echo 'RC interop accepted a mismatched Xray-core revision' >&2
-  exit 101
+  exit 102
 fi
 if ! grep -Fq "expected $EXPECTED_XRAY_CORE_REVISION" "$MISMATCH_OUTPUT"; then
   echo 'RC interop mismatch did not name the literal release pin' >&2
-  exit 102
+  exit 103
 fi
 if [[ -s "$MISMATCH_CARGO_LOG" ]]; then
   echo 'RC interop invoked Cargo before rejecting a mismatched Xray-core revision' >&2
-  exit 103
+  exit 104
 fi
 
 echo 'RC interop sanitizes hostile revision overrides and uses an explicit freshly built release binary'

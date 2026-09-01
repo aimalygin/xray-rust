@@ -73,6 +73,13 @@ release series.
   destination fallback and non-recursive endpoint bootstrap, while
   `StaticOnly` ignores it and remains fail-closed. Runtime startup preserves
   the same dependency instead of silently restoring `getaddrinfo`.
+- Expanded the blocking pinned-Xray oracle matrix for v0.5. The live suite now
+  proves round-robin traffic reaches both Xray VLESS members and a two-hop
+  transport-layer chain reaches its final echo target without local domain
+  resolution. The RC gate also submits one shared Phase 2 balancer/chaining/
+  observatory/encrypted-DNS/cache config to `xray run -test`, then explicitly
+  runs DoT/DoH/DoQ framing and failover, configured-DNS policy/bootstrap, and
+  cache/singleflight/stale-refresh oracle filters.
 - Added Android VLESS share-link import parity for the portable Apple subset:
   raw/TCP REALITY and XHTTP/SplitHTTP with none, TLS, or REALITY security. The
   Kotlin API emits the same mobile TUN topology, rejects duplicate or

@@ -13,14 +13,17 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
-    CoreConfig, GrpcSettings, HttpUpgradeSettings, InboundConfig, InboundProtocol, Network,
-    OutboundConfig, OutboundSettings, RealitySettings, RealityShortId, RoutingConfig,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpSettings,
+    CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings, InboundConfig,
+    InboundProtocol, Network, OutboundConfig, OutboundProxySettings, OutboundSettings,
+    RealitySettings, RealityShortId, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig,
+    RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
+    TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpSettings,
     XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
-use xray_transport::{SystemDnsResolver, TlsConnector, TransportDialer};
+use xray_transport::{
+    DnsResolver, SystemDnsResolver, TlsConnector, TransportDialer, TransportError,
+};
 
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
@@ -86,6 +89,28 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tcp() {
     timeout(Duration::from_secs(120), run_local_xray_vless_interop())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_round_robin_balancer_uses_each_local_xray_vless_member() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_round_robin_balancer_interop(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn rust_two_hop_proxy_chain_reaches_echo_through_local_xray_vless_servers() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_two_hop_proxy_chain_interop(),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -198,6 +223,207 @@ async fn run_local_xray_vless_interop() {
 
     let rust_config = rust_core_config_with_security(xray.addr, StreamSecurity::None, None);
     run_local_xray_vless_interop_scenario(xray, rust_config, None).await;
+}
+
+async fn start_plain_xray_vless_server(xray_checkout: &Path) -> XrayServer {
+    timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::None,
+                transport: XrayInboundTransport::Raw,
+                flow: None,
+            },
+        ),
+    )
+    .await
+    .expect("start plain Xray VLESS server timeout")
+}
+
+async fn run_local_xray_round_robin_balancer_interop() {
+    let xray_checkout = resolve_xray_checkout();
+    let first = start_plain_xray_vless_server(&xray_checkout).await;
+    let second = start_plain_xray_vless_server(&xray_checkout).await;
+    let mut config = rust_core_config_with_security(first.addr, StreamSecurity::None, None);
+    config.outbounds = vec![
+        rust_vless_outbound(
+            "proxy-a",
+            first.addr,
+            StreamSecurity::None,
+            None,
+            StreamTransport::Raw,
+        ),
+        rust_vless_outbound(
+            "proxy-b",
+            second.addr,
+            StreamSecurity::None,
+            None,
+            StreamTransport::Raw,
+        ),
+    ];
+    config.default_outbound_tag = Some("proxy-a".to_owned());
+    config.routing = RoutingConfig {
+        rules: vec![RoutingRule {
+            inbound_tags: vec!["socks-in".to_owned()],
+            networks: vec![Network::Tcp],
+            port_ranges: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: Default::default(),
+            target: RoutingRuleTarget::Balancer("automatic".to_owned()),
+        }],
+        balancers: vec![RoutingBalancer {
+            tag: "automatic".to_owned(),
+            selectors: vec!["proxy-".to_owned()],
+            strategy: RoutingBalancerStrategy::RoundRobin,
+            fallback_tag: None,
+        }],
+        ..RoutingConfig::default()
+    };
+
+    let mut core = Core::new(config).expect("create balanced Rust core");
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start balanced Rust core timeout")
+        .expect("start balanced Rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound balanced SOCKS addr");
+
+    for index in 0..4 {
+        let (echo_addr, echo_handle) = spawn_echo_server().await;
+        run_socks_echo_flow(socks_addr, echo_addr, index)
+            .await
+            .unwrap_or_else(|error| {
+                panic!(
+                    "balanced flow {index} failed: {error}\nfirst server:\n{}\nsecond server:\n{}",
+                    first.logs(),
+                    second.logs()
+                )
+            });
+        timeout(Duration::from_secs(5), echo_handle)
+            .await
+            .expect("balanced echo task should finish")
+            .expect("balanced echo task should not panic");
+    }
+
+    let accounting = core.outbound_accounting_snapshot();
+    for tag in ["proxy-a", "proxy-b"] {
+        let outbound = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some(tag))
+            .unwrap_or_else(|| panic!("missing accounting for {tag}: {accounting:?}"));
+        assert_eq!(outbound.opened_connections, 2, "accounting for {tag}");
+    }
+
+    core.stop().await.expect("stop balanced Rust core");
+    drop(second);
+    drop(first);
+}
+
+#[derive(Debug, Default)]
+struct RejectingDnsResolver {
+    calls: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl DnsResolver for RejectingDnsResolver {
+    async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+    }
+}
+
+async fn run_local_xray_two_hop_proxy_chain_interop() {
+    let xray_checkout = resolve_xray_checkout();
+    let middle_server = start_plain_xray_vless_server(&xray_checkout).await;
+    let exit_server = start_plain_xray_vless_server(&xray_checkout).await;
+    let mut config = rust_core_config_with_security(middle_server.addr, StreamSecurity::None, None);
+    let mut entry = rust_freedom_outbound("entry");
+    entry.proxy_settings = Some(OutboundProxySettings {
+        tag: "middle".to_owned(),
+        transport_layer: true,
+    });
+    let mut middle = rust_vless_outbound(
+        "middle",
+        middle_server.addr,
+        StreamSecurity::None,
+        None,
+        StreamTransport::Raw,
+    );
+    middle.proxy_settings = Some(OutboundProxySettings {
+        tag: "exit".to_owned(),
+        transport_layer: true,
+    });
+    let exit = rust_vless_outbound(
+        "exit",
+        exit_server.addr,
+        StreamSecurity::None,
+        None,
+        StreamTransport::Raw,
+    );
+    config.outbounds = vec![entry, middle, exit];
+    config.default_outbound_tag = Some("entry".to_owned());
+    config.routing = RoutingConfig::default();
+
+    let resolver = Arc::new(RejectingDnsResolver::default());
+    let mut core = Core::with_runtime_dependencies(
+        config,
+        resolver.clone(),
+        Arc::new(TransportDialer::system().expect("build chain transport dialer")),
+    )
+    .expect("create chained Rust core");
+    timeout(Duration::from_secs(5), core.start())
+        .await
+        .expect("start chained Rust core timeout")
+        .expect("start chained Rust core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound chained SOCKS addr");
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let mut client = timeout(Duration::from_secs(5), TcpStream::connect(socks_addr))
+        .await
+        .expect("connect chained SOCKS timeout")
+        .expect("connect chained SOCKS");
+    timeout(
+        Duration::from_secs(15),
+        socks5_connect_domain(&mut client, "127.0.0.1", echo_addr.port()),
+    )
+    .await
+    .expect("chained SOCKS request timeout")
+    .unwrap_or_else(|error| {
+        panic!(
+            "chained SOCKS request failed: {error}\nmiddle server:\n{}\nexit server:\n{}",
+            middle_server.logs(),
+            exit_server.logs()
+        )
+    });
+    let payload = b"hello two-hop local xray interop";
+    client
+        .write_all(payload)
+        .await
+        .expect("write chained payload");
+    let mut echoed = vec![0; payload.len()];
+    timeout(Duration::from_secs(15), client.read_exact(&mut echoed))
+        .await
+        .expect("read chained echo timeout")
+        .expect("read chained echo");
+    assert_eq!(echoed, payload);
+    assert_eq!(
+        resolver.calls.load(Ordering::SeqCst),
+        0,
+        "the final domain must be resolved by the Xray side of the chain"
+    );
+
+    drop(client);
+    core.stop().await.expect("stop chained Rust core");
+    timeout(Duration::from_secs(5), echo_handle)
+        .await
+        .expect("chained echo task should finish")
+        .expect("chained echo task should not panic");
+    drop(exit_server);
+    drop(middle_server);
 }
 
 async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
@@ -1521,32 +1747,59 @@ fn rust_core_config_with_transport(
             sniffing: None,
             user_level: None,
         }],
-        outbounds: vec![OutboundConfig {
-            tag: Some("proxy".to_owned()),
-            proxy_settings: None,
-            stream: StreamSettings {
-                network: Network::Tcp,
-                transport,
-                security,
-                quic_params: None,
-                socket_options: None,
-            },
-            settings: OutboundSettings::Vless(VlessOutboundSettings {
-                server: TargetAddr::Ip(xray_addr.ip()),
-                port: xray_addr.port(),
-                users: vec![VlessUser {
-                    id: TEST_UUID.parse().expect("static uuid"),
-                    encryption: "none".to_owned(),
-                    flow: flow.map(ToOwned::to_owned),
-                    level: 0,
-                }],
-            }),
-        }],
+        outbounds: vec![rust_vless_outbound(
+            "proxy", xray_addr, security, flow, transport,
+        )],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
         observatory: None,
         dns: Default::default(),
         policy: Default::default(),
+    }
+}
+
+fn rust_vless_outbound(
+    tag: &str,
+    xray_addr: SocketAddr,
+    security: StreamSecurity,
+    flow: Option<&str>,
+    transport: StreamTransport,
+) -> OutboundConfig {
+    OutboundConfig {
+        tag: Some(tag.to_owned()),
+        proxy_settings: None,
+        stream: StreamSettings {
+            network: Network::Tcp,
+            transport,
+            security,
+            quic_params: None,
+            socket_options: None,
+        },
+        settings: OutboundSettings::Vless(VlessOutboundSettings {
+            server: TargetAddr::Ip(xray_addr.ip()),
+            port: xray_addr.port(),
+            users: vec![VlessUser {
+                id: TEST_UUID.parse().expect("static uuid"),
+                encryption: "none".to_owned(),
+                flow: flow.map(ToOwned::to_owned),
+                level: 0,
+            }],
+        }),
+    }
+}
+
+fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
+    OutboundConfig {
+        tag: Some(tag.to_owned()),
+        proxy_settings: None,
+        stream: StreamSettings {
+            network: Network::Tcp,
+            transport: StreamTransport::Raw,
+            security: StreamSecurity::None,
+            quic_params: None,
+            socket_options: None,
+        },
+        settings: OutboundSettings::Freedom,
     }
 }
 
@@ -1834,6 +2087,78 @@ async fn socks5_connect(client: &mut TcpStream, target: SocketAddr) -> Result<()
         }
     }
 
+    Ok(())
+}
+
+async fn socks5_connect_domain(
+    client: &mut TcpStream,
+    domain: &str,
+    port: u16,
+) -> Result<(), String> {
+    let domain_len = u8::try_from(domain.len())
+        .map_err(|_| format!("SOCKS domain is too long: {} bytes", domain.len()))?;
+    client
+        .write_all(&[5, 1, 0])
+        .await
+        .map_err(|error| format!("write socks greeting: {error}"))?;
+    let mut method = [0; 2];
+    client
+        .read_exact(&mut method)
+        .await
+        .map_err(|error| format!("read socks method: {error}"))?;
+    if method != [5, 0] {
+        return Err(format!("unexpected socks method reply: {method:?}"));
+    }
+
+    let mut request = vec![5, 1, 0, 3, domain_len];
+    request.extend_from_slice(domain.as_bytes());
+    request.extend_from_slice(&port.to_be_bytes());
+    client
+        .write_all(&request)
+        .await
+        .map_err(|error| format!("write socks domain connect: {error}"))?;
+
+    let mut reply_header = [0; 4];
+    client
+        .read_exact(&mut reply_header)
+        .await
+        .map_err(|error| format!("read socks domain reply: {error}"))?;
+    if reply_header[0] != 5 || reply_header[2] != 0 || reply_header[1] != 0 {
+        return Err(format!("SOCKS domain connect rejected: {reply_header:?}"));
+    }
+    match reply_header[3] {
+        1 => {
+            let mut bind = [0; 6];
+            client
+                .read_exact(&mut bind)
+                .await
+                .map_err(|error| format!("read socks IPv4 bind: {error}"))?;
+        }
+        3 => {
+            let mut len = [0; 1];
+            client
+                .read_exact(&mut len)
+                .await
+                .map_err(|error| format!("read socks domain bind length: {error}"))?;
+            let mut bind = vec![0; usize::from(len[0]) + 2];
+            client
+                .read_exact(&mut bind)
+                .await
+                .map_err(|error| format!("read socks domain bind: {error}"))?;
+        }
+        4 => {
+            let mut bind = [0; 18];
+            client
+                .read_exact(&mut bind)
+                .await
+                .map_err(|error| format!("read socks IPv6 bind: {error}"))?;
+        }
+        address_type => {
+            return Err(format!(
+                "unsupported socks bind address type {address_type}"
+            ));
+        }
+    }
     Ok(())
 }
 

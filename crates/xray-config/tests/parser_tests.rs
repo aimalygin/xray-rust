@@ -378,6 +378,64 @@ fn parses_xray_core_reality_split_routing_fixture() {
 }
 
 #[test]
+fn parses_xray_core_v05_phase2_oracle_fixture() {
+    // Xray-core oracle: the RC interop gate passes this exact document to the
+    // pinned v26.7.28 `xray run -test -format json` binary before exercising
+    // the Rust semantic model below.
+    let raw = include_str!("../../../tests/fixtures/configs/v05_phase2_oracle.json");
+    let parsed = parse_xray_json(raw).expect("Phase 2 fixture accepted by Xray-core should parse");
+
+    let entry = &parsed.config.outbounds[0];
+    let proxy = entry
+        .proxy_settings
+        .as_ref()
+        .expect("entry outbound should retain transport-layer chaining");
+    assert_eq!(proxy.tag, "exit");
+    assert!(proxy.transport_layer);
+
+    let balancer = &parsed.config.routing.balancers[0];
+    assert_eq!(balancer.tag, "automatic");
+    assert_eq!(balancer.selectors, ["proxy-"]);
+    assert_eq!(
+        balancer.strategy,
+        xray_config::RoutingBalancerStrategy::RoundRobin
+    );
+    assert_eq!(balancer.fallback_tag.as_deref(), Some("direct"));
+    assert_eq!(
+        parsed.config.routing.rules[0].target,
+        RoutingRuleTarget::Balancer("automatic".to_owned())
+    );
+
+    let observatory = parsed.config.observatory.expect("observatory config");
+    assert_eq!(observatory.subject_selectors, ["proxy-"]);
+    assert_eq!(observatory.probe_interval, Duration::from_secs(10));
+    assert!(observatory.enable_concurrency);
+
+    assert!(!parsed.config.dns.disable_cache);
+    assert!(parsed.config.dns.serve_stale);
+    assert_eq!(parsed.config.dns.serve_expired_ttl, 60);
+    let transports = parsed
+        .config
+        .dns
+        .servers
+        .iter()
+        .map(DnsServerConfig::transport)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        transports,
+        [
+            DnsServerTransport::HttpsLocal,
+            DnsServerTransport::QuicLocal,
+            DnsServerTransport::TcpLocal,
+        ]
+    );
+    assert_eq!(
+        parsed.config.dns.servers[0].https_path(),
+        Some("/dns-query")
+    );
+}
+
+#[test]
 fn sets_default_outbound_tag_to_first_outbound_tag() {
     let raw = vless_raw(
         r#""users": [{ "id": "00010203-0405-0607-0809-0a0b0c0d0e0f" }]"#,
