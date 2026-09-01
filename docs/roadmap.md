@@ -306,7 +306,13 @@ Kotlin polling APIs. Android also exposes the same fail-closed raw-REALITY and
 XHTTP none/TLS/REALITY share-link import subset as Apple, including bounded
 XHTTP `extra` decoding and mobile TUN config generation. The repository still
 does not ship an Android host app, so production profile persistence/UI and
-device soak remain host/release work.
+device soak remain host/release work. A fail-closed physical-device evidence
+validator now pins the clean candidate revision, requires separate Apple and
+Android six-hour reports, verifies the complete transition scenario matrix,
+checks bounded steady-state memory/thread growth, and authenticates sanitized
+profiler/log/timeline artifacts. This makes the remaining hardware campaign a
+reproducible release gate; it does not count offline devices, simulators, or an
+unexecuted template as passing evidence.
 
 ### Exit criteria
 

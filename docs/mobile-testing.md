@@ -261,6 +261,61 @@ verify at minimum:
 - Android foreground-service behavior and Apple Network Extension lifecycle;
 - release signing, entitlements/manifest declarations, and store policy.
 
+## Physical-device release evidence
+
+`v0.5.0` requires one physical Apple report and one physical Android report for
+the exact clean candidate revision. Simulator/emulator results remain useful
+debug evidence but cannot satisfy this gate. Store the local campaign under an
+ignored directory such as `target/mobile/device-gate/<campaign-id>` and validate
+it with:
+
+```sh
+python3 scripts/check-mobile-device-evidence.py \
+  --candidate "$(git rev-parse HEAD)" \
+  target/mobile/device-gate/<campaign-id>/campaign.json
+```
+
+The schema is deliberately fail-closed. `campaign.json` has
+`schemaVersion: 1`, a non-secret campaign ID, a clean full Git revision, and
+exactly two `reports`: `apple` and `android`. Each report must identify a
+physical device using a SHA-256 hash of its device identifier rather than the
+raw identifier, name the tested application build, cover at least six hours,
+and sample no less frequently than once per minute. Samples record elapsed
+time, runtime generation, resident memory, thread and active-connection counts,
+TUN packet counters, fatal TUN errors, and unrecovered transitions. A runtime
+restart increments `runtimeGeneration`, allowing packet counters to restart
+without hiding an in-process regression.
+
+The validator requires the following passed scenarios on both platforms:
+
+- repeated connect and rapid stop-during-start;
+- IPv4, IPv6, failed-preferred-family and cancelled Happy Eyeballs attempts;
+- TCP Freedom, TCP VLESS/REALITY, UDP Freedom, and UDP VLESS/XUDP;
+- managed DNS failover, captive network, and DNS64/NAT64;
+- airplane mode, Wi-Fi/cellular transitions, sleep/wake, memory pressure, and
+  provider/service restart;
+- controlled packet loss plus long-lived XHTTP HTTP/2 and HTTP/3;
+- secure profile persistence, credential redaction, and the platform-specific
+  Network Extension or foreground-service lifecycle.
+
+The exact scenario IDs and minimum attempt counts are defined in
+`scripts/check-mobile-device-evidence.py`; changing them is a release-policy
+change and is covered by its contract test. Each report must also reference
+checksum-verified `resource-profile`, `sanitized-log`, and
+`transition-timeline` artifacts beneath the campaign directory. Collect the
+resource profile with Instruments on Apple and Perfetto plus `dumpsys meminfo`
+on Android. Sanitize logs before hashing them; never put raw profile JSON,
+VLESS URLs, credentials, device identifiers, or signing material in evidence.
+
+For a passing campaign, every sample has zero fatal TUN errors and zero
+unrecovered transitions, bidirectional traffic is observed, and teardown ends
+with no active connection. The validator compares the median of the first and
+last five samples and rejects resident-memory growth above both the fixed
+8-MiB allowance and the 25-percent steady-state allowance, or thread growth
+above four. These automatic checks complement review of the attached profiler
+trace; they do not waive platform memory, energy, thermal, signing, or store
+requirements.
+
 ## Current host responsibilities
 
 - Apple requires an appropriate Developer team, app/extension identifiers,
