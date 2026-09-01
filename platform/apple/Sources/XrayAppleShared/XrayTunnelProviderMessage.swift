@@ -22,6 +22,7 @@ public enum XrayTunnelProviderMessage {
     public static let providerGeodataAppGroupIdentifierKey = "geodataAppGroupIdentifier"
     public static let providerGeodataRelativeDirectoryKey = "geodataRelativeDirectory"
     public static let statsRequest = "stats"
+    public static let closeConnectionsRequest = "close-connections"
 
     public static func encodeStatsResponse(_ stats: XrayClientRuntimeStats) throws -> Data {
         try JSONEncoder().encode(stats)
@@ -29,5 +30,13 @@ public enum XrayTunnelProviderMessage {
 
     public static func decodeStatsResponse(_ data: Data) throws -> XrayClientRuntimeStats {
         try JSONDecoder().decode(XrayClientRuntimeStats.self, from: data)
+    }
+
+    public static func encodeCloseConnectionsResponse(_ count: UInt64) throws -> Data {
+        try JSONEncoder().encode(count)
+    }
+
+    public static func decodeCloseConnectionsResponse(_ data: Data) throws -> UInt64 {
+        try JSONDecoder().decode(UInt64.self, from: data)
     }
 }

@@ -316,6 +316,42 @@ above four. These automatic checks complement review of the attached profiler
 trace; they do not waive platform memory, energy, thermal, signing, or store
 requirements.
 
+The Apple reference app includes an opt-in physical-device runner that keeps
+all probe endpoints in the generated test-only `.xctestrun`, drives HTTPS and
+UDP traffic from the device, samples provider RSS/threads/TUN/connection
+telemetry, closes active flows, tears the tunnel down, and retains an
+Instruments Activity Monitor trace. A formal run requires a clean worktree and
+defaults to six hours:
+
+```sh
+python3 scripts/run-apple-device-campaign.py \
+  --device-id <physical-iphone-udid> \
+  --campaign-id <non-secret-id> \
+  --campaign-dir target/mobile/device-gate/<campaign-id>/apple \
+  --http-url https://<approved-probe>/payload \
+  --udp-host <approved-udp-probe> \
+  --udp-port 53
+```
+
+Use `--rehearsal --duration-seconds 30` for a short dirty-worktree check.
+While a campaign is active, record each physical action immediately after it
+with `scripts/mark-apple-device-transition.py`; markers contain only scenario
+IDs, attempt numbers, phases, and non-secret notes. The runner writes
+`apple-run.json`, `apple-device-samples.json`, a sanitized log, a transition
+timeline, the local `.xcresult`, and a zipped Instruments resource profile.
+Keep the iPhone unlocked with Auto-Lock disabled for launch and recovery.
+
+For example, bracket the first airplane-mode attempt with:
+
+```sh
+python3 scripts/mark-apple-device-transition.py \
+  target/mobile/device-gate/<campaign-id>/apple airplane-mode \
+  --attempt 1 --phase begin --notes "enabling airplane mode"
+python3 scripts/mark-apple-device-transition.py \
+  target/mobile/device-gate/<campaign-id>/apple airplane-mode \
+  --attempt 1 --phase passed --notes "traffic recovered after radios returned"
+```
+
 ## Current host responsibilities
 
 - Apple requires an appropriate Developer team, app/extension identifiers,

@@ -72,11 +72,34 @@ public struct XrayClientRootView: View {
                     ProgressView()
                 }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("xray.connection.status")
+            .accessibilityValue(viewModel.connectionStatus.displayName)
 
             if let runtimeStats = viewModel.runtimeStats {
-                statsRow("Inbound", value: runtimeStats.inboundPackets)
-                statsRow("Outbound", value: runtimeStats.outboundPackets)
-                statsRow("Dropped", value: runtimeStats.droppedPackets)
+                statsRow(
+                    "Inbound",
+                    value: runtimeStats.inboundPackets,
+                    identifier: "xray.runtime.inboundPackets"
+                )
+                statsRow(
+                    "Outbound",
+                    value: runtimeStats.outboundPackets,
+                    identifier: "xray.runtime.outboundPackets"
+                )
+                statsRow(
+                    "Dropped",
+                    value: runtimeStats.droppedPackets,
+                    identifier: "xray.runtime.droppedPackets"
+                )
+                campaignTelemetryRow(runtimeStats)
+                Button {
+                    Task { await viewModel.closeActiveConnections() }
+                } label: {
+                    Label("Close active flows", systemImage: "xmark.circle")
+                }
+                .accessibilityIdentifier("xray.runtime.closeConnections")
+                .disabled(viewModel.isBusy)
             }
 
             if let lastErrorMessage = viewModel.lastErrorMessage {
@@ -248,7 +271,11 @@ public struct XrayClientRootView: View {
         }
     }
 
-    private func statsRow(_ title: String, value: UInt64) -> some View {
+    private func statsRow(
+        _ title: String,
+        value: UInt64,
+        identifier: String
+    ) -> some View {
         HStack {
             Text(title)
             Spacer()
@@ -257,5 +284,28 @@ public struct XrayClientRootView: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue(String(value))
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func campaignTelemetryRow(_ stats: XrayClientRuntimeStats) -> some View {
+        HStack {
+            Text("Campaign telemetry")
+            Spacer()
+            Text("\(stats.threadCount) threads")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Campaign telemetry")
+        .accessibilityValue(
+            "residentMemoryBytes=\(stats.residentMemoryBytes);" +
+                "threadCount=\(stats.threadCount);" +
+                "runtimeIdentifier=\(stats.runtimeIdentifier);" +
+                "activeTCPFlows=\(stats.activeTCPFlows);" +
+                "activeUDPFlows=\(stats.activeUDPFlows)"
+        )
+        .accessibilityIdentifier("xray.runtime.campaignTelemetry")
     }
 }

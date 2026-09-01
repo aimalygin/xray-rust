@@ -423,6 +423,53 @@ private final class XrayWeakReference<Value: AnyObject>: @unchecked Sendable {
     }
 }
 
+struct XrayPacketTunnelResourceSnapshot: Equatable {
+    var residentMemoryBytes: UInt64
+    var threadCount: UInt64
+
+    static func current() -> Self {
+        Self(
+            residentMemoryBytes: currentResidentMemoryBytes(),
+            threadCount: currentThreadCount()
+        )
+    }
+
+    private static func currentResidentMemoryBytes() -> UInt64 {
+        var info = mach_task_basic_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(MACH_TASK_BASIC_INFO),
+                    $0,
+                    &count
+                )
+            }
+        }
+        guard result == KERN_SUCCESS else {
+            return 0
+        }
+        return UInt64(info.resident_size)
+    }
+
+    private static func currentThreadCount() -> UInt64 {
+        var threads: thread_act_array_t?
+        var count: mach_msg_type_number_t = 0
+        guard task_threads(mach_task_self_, &threads, &count) == KERN_SUCCESS else {
+            return 0
+        }
+        if let threads {
+            let address = vm_address_t(UInt(bitPattern: threads))
+            let size = vm_size_t(Int(count) * MemoryLayout<thread_t>.stride)
+            vm_deallocate(mach_task_self_, address, size)
+        }
+        return UInt64(count)
+    }
+}
+
 @available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
 open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     private static let defaultStartupProbeTimeoutMs: UInt64 = 5_000
@@ -453,7 +500,6 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         qos: .userInitiated
     )
     private static let dnsBootstrapWorkGate = XrayPacketTunnelWorkGate()
-
     private let debugStatsQueue = DispatchQueue(
         label: "org.xrayrust.apple.packet-tunnel.debug-stats"
     )
@@ -741,14 +787,58 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             "PacketTunnelProvider",
             "handleAppMessage bytes=\(messageData.count)"
         )
-        guard String(data: messageData, encoding: .utf8) == XrayTunnelProviderMessage.statsRequest,
-              let stats = try? lifecycle.active()?.core.stats()
+        guard let request = String(data: messageData, encoding: .utf8),
+              let runtime = lifecycle.active()
+        else {
+            XrayAppleLog.info("PacketTunnelProvider", "App message ignored or stats unavailable")
+            completionHandler?(nil)
+            return
+        }
+        let core = runtime.core
+
+        if request == XrayTunnelProviderMessage.closeConnectionsRequest {
+            do {
+                let snapshot = try core.connectionSnapshot()
+                var closedConnections: UInt64 = 0
+                for connection in snapshot.connections {
+                    do {
+                        try core.closeConnection(id: connection.id)
+                        closedConnections += 1
+                    } catch {
+                        XrayAppleLog.info(
+                            "PacketTunnelProvider",
+                            "Connection already closed before close request completed"
+                        )
+                    }
+                }
+                XrayAppleLog.info(
+                    "PacketTunnelProvider",
+                    "Requested closure for \(closedConnections) active connection(s)"
+                )
+                completionHandler?(
+                    try XrayTunnelProviderMessage.encodeCloseConnectionsResponse(
+                        closedConnections
+                    )
+                )
+            } catch {
+                XrayAppleLog.error(
+                    "PacketTunnelProvider",
+                    "Failed to close active connections"
+                )
+                completionHandler?(nil)
+            }
+            return
+        }
+
+        guard request == XrayTunnelProviderMessage.statsRequest,
+              let stats = try? core.stats()
         else {
             XrayAppleLog.info("PacketTunnelProvider", "App message ignored or stats unavailable")
             completionHandler?(nil)
             return
         }
 
+        let resourceSnapshot = XrayPacketTunnelResourceSnapshot.current()
         let runtimeStats = XrayClientRuntimeStats(
             inboundPackets: stats.inboundPackets,
             outboundPackets: stats.outboundPackets,
@@ -767,6 +857,9 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             tcp443FirstByteDurationMsMax: stats.tcp443FirstByteDurationMsMax,
             activeTCPFlows: stats.activeTCPFlows,
             activeUDPFlows: stats.activeUDPFlows,
+            residentMemoryBytes: resourceSnapshot.residentMemoryBytes,
+            threadCount: resourceSnapshot.threadCount,
+            runtimeIdentifier: runtime.identifier,
             udpFlowLimit: stats.udpFlowLimit,
             udpBudgetDrops: stats.udpBudgetDrops,
             udpEvictedFlows: stats.udpEvictedFlows,
@@ -2629,6 +2722,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 @available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
 private final class XrayPacketTunnelRuntime {
     let core: XrayCore
+    let identifier = UUID().uuidString.lowercased()
 
     private let lock = NSLock()
     private var pump: XrayPacketTunnelPump?

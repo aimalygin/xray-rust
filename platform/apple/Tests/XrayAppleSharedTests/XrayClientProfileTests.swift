@@ -47,6 +47,9 @@ final class XrayClientProfileTests: XCTestCase {
             tcp443FirstByteEvents: 6,
             tcp443FirstByteDurationMsTotal: 1_000,
             tcp443FirstByteDurationMsMax: 500,
+            residentMemoryBytes: 12_345_678,
+            threadCount: 17,
+            runtimeIdentifier: "runtime-1",
             udpRemoteOpenEvents: 4,
             udpRemoteUDP443OpenEvents: 5,
             udpRemoteWrittenBytes: 6,
@@ -58,6 +61,27 @@ final class XrayClientProfileTests: XCTestCase {
         XCTAssertEqual(
             try XrayTunnelProviderMessage.decodeStatsResponse(data),
             stats
+        )
+    }
+
+    func testStatsMessageDecodesOlderResourceTelemetryAsDefaults() throws {
+        let data = Data(
+            #"{"inboundPackets":1,"outboundPackets":2,"droppedPackets":3}"#.utf8
+        )
+
+        let stats = try JSONDecoder().decode(XrayClientRuntimeStats.self, from: data)
+
+        XCTAssertEqual(stats.residentMemoryBytes, 0)
+        XCTAssertEqual(stats.threadCount, 0)
+        XCTAssertEqual(stats.runtimeIdentifier, "")
+    }
+
+    func testCloseConnectionsResponseRoundTrip() throws {
+        let data = try XrayTunnelProviderMessage.encodeCloseConnectionsResponse(17)
+
+        XCTAssertEqual(
+            try XrayTunnelProviderMessage.decodeCloseConnectionsResponse(data),
+            17
         )
     }
 

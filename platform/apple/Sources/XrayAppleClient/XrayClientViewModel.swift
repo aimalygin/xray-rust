@@ -107,6 +107,24 @@ public final class XrayClientViewModel: ObservableObject {
         }
     }
 
+    public func closeActiveConnections() async {
+        guard connectionStatus == .connected, !isBusy else {
+            return
+        }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await tunnelController.closeActiveConnections()
+            await refresh()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            XrayAppleLog.error(
+                "ClientViewModel",
+                "Failed to close active connections: \(error.localizedDescription)"
+            )
+        }
+    }
+
     public func saveProfile() {
         normalizeProfileIfNeeded()
         XrayAppleLog.info(

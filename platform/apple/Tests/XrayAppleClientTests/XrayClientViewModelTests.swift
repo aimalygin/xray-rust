@@ -592,6 +592,32 @@ final class XrayClientViewModelTests: XCTestCase {
         XCTAssertEqual(tunnelController.disconnectErrorRequests, 1)
     }
 
+    func testCloseActiveConnectionsRequestsProviderAndRefreshesStats() async throws {
+        let store = try makeStore()
+        let tunnelController = StatusObservingMockTunnelController(status: .connected)
+        tunnelController.runtimeStatsResponse = XrayClientRuntimeStats(
+            inboundPackets: 11,
+            outboundPackets: 13,
+            droppedPackets: 0,
+            activeTCPFlows: 0,
+            activeUDPFlows: 0
+        )
+        let viewModel = XrayClientViewModel(
+            store: store,
+            tunnelController: tunnelController
+        )
+        await waitUntil("initial connected status") {
+            viewModel.connectionStatus == .connected
+        }
+
+        await viewModel.closeActiveConnections()
+
+        XCTAssertEqual(tunnelController.closeConnectionsRequests, 1)
+        XCTAssertEqual(viewModel.runtimeStats, tunnelController.runtimeStatsResponse)
+        XCTAssertFalse(viewModel.isBusy)
+        XCTAssertNil(viewModel.lastErrorMessage)
+    }
+
     func testPersistentObserverDoesNotOverwriteExactStartupFailure() async throws {
         let store = try makeStore()
         try store.save(
@@ -814,8 +840,10 @@ private final class StatusObservingMockTunnelController: XrayClientTunnelControl
     private(set) var startedProfile: XrayClientProfile?
     private(set) var statusUpdatesRequested = false
     private(set) var disconnectErrorRequests = 0
+    private(set) var closeConnectionsRequests = 0
     var status: XrayClientConnectionStatus
     var disconnectError: Error?
+    var runtimeStatsResponse: XrayClientRuntimeStats?
     var startAction: (@MainActor () async throws -> Void)?
 
     init(status: XrayClientConnectionStatus) {
@@ -856,7 +884,12 @@ private final class StatusObservingMockTunnelController: XrayClientTunnelControl
     }
 
     func runtimeStats() async throws -> XrayClientRuntimeStats? {
-        nil
+        runtimeStatsResponse
+    }
+
+    func closeActiveConnections() async throws -> UInt64 {
+        closeConnectionsRequests += 1
+        return 1
     }
 
     func emit(_ status: XrayClientConnectionStatus) {

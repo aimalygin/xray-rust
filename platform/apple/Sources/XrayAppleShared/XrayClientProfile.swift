@@ -1277,6 +1277,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
     public var tcp443FirstByteDurationMsMax: UInt64
     public var activeTCPFlows: UInt64
     public var activeUDPFlows: UInt64
+    public var residentMemoryBytes: UInt64
+    public var threadCount: UInt64
+    public var runtimeIdentifier: String
     public var udpFlowLimit: UInt64
     public var udpBudgetDrops: UInt64
     public var udpEvictedFlows: UInt64
@@ -1320,6 +1323,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         case tcp443FirstByteDurationMsMax
         case activeTCPFlows
         case activeUDPFlows
+        case residentMemoryBytes
+        case threadCount
+        case runtimeIdentifier
         case udpFlowLimit
         case udpBudgetDrops
         case udpEvictedFlows
@@ -1364,6 +1370,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         tcp443FirstByteDurationMsMax: UInt64 = 0,
         activeTCPFlows: UInt64 = 0,
         activeUDPFlows: UInt64 = 0,
+        residentMemoryBytes: UInt64 = 0,
+        threadCount: UInt64 = 0,
+        runtimeIdentifier: String = "",
         udpFlowLimit: UInt64 = 0,
         udpBudgetDrops: UInt64 = 0,
         udpEvictedFlows: UInt64 = 0,
@@ -1406,6 +1415,9 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         self.tcp443FirstByteDurationMsMax = tcp443FirstByteDurationMsMax
         self.activeTCPFlows = activeTCPFlows
         self.activeUDPFlows = activeUDPFlows
+        self.residentMemoryBytes = residentMemoryBytes
+        self.threadCount = threadCount
+        self.runtimeIdentifier = runtimeIdentifier
         self.udpFlowLimit = udpFlowLimit
         self.udpBudgetDrops = udpBudgetDrops
         self.udpEvictedFlows = udpEvictedFlows
@@ -1484,6 +1496,15 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         ) ?? 0
         activeTCPFlows = try container.decodeIfPresent(UInt64.self, forKey: .activeTCPFlows) ?? 0
         activeUDPFlows = try container.decodeIfPresent(UInt64.self, forKey: .activeUDPFlows) ?? 0
+        residentMemoryBytes = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .residentMemoryBytes
+        ) ?? 0
+        threadCount = try container.decodeIfPresent(UInt64.self, forKey: .threadCount) ?? 0
+        runtimeIdentifier = try container.decodeIfPresent(
+            String.self,
+            forKey: .runtimeIdentifier
+        ) ?? ""
         udpFlowLimit = try container.decodeIfPresent(UInt64.self, forKey: .udpFlowLimit) ?? 0
         udpBudgetDrops = try container.decodeIfPresent(UInt64.self, forKey: .udpBudgetDrops) ?? 0
         udpEvictedFlows = try container.decodeIfPresent(UInt64.self, forKey: .udpEvictedFlows) ?? 0

@@ -6,6 +6,13 @@ import NetworkExtension
 
 @available(macOS 13.0, *)
 final class XrayPacketTunnelProviderTests: XCTestCase {
+    func testCurrentResourceSnapshotIsPopulated() {
+        let snapshot = XrayPacketTunnelResourceSnapshot.current()
+
+        XCTAssertGreaterThan(snapshot.residentMemoryBytes, 0)
+        XCTAssertGreaterThan(snapshot.threadCount, 0)
+    }
+
     func testProviderErrorNSErrorContractIsStable() {
         let expectedDomain = "XrayAppleTunnel.XrayPacketTunnelProviderError"
         let expectedCodes: [(XrayPacketTunnelProviderError, Int)] = [

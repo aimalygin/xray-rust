@@ -115,6 +115,7 @@ public protocol XrayClientTunnelControlling: AnyObject {
     func start(profile: XrayClientProfile) async throws
     func stop() async throws
     func runtimeStats() async throws -> XrayClientRuntimeStats?
+    func closeActiveConnections() async throws -> UInt64
 }
 
 public extension XrayClientTunnelControlling {
@@ -126,6 +127,10 @@ public extension XrayClientTunnelControlling {
 
     func lastDisconnectError() async -> Error? {
         nil
+    }
+
+    func closeActiveConnections() async throws -> UInt64 {
+        0
     }
 }
 
@@ -522,6 +527,29 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
         return stats
     }
 
+    public func closeActiveConnections() async throws -> UInt64 {
+        XrayAppleLog.info("TunnelController", "Requesting closure of active connections")
+        guard let manager = try await loadManager(),
+              let session = manager.connection as? NETunnelProviderSession
+        else {
+            XrayAppleLog.info("TunnelController", "Connection close unavailable: no provider session")
+            return 0
+        }
+
+        let request = Data(XrayTunnelProviderMessage.closeConnectionsRequest.utf8)
+        let response = try await session.sendProviderMessageAsync(request)
+        guard let response else {
+            XrayAppleLog.info("TunnelController", "Connection close unavailable: empty response")
+            return 0
+        }
+        let count = try XrayTunnelProviderMessage.decodeCloseConnectionsResponse(response)
+        XrayAppleLog.info(
+            "TunnelController",
+            "Provider accepted \(count) connection close request(s)"
+        )
+        return count
+    }
+
     private func configure(
         manager: NETunnelProviderManager,
         for profile: XrayClientProfile,
@@ -808,6 +836,10 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
 
     public func runtimeStats() async throws -> XrayClientRuntimeStats? {
         nil
+    }
+
+    public func closeActiveConnections() async throws -> UInt64 {
+        0
     }
 }
 #endif
