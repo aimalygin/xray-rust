@@ -36,11 +36,35 @@ def main() -> int:
             "--udp-host",
             "127.0.0.1",
             "--udp-port",
-            "53",
+            "53053",
             "--derived-data",
             str(temporary / "derived"),
             "--skip-test-build",
         ]
+
+        recursive_common = list(common)
+        recursive_common[7] = "53"
+        recursive_dns = run(
+            [
+                *recursive_common,
+                "--campaign-id",
+                "recursive-dns",
+                "--campaign-dir",
+                str(temporary / "recursive-dns"),
+                "--duration-seconds",
+                "30",
+                "--rehearsal",
+            ],
+            root,
+        )
+        if recursive_dns.returncode == 0 or (
+            "dedicated non-DNS probe endpoint" not in recursive_dns.stderr
+        ):
+            raise AssertionError(
+                f"recursive DNS endpoint was not rejected: {recursive_dns.stderr}"
+            )
+        if (temporary / "recursive-dns").exists():
+            raise AssertionError("recursive DNS rejection created a campaign directory")
 
         formal = run(
             [

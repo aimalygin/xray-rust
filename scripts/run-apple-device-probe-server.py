@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve a bounded DNS-over-UDP probe endpoint for Apple LAN device checks."""
+"""Serve the bounded DNS-over-UDP oracle used by Apple device campaigns."""
 
 from __future__ import annotations
 
@@ -43,11 +43,24 @@ def dns_question_end(query: bytes) -> int:
 
 def build_dns_response(query: bytes) -> bytes:
     question_end = dns_question_end(query)
-    if query[2] & 0x80:
-        raise ProbeError("received a DNS response instead of a query")
-    if query[4:6] != b"\x00\x01":
-        raise ProbeError("probe requires exactly one DNS question")
+    if len(query) != question_end:
+        raise ProbeError("probe query must contain only one DNS question")
+    if query[2:4] != b"\x01\x00":
+        raise ProbeError("probe requires a standard recursive DNS query")
+    if query[4:12] != b"\x00\x01\x00\x00\x00\x00\x00\x00":
+        raise ProbeError("probe requires exactly one DNS question and no records")
     question = query[12:question_end]
+    expected_suffix = b"\x07example\x03com\x00\x00\x01\x00\x01"
+    if len(question) != 1 + 37 + len(expected_suffix):
+        raise ProbeError("probe question has an invalid size")
+    nonce_label = question[1:38]
+    if question[0] != len(nonce_label) or not nonce_label.startswith(b"xray-"):
+        raise ProbeError("probe question has an invalid nonce label")
+    nonce = nonce_label[len(b"xray-") :]
+    if any(byte not in b"0123456789abcdef" for byte in nonce):
+        raise ProbeError("probe question has an invalid nonce")
+    if question[38:] != expected_suffix:
+        raise ProbeError("probe question must request xray-<nonce>.example.com A/IN")
     header = query[0:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00"
     answer = b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x00\x00\x04" + TEST_ADDRESS
     return header + question + answer

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Contract test for the Apple physical-device LAN probe server."""
+"""Contract test for the Apple physical-device UDP oracle server."""
 
 from __future__ import annotations
 
@@ -13,8 +13,13 @@ import sys
 DNS_QUERY = bytes(
     (
         0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x07, 0x65, 0x78, 0x61,
-        0x6D, 0x70, 0x6C, 0x65, 0x03, 0x63, 0x6F, 0x6D,
+        0x00, 0x00, 0x00, 0x00, 0x25, 0x78, 0x72, 0x61,
+        0x79, 0x2D, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+        0x36, 0x37, 0x38, 0x39, 0x61, 0x62, 0x63, 0x64,
+        0x65, 0x66, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35,
+        0x36, 0x37, 0x38, 0x39, 0x61, 0x62, 0x63, 0x64,
+        0x65, 0x66, 0x07, 0x65, 0x78, 0x61, 0x6D, 0x70,
+        0x6C, 0x65, 0x03, 0x63, 0x6F, 0x6D,
         0x00, 0x00, 0x01, 0x00, 0x01,
     )
 )
@@ -50,10 +55,19 @@ def main() -> int:
         invalid_query[2] |= 0x80
         client.sendto(invalid_query, ("127.0.0.1", ready["port"]))
         rejected = json.loads(process.stdout.readline())
-        if rejected.get("event") != "rejected" or "response" not in rejected.get(
-            "reason", ""
+        if rejected.get("event") != "rejected" or (
+            "standard recursive DNS query" not in rejected.get("reason", "")
         ):
             raise AssertionError(f"invalid query was not rejected: {rejected}")
+
+        unrelated_query = bytearray(DNS_QUERY)
+        unrelated_query[13:18] = b"other"
+        client.sendto(unrelated_query, ("127.0.0.1", ready["port"]))
+        rejected = json.loads(process.stdout.readline())
+        if rejected.get("event") != "rejected" or "nonce label" not in rejected.get(
+            "reason", ""
+        ):
+            raise AssertionError(f"unrelated query was not rejected: {rejected}")
 
         client.sendto(DNS_QUERY, ("127.0.0.1", ready["port"]))
         response, _ = client.recvfrom(4096)
@@ -73,7 +87,7 @@ def main() -> int:
     events = [json.loads(line) for line in stdout_tail.splitlines()]
     if [event.get("event") for event in events] != ["response", "stopped"]:
         raise AssertionError(f"unexpected server events: {events}")
-    print("Apple LAN probe server contract test passed")
+    print("Apple UDP oracle server contract test passed")
     return 0
 
 

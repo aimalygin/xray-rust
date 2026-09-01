@@ -340,11 +340,14 @@ def main() -> int:
         raise CampaignError("--http-url must be an absolute HTTPS URL")
     if (
         not 1 <= args.udp_port <= 65535
+        or args.udp_port == 53
         or not args.udp_host
         or len(args.udp_host) > 253
         or not args.udp_host.isprintable()
     ):
-        raise CampaignError("--udp-host/--udp-port are invalid")
+        raise CampaignError(
+            "--udp-host/--udp-port must identify a dedicated non-DNS probe endpoint"
+        )
     minimum_duration = 30 if args.rehearsal else MIN_FORMAL_DURATION_SECONDS
     if not minimum_duration <= args.duration_seconds <= MAX_DURATION_SECONDS:
         raise CampaignError(

@@ -15,6 +15,46 @@ final class XrayClientUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    func testDNSProbeRejectsStaleAndUnrelatedResponses() {
+        let firstQuery = Self.makeDNSQuery(
+            transactionID: 0x1234,
+            nonce: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        )
+        let secondQuery = Self.makeDNSQuery(
+            transactionID: 0x5678,
+            nonce: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        )
+
+        XCTAssertNotEqual(firstQuery, secondQuery)
+
+        var validResponse = firstQuery
+        validResponse[2] = 0x81
+        validResponse[3] = 0x80
+        validResponse[6] = 0x00
+        validResponse[7] = 0x01
+        validResponse.append(Self.DNSProbeAnswer)
+        XCTAssertTrue(Self.isValidDNSResponse(validResponse, for: firstQuery))
+        XCTAssertFalse(Self.isValidDNSResponse(validResponse, for: secondQuery))
+
+        var wrongAddressResponse = validResponse
+        wrongAddressResponse[wrongAddressResponse.index(before: wrongAddressResponse.endIndex)] ^= 0x01
+        XCTAssertFalse(Self.isValidDNSResponse(wrongAddressResponse, for: firstQuery))
+
+        var nameErrorResponse = firstQuery
+        nameErrorResponse[2] = 0x81
+        nameErrorResponse[3] = 0x83
+        XCTAssertFalse(Self.isValidDNSResponse(nameErrorResponse, for: firstQuery))
+
+        var serverFailureResponse = firstQuery
+        serverFailureResponse[2] = 0x81
+        serverFailureResponse[3] = 0x82
+        XCTAssertFalse(Self.isValidDNSResponse(serverFailureResponse, for: firstQuery))
+
+        var unrelatedQuestion = firstQuery
+        unrelatedQuestion[13] ^= 0x01
+        XCTAssertFalse(Self.isValidDNSResponse(unrelatedQuestion, for: firstQuery))
+    }
+
     @MainActor
     func testPhysicalDeviceCampaign() async throws {
         let environment = ProcessInfo.processInfo.environment
@@ -391,6 +431,7 @@ final class XrayClientUITests: XCTestCase {
     private func sendUDPProbe(host: NWEndpoint.Host, port: NWEndpoint.Port) async throws {
         let queue = DispatchQueue(label: "org.xrayrust.device-campaign.udp")
         let connection = NWConnection(host: host, port: port, using: .udp)
+        let query = Self.makeDNSQuery()
         defer { connection.cancel() }
 
         try await withTaskCancellationHandler {
@@ -404,7 +445,7 @@ final class XrayClientUITests: XCTestCase {
                     case .ready:
                         connection.stateUpdateHandler = nil
                         connection.send(
-                            content: Self.DNSQuery,
+                            content: query,
                             completion: .contentProcessed { error in
                                 if let error {
                                     completion.finish(.failure(error))
@@ -415,7 +456,7 @@ final class XrayClientUITests: XCTestCase {
                                     if let receiveError {
                                         completion.finish(.failure(receiveError))
                                     } else if let response,
-                                              Self.isValidDNSResponse(response)
+                                              Self.isValidDNSResponse(response, for: query)
                                     {
                                         completion.finish(.success(()))
                                     } else {
@@ -441,14 +482,46 @@ final class XrayClientUITests: XCTestCase {
         }
     }
 
-    private static func isValidDNSResponse(_ response: Data) -> Bool {
-        guard response.count >= 12 else {
+    private static func makeDNSQuery(
+        transactionID: UInt16 = UInt16.random(in: UInt16.min ... UInt16.max),
+        nonce: UUID = UUID()
+    ) -> Data {
+        let nonceLabel = "xray-" + nonce.uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        var query = Data([
+            UInt8(transactionID >> 8), UInt8(transactionID & 0xff),
+            0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+        ])
+        for label in [nonceLabel, "example", "com"] {
+            let bytes = Array(label.utf8)
+            precondition(bytes.count <= 63)
+            query.append(UInt8(bytes.count))
+            query.append(contentsOf: bytes)
+        }
+        query.append(contentsOf: [0x00, 0x00, 0x01, 0x00, 0x01])
+        return query
+    }
+
+    private static func isValidDNSResponse(_ response: Data, for query: Data) -> Bool {
+        guard query.count >= 12,
+              response.count == query.count + DNSProbeAnswer.count
+        else {
             return false
         }
-        return response[0] == DNSQuery[0]
-            && response[1] == DNSQuery[1]
-            && response[2] & 0x80 != 0
-            && response[3] & 0x0f == 0
+        return response[0] == query[0]
+            && response[1] == query[1]
+            && response[2] == 0x81
+            && response[3] == 0x80
+            && response[4] == 0x00
+            && response[5] == 0x01
+            && response[6] == 0x00
+            && response[7] == 0x01
+            && response[8] == 0x00
+            && response[9] == 0x00
+            && response[10] == 0x00
+            && response[11] == 0x00
+            && response[12 ..< query.count] == query[12 ..< query.count]
+            && response[query.count...] == DNSProbeAnswer
     }
 
     private static func probeErrorCode(_ error: Error) -> String {
@@ -506,12 +579,11 @@ final class XrayClientUITests: XCTestCase {
         add(attachment)
     }
 
-    private static let DNSQuery = Data([
-        0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x07, 0x65, 0x78, 0x61,
-        0x6d, 0x70, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d,
-        0x00, 0x00, 0x01, 0x00, 0x01
+    private static let DNSProbeAnswer = Data([
+        0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x04, 0xcb, 0x00, 0x71, 0x01,
     ])
+
 }
 
 private struct CampaignConfiguration {

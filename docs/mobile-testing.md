@@ -321,8 +321,13 @@ all probe endpoints in the generated test-only `.xctestrun`, drives HTTPS and
 DNS-over-UDP traffic from the device, samples provider
 RSS/threads/TUN/connection telemetry, closes active flows, tears the tunnel
 down, and retains an Instruments Activity Monitor trace. The UDP probe is a
-round trip: a send-only datagram is not accepted. The response must carry the
-probe transaction ID, the DNS response bit, and a successful response code.
+round trip: a send-only datagram is not accepted. Every round uses a fresh DNS
+transaction ID and a unique nonce label beneath `example.com`, so a cached
+answer from an earlier round cannot establish reachability. A generic recursive
+DNS server is not accepted: a managed resolver can synthesize a matching
+NXDOMAIN while offline. The dedicated oracle response must carry that
+transaction ID, repeat the exact question, set the DNS response bit, and return
+the zero-TTL documentation address `203.0.113.1` in its single A answer.
 The close gate records how many snapshot connections the provider accepted
 for closure and requires a nonzero total. It does not require an intermediate
 live-tunnel sample to stay at zero: iOS background services can open a new TCP
@@ -349,11 +354,16 @@ python3 scripts/run-apple-device-campaign.py \
   --campaign-dir target/mobile/device-gate/<campaign-id>/apple \
   --http-url https://<approved-probe>/payload \
   --udp-host <approved-udp-probe> \
-  --udp-port 53
+  --udp-port <dedicated-non-53-port>
 ```
 
-Use a stable external DNS endpoint for the formal TUN campaign. For a bounded
-LAN reachability rehearsal, start the repository-owned oracle on the Mac:
+For the formal TUN campaign, deploy `run-apple-device-probe-server.py` at a
+stable approved external endpoint on a dedicated port other than `53`. A
+generic recursive DNS endpoint is rejected because it cannot distinguish an
+external round trip from a locally synthesized resolver response. For a
+bounded LAN reachability rehearsal, the tested profile must route the Mac's
+LAN address through a `direct` outbound. Start the same repository-owned
+oracle on the Mac:
 
 ```sh
 python3 scripts/run-apple-device-probe-server.py \
@@ -363,9 +373,12 @@ python3 scripts/run-apple-device-probe-server.py \
 
 Then pass the Mac's LAN address as `--udp-host` and `53053` as `--udp-port`.
 The server emits one JSON line for every validated query and response and
-returns the documentation-only address `203.0.113.1`. A LAN probe proves TUN
-carriage only when the tested VPN profile explicitly includes the local
-subnet; otherwise iOS may route it directly on Wi-Fi. The HTTPS probe and TUN
+returns the documentation-only address `203.0.113.1`. A remote proxy outbound
+cannot normally reach the Mac's private LAN address; an observed timeout in
+that configuration is expected. A LAN probe proves TUN carriage only when the
+local subnet is included in the tunnel and the core explicitly selects a
+`direct` outbound for that destination. It is a harness rehearsal, not a
+substitute for the formal external proxy-path gate. The HTTPS probe and TUN
 packet counters remain mandatory in either case.
 
 Use `--rehearsal --duration-seconds 30` for a short dirty-worktree check.
