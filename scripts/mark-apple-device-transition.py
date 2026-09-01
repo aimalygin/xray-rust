@@ -41,7 +41,16 @@ def main() -> int:
     if timeline_path.is_symlink() or not timeline_path.is_file():
         parser.error("transition timeline is unavailable")
     state = json.loads(state_path.read_text(encoding="utf-8"))
-    started_at = dt.datetime.fromisoformat(state["startedAt"].replace("Z", "+00:00"))
+    if state.get("phase") != "running" or "startedAt" not in state:
+        parser.error("campaign is building; wait for the first device sample")
+    try:
+        started_at = dt.datetime.fromisoformat(
+            state["startedAt"].replace("Z", "+00:00")
+        )
+    except (AttributeError, TypeError, ValueError):
+        parser.error("campaign state has an invalid start timestamp")
+    if started_at.utcoffset() != dt.timedelta(0):
+        parser.error("campaign start timestamp is not UTC")
     now = dt.datetime.now(dt.timezone.utc)
     event = {
         "at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -60,7 +69,10 @@ def main() -> int:
         payload = (json.dumps(event, sort_keys=True) + "\n").encode("utf-8")
         offset = 0
         while offset < len(payload):
-            offset += os.write(descriptor, payload[offset:])
+            written = os.write(descriptor, payload[offset:])
+            if written == 0:
+                raise OSError("short write while recording transition marker")
+            offset += written
         os.fsync(descriptor)
     finally:
         os.close(descriptor)

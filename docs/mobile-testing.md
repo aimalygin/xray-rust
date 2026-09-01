@@ -338,8 +338,14 @@ While a campaign is active, record each physical action immediately after it
 with `scripts/mark-apple-device-transition.py`; markers contain only scenario
 IDs, attempt numbers, phases, and non-secret notes. The runner writes
 `apple-run.json`, `apple-device-samples.json`, a sanitized log, a transition
-timeline, the local `.xcresult`, and a zipped Instruments resource profile.
-Keep the iPhone unlocked with Auto-Lock disabled for launch and recovery.
+timeline, the local `.xcresult`, and a zipped Instruments resource profile. A
+formal run also invokes `scripts/build-apple-device-report.py`, which refuses
+unknown, incomplete, failed-only, or under-counted scenarios and writes the
+validator-ready `apple-report.json`. Use `--artifact-prefix` when the Apple
+directory will not be named `apple` relative to the eventual `campaign.json`.
+Keep the iPhone unlocked with Auto-Lock disabled for launch and recovery. Wait
+for the first `XRAY_DEVICE_SAMPLE` before recording a scenario; markers are
+rejected while the signed app is still building or launching.
 
 For example, bracket the first airplane-mode attempt with:
 
@@ -351,6 +357,12 @@ python3 scripts/mark-apple-device-transition.py \
   target/mobile/device-gate/<campaign-id>/apple airplane-mode \
   --attempt 1 --phase passed --notes "traffic recovered after radios returned"
 ```
+
+Every credited attempt needs one `begin` marker and one later `passed` marker
+with the same scenario ID and attempt number. Mark a failed observation as
+`failed`, then use a new attempt number for the retry. The report counts only
+passing attempts; the exact minimums remain owned by
+`scripts/check-mobile-device-evidence.py`.
 
 ## Current host responsibilities
 

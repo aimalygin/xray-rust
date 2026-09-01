@@ -63,6 +63,52 @@ def redact(line: str, secrets: list[str]) -> str:
     return redacted
 
 
+def write_all(descriptor: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        written = os.write(descriptor, payload[offset:])
+        if written == 0:
+            raise CampaignError("short write while recording campaign evidence")
+        offset += written
+
+
+def atomic_write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        try:
+            write_all(
+                descriptor,
+                (json.dumps(value, sort_keys=True) + "\n").encode("utf-8"),
+            )
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def append_json_line(path: pathlib.Path, value: dict[str, Any]) -> None:
+    descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        write_all(
+            descriptor,
+            (json.dumps(value, sort_keys=True) + "\n").encode("utf-8"),
+        )
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def stream_command(
     arguments: list[str],
     root: pathlib.Path,
@@ -253,6 +299,10 @@ def main() -> int:
     parser.add_argument("--udp-host", required=True)
     parser.add_argument("--udp-port", type=int, required=True)
     parser.add_argument(
+        "--artifact-prefix",
+        help="artifact path prefix relative to the eventual campaign.json directory",
+    )
+    parser.add_argument(
         "--derived-data",
         type=pathlib.Path,
         default=pathlib.Path("/private/tmp/xray-apple-device-campaign-derived"),
@@ -308,24 +358,28 @@ def main() -> int:
     trace_archive = args.campaign_dir / "resource-profile.trace.zip"
     secrets = [args.device_id, args.http_url, args.udp_host]
 
-    started_at = UTC_now()
-    state_path.write_text(
-        json.dumps(
-            {"schemaVersion": 1, "campaignId": args.campaign_id, "startedAt": started_at},
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    timeline_path.write_text(
-        json.dumps({"event": "campaign-start", "at": started_at}, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
     generated_xctestrun: pathlib.Path | None = None
     instrument_process: subprocess.Popen[str] | None = None
     instrument_output: IO[str] | None = None
+    soak_started_at: str | None = None
     try:
+        build_started_at = UTC_now()
+        atomic_write_json(
+            state_path,
+            {
+                "schemaVersion": 1,
+                "campaignId": args.campaign_id,
+                "phase": "building",
+            },
+        )
+        timeline_path.write_text(
+            json.dumps(
+                {"event": "campaign-build-start", "at": build_started_at},
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         with log_path.open("w", encoding="utf-8") as log:
             if not args.skip_xcframework_build and not args.rehearsal:
                 if stream_command(
@@ -387,36 +441,47 @@ def main() -> int:
                 line = redact(raw_line, secrets)
                 log.write(line)
                 log.flush()
+                if soak_started_at is None and raw_line.startswith("XRAY_DEVICE_SAMPLE "):
+                    soak_started_at = UTC_now()
+                    append_json_line(
+                        timeline_path,
+                        {"event": "campaign-start", "at": soak_started_at},
+                    )
+                    atomic_write_json(
+                        state_path,
+                        {
+                            "schemaVersion": 1,
+                            "campaignId": args.campaign_id,
+                            "phase": "running",
+                            "startedAt": soak_started_at,
+                        },
+                    )
+                    if not args.skip_instruments:
+                        instrument_output = open(os.devnull, "w", encoding="utf-8")
+                        instrument_process = subprocess.Popen(
+                            [
+                                "xcrun",
+                                "xctrace",
+                                "record",
+                                "--template",
+                                "Activity Monitor",
+                                "--device",
+                                args.device_id,
+                                "--attach",
+                                "Tunnel",
+                                "--output",
+                                str(trace_path),
+                                "--time-limit",
+                                f"{args.duration_seconds + 600}s",
+                                "--no-prompt",
+                            ],
+                            cwd=root,
+                            text=True,
+                            stdout=instrument_output,
+                            stderr=subprocess.STDOUT,
+                        )
                 sys.stdout.write(line)
                 sys.stdout.flush()
-                if (
-                    not args.skip_instruments
-                    and instrument_process is None
-                    and raw_line.startswith("XRAY_DEVICE_SAMPLE ")
-                ):
-                    instrument_output = open(os.devnull, "w", encoding="utf-8")
-                    instrument_process = subprocess.Popen(
-                        [
-                            "xcrun",
-                            "xctrace",
-                            "record",
-                            "--template",
-                            "Activity Monitor",
-                            "--device",
-                            args.device_id,
-                            "--attach",
-                            "Tunnel",
-                            "--output",
-                            str(trace_path),
-                            "--time-limit",
-                            f"{args.duration_seconds + 600}s",
-                            "--no-prompt",
-                        ],
-                        cwd=root,
-                        text=True,
-                        stdout=instrument_output,
-                        stderr=subprocess.STDOUT,
-                    )
             test_return_code = test_process.wait()
             if test_return_code != 0:
                 raise CampaignError("physical-device UI campaign failed")
@@ -449,6 +514,8 @@ def main() -> int:
 
         samples_path, summary = export_samples(root, result_bundle, args.campaign_dir)
         samples = validate_samples(samples_path)
+        if soak_started_at is None:
+            raise CampaignError("campaign passed without recording its first sample time")
         devices = summary.get("devicesAndConfigurations", [])
         if len(devices) != 1:
             raise CampaignError("xcresult does not identify exactly one device")
@@ -461,26 +528,27 @@ def main() -> int:
         )
         with info_plist.open("rb") as source:
             app_info = plistlib.load(source)
-        ended_at = UTC_now()
-        with timeline_path.open("a", encoding="utf-8") as timeline:
-            timeline.write(
-                json.dumps(
-                    {
-                        "event": "campaign-end",
-                        "at": ended_at,
-                        "elapsedSeconds": samples[-1]["elapsedSeconds"],
-                        "result": "passed",
-                    },
-                    sort_keys=True,
-                )
-                + "\n"
-            )
+        started_at_value = dt.datetime.fromisoformat(
+            soak_started_at.replace("Z", "+00:00")
+        )
+        ended_at = (
+            started_at_value + dt.timedelta(seconds=samples[-1]["elapsedSeconds"])
+        ).isoformat(timespec="seconds").replace("+00:00", "Z")
+        append_json_line(
+            timeline_path,
+            {
+                "event": "campaign-end",
+                "at": ended_at,
+                "elapsedSeconds": samples[-1]["elapsedSeconds"],
+                "result": "passed",
+            },
+        )
         metadata = {
             "schemaVersion": 1,
             "campaignId": args.campaign_id,
             "candidate": {"revision": revision, "dirty": dirty},
             "rehearsal": args.rehearsal,
-            "startedAt": started_at,
+            "startedAt": soak_started_at,
             "endedAt": ended_at,
             "requestedDurationSeconds": args.duration_seconds,
             "observedDurationSeconds": samples[-1]["elapsedSeconds"],
@@ -509,24 +577,32 @@ def main() -> int:
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        if not args.rehearsal:
+            report_output = run_capture(
+                [
+                    sys.executable,
+                    str(root / "scripts/build-apple-device-report.py"),
+                    str(args.campaign_dir),
+                    "--artifact-prefix",
+                    args.artifact_prefix or args.campaign_dir.name,
+                ],
+                root,
+            )
+            print(report_output.strip())
         print(f"Apple device campaign passed: {args.campaign_dir}")
         return 0
     except Exception as error:
         try:
-            with timeline_path.open("a", encoding="utf-8") as timeline:
-                timeline.write(
-                    json.dumps(
-                        {
-                            "event": "campaign-end",
-                            "at": UTC_now(),
-                            "result": "failed",
-                            "errorType": type(error).__name__,
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n"
-                )
-        except OSError:
+            append_json_line(
+                timeline_path,
+                {
+                    "event": "campaign-end",
+                    "at": UTC_now(),
+                    "result": "failed",
+                    "errorType": type(error).__name__,
+                },
+            )
+        except (CampaignError, OSError):
             pass
         raise
     finally:
