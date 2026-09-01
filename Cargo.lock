@@ -2447,6 +2447,7 @@ version = "0.5.0-dev.0"
 dependencies = [
  "bytes",
  "libc",
+ "serde_json",
  "tokio",
  "xray-config",
  "xray-core-rs",

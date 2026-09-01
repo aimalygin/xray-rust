@@ -208,7 +208,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testFFIInfoReportsCurrentCapabilities() {
         let info = XrayCore.ffiInfo
 
-        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 1))
+        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 2))
         XCTAssertTrue(info.supports(.configWarnings))
         XCTAssertTrue(info.supports(.geodataSearch))
         XCTAssertTrue(info.supports(.socketProtection))
@@ -221,7 +221,60 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertTrue(info.supports(.dnsBootstrapPolicy))
         XCTAssertTrue(info.supports(.tunStats))
         XCTAssertTrue(info.supports(.tunDiagnosticEvents))
+        XCTAssertTrue(info.supports(.outboundSelection))
+        XCTAssertTrue(info.supports(.outboundHealth))
         XCTAssertFalse(info.supports(XrayFFICapabilities(rawValue: 1 << 63)))
+    }
+
+    func testOutboundSelectionSnapshotDecodesVersionedWireContract() throws {
+        let json = #"{"schemaVersion":1,"revision":7,"groups":[{"tag":"auto","candidates":["proxy-a","proxy-b"],"overrideTag":"proxy-b"}]}"#
+
+        let snapshot = try JSONDecoder().decode(
+            XrayOutboundSelectionSnapshot.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertEqual(snapshot.schemaVersion, 1)
+        XCTAssertEqual(snapshot.revision, 7)
+        XCTAssertEqual(snapshot.groups.count, 1)
+        XCTAssertEqual(snapshot.groups[0].tag, "auto")
+        XCTAssertEqual(snapshot.groups[0].candidates, ["proxy-a", "proxy-b"])
+        XCTAssertEqual(snapshot.groups[0].overrideTag, "proxy-b")
+    }
+
+    func testOutboundHealthSnapshotDecodesRedactedWireContract() throws {
+        let json = #"{"schemaVersion":1,"revision":3,"outbounds":[{"tag":"proxy-a","state":"unhealthy","delayMs":null,"lastTryUnixMs":42,"lastSeenUnixMs":null,"consecutiveFailures":2,"lastFailureKind":"httpStatus","httpStatus":503}]}"#
+
+        let snapshot = try JSONDecoder().decode(
+            XrayOutboundHealthSnapshot.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertEqual(snapshot.schemaVersion, 1)
+        XCTAssertEqual(snapshot.revision, 3)
+        XCTAssertEqual(snapshot.outbounds.count, 1)
+        XCTAssertEqual(snapshot.outbounds[0].state, .unhealthy)
+        XCTAssertEqual(snapshot.outbounds[0].consecutiveFailures, 2)
+        XCTAssertEqual(snapshot.outbounds[0].lastFailureKind, .httpStatus)
+        XCTAssertEqual(snapshot.outbounds[0].httpStatus, 503)
+    }
+
+    func testOutboundSnapshotsRejectUnknownSchemaVersions() {
+        let selection = #"{"schemaVersion":2,"revision":0,"groups":[]}"#
+        let health = #"{"schemaVersion":2,"revision":0,"outbounds":[]}"#
+
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                XrayOutboundSelectionSnapshot.self,
+                from: Data(selection.utf8)
+            )
+        )
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                XrayOutboundHealthSnapshot.self,
+                from: Data(health.utf8)
+            )
+        )
     }
 
     func testLifecycleGateWaitsForAllDataPathCallsAndBlocksLateReaders() {

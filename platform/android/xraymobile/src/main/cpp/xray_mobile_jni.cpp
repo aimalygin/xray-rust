@@ -249,6 +249,48 @@ bool check_status(JNIEnv *env, XrayStatus status, XrayError *error) {
   return false;
 }
 
+using SnapshotJsonFunction = XrayStatus (*)(
+    const XrayCoreHandle *,
+    char *,
+    size_t,
+    size_t *,
+    XrayError **);
+
+jstring snapshot_json(
+    JNIEnv *env,
+    NativeCore *native,
+    SnapshotJsonFunction snapshot,
+    const char *invalid_length_message) {
+  if (native == nullptr || native->core == nullptr) {
+    return nullptr;
+  }
+
+  size_t required = 0;
+  XrayError *error = nullptr;
+  XrayStatus status =
+      snapshot(native->core, nullptr, 0, &required, &error);
+  if (!check_status(env, status, error)) {
+    return nullptr;
+  }
+
+  std::vector<char> buffer(required + 1, '\0');
+  size_t written = 0;
+  status = snapshot(
+      native->core,
+      buffer.data(),
+      buffer.size(),
+      &written,
+      &error);
+  if (!check_status(env, status, error)) {
+    return nullptr;
+  }
+  if (written > required) {
+    throw_illegal_argument(env, invalid_length_message);
+    return nullptr;
+  }
+  return utf8_to_jstring(env, std::string_view(buffer.data(), written));
+}
+
 int32_t protect_socket(int32_t fd, void *user_data) {
   auto *protector = reinterpret_cast<AndroidSocketProtector *>(user_data);
   if (protector == nullptr || protector->vm == nullptr || protector->object == nullptr) {
@@ -379,6 +421,82 @@ Java_org_xrayrust_mobile_XrayCore_nativeConfigWarnings(
     return nullptr;
   }
   return utf8_to_jstring(env, std::string_view(buffer.data(), written));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetOutboundSelectorOverride(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring group_tag,
+    jstring outbound_tag) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  std::string utf8_group_tag;
+  std::string utf8_outbound_tag;
+  if (!jstring_to_utf8(env, group_tag, &utf8_group_tag) ||
+      !jstring_to_utf8(env, outbound_tag, &utf8_outbound_tag)) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_set_outbound_selector_override(
+      native->core,
+      utf8_group_tag.c_str(),
+      utf8_outbound_tag.c_str(),
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeClearOutboundSelectorOverride(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring group_tag) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  std::string utf8_group_tag;
+  if (!jstring_to_utf8(env, group_tag, &utf8_group_tag)) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_clear_outbound_selector_override(
+      native->core,
+      utf8_group_tag.c_str(),
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeOutboundSelectionSnapshotJson(
+    JNIEnv *env,
+    jobject,
+    jlong handle) {
+  return snapshot_json(
+      env,
+      core_from_handle(handle),
+      xray_core_outbound_selection_snapshot_json,
+      "xray returned an invalid outbound selection snapshot length");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeOutboundHealthSnapshotJson(
+    JNIEnv *env,
+    jobject,
+    jlong handle) {
+  return snapshot_json(
+      env,
+      core_from_handle(handle),
+      xray_core_outbound_health_snapshot_json,
+      "xray returned an invalid outbound health snapshot length");
 }
 
 extern "C" JNIEXPORT void JNICALL

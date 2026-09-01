@@ -27,7 +27,11 @@ release series.
   snapshots; random and round-robin skip known-dead candidates, while
   `leastPing` deterministically selects the lowest healthy delay and falls back
   when no healthy candidate remains. Explicit overrides remain authoritative.
-  `leastLoad`, chaining, and the selector/health C ABI projection remain.
+  `leastLoad` and chaining remain.
+- Extended C ABI 1.2 with capability-gated atomic selector override/clear and
+  two-pass, schema-versioned JSON snapshots for selection and redacted health
+  state. The Swift and Kotlin adapters expose equivalent typed APIs; SwiftPM
+  tests and the four-ABI Android JNI/AAR build cover the shared wire contract.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

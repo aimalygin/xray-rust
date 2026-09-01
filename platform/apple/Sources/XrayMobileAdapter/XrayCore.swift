@@ -131,6 +131,12 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let tunDiagnosticEvents = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS.rawValue)
     )
+    public static let outboundSelection = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION.rawValue)
+    )
+    public static let outboundHealth = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH.rawValue)
+    )
 }
 
 public struct XrayFFIInfo: Equatable, Sendable {
@@ -145,6 +151,93 @@ public struct XrayFFIInfo: Equatable, Sendable {
     public func supports(_ capability: XrayFFICapabilities) -> Bool {
         capabilities.contains(capability)
     }
+}
+
+public struct XrayOutboundSelectionSnapshot: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let revision: UInt64
+    public let groups: [XrayOutboundSelectorGroupSnapshot]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case revision
+        case groups
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "unsupported outbound selection snapshot schema: \(schemaVersion)"
+            )
+        }
+        revision = try container.decode(UInt64.self, forKey: .revision)
+        groups = try container.decode(
+            [XrayOutboundSelectorGroupSnapshot].self,
+            forKey: .groups
+        )
+    }
+}
+
+public struct XrayOutboundSelectorGroupSnapshot: Codable, Equatable, Sendable {
+    public let tag: String
+    public let candidates: [String]
+    public let overrideTag: String?
+}
+
+public enum XrayOutboundHealthState: String, Codable, Equatable, Sendable {
+    case unknown
+    case healthy
+    case unhealthy
+}
+
+public enum XrayOutboundHealthFailureKind: String, Codable, Equatable, Sendable {
+    case timeout
+    case transport
+    case tls
+    case io
+    case malformedHttpResponse
+    case httpStatus
+}
+
+public struct XrayOutboundHealthSnapshot: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let revision: UInt64
+    public let outbounds: [XrayOutboundHealthStatus]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case revision
+        case outbounds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "unsupported outbound health snapshot schema: \(schemaVersion)"
+            )
+        }
+        revision = try container.decode(UInt64.self, forKey: .revision)
+        outbounds = try container.decode([XrayOutboundHealthStatus].self, forKey: .outbounds)
+    }
+}
+
+public struct XrayOutboundHealthStatus: Codable, Equatable, Sendable {
+    public let tag: String
+    public let state: XrayOutboundHealthState
+    public let delayMs: UInt64?
+    public let lastTryUnixMs: UInt64?
+    public let lastSeenUnixMs: UInt64?
+    public let consecutiveFailures: UInt64
+    public let lastFailureKind: XrayOutboundHealthFailureKind?
+    public let httpStatus: UInt16?
 }
 
 /// Controls whether the core may use the platform resolver for bootstrap lookups.
@@ -828,6 +921,59 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
+    public func setOutboundSelectorOverride(groupTag: String, outboundTag: String) throws {
+        try requireCapability(.outboundSelection)
+        try withSharedHandle { handle in
+            var error: OpaquePointer?
+            try groupTag.withCString { groupPointer in
+                try outboundTag.withCString { outboundPointer in
+                    try check(
+                        xray_core_set_outbound_selector_override(
+                            handle,
+                            groupPointer,
+                            outboundPointer,
+                            &error
+                        ),
+                        error: error
+                    )
+                }
+            }
+        }
+    }
+
+    public func clearOutboundSelectorOverride(groupTag: String) throws {
+        try requireCapability(.outboundSelection)
+        try withSharedHandle { handle in
+            var error: OpaquePointer?
+            try groupTag.withCString { groupPointer in
+                try check(
+                    xray_core_clear_outbound_selector_override(
+                        handle,
+                        groupPointer,
+                        &error
+                    ),
+                    error: error
+                )
+            }
+        }
+    }
+
+    public func outboundSelectionSnapshot() throws -> XrayOutboundSelectionSnapshot {
+        try requireCapability(.outboundSelection)
+        return try withSharedHandle { handle in
+            let data = try snapshotJSON(handle: handle, kind: .selection)
+            return try JSONDecoder().decode(XrayOutboundSelectionSnapshot.self, from: data)
+        }
+    }
+
+    public func outboundHealthSnapshot() throws -> XrayOutboundHealthSnapshot {
+        try requireCapability(.outboundHealth)
+        return try withSharedHandle { handle in
+            let data = try snapshotJSON(handle: handle, kind: .health)
+            return try JSONDecoder().decode(XrayOutboundHealthSnapshot.self, from: data)
+        }
+    }
+
     public func pushPacket(_ packet: Data) throws {
         try withDataPathHandle { handle in
             var error: OpaquePointer?
@@ -1342,15 +1488,88 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
-    private func withDataPathHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+    private func withSharedHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
         try callGate.withDataPath {
             guard let handle else {
                 throw XrayCoreError.missingHandle
             }
+            return try body(handle)
+        }
+    }
+
+    private func withDataPathHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+        try withSharedHandle { handle in
             guard dataPathEnabled else {
                 throw XrayCoreError.notRunning
             }
             return try body(handle)
+        }
+    }
+
+    private enum SnapshotKind {
+        case selection
+        case health
+    }
+
+    private func snapshotJSON(handle: OpaquePointer, kind: SnapshotKind) throws -> Data {
+        var requiredLength = 0
+        var error: OpaquePointer?
+        let queryStatus: XrayStatus
+        switch kind {
+        case .selection:
+            queryStatus = xray_core_outbound_selection_snapshot_json(
+                handle,
+                nil,
+                0,
+                &requiredLength,
+                &error
+            )
+        case .health:
+            queryStatus = xray_core_outbound_health_snapshot_json(
+                handle,
+                nil,
+                0,
+                &requiredLength,
+                &error
+            )
+        }
+        try check(queryStatus, error: error)
+
+        var buffer = [CChar](repeating: 0, count: requiredLength + 1)
+        var written = 0
+        let status = buffer.withUnsafeMutableBufferPointer { pointer in
+            switch kind {
+            case .selection:
+                return xray_core_outbound_selection_snapshot_json(
+                    handle,
+                    pointer.baseAddress,
+                    pointer.count,
+                    &written,
+                    &error
+                )
+            case .health:
+                return xray_core_outbound_health_snapshot_json(
+                    handle,
+                    pointer.baseAddress,
+                    pointer.count,
+                    &written,
+                    &error
+                )
+            }
+        }
+        try check(status, error: error)
+        guard written <= requiredLength else {
+            throw XrayCoreError.invalidUtf8
+        }
+        return Data(buffer.prefix(written).map { UInt8(bitPattern: $0) })
+    }
+
+    private func requireCapability(_ capability: XrayFFICapabilities) throws {
+        guard Self.ffiInfo.supports(capability) else {
+            throw XrayCoreError.status(
+                code: XRAY_STATUS_RUNTIME_ERROR,
+                message: "required xray FFI capability is unavailable"
+            )
         }
     }
 

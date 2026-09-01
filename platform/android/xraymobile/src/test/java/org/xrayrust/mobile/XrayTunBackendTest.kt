@@ -69,6 +69,58 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun outboundCapabilitiesKeepStableAbiBits() {
+        assertEquals(1L shl 12, XrayFfiCapability.OutboundSelection.mask)
+        assertEquals(1L shl 13, XrayFfiCapability.OutboundHealth.mask)
+    }
+
+    @Test
+    fun outboundSelectionSnapshotParsesVersionedWireContract() {
+        val snapshot = parseOutboundSelectionSnapshot(
+            """{"schemaVersion":1,"revision":7,"groups":[{"tag":"auto","candidates":["proxy-a","proxy-b"],"overrideTag":"proxy-b"}]}""",
+        )
+
+        assertEquals(1, snapshot.schemaVersion)
+        assertEquals(7L, snapshot.revision)
+        assertEquals(1, snapshot.groups.size)
+        assertEquals("auto", snapshot.groups[0].tag)
+        assertEquals(listOf("proxy-a", "proxy-b"), snapshot.groups[0].candidates)
+        assertEquals("proxy-b", snapshot.groups[0].overrideTag)
+    }
+
+    @Test
+    fun outboundHealthSnapshotParsesRedactedWireContract() {
+        val snapshot = parseOutboundHealthSnapshot(
+            """{"schemaVersion":1,"revision":3,"outbounds":[{"tag":"proxy-a","state":"unhealthy","delayMs":null,"lastTryUnixMs":42,"lastSeenUnixMs":null,"consecutiveFailures":2,"lastFailureKind":"httpStatus","httpStatus":503}]}""",
+        )
+
+        assertEquals(1, snapshot.schemaVersion)
+        assertEquals(3L, snapshot.revision)
+        assertEquals(1, snapshot.outbounds.size)
+        assertEquals(XrayOutboundHealthState.Unhealthy, snapshot.outbounds[0].state)
+        assertEquals(2L, snapshot.outbounds[0].consecutiveFailures)
+        assertEquals(
+            XrayOutboundHealthFailureKind.HttpStatus,
+            snapshot.outbounds[0].lastFailureKind,
+        )
+        assertEquals(503, snapshot.outbounds[0].httpStatus)
+    }
+
+    @Test
+    fun outboundSnapshotParsersRejectUnknownSchemaVersions() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parseOutboundSelectionSnapshot(
+                """{"schemaVersion":2,"revision":0,"groups":[]}""",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseOutboundHealthSnapshot(
+                """{"schemaVersion":2,"revision":0,"outbounds":[]}""",
+            )
+        }
+    }
+
+    @Test
     fun bootstrapDomainsUseCanonicalDnsIdentity() {
         assertEquals("server.example", normalizeBootstrapDomain("Server.Example."))
     }

@@ -8,8 +8,10 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.1`. The checked-in Swift and JNI adapters
-reject any major other than `1` and require minor `1` or newer.
+handle. The current ABI version is `1.2`. The checked-in Swift and JNI adapters
+reject any major other than `1` and require minor `1` or newer. Their selector
+and health methods additionally require the corresponding ABI 1.2 capability
+bit before calling the optional symbols.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -43,7 +45,8 @@ compatibility checks.
 5. Call `xray_core_load_config_json` exactly once successfully.
 6. Read `xray_core_config_warnings` and surface non-empty diagnostics.
 7. Call `xray_core_start`.
-8. Use the packet, statistics, and diagnostic-event APIs.
+8. Use the packet, statistics, diagnostic-event, selector-override, and
+   outbound-snapshot APIs.
 9. Call `xray_core_stop`.
 10. Release the handle with `xray_core_free`.
 
@@ -83,14 +86,81 @@ boundary caught an unexpected Rust panic.
 `written` excludes the trailing NUL. The function is valid only after a
 successful config load and must not overlap lifecycle/configuration operations.
 
+## Outbound selection and health
+
+ABI minor 1.2 adds two independent capabilities:
+
+| Capability | Optional surface |
+| --- | --- |
+| `XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION` | Atomic selector override/clear and selection snapshots |
+| `XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH` | Read-only outbound health snapshots |
+
+`xray_core_set_outbound_selector_override` validates that both tags name a
+loaded selector group and one of its configured members, then atomically
+redirects new flows. Existing flows and compiled/shared outbound handlers are
+unchanged. `xray_core_clear_outbound_selector_override` restores the group's
+configured strategy. Both calls are valid before or after `xray_core_start`.
+
+`xray_core_outbound_selection_snapshot_json` and
+`xray_core_outbound_health_snapshot_json` use the same two-pass UTF-8 buffer
+contract as configuration warnings. Their documents are versioned separately
+from the C ABI so fields can be evolved deliberately. Schema version 1 is:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 2,
+  "groups": [
+    {
+      "tag": "automatic",
+      "candidates": ["proxy-a", "proxy-b"],
+      "overrideTag": "proxy-b"
+    }
+  ]
+}
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 4,
+  "outbounds": [
+    {
+      "tag": "proxy-a",
+      "state": "unhealthy",
+      "delayMs": null,
+      "lastTryUnixMs": 1788220800000,
+      "lastSeenUnixMs": null,
+      "consecutiveFailures": 2,
+      "lastFailureKind": "httpStatus",
+      "httpStatus": 503
+    }
+  ]
+}
+```
+
+Health states are `unknown`, `healthy`, and `unhealthy`. Failure kinds are
+`timeout`, `transport`, `tls`, `io`, `malformedHttpResponse`, and
+`httpStatus`; nullable measurement/failure fields are emitted explicitly as
+JSON `null`. Snapshot contents are redacted: they expose configured outbound
+tags and typed probe results, not target URLs, endpoint addresses, free-form
+errors, or credentials. Consumers must reject an unsupported `schemaVersion`
+rather than guessing its meaning. The checked-in Swift and Kotlin models do
+this decoding and expose equivalent public operations.
+
 ## Threading
 
 Serialize all configuration and lifecycle calls for a handle:
 
 - `xray_core_load_config_json`;
 - `xray_core_start` / `xray_core_stop`;
-- every `xray_core_set_*` call;
+- every pre-load `xray_core_set_*` call;
 - `xray_core_free`.
+
+The selector override/clear calls are the exception: they use the shared
+runtime gate and may overlap packet/statistics calls, snapshot reads, and each
+other. The two snapshot calls have the same shared-call behavior. None of
+these four calls may overlap load/start/stop/free.
 
 The header explicitly permits `xray_tun_poll_packets` to run concurrently with
 `xray_tun_push_packet`, `xray_tun_poll_packet`, and `xray_tun_stats` on the same

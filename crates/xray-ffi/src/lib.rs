@@ -15,14 +15,15 @@ use xray_config::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dirs,
 };
 use xray_core_rs::{
-    Core, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy,
-    TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
+    Core, DnsBootstrapMode, OutboundHealthFailure, OutboundHealthState, RuntimeLogConfig,
+    RuntimeLogger, StartupProbeOptions, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat,
+    TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 1;
+pub const XRAY_FFI_ABI_MINOR: u32 = 2;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -36,6 +37,8 @@ pub const XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES: u64 = 1 << 8;
 pub const XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY: u64 = 1 << 9;
 pub const XRAY_FFI_CAPABILITY_TUN_STATS: u64 = 1 << 10;
 pub const XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS: u64 = 1 << 11;
+pub const XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION: u64 = 1 << 12;
+pub const XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH: u64 = 1 << 13;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -48,7 +51,9 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES
     | XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY
     | XRAY_FFI_CAPABILITY_TUN_STATS
-    | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS;
+    | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS
+    | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
+    | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1040,6 +1045,226 @@ unsafe fn xray_core_config_warnings_inner(
         *buffer.add(warnings.len()) = 0;
     }
     XrayStatus::Ok
+}
+
+/// Atomically directs new flows for one selector group to a configured member.
+///
+/// Existing flows and compiled outbound handlers are not replaced. The
+/// override may be installed before or while the core is running.
+///
+/// # Safety
+///
+/// `handle` must either be null or a pointer returned by `xray_core_new` that
+/// has not been freed. `group_tag` and `outbound_tag` must point to valid
+/// NUL-terminated UTF-8 strings. This function may run concurrently with data
+/// path calls, but not with lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_outbound_selector_override(
+    handle: *mut XrayCoreHandle,
+    group_tag: *const c_char,
+    outbound_tag: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_set_outbound_selector_override_inner(handle, group_tag, outbound_tag, error)
+        })
+    }
+}
+
+unsafe fn xray_core_set_outbound_selector_override_inner(
+    handle: *mut XrayCoreHandle,
+    group_tag: *const c_char,
+    outbound_tag: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+    let handle = match unsafe { shared_handle(handle, error) } {
+        Ok(handle) => handle,
+        Err(status) => return status,
+    };
+    let group_tag = match unsafe { required_utf8_argument(group_tag, "selector group tag", error) }
+    {
+        Ok(group_tag) => group_tag,
+        Err(status) => return status,
+    };
+    let outbound_tag =
+        match unsafe { required_utf8_argument(outbound_tag, "selector outbound tag", error) } {
+            Ok(outbound_tag) => outbound_tag,
+            Err(status) => return status,
+        };
+    let core = match unsafe { loaded_core(handle, error) } {
+        Ok(core) => core,
+        Err(status) => return status,
+    };
+
+    match core.set_outbound_selector_override(group_tag, outbound_tag) {
+        Ok(_) => XrayStatus::Ok,
+        Err(source) => unsafe {
+            set_error(error, XrayStatus::InvalidArgument, source.to_string());
+            XrayStatus::InvalidArgument
+        },
+    }
+}
+
+/// Clears a selector-group override and restores its configured strategy.
+///
+/// # Safety
+///
+/// The pointer and concurrency requirements are the same as
+/// `xray_core_set_outbound_selector_override`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_clear_outbound_selector_override(
+    handle: *mut XrayCoreHandle,
+    group_tag: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_clear_outbound_selector_override_inner(handle, group_tag, error)
+        })
+    }
+}
+
+unsafe fn xray_core_clear_outbound_selector_override_inner(
+    handle: *mut XrayCoreHandle,
+    group_tag: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+    let handle = match unsafe { shared_handle(handle, error) } {
+        Ok(handle) => handle,
+        Err(status) => return status,
+    };
+    let group_tag = match unsafe { required_utf8_argument(group_tag, "selector group tag", error) }
+    {
+        Ok(group_tag) => group_tag,
+        Err(status) => return status,
+    };
+    let core = match unsafe { loaded_core(handle, error) } {
+        Ok(core) => core,
+        Err(status) => return status,
+    };
+
+    match core.clear_outbound_selector_override(group_tag) {
+        Ok(_) => XrayStatus::Ok,
+        Err(source) => unsafe {
+            set_error(error, XrayStatus::InvalidArgument, source.to_string());
+            XrayStatus::InvalidArgument
+        },
+    }
+}
+
+/// Copies the version-1 selector snapshot JSON document.
+///
+/// `written` receives the UTF-8 byte length excluding the trailing NUL. Pass
+/// null/zero as `buffer`/`buffer_len` to query the required length.
+///
+/// # Safety
+///
+/// `handle` must either be null or a live core handle. `written` must point to
+/// one writable `usize`; a non-null `buffer` must point to `buffer_len`
+/// writable bytes. This function may run concurrently with data-path and
+/// selector-override calls, but not lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_outbound_selection_snapshot_json(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_snapshot_json_inner(
+                handle,
+                buffer,
+                buffer_len,
+                written,
+                SnapshotKind::Selection,
+                error,
+            )
+        })
+    }
+}
+
+/// Copies the version-1 outbound health snapshot JSON document.
+///
+/// Buffer and concurrency semantics match
+/// `xray_core_outbound_selection_snapshot_json`.
+///
+/// # Safety
+///
+/// The pointer and concurrency requirements are the same as
+/// `xray_core_outbound_selection_snapshot_json`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_outbound_health_snapshot_json(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_snapshot_json_inner(
+                handle,
+                buffer,
+                buffer_len,
+                written,
+                SnapshotKind::Health,
+                error,
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SnapshotKind {
+    Selection,
+    Health,
+}
+
+unsafe fn xray_core_snapshot_json_inner(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    kind: SnapshotKind,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+    if handle.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, "core handle is null");
+        }
+        return XrayStatus::NullArgument;
+    }
+    let handle = unsafe { &*handle };
+    let core = match unsafe { loaded_core(handle, error) } {
+        Ok(core) => core,
+        Err(status) => return status,
+    };
+    let json = match kind {
+        SnapshotKind::Selection => outbound_selection_snapshot_json(core),
+        SnapshotKind::Health => outbound_health_snapshot_json(core),
+    };
+    unsafe {
+        write_utf8_output(
+            &json,
+            "outbound snapshot",
+            buffer,
+            buffer_len,
+            written,
+            error,
+        )
+    }
 }
 
 /// Configures an optional HTTP(S) startup probe.
@@ -3141,6 +3366,160 @@ fn ffi_panic_message(payload: &(dyn Any + Send)) -> String {
         .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
         .unwrap_or("non-string panic payload");
     format!("panic caught at FFI boundary: {detail}")
+}
+
+unsafe fn required_utf8_argument<'a>(
+    value: *const c_char,
+    name: &str,
+    error: *mut *mut XrayError,
+) -> Result<&'a str, XrayStatus> {
+    if value.is_null() {
+        unsafe {
+            set_error(error, XrayStatus::NullArgument, format!("{name} is null"));
+        }
+        return Err(XrayStatus::NullArgument);
+    }
+    let value = match unsafe { CStr::from_ptr(value) }.to_str() {
+        Ok(value) => value,
+        Err(source) => {
+            unsafe {
+                set_error(
+                    error,
+                    XrayStatus::InvalidUtf8,
+                    format!("{name} is not valid UTF-8: {source}"),
+                );
+            }
+            return Err(XrayStatus::InvalidUtf8);
+        }
+    };
+    if value.is_empty() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::InvalidArgument,
+                format!("{name} is empty"),
+            );
+        }
+        return Err(XrayStatus::InvalidArgument);
+    }
+    Ok(value)
+}
+
+unsafe fn write_utf8_output(
+    value: &str,
+    name: &str,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    if written.is_null() {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                format!("{name} length pointer is null"),
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    if buffer.is_null() && buffer_len != 0 {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::NullArgument,
+                format!("{name} buffer is null"),
+            );
+        }
+        return XrayStatus::NullArgument;
+    }
+    unsafe {
+        *written = value.len();
+    }
+    if buffer.is_null() {
+        return XrayStatus::Ok;
+    }
+    let required = value.len().saturating_add(1);
+    if buffer_len < required {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::BufferTooSmall,
+                format!("{name} buffer is {buffer_len} bytes; {required} bytes are required"),
+            );
+        }
+        return XrayStatus::BufferTooSmall;
+    }
+    unsafe {
+        ptr::copy_nonoverlapping(value.as_ptr(), buffer.cast::<u8>(), value.len());
+        *buffer.add(value.len()) = 0;
+    }
+    XrayStatus::Ok
+}
+
+fn outbound_selection_snapshot_json(core: &Core) -> String {
+    let snapshot = core.outbound_selection_snapshot();
+    let groups = snapshot
+        .groups
+        .into_iter()
+        .map(|group| {
+            serde_json::json!({
+                "tag": group.tag,
+                "candidates": group.candidates,
+                "overrideTag": group.override_tag,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schemaVersion": 1,
+        "revision": snapshot.revision,
+        "groups": groups,
+    })
+    .to_string()
+}
+
+fn outbound_health_snapshot_json(core: &Core) -> String {
+    let snapshot = core.outbound_health_snapshot();
+    let outbounds = snapshot
+        .outbounds
+        .into_iter()
+        .map(|status| {
+            let state = match status.state {
+                OutboundHealthState::Unknown => "unknown",
+                OutboundHealthState::Healthy => "healthy",
+                OutboundHealthState::Unhealthy => "unhealthy",
+            };
+            let (last_failure_kind, http_status) = match status.last_failure {
+                None => (None, None),
+                Some(OutboundHealthFailure::Timeout) => (Some("timeout"), None),
+                Some(OutboundHealthFailure::Transport) => (Some("transport"), None),
+                Some(OutboundHealthFailure::Tls) => (Some("tls"), None),
+                Some(OutboundHealthFailure::Io) => (Some("io"), None),
+                Some(OutboundHealthFailure::MalformedHttpResponse) => {
+                    (Some("malformedHttpResponse"), None)
+                }
+                Some(OutboundHealthFailure::HttpStatus(http_status)) => {
+                    (Some("httpStatus"), Some(http_status))
+                }
+            };
+            serde_json::json!({
+                "tag": status.outbound_tag,
+                "state": state,
+                "delayMs": status.delay_ms,
+                "lastTryUnixMs": status.last_try_unix_ms,
+                "lastSeenUnixMs": status.last_seen_unix_ms,
+                "consecutiveFailures": status.consecutive_failures,
+                "lastFailureKind": last_failure_kind,
+                "httpStatus": http_status,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schemaVersion": 1,
+        "revision": snapshot.revision,
+        "outbounds": outbounds,
+    })
+    .to_string()
 }
 
 fn diagnostics_message(diagnostics: Vec<xray_config::Diagnostic>) -> String {

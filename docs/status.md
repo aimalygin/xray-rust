@@ -30,7 +30,7 @@ parity with every Xray-core release.
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP/network/port routing | Supported subset | Ordered `field` rules with inbound tags, domain/CIDR/private/geodata matchers, network selectors, and numeric/range port selectors; populated selectors inside one rule are ANDed |
-| Outbound selector groups | Supported subset | Xray `routing.balancers` prefix selectors, random/round-robin/`leastPing`, fallback tags, `balancerTag` rules, atomic validated host overrides, bounded `observatory` URL probes, typed health snapshots, and health-aware failover over shared handler pools; `leastLoad`, chaining, and the C ABI projection remain pending |
+| Outbound selector groups | Supported subset | Xray `routing.balancers` prefix selectors, random/round-robin/`leastPing`, fallback tags, `balancerTag` rules, atomic validated host overrides, bounded `observatory` URL probes, typed health snapshots, and health-aware failover over shared handler pools; ABI 1.2 plus Swift/Kotlin expose capability-gated override and versioned selection/health snapshots; `leastLoad` and chaining remain pending |
 | Configured DNS | Supported subset | Static single/ordered-array hosts, global `UseIP`/`UseIPv4`/`UseIPv6`, routed multi-address A/AAAA/CNAME resolution with one per-Core family-aware TTL cache/single-flight shared by TUN/SOCKS/HTTP/probes, ordered upstream failover, valid UDP-truncation/TCP retry, all-IP `IPIfNonMatch`, and a hybrid TUN anchor with managed ordinary A/AAAA Hijack, raw DNSSEC/non-IP forwarding, bounded persistent RFC 7766 connections, query-aware TCP failover, and transparent zone-transfer fallback for IP/domain servers. Xray DNS-outbound Direct/Drop/Return/Hijack with `qType`/`rCode`, component rewrite, own-link recursion escape, TLS/REALITY stream security, and bounded UDP-to-TCP session reuse execute through one core-wide TUN/SOCKS/HTTP runtime. |
 | Fake IP | Supported subset | Bounded per-Core IPv4 pool with TTL-leased mappings and UDP/TCP synthesis shared by DNS outbound plus TUN/SOCKS/HTTP reverse routing |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
@@ -48,8 +48,8 @@ Notable unsupported areas include:
 - VMess, Trojan, Shadowsocks, WireGuard, and server-side VLESS;
 - generic HTTP/2, QUIC and KCP transports, and stream transports beyond raw,
   WebSocket, HTTPUpgrade, gRPC and XHTTP;
-- mux, `leastLoad`, reverse proxy, observatory command/API services, outbound
-  chaining, and the selector/health C ABI projection;
+- mux, `leastLoad`, reverse proxy, observatory command/API services, and
+  outbound chaining;
 - SOCKS/HTTP authentication and HTTP transparent proxy mode;
 - full Xray DNS, policy/statistics, sniffing, and routing semantics.
 

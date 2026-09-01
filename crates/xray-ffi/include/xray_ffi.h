@@ -194,7 +194,9 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES = 1 << 8,
   XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY = 1 << 9,
   XRAY_FFI_CAPABILITY_TUN_STATS = 1 << 10,
-  XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS = 1 << 11
+  XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS = 1 << 11,
+  XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION = 1 << 12,
+  XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH = 1 << 13
 } XrayFfiCapability;
 
 uint32_t xray_ffi_version_major(void);
@@ -229,6 +231,30 @@ XrayStatus xray_core_config_warnings(
     XrayError **error);
 XrayStatus xray_core_start(XrayCoreHandle *handle, XrayError **error);
 XrayStatus xray_core_stop(XrayCoreHandle *handle, XrayError **error);
+/* Selector overrides affect new flows only and may be changed while running. */
+XrayStatus xray_core_set_outbound_selector_override(
+    XrayCoreHandle *handle,
+    const char *group_tag,
+    const char *outbound_tag,
+    XrayError **error);
+XrayStatus xray_core_clear_outbound_selector_override(
+    XrayCoreHandle *handle,
+    const char *group_tag,
+    XrayError **error);
+/* Snapshot documents use schemaVersion 1. `written` excludes the trailing NUL;
+ * pass NULL/0 as buffer/buffer_len to query the required UTF-8 byte length. */
+XrayStatus xray_core_outbound_selection_snapshot_json(
+    const XrayCoreHandle *handle,
+    char *buffer,
+    size_t buffer_len,
+    size_t *written,
+    XrayError **error);
+XrayStatus xray_core_outbound_health_snapshot_json(
+    const XrayCoreHandle *handle,
+    char *buffer,
+    size_t buffer_len,
+    size_t *written,
+    XrayError **error);
 XrayStatus xray_core_set_socket_protect_callback(
     XrayCoreHandle *handle,
     XraySocketProtectCallback callback,

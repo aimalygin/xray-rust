@@ -14,6 +14,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 bytes.workspace = true
 libc.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 xray-config = { path = "../xray-config" }
 xray-core-rs = { path = "../xray-core-rs" }

@@ -226,17 +226,19 @@ adding unfinished Phase 2 features.
   replaced rule/geodata snapshots. Full configuration replacement may continue
   to use a new core handle.
 
-The first two selection increments are now implemented on the `v0.5`
+The first three selection increments are now implemented on the `v0.5`
 development line. Xray-compatible prefix selector groups, random/round-robin/
 `leastPing`, fallback tags, atomic validated overrides, bounded lifecycle-owned
 URL tests, typed health snapshots, and deterministic health failover share the
-graph's existing leaf handler pools. Cycle-free chaining and the C ABI
-projection remain the next increments of this Phase 2 item.
+graph's existing leaf handler pools. ABI 1.2 exposes capability-gated atomic
+override/clear plus versioned, redacted selection and health snapshots through
+equivalent Swift and Kotlin APIs. Cycle-free chaining and bounded `leastLoad`
+remain the next increments of this Phase 2 item.
 
 ### Mobile SDK and management API
 
-- Add ABI minor-version and capability discovery before extending more FFI
-  structures.
+- Keep the implemented ABI minor-version/capability discovery and ABI 1.2
+  selector/health projection backward-compatible while extending the FFI.
 - Expose typed connection inventory, connection close, per-outbound accounting,
   health, and structured diagnostic events. Do not add an in-core HTTP server.
 - Bring Android profile import, statistics, and event coverage to parity with
@@ -244,6 +246,10 @@ projection remain the next increments of this Phase 2 item.
 - Add physical-device transition and soak coverage: Wi-Fi/cellular changes,
   sleep/wake, memory pressure, extension/service restart, DNS64/NAT64,
   cancellation, and long-lived XHTTP H2/H3 sessions.
+
+The version/capability foundation and cross-platform selection/health surface
+are implemented. Connection inventory/close, per-outbound accounting,
+structured diagnostics, broader Android host parity, and device soak remain.
 
 ### Exit criteria
 

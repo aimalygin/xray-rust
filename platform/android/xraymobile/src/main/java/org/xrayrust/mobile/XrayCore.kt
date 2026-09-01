@@ -2,6 +2,7 @@ package org.xrayrust.mobile
 
 import android.net.VpnService
 import android.util.Log
+import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
 import java.nio.ByteBuffer
@@ -27,6 +28,8 @@ enum class XrayFfiCapability(val mask: Long) {
     DnsBootstrapPolicy(1L shl 9),
     TunStats(1L shl 10),
     TunDiagnosticEvents(1L shl 11),
+    OutboundSelection(1L shl 12),
+    OutboundHealth(1L shl 13),
 }
 
 data class XrayFfiInfo(
@@ -36,6 +39,124 @@ data class XrayFfiInfo(
     fun supports(capability: XrayFfiCapability): Boolean =
         capabilityMask and capability.mask == capability.mask
 }
+
+data class XrayOutboundSelectionSnapshot(
+    val schemaVersion: Int,
+    val revision: Long,
+    val groups: List<XrayOutboundSelectorGroupSnapshot>,
+)
+
+data class XrayOutboundSelectorGroupSnapshot(
+    val tag: String,
+    val candidates: List<String>,
+    val overrideTag: String?,
+)
+
+enum class XrayOutboundHealthState(val wireValue: String) {
+    Unknown("unknown"),
+    Healthy("healthy"),
+    Unhealthy("unhealthy"),
+    ;
+
+    companion object {
+        internal fun fromWireValue(value: String): XrayOutboundHealthState =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("unknown outbound health state: $value")
+    }
+}
+
+enum class XrayOutboundHealthFailureKind(val wireValue: String) {
+    Timeout("timeout"),
+    Transport("transport"),
+    Tls("tls"),
+    Io("io"),
+    MalformedHttpResponse("malformedHttpResponse"),
+    HttpStatus("httpStatus"),
+    ;
+
+    companion object {
+        internal fun fromWireValue(value: String): XrayOutboundHealthFailureKind =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("unknown outbound health failure kind: $value")
+    }
+}
+
+data class XrayOutboundHealthSnapshot(
+    val schemaVersion: Int,
+    val revision: Long,
+    val outbounds: List<XrayOutboundHealthStatus>,
+)
+
+data class XrayOutboundHealthStatus(
+    val tag: String,
+    val state: XrayOutboundHealthState,
+    val delayMs: Long?,
+    val lastTryUnixMs: Long?,
+    val lastSeenUnixMs: Long?,
+    val consecutiveFailures: Long,
+    val lastFailureKind: XrayOutboundHealthFailureKind?,
+    val httpStatus: Int?,
+)
+
+internal fun parseOutboundSelectionSnapshot(json: String): XrayOutboundSelectionSnapshot {
+    val root = JSONObject(json)
+    val schemaVersion = root.getInt("schemaVersion")
+    require(schemaVersion == 1) {
+        "unsupported outbound selection snapshot schema: $schemaVersion"
+    }
+    val groupsJson = root.getJSONArray("groups")
+    val groups = List(groupsJson.length()) { groupIndex ->
+        val group = groupsJson.getJSONObject(groupIndex)
+        val candidatesJson = group.getJSONArray("candidates")
+        XrayOutboundSelectorGroupSnapshot(
+            tag = group.getString("tag"),
+            candidates = List(candidatesJson.length()) { candidatesJson.getString(it) },
+            overrideTag = group.optionalString("overrideTag"),
+        )
+    }
+    return XrayOutboundSelectionSnapshot(
+        schemaVersion = schemaVersion,
+        revision = root.getLong("revision"),
+        groups = groups,
+    )
+}
+
+internal fun parseOutboundHealthSnapshot(json: String): XrayOutboundHealthSnapshot {
+    val root = JSONObject(json)
+    val schemaVersion = root.getInt("schemaVersion")
+    require(schemaVersion == 1) {
+        "unsupported outbound health snapshot schema: $schemaVersion"
+    }
+    val outboundsJson = root.getJSONArray("outbounds")
+    val outbounds = List(outboundsJson.length()) { outboundIndex ->
+        val outbound = outboundsJson.getJSONObject(outboundIndex)
+        XrayOutboundHealthStatus(
+            tag = outbound.getString("tag"),
+            state = XrayOutboundHealthState.fromWireValue(outbound.getString("state")),
+            delayMs = outbound.optionalLong("delayMs"),
+            lastTryUnixMs = outbound.optionalLong("lastTryUnixMs"),
+            lastSeenUnixMs = outbound.optionalLong("lastSeenUnixMs"),
+            consecutiveFailures = outbound.getLong("consecutiveFailures"),
+            lastFailureKind = outbound.optionalString("lastFailureKind")
+                ?.let(XrayOutboundHealthFailureKind::fromWireValue),
+            httpStatus = outbound.optionalInt("httpStatus"),
+        )
+    }
+    return XrayOutboundHealthSnapshot(
+        schemaVersion = schemaVersion,
+        revision = root.getLong("revision"),
+        outbounds = outbounds,
+    )
+}
+
+private fun JSONObject.optionalString(name: String): String? =
+    if (isNull(name)) null else getString(name)
+
+private fun JSONObject.optionalLong(name: String): Long? =
+    if (isNull(name)) null else getLong(name)
+
+private fun JSONObject.optionalInt(name: String): Int? =
+    if (isNull(name)) null else getInt(name)
 
 internal const val EXPECTED_XRAY_FFI_MAJOR_VERSION = 1
 internal const val MINIMUM_XRAY_FFI_MINOR_VERSION = 1
@@ -125,6 +246,33 @@ class XrayCore private constructor(handle: Long) : Closeable {
     fun start() = withLifecycleHandle { nativeStart(it) }
 
     fun stop() = withLifecycleHandle { nativeStop(it) }
+
+    fun setOutboundSelectorOverride(groupTag: String, outboundTag: String) {
+        requireCapability(XrayFfiCapability.OutboundSelection)
+        require(groupTag.isNotEmpty()) { "selector group tag must not be empty" }
+        require(outboundTag.isNotEmpty()) { "outbound tag must not be empty" }
+        withDataPathHandle { nativeSetOutboundSelectorOverride(it, groupTag, outboundTag) }
+    }
+
+    fun clearOutboundSelectorOverride(groupTag: String) {
+        requireCapability(XrayFfiCapability.OutboundSelection)
+        require(groupTag.isNotEmpty()) { "selector group tag must not be empty" }
+        withDataPathHandle { nativeClearOutboundSelectorOverride(it, groupTag) }
+    }
+
+    fun outboundSelectionSnapshot(): XrayOutboundSelectionSnapshot {
+        requireCapability(XrayFfiCapability.OutboundSelection)
+        return parseOutboundSelectionSnapshot(
+            withDataPathHandle { nativeOutboundSelectionSnapshotJson(it) },
+        )
+    }
+
+    fun outboundHealthSnapshot(): XrayOutboundHealthSnapshot {
+        requireCapability(XrayFfiCapability.OutboundHealth)
+        return parseOutboundHealthSnapshot(
+            withDataPathHandle { nativeOutboundHealthSnapshotJson(it) },
+        )
+    }
 
     fun pushPacket(packet: ByteArray, length: Int = packet.size) {
         require(length in 0..packet.size) { "packet length is outside the source buffer" }
@@ -267,6 +415,12 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
+    private fun requireCapability(capability: XrayFfiCapability) {
+        check(ffiInfo().supports(capability)) {
+            "required xray FFI capability is unavailable: $capability"
+        }
+    }
+
     private inline fun <T> withLifecycleHandle(block: (Long) -> T): T =
         lifecycleLock.write {
             check(nativeHandle != 0L) { "xray core is closed" }
@@ -284,6 +438,14 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeStart(handle: Long)
     private external fun nativeStop(handle: Long)
     private external fun nativeFree(handle: Long)
+    private external fun nativeSetOutboundSelectorOverride(
+        handle: Long,
+        groupTag: String,
+        outboundTag: String,
+    )
+    private external fun nativeClearOutboundSelectorOverride(handle: Long, groupTag: String)
+    private external fun nativeOutboundSelectionSnapshotJson(handle: Long): String
+    private external fun nativeOutboundHealthSnapshotJson(handle: Long): String
     private external fun nativeSetSocketProtector(handle: Long, protector: SocketProtector)
     private external fun nativeSetTunFd(
         handle: Long,

@@ -6,27 +6,31 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use xray_ffi::{
-    xray_core_config_warnings, xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging, xray_core_set_geodata_search_dir,
-    xray_core_set_geodata_search_dir_exclusive, xray_core_set_socket_protect_callback,
-    xray_core_set_startup_probe, xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd,
-    xray_core_set_tun_runtime_profile, xray_core_start, xray_core_stop, xray_error_code,
-    xray_error_free, xray_error_message, xray_ffi_capabilities, xray_ffi_version_major,
-    xray_ffi_version_minor, xray_tun_poll_packet, xray_tun_poll_packets,
-    xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_open_error_event,
-    xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
-    xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
-    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayDnsBootstrapMode,
-    XrayStatus, XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
-    XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile,
-    XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
-    XRAY_FFI_ABI_MAJOR, XRAY_FFI_ABI_MINOR, XRAY_FFI_CAPABILITIES,
-    XRAY_FFI_CAPABILITY_CONFIG_WARNINGS, XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY,
-    XRAY_FFI_CAPABILITY_FILE_LOGGING, XRAY_FFI_CAPABILITY_GEODATA_SEARCH,
-    XRAY_FFI_CAPABILITY_SOCKET_PROTECTION, XRAY_FFI_CAPABILITY_STARTUP_PROBE,
-    XRAY_FFI_CAPABILITY_TUN_BATCH_POLL, XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS,
-    XRAY_FFI_CAPABILITY_TUN_FD, XRAY_FFI_CAPABILITY_TUN_PACKET_IO,
-    XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES, XRAY_FFI_CAPABILITY_TUN_STATS,
+    xray_core_clear_outbound_selector_override, xray_core_config_warnings, xray_core_free,
+    xray_core_load_config_json, xray_core_new, xray_core_outbound_health_snapshot_json,
+    xray_core_outbound_selection_snapshot_json, xray_core_set_dns_bootstrap_mode,
+    xray_core_set_file_logging, xray_core_set_geodata_search_dir,
+    xray_core_set_geodata_search_dir_exclusive, xray_core_set_outbound_selector_override,
+    xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
+    xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
+    xray_core_start, xray_core_stop, xray_error_code, xray_error_free, xray_error_message,
+    xray_ffi_capabilities, xray_ffi_version_major, xray_ffi_version_minor, xray_tun_poll_packet,
+    xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
+    xray_tun_poll_tcp_open_error_event, xray_tun_poll_tcp_remote_write_slow_event,
+    xray_tun_poll_tcp_slow_flow_event, xray_tun_poll_udp_quic_blocked_event,
+    xray_tun_poll_udp_response_gap_event, xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet,
+    xray_tun_stats, XrayDnsBootstrapMode, XrayStatus, XrayTcpFlowSummaryEvent,
+    XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy,
+    XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent,
+    XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent, XRAY_FFI_ABI_MAJOR, XRAY_FFI_ABI_MINOR,
+    XRAY_FFI_CAPABILITIES, XRAY_FFI_CAPABILITY_CONFIG_WARNINGS,
+    XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY, XRAY_FFI_CAPABILITY_FILE_LOGGING,
+    XRAY_FFI_CAPABILITY_GEODATA_SEARCH, XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH,
+    XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION, XRAY_FFI_CAPABILITY_SOCKET_PROTECTION,
+    XRAY_FFI_CAPABILITY_STARTUP_PROBE, XRAY_FFI_CAPABILITY_TUN_BATCH_POLL,
+    XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS, XRAY_FFI_CAPABILITY_TUN_FD,
+    XRAY_FFI_CAPABILITY_TUN_PACKET_IO, XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES,
+    XRAY_FFI_CAPABILITY_TUN_STATS,
 };
 
 #[test]
@@ -48,7 +52,9 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES
         | XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY
         | XRAY_FFI_CAPABILITY_TUN_STATS
-        | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS;
+        | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS
+        | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
+        | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -244,6 +250,175 @@ fn ffi_exposes_config_warnings_without_truncation() {
     unsafe {
         xray_core_free(core);
     }
+}
+
+#[test]
+fn ffi_exposes_atomic_selector_override_and_versioned_snapshot() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(config_with_outbound_selector()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok,
+        "load error: {}",
+        error_message(err)
+    );
+
+    let initial = read_snapshot_json(core, xray_core_outbound_selection_snapshot_json, &mut err);
+    assert_eq!(initial["schemaVersion"], 1);
+    assert_eq!(initial["revision"], 0);
+    assert_eq!(initial["groups"][0]["tag"], "automatic");
+    assert_eq!(initial["groups"][0]["candidates"][0], "proxy-a");
+    assert_eq!(initial["groups"][0]["candidates"][1], "proxy-b");
+    assert!(initial["groups"][0]["overrideTag"].is_null());
+
+    let group = CString::new("automatic").unwrap();
+    let outbound = CString::new("proxy-b").unwrap();
+    assert_eq!(
+        unsafe {
+            xray_core_set_outbound_selector_override(
+                core,
+                group.as_ptr(),
+                outbound.as_ptr(),
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    let selected = read_snapshot_json(core, xray_core_outbound_selection_snapshot_json, &mut err);
+    assert_eq!(selected["revision"], 1);
+    assert_eq!(selected["groups"][0]["overrideTag"], "proxy-b");
+
+    assert_eq!(
+        unsafe { xray_core_clear_outbound_selector_override(core, group.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    let cleared = read_snapshot_json(core, xray_core_outbound_selection_snapshot_json, &mut err);
+    assert_eq!(cleared["revision"], 2);
+    assert!(cleared["groups"][0]["overrideTag"].is_null());
+
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_selector_override_rejects_non_member() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(config_with_outbound_selector()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    let group = CString::new("automatic").unwrap();
+    let outbound = CString::new("direct").unwrap();
+
+    let status = unsafe {
+        xray_core_set_outbound_selector_override(core, group.as_ptr(), outbound.as_ptr(), &mut err)
+    };
+
+    assert_eq!(status, XrayStatus::InvalidArgument);
+    assert_error(&mut err, XrayStatus::InvalidArgument, "is not a candidate");
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_health_snapshot_has_stable_redacted_schema() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(config_with_outbound_selector()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+
+    let snapshot = read_snapshot_json(core, xray_core_outbound_health_snapshot_json, &mut err);
+
+    assert_eq!(snapshot["schemaVersion"], 1);
+    assert_eq!(snapshot["revision"], 0);
+    assert_eq!(snapshot["outbounds"].as_array().unwrap().len(), 3);
+    assert!(snapshot["outbounds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|status| {
+            status["state"] == "unknown"
+                && status["delayMs"].is_null()
+                && status["lastFailureKind"].is_null()
+                && status["httpStatus"].is_null()
+        }));
+
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_outbound_snapshot_validates_two_pass_output_contract() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(config_with_outbound_selector()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+
+    let mut required = 0;
+    assert_eq!(
+        unsafe {
+            xray_core_outbound_selection_snapshot_json(
+                core,
+                std::ptr::null_mut(),
+                1,
+                &mut required,
+                &mut err,
+            )
+        },
+        XrayStatus::NullArgument
+    );
+    assert_error(&mut err, XrayStatus::NullArgument, "buffer is null");
+
+    assert_eq!(
+        unsafe {
+            xray_core_outbound_selection_snapshot_json(
+                core,
+                std::ptr::null_mut(),
+                0,
+                &mut required,
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    assert!(required > 0);
+    let mut short = vec![0 as libc::c_char; required];
+    let mut written = 0;
+    assert_eq!(
+        unsafe {
+            xray_core_outbound_selection_snapshot_json(
+                core,
+                short.as_mut_ptr(),
+                short.len(),
+                &mut written,
+                &mut err,
+            )
+        },
+        XrayStatus::BufferTooSmall
+    );
+    assert_eq!(written, required);
+    assert_error(&mut err, XrayStatus::BufferTooSmall, "bytes are required");
+
+    assert_eq!(
+        unsafe {
+            xray_core_outbound_selection_snapshot_json(
+                core,
+                short.as_mut_ptr(),
+                short.len(),
+                std::ptr::null_mut(),
+                &mut err,
+            )
+        },
+        XrayStatus::NullArgument
+    );
+    assert_error(&mut err, XrayStatus::NullArgument, "length pointer is null");
+    unsafe { xray_core_free(core) };
 }
 
 #[test]
@@ -2519,6 +2694,74 @@ fn client_config_with_freedom_outbound() -> String {
       ]
     }"#
     .to_owned()
+}
+
+fn config_with_outbound_selector() -> String {
+    r#"{
+      "inbounds": [{
+        "tag": "socks-in",
+        "protocol": "socks",
+        "listen": "127.0.0.1",
+        "port": 0
+      }],
+      "outbounds": [
+        {"tag": "proxy-b", "protocol": "freedom"},
+        {"tag": "direct", "protocol": "freedom"},
+        {"tag": "proxy-a", "protocol": "freedom"}
+      ],
+      "routing": {
+        "balancers": [{
+          "tag": "automatic",
+          "selector": ["proxy-"],
+          "strategy": {"type": "roundRobin"},
+          "fallbackTag": "direct"
+        }],
+        "rules": [{
+          "type": "field",
+          "network": "tcp",
+          "balancerTag": "automatic"
+        }]
+      }
+    }"#
+    .to_owned()
+}
+
+type SnapshotJsonFn = unsafe extern "C" fn(
+    *const xray_ffi::XrayCoreHandle,
+    *mut libc::c_char,
+    usize,
+    *mut usize,
+    *mut *mut xray_ffi::XrayError,
+) -> XrayStatus;
+
+fn read_snapshot_json(
+    core: *mut xray_ffi::XrayCoreHandle,
+    snapshot: SnapshotJsonFn,
+    error: &mut *mut xray_ffi::XrayError,
+) -> serde_json::Value {
+    let mut required = 0;
+    assert_eq!(
+        unsafe { snapshot(core, std::ptr::null_mut(), 0, &mut required, error) },
+        XrayStatus::Ok,
+        "snapshot size error: {}",
+        error_message(*error)
+    );
+    let mut buffer = vec![0 as libc::c_char; required + 1];
+    let mut written = 0;
+    assert_eq!(
+        unsafe { snapshot(core, buffer.as_mut_ptr(), buffer.len(), &mut written, error,) },
+        XrayStatus::Ok,
+        "snapshot read error: {}",
+        error_message(*error)
+    );
+    assert_eq!(written, required);
+    serde_json::from_slice(
+        &buffer[..written]
+            .iter()
+            .map(|byte| *byte as u8)
+            .collect::<Vec<_>>(),
+    )
+    .expect("valid snapshot JSON")
 }
 
 fn config_with_wildcard_listen_warning() -> String {
