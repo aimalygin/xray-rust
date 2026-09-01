@@ -237,9 +237,10 @@ equivalent Swift and Kotlin APIs. Xray `proxySettings` with explicit
 `transportLayer: true` now creates validated cycle-free TCP graph edges and
 layers supported security/stream transports over the nested carrier without
 bypassing socket protection. UDP/protocol-layer, REALITY, and XHTTP HTTP/3
-chaining remain fail-closed subsets. The next outbound work is connection
-inventory coverage for TUN/UDP, C/Swift/Kotlin management projection, and
-structured diagnostics.
+chaining remain fail-closed subsets. Connection inventory now also covers TUN
+TCP/UDP transport sessions with addressable cancellation and byte accounting.
+The next management work is the C/Swift/Kotlin projection and structured
+diagnostics.
 
 ### Mobile SDK and management API
 
@@ -256,9 +257,9 @@ structured diagnostics.
 The version/capability foundation and cross-platform selection/health surface
 are implemented. A core-owned registry now supplies typed connection
 inventory, addressable cancellation, and cumulative per-outbound accounting
-for routed SOCKS/HTTP TCP flows. TUN/UDP registration, C/Swift/Kotlin
-projection, structured diagnostics, broader Android host parity, and device
-soak remain.
+for routed SOCKS/HTTP/TUN TCP and TUN UDP flows. C/Swift/Kotlin projection,
+SOCKS UDP registration, structured diagnostics, broader Android host parity,
+and device soak remain.
 
 ### Exit criteria
 

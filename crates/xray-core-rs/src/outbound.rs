@@ -359,6 +359,12 @@ pub(crate) enum UdpSessionOutbound {
     Dns(DnsOutbound),
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SelectedUdpSessionOutbound {
+    pub(crate) outbound: UdpSessionOutbound,
+    pub(crate) tag: Option<String>,
+}
+
 impl DnsOutbound {
     #[cfg(test)]
     pub(crate) fn new(settings: DnsOutboundSettings) -> Self {
@@ -2304,10 +2310,30 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<UdpSessionOutbound, CoreError> {
+        self.select_udp_session_outbound_with_tag_and_resolver(
+            inbound_tag,
+            target,
+            false,
+            dns_resolver,
+        )
+        .await
+        .map(|selected| selected.outbound)
+    }
+
+    pub(crate) async fn select_udp_session_outbound_with_tag_and_resolver(
+        &self,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        include_tag: bool,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<SelectedUdpSessionOutbound, CoreError> {
         let node = self
             .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        if self
+        let tag = include_tag
+            .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
+            .flatten();
+        let outbound = if self
             .graph()
             .node(node)
             .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
@@ -2319,7 +2345,8 @@ impl OutboundRouter {
             self.factory
                 .cached_udp_outbound(node)
                 .map(UdpSessionOutbound::Transport)
-        }
+        }?;
+        Ok(SelectedUdpSessionOutbound { outbound, tag })
     }
 
     fn select_configured_node(

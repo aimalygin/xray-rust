@@ -2147,6 +2147,56 @@ async fn tun_tcp_client_reaches_echo_target_through_freedom_outbound() {
 }
 
 #[tokio::test]
+async fn tun_tcp_inventory_close_and_accounting_share_runtime_state() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_handle) = spawn_echo_server().await;
+        let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+        core.start().await.unwrap();
+
+        let mut client = TunTcpClient::new();
+        client.connect(echo_addr);
+        pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+
+        let payload = b"accounted tun tcp";
+        client.send_payload(payload);
+        let mut received = Vec::new();
+        pump_tun_until(&mut client, core.tun(), |client| {
+            received.extend_from_slice(&client.recv_available());
+            received.len() >= payload.len()
+        })
+        .await;
+        assert_eq!(received, payload);
+
+        let snapshot = core.connection_snapshot();
+        assert_eq!(snapshot.connections.len(), 1);
+        let connection = &snapshot.connections[0];
+        assert_eq!(connection.state, ConnectionState::Active);
+        assert_eq!(connection.inbound_tag.as_deref(), Some("tun-in"));
+        assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
+        assert_eq!(connection.target.port, echo_addr.port());
+
+        core.close_connection(connection.id).unwrap();
+        wait_for_empty_connection_snapshot(&core).await;
+        let accounting = core.outbound_accounting_snapshot();
+        let direct = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+            .unwrap();
+        assert_eq!(direct.opened_connections, 1);
+        assert_eq!(direct.completed_connections, 1);
+        assert_eq!(direct.host_closed_connections, 1);
+        assert_eq!(direct.uplink_bytes, payload.len() as u64);
+        assert_eq!(direct.downlink_bytes, payload.len() as u64);
+
+        core.stop().await.unwrap();
+        echo_handle.await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_tcp_clients_reach_same_target_concurrently_through_freedom_outbound() {
     timeout(
         Duration::from_secs(3),
@@ -2314,6 +2364,68 @@ async fn tun_udp_client_reaches_echo_target_through_freedom_outbound() {
     timeout(Duration::from_secs(2), run_tun_udp_freedom_echo_scenario())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn tun_udp_inventory_close_and_accounting_share_runtime_state() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+        let SocketAddr::V4(echo_addr_v4) = echo_addr else {
+            panic!("UDP TUN test expects IPv4 echo server");
+        };
+        let mut core = Core::new(runtime_tun_config_with_freedom_outbound()).unwrap();
+        core.start().await.unwrap();
+
+        let client_addr = Ipv4Addr::new(10, 10, 0, 2);
+        let payload = b"accounted tun udp";
+        let request = ipv4_udp_packet(
+            client_addr,
+            49154,
+            *echo_addr_v4.ip(),
+            echo_addr_v4.port(),
+            payload,
+        );
+        core.tun().push_inbound(Bytes::from(request)).await.unwrap();
+        let reply = poll_tun_outbound_until(core.tun(), |packet| {
+            ipv4_udp_payload(packet).is_some_and(|reply_payload| reply_payload == payload)
+        })
+        .await;
+        assert_ipv4_udp_packet(
+            &reply,
+            *echo_addr_v4.ip(),
+            echo_addr_v4.port(),
+            client_addr,
+            49154,
+            payload,
+        );
+
+        let snapshot = core.connection_snapshot();
+        assert_eq!(snapshot.connections.len(), 1);
+        let connection = &snapshot.connections[0];
+        assert_eq!(connection.state, ConnectionState::Active);
+        assert_eq!(connection.inbound_tag.as_deref(), Some("tun-in"));
+        assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
+        assert_eq!(connection.target.port, echo_addr.port());
+
+        core.close_connection(connection.id).unwrap();
+        wait_for_empty_connection_snapshot(&core).await;
+        let accounting = core.outbound_accounting_snapshot();
+        let direct = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+            .unwrap();
+        assert_eq!(direct.opened_connections, 1);
+        assert_eq!(direct.completed_connections, 1);
+        assert_eq!(direct.host_closed_connections, 1);
+        assert_eq!(direct.uplink_bytes, payload.len() as u64);
+        assert_eq!(direct.downlink_bytes, payload.len() as u64);
+
+        core.stop().await.unwrap();
+        echo_handle.await.unwrap();
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -3599,6 +3711,17 @@ async fn run_tun_tcp_handshake_scenario() {
     assert!(client.may_send());
     core.stop().await.unwrap();
     echo_handle.abort();
+}
+
+async fn wait_for_empty_connection_snapshot(core: &Core) {
+    let deadline = TokioInstant::now() + Duration::from_secs(1);
+    while !core.connection_snapshot().connections.is_empty() {
+        assert!(
+            TokioInstant::now() < deadline,
+            "managed connection stayed registered"
+        );
+        tokio::task::yield_now().await;
+    }
 }
 
 async fn run_tun_tcp_freedom_echo_scenario() {

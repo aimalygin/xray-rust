@@ -29,6 +29,9 @@ use xray_tun::{
     TunUdpSlowFlowEvent,
 };
 
+use crate::connection::{
+    wait_for_connection_close, ConnectionLease, ConnectionRegistry, ConnectionTraffic,
+};
 use crate::dns_outbound_runtime::{FakeIpTargetProvenance, RestoredClientTarget};
 use crate::fake_dns::FakeIpMapper;
 use crate::outbound::{
@@ -833,6 +836,7 @@ pub(crate) async fn serve_tun_endpoint(
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
     transport_dialer: Arc<TransportDialer>,
+    connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
     runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
@@ -876,6 +880,7 @@ pub(crate) async fn serve_tun_endpoint(
         dns_bootstrap_resolver,
         dns_outbound_runtime,
         transport_dialer,
+        connection_registry,
         stack_tx,
         tun: Arc::clone(&tun),
         tun_runtime_options,
@@ -1415,6 +1420,7 @@ struct TunRuntimeContext {
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
     transport_dialer: Arc<TransportDialer>,
+    connection_registry: Arc<ConnectionRegistry>,
     stack_tx: mpsc::Sender<StackEvent>,
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
@@ -2843,14 +2849,14 @@ async fn bridge_tcp_flow_inner(
                                 .select_tcp_outbound_for_session_with_tag(
                                     routing_inbound_tag,
                                     &dial_target,
-                                    collect_tcp_timings,
+                                    true,
                                 )
                         } else {
                             context.outbound_router
                                 .select_tcp_outbound_for_session_with_tag_and_resolver(
                                     routing_inbound_tag,
                                     &dial_target,
-                                    collect_tcp_timings,
+                                    true,
                                     context.dns_resolver.as_ref(),
                                 )
                                 .await
@@ -2874,6 +2880,12 @@ async fn bridge_tcp_flow_inner(
                 continue;
             }
         };
+        let connection = context.connection_registry.register(
+            context.inbound_tag.clone(),
+            outbound_tag.clone(),
+            client_target.clone(),
+        );
+        let mut connection_close = connection.close_receiver();
         let policy_timeout = match outbound.primary() {
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
                 context.inbound_policy.handshake
@@ -2911,6 +2923,7 @@ async fn bridge_tcp_flow_inner(
         let open_result = tokio::select! {
             biased;
             () = wait_for_tun_shutdown(&mut shutdown) => return,
+            () = wait_for_connection_close(&mut connection_close) => return,
             result = tokio::time::timeout(
                 open_timeout,
                 open_tcp_bridge_stream(
@@ -2929,6 +2942,8 @@ async fn bridge_tcp_flow_inner(
                     outbound_tag,
                     dial_target,
                     routing_inbound_tag.map(ToOwned::to_owned),
+                    connection,
+                    connection_close,
                 ));
                 break;
             }
@@ -2947,7 +2962,16 @@ async fn bridge_tcp_flow_inner(
         }
     }
     drop(pending_open);
-    let Some((stream, outbound, outbound_tag, dial_target, routing_inbound_tag)) = opened else {
+    let Some((
+        stream,
+        outbound,
+        outbound_tag,
+        dial_target,
+        routing_inbound_tag,
+        connection,
+        mut connection_close,
+    )) = opened
+    else {
         let (error, outbound_tag) = last_failure
             .unwrap_or_else(|| ("no usable DNS TCP upstream configured".to_owned(), None));
         if context.runtime_logger.is_enabled() {
@@ -2988,15 +3012,19 @@ async fn bridge_tcp_flow_inner(
     let bridge_idle_timeout = idle_timeout_override.unwrap_or(context.inbound_policy.conn_idle);
     let bridge_operation_timeout =
         is_dns_proxy.then_some(bridge_idle_timeout.min(dns_operation_timeout));
+    connection.mark_active();
     if !client_already_opened
         && !matches!(
-            await_with_optional_timeout(
-                bridge_operation_timeout,
-                context
-                    .stack_tx
-                    .send(StackEvent::RemoteOpened { handle, generation }),
-            )
-            .await,
+            tokio::select! {
+                biased;
+                () = wait_for_connection_close(&mut connection_close) => None,
+                result = await_with_optional_timeout(
+                    bridge_operation_timeout,
+                    context
+                        .stack_tx
+                        .send(StackEvent::RemoteOpened { handle, generation }),
+                ) => result,
+            },
             Some(Ok(()))
         )
     {
@@ -3039,20 +3067,25 @@ async fn bridge_tcp_flow_inner(
     } else {
         None
     };
+    let connection_traffic = connection.traffic();
     let (mut remote_reader, mut remote_writer) = tokio::io::split(stream);
     if !initial_upload.is_empty()
         && !matches!(
-            await_with_optional_timeout(
-                bridge_operation_timeout,
-                write_prebuffered_stack_data(
-                    &mut remote_writer,
-                    &dial_target,
-                    outbound_tag.as_deref(),
-                    &mut initial_upload,
-                    context.tun.as_ref(),
-                ),
-            )
-            .await,
+            tokio::select! {
+                biased;
+                () = wait_for_connection_close(&mut connection_close) => None,
+                result = await_with_optional_timeout(
+                    bridge_operation_timeout,
+                    write_prebuffered_stack_data(
+                        &mut remote_writer,
+                        &dial_target,
+                        outbound_tag.as_deref(),
+                        &mut initial_upload,
+                        context.tun.as_ref(),
+                        connection_traffic.as_ref(),
+                    ),
+                ) => result,
+            },
             Some(Ok(()))
         )
     {
@@ -3081,6 +3114,8 @@ async fn bridge_tcp_flow_inner(
             bridge_idle_timeout,
             bridge_operation_timeout,
             client_upload_allowed,
+            connection_close,
+            Arc::clone(&connection_traffic),
         )
         .await;
     } else {
@@ -3099,10 +3134,13 @@ async fn bridge_tcp_flow_inner(
             bridge_idle_timeout,
             bridge_operation_timeout,
             client_upload_allowed,
+            connection_close,
+            Arc::clone(&connection_traffic),
         )
         .await;
     }
     let _ = await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
+    connection.finish();
 }
 
 async fn wait_for_tun_shutdown(shutdown: &mut watch::Receiver<bool>) {
@@ -3132,6 +3170,7 @@ async fn write_prebuffered_stack_data<W>(
     outbound_tag: Option<&str>,
     initial_upload: &mut VecDeque<StackToRemoteData>,
     tun: &TunEndpoint,
+    traffic: &ConnectionTraffic,
 ) -> std::io::Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -3159,6 +3198,7 @@ where
         messages,
     );
     tun.record_tcp_remote_written(bytes);
+    traffic.record_uplink(bytes as u64);
     let flush_start = StdInstant::now();
     remote_writer.flush().await?;
     tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
@@ -3182,6 +3222,8 @@ async fn bridge_tcp_flow_loop<R, W, T>(
     idle_timeout: Duration,
     operation_timeout: Option<Duration>,
     client_upload_allowed: bool,
+    mut connection_close: watch::Receiver<bool>,
+    traffic: Arc<ConnectionTraffic>,
 ) where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -3201,6 +3243,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                     break;
                 }
             }
+            () = wait_for_connection_close(&mut connection_close) => break,
             () = &mut idle_sleep => break,
             data = from_stack.recv() => {
                 let Some(data) = data else {
@@ -3221,6 +3264,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                         upload_policy,
                         &mut upload_batch,
                         &mut upload_reservations,
+                        Some(traffic.as_ref()),
                     ),
                 )
                 .await;
@@ -3246,6 +3290,7 @@ async fn bridge_tcp_flow_loop<R, W, T>(
                 }
                 timing.record_first_byte(context.tun.as_ref(), target);
                 context.tun.record_tcp_remote_read(read);
+                traffic.record_downlink(read as u64);
                 timing.record_remote_read(context.tun.as_ref(), target, read);
                 let delivered = await_with_optional_timeout(
                     operation_timeout,
@@ -3656,6 +3701,7 @@ async fn write_stack_batch_to_remote<W>(
     policy: TcpUploadBridgePolicy,
     batch: &mut BytesMut,
     reservations: &mut Vec<TcpUploadReservation>,
+    traffic: Option<&ConnectionTraffic>,
 ) -> std::io::Result<()>
 where
     W: AsyncWrite + Unpin,
@@ -3682,6 +3728,9 @@ where
         );
         write_result?;
         tun.record_tcp_remote_written(batch_bytes);
+        if let Some(traffic) = traffic {
+            traffic.record_uplink(batch_bytes as u64);
+        }
         let flush_start = StdInstant::now();
         let flush_result = remote_writer.flush().await;
         tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
@@ -3730,6 +3779,9 @@ where
     );
     write_result?;
     tun.record_tcp_remote_written(batch_bytes);
+    if let Some(traffic) = traffic {
+        traffic.record_uplink(batch_bytes as u64);
+    }
     let flush_start = StdInstant::now();
     let flush_result = remote_writer.flush().await;
     tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
@@ -3846,9 +3898,10 @@ async fn bridge_udp_flow(
     let dial_target = sniffed_target.dial_target;
     let selected = match context
         .outbound_router
-        .select_udp_session_outbound_with_resolver(
+        .select_udp_session_outbound_with_tag_and_resolver(
             context.inbound_tag.as_deref(),
             &route_target,
+            true,
             context.dns_resolver.as_ref(),
         )
         .await
@@ -3873,12 +3926,16 @@ async fn bridge_udp_flow(
     };
 
     if context.runtime_logger.is_enabled() {
-        let selected_outbound = match &selected {
-            UdpSessionOutbound::Transport(outbound) => {
-                crate::debug_log::udp_outbound_label(outbound)
-            }
-            UdpSessionOutbound::Dns(_) => "dns",
-        };
+        let selected_outbound =
+            selected
+                .tag
+                .as_deref()
+                .unwrap_or_else(|| match &selected.outbound {
+                    UdpSessionOutbound::Transport(outbound) => {
+                        crate::debug_log::udp_outbound_label(outbound)
+                    }
+                    UdpSessionOutbound::Dns(_) => "dns",
+                });
         crate::debug_log::log_route_decision(
             &context.runtime_logger,
             crate::debug_log::RouteDecisionLog {
@@ -3893,7 +3950,13 @@ async fn bridge_udp_flow(
         );
     }
 
-    let outbound = match selected {
+    let connection = context.connection_registry.register(
+        context.inbound_tag.clone(),
+        selected.tag.clone(),
+        dial_target.clone(),
+    );
+    let connection_close = connection.close_receiver();
+    let outbound = match selected.outbound {
         UdpSessionOutbound::Transport(outbound) => outbound,
         UdpSessionOutbound::Dns(outbound) => {
             let Ok(dns_permit) = Arc::clone(&context.dns_udp_task_permits).try_acquire_owned()
@@ -3914,6 +3977,8 @@ async fn bridge_udp_flow(
                 shutdown,
                 first_payload,
                 dns_permit,
+                connection,
+                connection_close,
             )
             .await;
             return;
@@ -3961,6 +4026,8 @@ async fn bridge_udp_flow(
                 shutdown,
                 udp_timing_start,
                 first_payload,
+                connection,
+                connection_close,
             )
             .await;
         }
@@ -3975,6 +4042,8 @@ async fn bridge_udp_flow(
                 shutdown,
                 udp_timing_start,
                 first_payload,
+                connection,
+                connection_close,
             )
             .await;
         }
@@ -3995,18 +4064,24 @@ async fn bridge_udp_dns_outbound_flow(
     mut shutdown: watch::Receiver<bool>,
     first_payload: Bytes,
     _dns_permit: OwnedSemaphorePermit,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
 ) {
     let client = key.client.into_endpoint();
     let response_source = key.target.into_endpoint();
     let path_payload_cap = dns_proxy::dns_udp_path_payload_cap(context.tun.mtu(), response_source);
     let idle_timeout = UDP_IDLE_TIMEOUT.min(outbound.conn_idle_timeout());
     let mut pending_payload = Some(first_payload);
+    let traffic = connection.traffic();
+    connection.mark_active();
 
     loop {
         let payload = match pending_payload.take() {
             Some(payload) => payload,
             None => {
                 tokio::select! {
+                    biased;
+                    () = wait_for_connection_close(&mut connection_close) => break,
                     changed = shutdown.changed() => {
                         if changed.is_err() || *shutdown.borrow() {
                             break;
@@ -4024,7 +4099,10 @@ async fn bridge_udp_dns_outbound_flow(
             }
         };
 
+        let payload_len = payload.len();
         let outcome = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => break,
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
                     break;
@@ -4038,10 +4116,14 @@ async fn bridge_udp_dns_outbound_flow(
                 crate::dns_outbound_runtime::DnsClientTransport::Udp { path_payload_cap },
             ) => outcome,
         };
+        traffic.record_uplink(payload_len as u64);
         let crate::dns_outbound_runtime::DnsMessageOutcome::Reply(response) = outcome else {
             continue;
         };
+        traffic.record_downlink(response.len() as u64);
         let sent = tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => false,
             changed = shutdown.changed() => changed.is_ok() && !*shutdown.borrow(),
             sent = context.stack_tx.send(StackEvent::UdpDatagram {
                 client,
@@ -4058,6 +4140,7 @@ async fn bridge_udp_dns_outbound_flow(
         .stack_tx
         .send(StackEvent::UdpClosed { key, generation })
         .await;
+    connection.finish();
 }
 
 async fn read_first_tun_udp_payload(
@@ -4149,9 +4232,15 @@ async fn bridge_udp_freedom_flow(
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
     first_payload: Bytes,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
 ) {
-    let target_addr = match resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()).await
-    {
+    let resolved = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = resolve_udp_freedom_target(&target, context.dns_resolver.as_ref()) => result,
+    };
+    let target_addr = match resolved {
         Ok(target) => target,
         Err(_) => {
             if context.runtime_logger.is_enabled() {
@@ -4174,7 +4263,11 @@ async fn bridge_udp_freedom_flow(
         SocketAddr::V4(_) => SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
         SocketAddr::V6(_) => SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0),
     };
-    let socket = match UdpSocket::bind(bind_addr).await {
+    let socket = match tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = UdpSocket::bind(bind_addr) => result,
+    } {
         Ok(socket) => socket,
         Err(_) => {
             if context.runtime_logger.is_enabled() {
@@ -4209,6 +4302,8 @@ async fn bridge_udp_freedom_flow(
             .await;
         return;
     }
+    connection.mark_active();
+    let traffic = connection.traffic();
     context.tun.record_udp_remote_open(target.port == 443);
     if context.runtime_logger.is_enabled() {
         crate::debug_log::log_access_accepted(&context.runtime_logger, "tun", &target, "freedom");
@@ -4226,6 +4321,9 @@ async fn bridge_udp_freedom_flow(
             shutdown,
             &mut timing,
             first_payload,
+            connection,
+            connection_close,
+            Arc::clone(&traffic),
         )
         .await;
     } else {
@@ -4241,6 +4339,9 @@ async fn bridge_udp_freedom_flow(
             shutdown,
             &mut timing,
             first_payload,
+            connection,
+            connection_close,
+            Arc::clone(&traffic),
         )
         .await;
     }
@@ -4258,6 +4359,9 @@ async fn bridge_udp_freedom_flow_loop<T>(
     mut shutdown: watch::Receiver<bool>,
     timing: &mut T,
     first_payload: Bytes,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
+    traffic: Arc<ConnectionTraffic>,
 ) where
     T: UdpFirstResponseTiming,
 {
@@ -4265,7 +4369,12 @@ async fn bridge_udp_freedom_flow_loop<T>(
     let response_source = key.target.into_endpoint();
     let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
     let first_payload_len = first_payload.len();
-    if socket.send_to(&first_payload, target_addr).await.is_err() {
+    let first_sent = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = socket.send_to(&first_payload, target_addr) => result,
+    };
+    if first_sent.is_err() {
         context.tun.record_udp_remote_write_error();
         let _ = context
             .stack_tx
@@ -4274,10 +4383,13 @@ async fn bridge_udp_freedom_flow_loop<T>(
         return;
     }
     context.tun.record_udp_remote_written(first_payload_len);
+    traffic.record_uplink(first_payload_len as u64);
     timing.record_written(first_payload_len);
 
     loop {
         tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => break,
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
                     break;
@@ -4296,6 +4408,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
                     break;
                 }
                 context.tun.record_udp_remote_written(payload_len);
+                traffic.record_uplink(payload_len as u64);
                 timing.record_written(payload_len);
             }
             received = socket.recv_from(&mut read_buffer) => {
@@ -4305,6 +4418,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
                 };
                 timing.record_first_response(context.tun.as_ref(), &target, len);
                 context.tun.record_udp_remote_read(len);
+                traffic.record_downlink(len as u64);
                 if context
                     .stack_tx
                     .send(StackEvent::UdpDatagram {
@@ -4325,6 +4439,7 @@ async fn bridge_udp_freedom_flow_loop<T>(
         .stack_tx
         .send(StackEvent::UdpClosed { key, generation })
         .await;
+    connection.finish();
 }
 
 async fn resolve_udp_freedom_target(
@@ -4351,21 +4466,26 @@ async fn bridge_udp_vless_flow(
     shutdown: watch::Receiver<bool>,
     udp_timing_start: Option<StdInstant>,
     first_payload: Bytes,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
 ) {
     // Regular xtls-rprx-vision cannot carry UDP/443 (QUIC); reject it
     // unconditionally as upstream xray-core does. xtls-rprx-vision-udp443 still
     // allows it. This is the backstop for any packet that reaches VLESS opening
     // without the flow-level ICMP rejection running first.
     let options = VlessUdpOpenOptions::default();
-    let (stream, framing) = match open_vless_udp_stream_with_resolver_dialer_and_options(
-        &outbound,
-        &target,
-        context.bootstrap_dns_resolver(),
-        &context.transport_dialer,
-        options,
-    )
-    .await
-    {
+    let opened = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = open_vless_udp_stream_with_resolver_dialer_and_options(
+            &outbound,
+            &target,
+            context.bootstrap_dns_resolver(),
+            &context.transport_dialer,
+            options,
+        ) => result,
+    };
+    let (stream, framing) = match opened {
         Ok(opened) => opened,
         Err(error) => {
             if context.runtime_logger.is_enabled() {
@@ -4393,6 +4513,8 @@ async fn bridge_udp_vless_flow(
             return;
         }
     };
+    connection.mark_active();
+    let traffic = connection.traffic();
     context.tun.record_udp_remote_open(target.port == 443);
     if context.runtime_logger.is_enabled() {
         crate::debug_log::log_access_accepted(&context.runtime_logger, "tun", &target, "vless");
@@ -4413,6 +4535,9 @@ async fn bridge_udp_vless_flow(
             &mut remote_writer,
             &mut timing,
             first_payload,
+            connection,
+            connection_close,
+            Arc::clone(&traffic),
         )
         .await;
     } else {
@@ -4429,6 +4554,9 @@ async fn bridge_udp_vless_flow(
             &mut remote_writer,
             &mut timing,
             first_payload,
+            connection,
+            connection_close,
+            Arc::clone(&traffic),
         )
         .await;
     }
@@ -4447,6 +4575,9 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
     remote_writer: &mut W,
     timing: &mut T,
     first_payload: Bytes,
+    connection: ConnectionLease,
+    mut connection_close: watch::Receiver<bool>,
+    traffic: Arc<ConnectionTraffic>,
 ) where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -4471,7 +4602,12 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
             .await;
         return;
     };
-    if remote_writer.write_all(&frame).await.is_err() {
+    let first_write = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = remote_writer.write_all(&frame) => result,
+    };
+    if first_write.is_err() {
         context.tun.record_udp_remote_write_error();
         let _ = context
             .stack_tx
@@ -4479,7 +4615,12 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
             .await;
         return;
     }
-    if remote_writer.flush().await.is_err() {
+    let first_flush = tokio::select! {
+        biased;
+        () = wait_for_connection_close(&mut connection_close) => return,
+        result = remote_writer.flush() => result,
+    };
+    if first_flush.is_err() {
         context.tun.record_udp_remote_write_error();
         let _ = context
             .stack_tx
@@ -4488,10 +4629,13 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
         return;
     }
     context.tun.record_udp_remote_written(first_payload_len);
+    traffic.record_uplink(first_payload_len as u64);
     timing.record_written(first_payload_len);
 
     loop {
         tokio::select! {
+            biased;
+            () = wait_for_connection_close(&mut connection_close) => break,
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
                     break;
@@ -4528,6 +4672,7 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
                     break;
                 }
                 context.tun.record_udp_remote_written(payload_len);
+                traffic.record_uplink(payload_len as u64);
                 timing.record_written(payload_len);
             }
             packet = read_vless_udp_response(remote_reader, framing, fallback_source) => {
@@ -4544,6 +4689,7 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
                 };
                 timing.record_first_response(context.tun.as_ref(), &target, payload.len());
                 context.tun.record_udp_remote_read(payload.len());
+                traffic.record_downlink(payload.len() as u64);
                 if context
                     .stack_tx
                     .send(StackEvent::UdpDatagram {
@@ -4564,6 +4710,7 @@ async fn bridge_udp_vless_flow_loop<R, W, T>(
         .stack_tx
         .send(StackEvent::UdpClosed { key, generation })
         .await;
+    connection.finish();
 }
 
 fn admit_tcp_listener(
@@ -5822,6 +5969,7 @@ mod tests {
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
             &mut batch,
             &mut reservations,
+            None,
         )
         .await
         .unwrap();
@@ -5864,6 +6012,7 @@ mod tests {
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
             &mut batch,
             &mut reservations,
+            None,
         )
         .await
         .unwrap();
@@ -5897,6 +6046,7 @@ mod tests {
                 DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
                 &mut batch,
                 &mut reservations,
+                None,
             )
             .await
             .unwrap();
@@ -5936,6 +6086,7 @@ mod tests {
             policy,
             &mut batch,
             &mut reservations,
+            None,
         )
         .await
         .unwrap();
@@ -5973,6 +6124,7 @@ mod tests {
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
             &mut batch,
             &mut reservations,
+            None,
         )
         .await
         .unwrap();
@@ -6017,6 +6169,7 @@ mod tests {
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
             &mut batch,
             &mut reservations,
+            None,
         )
         .await
         .unwrap();
@@ -6054,6 +6207,7 @@ mod tests {
             DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
             &mut batch,
             &mut reservations,
+            None,
         )
         .await
         .unwrap();

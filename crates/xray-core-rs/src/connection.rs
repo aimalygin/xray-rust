@@ -87,6 +87,10 @@ impl ConnectionTraffic {
     pub(crate) fn record_uplink(&self, bytes: u64) {
         self.uplink_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
+
+    pub(crate) fn record_downlink(&self, bytes: u64) {
+        self.downlink_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
 }
 
 #[derive(Debug, Default)]

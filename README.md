@@ -60,7 +60,7 @@ The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection, routed multi-address resolution, TTL-aware cache, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | No UDP/protocol-layer outbound chaining, `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
-| Management | Core-owned typed SOCKS/HTTP TCP connection inventory, addressable close, and cumulative per-outbound accounting | TUN/UDP registration and C/Swift/Kotlin projection remain pending |
+| Management | Core-owned typed SOCKS/HTTP/TUN TCP and TUN UDP connection inventory, addressable close, and cumulative per-outbound accounting | SOCKS UDP registration and C/Swift/Kotlin projection remain pending |
 
 See [project status](docs/status.md) and
 [configuration compatibility](docs/config-compatibility.md) for the detailed

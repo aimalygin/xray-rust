@@ -860,6 +860,7 @@ impl Core {
                 Some(Arc::clone(&runtime_dns_resolvers.bootstrap)),
                 Arc::clone(&runtime_dns_resolvers.outbound),
                 Arc::clone(&self.transport_dialer),
+                Arc::clone(&self.connection_registry),
                 tun_runtime_options,
                 self.runtime_logger.clone(),
                 self.shutdown.subscribe(),
