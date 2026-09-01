@@ -65,6 +65,11 @@ release series.
   destination fallback and non-recursive endpoint bootstrap, while
   `StaticOnly` ignores it and remains fail-closed. Runtime startup preserves
   the same dependency instead of silently restoring `getaddrinfo`.
+- Added Android VLESS share-link import parity for the portable Apple subset:
+  raw/TCP REALITY and XHTTP/SplitHTTP with none, TLS, or REALITY security. The
+  Kotlin API emits the same mobile TUN topology, rejects duplicate or
+  unsupported security-critical fields, bounds XHTTP `extra` to 64 KiB and one
+  compatibility decode, and keeps unsupported secret values out of errors.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

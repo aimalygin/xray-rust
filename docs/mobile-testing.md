@@ -186,6 +186,14 @@ The Rust core consumes every pinned carrier candidate independently of global
 lookups. This preserves DNS64/NAT64 bootstrap on IPv6-only networks. The raw
 UDP/TCP DNS proxy still forwards the client's original question type unchanged.
 
+The Android library's `XrayVlessUrlImporter` unit matrix mirrors the portable
+Apple share-link subset: raw/TCP REALITY plus XHTTP/SplitHTTP with none, TLS,
+or REALITY security. Tests cover pasted and scheme-less links, canonical
+transport aliases, critical duplicate rejection, bounded single/double-encoded
+XHTTP `extra`, and redacted unsupported-security failures. The importer creates
+configuration only; a consuming app still owns secure storage, UI, and link
+intent handling.
+
 ## Android native libraries
 
 Build:

@@ -502,6 +502,57 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
 }
 
 #[test]
+fn android_adapter_exposes_bounded_vless_share_link_import() {
+    let importer = fs::read_to_string(workspace_root().join(
+        "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVlessUrlImporter.kt",
+    ))
+    .expect("read Kotlin VLESS importer");
+    let tests = fs::read_to_string(workspace_root().join(
+        "platform/android/xraymobile/src/test/java/org/xrayrust/mobile/XrayVlessUrlImporterTest.kt",
+    ))
+    .expect("read Kotlin VLESS importer tests");
+
+    for token in [
+        "object XrayVlessUrlImporter",
+        "fun profile(rawUrl: String): XrayImportedProfile",
+        "private const val MAX_XHTTP_EXTRA_BYTES = 64 * 1024",
+        "setOf(\"tcp\", \"raw\")",
+        "setOf(\"xhttp\", \"splithttp\")",
+        "XhttpSecurity.Tls",
+        "XhttpSecurity.Reality",
+        "query.rejectDuplicates(criticalQueryNames)",
+        "decodeXhttpExtra",
+        "VLESS URL contains unsupported `$name`.",
+    ] {
+        assert!(
+            importer.contains(token),
+            "Android VLESS importer missing `{token}`"
+        );
+    }
+    assert_eq!(
+        importer
+            .matches("val decoded = runCatching { decodeComponent(raw) }")
+            .count(),
+        1,
+        "XHTTP extra must permit exactly one compatibility decode"
+    );
+    for test_name in [
+        "buildsMobileRawRealityProfile",
+        "buildsPlainXhttpProfileFromDoubleEncodedExtra",
+        "buildsXhttpTlsWithoutLosingFields",
+        "buildsXhttpRealityAndAcceptsEmptyShortId",
+        "rejectsDuplicateSecurityCriticalFields",
+        "rejectsRealityOnlyTlsFieldsAndDoesNotLeakUnsupportedSecrets",
+        "boundsXhttpExtraBeforeParsing",
+    ] {
+        assert!(
+            tests.contains(test_name),
+            "Android VLESS importer tests missing `{test_name}`"
+        );
+    }
+}
+
+#[test]
 fn android_core_enables_file_logging_before_loading_config() {
     let core = fs::read_to_string(
         workspace_root()

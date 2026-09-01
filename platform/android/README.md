@@ -55,6 +55,8 @@ artifact directory.
   selection/health snapshots, connection inventory/accounting/close, seven
   typed TUN diagnostic queues, startup probe, runtime profiles, DNS bootstrap
   policy, and socket protection.
+- `XrayVlessUrlImporter`: fail-closed VLESS share-link conversion into a
+  self-contained mobile TUN profile.
 - `XrayVpnService`: reference VPN interface setup and lifecycle coordination.
 - `XrayTunBackend.FileDescriptor`: default direct borrowed raw-IP fd path.
 - `XrayTunBackend.PacketPump`: fallback with reusable direct buffers and
@@ -67,6 +69,24 @@ passed through `VpnService.protect(fd)` before use. With
 `sockopt.happyEyeballs`, protection is applied separately to every launched raw
 TCP candidate before connect; cancelled and losing candidates are not detached.
 This prevents proxy sockets from being routed back into the VPN.
+
+## VLESS share-link import
+
+`XrayVlessUrlImporter.profile(rawUrl)` returns an `XrayImportedProfile` with a
+display name, server address, and JSON config ready for `XrayCore.create` or
+`XrayVpnService.startXrayTunnel`. It accepts a bare link, a link embedded in
+pasted text, or a scheme-less UUID authority. The supported subset matches the
+Apple importer: `tcp`/`raw` with REALITY, and `xhttp`/`splithttp` with no
+security, TLS, or REALITY. The generated profile uses the TUN inbound, VLESS
+`proxy`, private-address Freedom split, and bounded IPv4 fake-IP defaults.
+
+Security- and transport-critical query values are unique and validated.
+Unsupported transports, security fields, modes, and flow values fail closed.
+XHTTP `extra` must be a JSON object no larger than 64 KiB after either the
+normal URL decode or exactly one compatibility decode; recursively encoded or
+non-object payloads are rejected. Errors for unsupported security parameters
+name the field without including its value. The library does not persist the
+result or log the source link; profile storage and UI remain host-owned.
 
 `XrayCore.create` defaults to `XrayDnsBootstrapMode.System`, which preserves the
 generic library/server behavior. Embedders that make system DNS unreachable

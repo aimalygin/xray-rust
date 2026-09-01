@@ -281,8 +281,8 @@ dependency is preserved when `Core::start` rebuilds the routed runtime resolver.
   backward-compatible while extending the FFI.
 - Expose typed connection inventory, connection close, per-outbound accounting,
   health, and structured diagnostic events. Do not add an in-core HTTP server.
-- Bring Android profile import, statistics, and event coverage to parity with
-  the supported Apple surface where platform APIs permit it.
+- Keep Android VLESS share-link import, statistics, and event coverage at
+  parity with the supported portable Apple surface where platform APIs permit.
 - Add physical-device transition and soak coverage: Wi-Fi/cellular changes,
   sleep/wake, memory pressure, extension/service restart, DNS64/NAT64,
   cancellation, and long-lived XHTTP H2/H3 sessions.
@@ -294,7 +294,11 @@ for routed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP flows. ABI 1.3 and
 equivalent Swift/Kotlin models expose inventory, cumulative per-outbound
 accounting, and close.
 The seven essential TUN diagnostic queues now have equivalent typed Swift and
-Kotlin polling APIs. Broader Android host parity and device soak remain.
+Kotlin polling APIs. Android also exposes the same fail-closed raw-REALITY and
+XHTTP none/TLS/REALITY share-link import subset as Apple, including bounded
+XHTTP `extra` decoding and mobile TUN config generation. The repository still
+does not ship an Android host app, so production profile persistence/UI and
+device soak remain host/release work.
 
 ### Exit criteria
 
