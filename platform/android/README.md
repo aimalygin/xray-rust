@@ -147,6 +147,12 @@ TCP, DoT, DoH, or DoQ transport. TCP clients remain length-prefixed for TCP/DoT
 and are translated frame-by-frame into bounded HTTP/2 DoH POST requests or
 single-stream DoQ exchanges.
 
+The Core-owned destination cache supports global `disableCache`, `serveStale`,
+and `serveExpiredTTL`. Stale service requires an explicit bounded 1-through-
+86400-second window; zero/unbounded and per-server cache overrides fail config
+validation. NXDOMAIN/NODATA are cached for 30 seconds, while transport failures
+are never cached.
+
 Fake-IP does not itself provide the real address needed by a Freedom outbound.
 When `dns.fakeIp.enabled` is true and `dns.servers` is empty, the reference
 service therefore rejects the config before `Builder.establish()` if Freedom is

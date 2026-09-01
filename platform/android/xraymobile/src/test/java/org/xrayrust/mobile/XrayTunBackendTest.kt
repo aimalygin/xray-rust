@@ -1000,6 +1000,41 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun dnsCachePolicyRequiresAnExplicitBoundedStaleWindow() {
+        val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {
+            error("cache-only preflight must not resolve a domain")
+        }
+        try {
+            val valid = prepareAndroidVpnConfigWithinDeadline(
+                configJson =
+                    """{"dns":{"disableCache":false,"serveStale":true,"serveExpiredTTL":3600}}""",
+                resolver = resolver,
+                deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+            )
+            val dns = JSONObject(valid.json).getJSONObject("dns")
+            assertTrue(dns.getBoolean("serveStale"))
+            assertEquals(3600, dns.getInt("serveExpiredTTL"))
+
+            for (invalid in listOf(
+                """{"dns":{"serveStale":true}}""",
+                """{"dns":{"serveStale":true,"serveExpiredTTL":0}}""",
+                """{"dns":{"serveStale":true,"serveExpiredTTL":86401}}""",
+                """{"dns":{"disableCache":true,"serveStale":true,"serveExpiredTTL":60}}""",
+            )) {
+                assertThrows(IllegalArgumentException::class.java) {
+                    prepareAndroidVpnConfigWithinDeadline(
+                        configJson = invalid,
+                        resolver = resolver,
+                        deadline = AndroidDnsBootstrapDeadline(TimeUnit.SECONDS.toNanos(1)),
+                    )
+                }
+            }
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
     fun tcpDnsServerUrlRejectsTunnelOwnedResolutionAtNonstandardPort() {
         for (address in listOf(XRAY_TUN_DNS_ANCHOR, "10.7.0.1", "fd00:7872::1")) {
             val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {

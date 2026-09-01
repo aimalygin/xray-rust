@@ -3184,6 +3184,69 @@ fn dns_geoip_private_uses_the_configured_xray_asset() {
 }
 
 #[test]
+fn parses_bounded_global_dns_cache_policy() {
+    let raw = r#"{
+        "dns": {
+          "disableCache": false,
+          "serveStale": true,
+          "serveExpiredTTL": 3600
+        },
+        "inbounds": [],
+        "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+    }"#;
+
+    let parsed = parse_xray_json(raw).expect("bounded DNS stale policy should parse");
+
+    assert!(!parsed.config.dns.disable_cache);
+    assert!(parsed.config.dns.serve_stale);
+    assert_eq!(parsed.config.dns.serve_expired_ttl, 3600);
+}
+
+#[test]
+fn rejects_unbounded_or_contradictory_global_dns_cache_policy() {
+    for (fields, path) in [
+        (r#""serveStale": true"#, "$.dns.serveExpiredTTL"),
+        (
+            r#""serveStale": true, "serveExpiredTTL": 0"#,
+            "$.dns.serveExpiredTTL",
+        ),
+        (
+            r#""serveStale": true, "serveExpiredTTL": 86401"#,
+            "$.dns.serveExpiredTTL",
+        ),
+        (
+            r#""disableCache": true, "serveStale": true, "serveExpiredTTL": 60"#,
+            "$.dns.serveStale",
+        ),
+        (r#""disableCache": "false""#, "$.dns.disableCache"),
+        (r#""serveExpiredTTL": -1"#, "$.dns.serveExpiredTTL"),
+    ] {
+        let raw = format!(
+            r#"{{
+                "dns": {{ {fields} }},
+                "inbounds": [],
+                "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+            }}"#
+        );
+
+        assert_parse_error_path(&raw, path);
+    }
+}
+
+#[test]
+fn rejects_per_server_dns_cache_policy_until_cache_ownership_is_per_upstream() {
+    for (field, name) in [
+        (r#""disableCache": false"#, "disableCache"),
+        (r#""serveStale": true"#, "serveStale"),
+        (r#""serveExpiredTTL": 60"#, "serveExpiredTTL"),
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#"{{ "address": "192.0.2.53", {field} }}"#));
+
+        assert_parse_error_path(&raw, &format!("$.dns.servers[0].{name}"));
+    }
+}
+
+#[test]
 fn rejects_dns_server_object_strategy_disjoint_from_global_strategy() {
     let raw = r#"{
         "dns": {

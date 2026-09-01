@@ -188,6 +188,7 @@ impl DnsResolver for SystemDnsResolver {
 }
 
 const DNS_DEFAULT_TTL: Duration = Duration::from_secs(300);
+const DNS_NEGATIVE_TTL: Duration = Duration::from_secs(30);
 const DNS_STATIC_HOST_TTL: Duration = Duration::from_secs(10);
 const DNS_CACHE_MAX_ENTRIES: usize = 256;
 const MAX_DNS_UDP_RESPONSE_SIZE: usize = 4096;
@@ -203,19 +204,22 @@ pub struct CachingDnsResolver {
     inner: Arc<dyn DnsResolver>,
     ttl: Duration,
     cap_authoritative_ttl: bool,
-    state: Mutex<DnsCacheState>,
+    negative_ttl: Duration,
+    stale_ttl: Option<Duration>,
+    state: Arc<Mutex<DnsCacheState>>,
 }
 
 #[derive(Default)]
 struct DnsCacheState {
-    resolved: HashMap<(String, u16, DnsQueryStrategy), CachedDnsLookup>,
+    resolved: HashMap<(String, u16, DnsQueryStrategy), CachedDnsOutcome>,
     in_flight: HashMap<(String, u16, DnsQueryStrategy), Arc<InFlightDnsLookup>>,
     access_sequence: u64,
 }
 
-struct CachedDnsLookup {
-    lookup: DnsLookup,
+struct CachedDnsOutcome {
+    outcome: InFlightDnsOutcome,
     expires_at: Instant,
+    stale_until: Instant,
     last_used: u64,
 }
 
@@ -320,14 +324,16 @@ impl InFlightDnsLookup {
     }
 }
 
-struct InFlightDnsLeader<'a> {
-    state: &'a Mutex<DnsCacheState>,
+struct InFlightDnsLeader {
+    state: Arc<Mutex<DnsCacheState>>,
     key: (String, u16, DnsQueryStrategy),
     lookup: Arc<InFlightDnsLookup>,
+    negative_ttl: Duration,
+    stale_ttl: Option<Duration>,
     active: bool,
 }
 
-impl InFlightDnsLeader<'_> {
+impl InFlightDnsLeader {
     fn finish(&mut self, outcome: InFlightDnsOutcome) {
         {
             let mut stored_outcome = self
@@ -348,33 +354,49 @@ impl InFlightDnsLeader<'_> {
             .is_some_and(|current| Arc::ptr_eq(current, &self.lookup));
         if still_leader {
             state.in_flight.remove(&self.key);
-            if let InFlightDnsOutcome::Resolved(lookup) = outcome {
+            let (ttl, allow_stale) = match &outcome {
+                InFlightDnsOutcome::Resolved(lookup) => {
+                    (lookup.ttl().filter(|ttl| !ttl.is_zero()), true)
+                }
+                InFlightDnsOutcome::NameError(_, _) | InFlightDnsOutcome::NoData(_, _) => (
+                    (!self.negative_ttl.is_zero()).then_some(self.negative_ttl),
+                    false,
+                ),
+                _ => (None, false),
+            };
+            if let Some(ttl) = ttl {
                 let now = Instant::now();
-                if let Some(ttl) = lookup.ttl().filter(|ttl| !ttl.is_zero()) {
-                    if let Some(expires_at) = now.checked_add(ttl) {
-                        if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
-                            state.resolved.retain(|_, entry| entry.expires_at > now);
-                        }
-                        if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
-                            let lru_key = state
-                                .resolved
-                                .iter()
-                                .min_by_key(|(_, entry)| entry.last_used)
-                                .map(|(key, _)| key.clone());
-                            if let Some(lru_key) = lru_key {
-                                state.resolved.remove(&lru_key);
-                            }
-                        }
-                        let access_sequence = state.next_access_sequence();
-                        state.resolved.insert(
-                            self.key.clone(),
-                            CachedDnsLookup {
-                                lookup,
-                                expires_at,
-                                last_used: access_sequence,
-                            },
-                        );
+                if let Some(expires_at) = now.checked_add(ttl) {
+                    let stale_until = if allow_stale {
+                        self.stale_ttl
+                            .and_then(|ttl| expires_at.checked_add(ttl))
+                            .unwrap_or(expires_at)
+                    } else {
+                        expires_at
+                    };
+                    if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
+                        state.resolved.retain(|_, entry| entry.stale_until > now);
                     }
+                    if state.resolved.len() >= DNS_CACHE_MAX_ENTRIES {
+                        let lru_key = state
+                            .resolved
+                            .iter()
+                            .min_by_key(|(_, entry)| entry.last_used)
+                            .map(|(key, _)| key.clone());
+                        if let Some(lru_key) = lru_key {
+                            state.resolved.remove(&lru_key);
+                        }
+                    }
+                    let access_sequence = state.next_access_sequence();
+                    state.resolved.insert(
+                        self.key.clone(),
+                        CachedDnsOutcome {
+                            outcome,
+                            expires_at,
+                            stale_until,
+                            last_used: access_sequence,
+                        },
+                    );
                 }
             }
         }
@@ -384,7 +406,7 @@ impl InFlightDnsLeader<'_> {
     }
 }
 
-impl Drop for InFlightDnsLeader<'_> {
+impl Drop for InFlightDnsLeader {
     fn drop(&mut self) {
         if !self.active {
             return;
@@ -412,7 +434,9 @@ impl CachingDnsResolver {
             inner,
             ttl: DNS_DEFAULT_TTL,
             cap_authoritative_ttl: false,
-            state: Mutex::new(DnsCacheState::default()),
+            negative_ttl: DNS_NEGATIVE_TTL,
+            stale_ttl: None,
+            state: Arc::new(Mutex::new(DnsCacheState::default())),
         }
     }
 
@@ -421,9 +445,83 @@ impl CachingDnsResolver {
             inner,
             ttl,
             cap_authoritative_ttl: true,
-            state: Mutex::new(DnsCacheState::default()),
+            negative_ttl: DNS_NEGATIVE_TTL,
+            stale_ttl: None,
+            state: Arc::new(Mutex::new(DnsCacheState::default())),
         }
     }
+
+    /// Enables bounded stale-while-revalidate for positive answers.
+    ///
+    /// Authoritative NXDOMAIN/NODATA outcomes still expire after the fixed
+    /// negative-cache TTL and are never served stale.
+    pub fn with_stale_ttl(inner: Arc<dyn DnsResolver>, stale_ttl: Duration) -> Self {
+        Self {
+            inner,
+            ttl: DNS_DEFAULT_TTL,
+            cap_authoritative_ttl: false,
+            negative_ttl: DNS_NEGATIVE_TTL,
+            stale_ttl: (!stale_ttl.is_zero()).then_some(stale_ttl),
+            state: Arc::new(Mutex::new(DnsCacheState::default())),
+        }
+    }
+
+    fn spawn_refresh(
+        &self,
+        domain: String,
+        port: u16,
+        strategy: DnsQueryStrategy,
+        key: (String, u16, DnsQueryStrategy),
+        lookup: Arc<InFlightDnsLookup>,
+    ) {
+        let inner = Arc::clone(&self.inner);
+        let state = Arc::clone(&self.state);
+        let ttl = self.ttl;
+        let cap_authoritative_ttl = self.cap_authoritative_ttl;
+        let negative_ttl = self.negative_ttl;
+        let stale_ttl = self.stale_ttl;
+        tokio::spawn(async move {
+            let mut leader = InFlightDnsLeader {
+                state,
+                key,
+                lookup,
+                negative_ttl,
+                stale_ttl,
+                active: true,
+            };
+            let resolved =
+                resolve_dns_lookup(inner, &domain, port, strategy, ttl, cap_authoritative_ttl)
+                    .await;
+            leader.finish(InFlightDnsOutcome::from_result(&resolved));
+        });
+    }
+}
+
+async fn resolve_dns_lookup(
+    inner: Arc<dyn DnsResolver>,
+    domain: &str,
+    port: u16,
+    strategy: DnsQueryStrategy,
+    ttl: Duration,
+    cap_authoritative_ttl: bool,
+) -> Result<DnsLookup, TransportError> {
+    let resolved = match strategy {
+        DnsQueryStrategy::UseIp => inner.resolve_all(domain, port).await,
+        DnsQueryStrategy::UseIpv4 | DnsQueryStrategy::UseIpv6 => {
+            inner
+                .resolve_all_with_strategy(domain, port, strategy)
+                .await
+        }
+    };
+    resolved
+        .and_then(|lookup| lookup.ensure_non_empty(domain, port))
+        .map(|lookup| {
+            if cap_authoritative_ttl {
+                lookup.with_ttl_cap(ttl)
+            } else {
+                lookup.with_fallback_ttl(ttl)
+            }
+        })
 }
 
 #[async_trait]
@@ -452,36 +550,68 @@ impl DnsResolver for CachingDnsResolver {
         );
         let lookup = loop {
             let now = Instant::now();
-            let (waiter, leader) = {
+            let (cached, refresh, waiter, leader) = {
                 let mut state = self
                     .state
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 let access_sequence = state.next_access_sequence();
-                if let Some(entry) = state.resolved.get_mut(&key) {
+                let cached = state.resolved.get_mut(&key).and_then(|entry| {
                     if entry.expires_at > now {
                         entry.last_used = access_sequence;
-                        return Ok(entry
-                            .lookup
-                            .with_remaining_ttl(entry.expires_at.duration_since(now)));
+                        Some((
+                            entry.outcome.clone(),
+                            entry.expires_at.duration_since(now),
+                            false,
+                        ))
+                    } else if entry.stale_until > now {
+                        entry.last_used = access_sequence;
+                        Some((entry.outcome.clone(), Duration::ZERO, true))
+                    } else {
+                        None
                     }
+                });
+                if cached.is_none() {
+                    state.resolved.remove(&key);
                 }
-                state.resolved.remove(&key);
 
-                match state.in_flight.get(&key) {
-                    Some(lookup) => {
-                        let lookup = Arc::clone(lookup);
-                        let waiter = Arc::clone(&lookup.notify).notified_owned();
-                        (Some((lookup, waiter)), None)
-                    }
-                    None => {
+                if let Some((outcome, remaining_ttl, stale)) = cached {
+                    let refresh = if stale && !state.in_flight.contains_key(&key) {
                         let lookup = Arc::new(InFlightDnsLookup::new());
                         state.in_flight.insert(key.clone(), Arc::clone(&lookup));
-                        (None, Some(lookup))
+                        Some(lookup)
+                    } else {
+                        None
+                    };
+                    (Some((outcome, remaining_ttl)), refresh, None, None)
+                } else {
+                    match state.in_flight.get(&key) {
+                        Some(lookup) => {
+                            let lookup = Arc::clone(lookup);
+                            let waiter = Arc::clone(&lookup.notify).notified_owned();
+                            (None, None, Some((lookup, waiter)), None)
+                        }
+                        None => {
+                            let lookup = Arc::new(InFlightDnsLookup::new());
+                            state.in_flight.insert(key.clone(), Arc::clone(&lookup));
+                            (None, None, None, Some(lookup))
+                        }
                     }
                 }
             };
 
+            if let Some(refresh) = refresh {
+                self.spawn_refresh(domain.to_owned(), port, strategy, key.clone(), refresh);
+            }
+            if let Some((outcome, remaining_ttl)) = cached {
+                let outcome = match outcome {
+                    InFlightDnsOutcome::Resolved(lookup) => {
+                        InFlightDnsOutcome::Resolved(lookup.with_remaining_ttl(remaining_ttl))
+                    }
+                    outcome => outcome,
+                };
+                return outcome.into_result(domain, port);
+            }
             if let Some((lookup, waiter)) = waiter {
                 waiter.await;
                 let outcome = lookup
@@ -499,27 +629,22 @@ impl DnsResolver for CachingDnsResolver {
         };
 
         let mut leader = InFlightDnsLeader {
-            state: &self.state,
+            state: Arc::clone(&self.state),
             key,
             lookup,
+            negative_ttl: self.negative_ttl,
+            stale_ttl: self.stale_ttl,
             active: true,
         };
-        let resolved = match strategy {
-            DnsQueryStrategy::UseIp => self.inner.resolve_all(domain, port).await,
-            DnsQueryStrategy::UseIpv4 | DnsQueryStrategy::UseIpv6 => {
-                self.inner
-                    .resolve_all_with_strategy(domain, port, strategy)
-                    .await
-            }
-        }
-        .and_then(|lookup| lookup.ensure_non_empty(domain, port))
-        .map(|lookup| {
-            if self.cap_authoritative_ttl {
-                lookup.with_ttl_cap(self.ttl)
-            } else {
-                lookup.with_fallback_ttl(self.ttl)
-            }
-        });
+        let resolved = resolve_dns_lookup(
+            Arc::clone(&self.inner),
+            domain,
+            port,
+            strategy,
+            self.ttl,
+            self.cap_authoritative_ttl,
+        )
+        .await;
         leader.finish(InFlightDnsOutcome::from_result(&resolved));
         resolved
     }
@@ -4314,6 +4439,116 @@ mod tests {
             ));
         }
         assert_eq!(inner.calls.load(Ordering::Relaxed), 1);
+
+        assert!(matches!(
+            resolver.resolve("missing.example", 443).await,
+            Err(TransportError::DnsNameError(domain, 443)) if domain == "missing.example"
+        ));
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 1);
+    }
+
+    struct ImmediateDnsFailureResolver {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for ImmediateDnsFailureResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Err(TransportError::Dns {
+                domain: domain.to_owned(),
+                port,
+                source: io::Error::new(io::ErrorKind::ConnectionRefused, "test failure"),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn caching_dns_never_negative_caches_transport_failures() {
+        let inner = Arc::new(ImmediateDnsFailureResolver {
+            calls: AtomicUsize::new(0),
+        });
+        let resolver = CachingDnsResolver::new(inner.clone());
+
+        assert!(resolver.resolve("unavailable.example", 443).await.is_err());
+        assert!(resolver.resolve("unavailable.example", 443).await.is_err());
+
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
+    }
+
+    struct RefreshingDnsResolver {
+        calls: AtomicUsize,
+        release_refresh: Notify,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for RefreshingDnsResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .first_socket_addr(domain, port)
+        }
+
+        async fn resolve_all(&self, _domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            let call = self.calls.fetch_add(1, Ordering::Relaxed);
+            if call > 0 {
+                self.release_refresh.notified().await;
+            }
+            let octet = if call == 0 { 70 } else { 71 };
+            Ok(DnsLookup::single(
+                SocketAddr::from(([192, 0, 2, octet], port)),
+                Some(if call == 0 {
+                    Duration::from_millis(20)
+                } else {
+                    Duration::from_secs(1)
+                }),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn caching_dns_serves_bounded_stale_and_single_flights_background_refresh() {
+        let inner = Arc::new(RefreshingDnsResolver {
+            calls: AtomicUsize::new(0),
+            release_refresh: Notify::new(),
+        });
+        let resolver =
+            CachingDnsResolver::with_stale_ttl(inner.clone(), Duration::from_millis(250));
+        let original = SocketAddr::from(([192, 0, 2, 70], 443));
+        let refreshed = SocketAddr::from(([192, 0, 2, 71], 443));
+
+        assert_eq!(
+            resolver.resolve("stale.example", 443).await.unwrap(),
+            original
+        );
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        for _ in 0..16 {
+            assert_eq!(
+                resolver.resolve("stale.example", 443).await.unwrap(),
+                original
+            );
+        }
+        while inner.calls.load(Ordering::Relaxed) < 2 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
+
+        inner.release_refresh.notify_one();
+        let actual = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let lookup = resolver.resolve("stale.example", 443).await.unwrap();
+                if lookup == refreshed {
+                    break lookup;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("background DNS refresh should replace the stale entry");
+
+        assert_eq!(actual, refreshed);
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
     }
 
     struct CancelOnceResolver {

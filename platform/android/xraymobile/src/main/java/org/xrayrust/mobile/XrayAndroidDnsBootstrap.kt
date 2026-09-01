@@ -135,6 +135,7 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
     validateAndroidDnsServerCount(dnsServers?.length() ?: 0)
     val globalQueryStrategy = dns?.opt("queryStrategy")
     dnsQueryStrategyFamilies(globalQueryStrategy, "global DNS")
+    validateAndroidDnsCachePolicy(dns)
     val usesFakeIp = if (dns?.has("fakeIp") == true) {
         val fakeIp = dns.getJSONObject("fakeIp")
         optionalStrictJsonBoolean(
@@ -855,6 +856,44 @@ internal fun optionalStrictJsonBoolean(
     return rawValue
 }
 
+private fun validateAndroidDnsCachePolicy(dns: JSONObject?) {
+    if (dns == null) {
+        return
+    }
+    val disableCache = optionalStrictJsonBoolean(
+        rawValue = dns.opt("disableCache"),
+        isPresent = dns.has("disableCache"),
+        field = "dns.disableCache",
+    )
+    val serveStale = optionalStrictJsonBoolean(
+        rawValue = dns.opt("serveStale"),
+        isPresent = dns.has("serveStale"),
+        field = "dns.serveStale",
+    )
+    val serveExpiredTtl = if (dns.has("serveExpiredTTL")) {
+        when (val value = dns.opt("serveExpiredTTL")) {
+            is Byte -> value.toLong()
+            is Short -> value.toLong()
+            is Int -> value.toLong()
+            is Long -> value
+            else -> null
+        }
+    } else {
+        0L
+    }
+    require(
+        serveExpiredTtl != null && serveExpiredTtl in 0..MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
+    ) {
+        "dns.serveExpiredTTL must be an integer from 0 through $MAX_DNS_SERVE_EXPIRED_TTL_SECONDS"
+    }
+    require(!serveStale || !disableCache) {
+        "dns.serveStale requires dns.disableCache to be false"
+    }
+    require(!serveStale || serveExpiredTtl > 0) {
+        "dns.serveStale requires an explicit nonzero bounded dns.serveExpiredTTL"
+    }
+}
+
 internal fun validateAndroidDnsServerCount(serverCount: Int) {
     require(serverCount in 0..MAX_DNS_SERVERS) {
         "DNS config contains $serverCount servers; maximum supported is $MAX_DNS_SERVERS"
@@ -1132,6 +1171,7 @@ private val DNS_SERVER_OBJECT_FIELDS = setOf(
 )
 
 private const val MAX_DNS_SERVER_TIMEOUT_MS = 4_611_686_018_427L
+private const val MAX_DNS_SERVE_EXPIRED_TTL_SECONDS = 86_400L
 
 private val DNS_QUERY_STRATEGIES = setOf(
     "useip",

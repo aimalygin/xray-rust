@@ -134,6 +134,13 @@ pub struct DnsConfig {
     /// tag. UUID generation intentionally stays outside the config model.
     pub tag: String,
     pub query_strategy: DnsQueryStrategy,
+    /// Disables the core-owned destination DNS cache. Bootstrap/system caches
+    /// remain platform-owned, matching Xray's `localhost` exception.
+    pub disable_cache: bool,
+    /// Returns expired positive answers while refreshing them in background.
+    pub serve_stale: bool,
+    /// Bounded positive-answer stale window in seconds.
+    pub serve_expired_ttl: u32,
     pub disable_fallback: bool,
     pub disable_fallback_if_match: bool,
 }
@@ -167,6 +174,7 @@ pub enum DnsServerTransport {
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;
+pub const MAX_DNS_SERVE_EXPIRED_TTL_SECONDS: u32 = 24 * 60 * 60;
 /// Largest millisecond value safe across Xray-core's duration conversions.
 ///
 /// Xray accepts larger `uint64` values, but its cached parallel-query context

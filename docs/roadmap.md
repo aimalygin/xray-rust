@@ -206,7 +206,8 @@ adding unfinished Phase 2 features.
 
 - Keep the implemented routed managed DoT/DoH and provider-local DoQ paths
   hardened, including their bounded connection lifecycles.
-- Add negative caching and bounded stale-while-revalidate behavior.
+- Keep the implemented typed negative cache and bounded positive-answer
+  stale-while-revalidate behavior hardened.
 - Provide an injectable platform system resolver and explicit bootstrap route
   behavior.
 - Preserve bounded query concurrency, cancellation, cache ownership, and
@@ -259,6 +260,13 @@ exact ALPN `doq`, and exchange one RFC 9250 length-prefixed query on one QUIC v1
 bidirectional stream. The initial lifecycle remains deliberately bounded to one
 protected QUIC connection per query; routed DoQ and connection pooling are not
 claimed.
+The Core-owned destination cache now retains authoritative NXDOMAIN/NODATA for
+30 seconds, never caches transport failures, and can serve expired positive
+answers while a single-flight refresh runs in the background. Global
+`disableCache`, `serveStale`, and `serveExpiredTTL` are parsed; stale service
+requires an explicit 1-through-86400-second window. Xray's unbounded zero value
+and per-server overrides remain fail-closed until their lifecycle/resource
+ownership can be represented safely.
 
 ### Mobile SDK and management API
 

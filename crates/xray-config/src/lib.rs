@@ -21,7 +21,7 @@ pub use model::{
     XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
     XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_DNS_SERVER_TIMEOUT_MS,
     DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS,
-    OBSERVATORY_PROBE_TIMEOUT,
+    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,

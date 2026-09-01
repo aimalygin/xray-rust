@@ -708,7 +708,7 @@ impl Core {
                 query_transport.clone(),
                 transport_dns_query_strategy(config.dns.query_strategy),
             );
-            Arc::new(CachingDnsResolver::new(resolver)) as Arc<dyn DnsResolver>
+            destination_dns_cache_for_config(config.as_ref(), resolver)
         } else {
             Arc::clone(&self.dns_resolver)
         };
@@ -966,6 +966,22 @@ pub fn version() -> &'static str {
 
 fn system_dns_resolver() -> Arc<dyn DnsResolver> {
     Arc::new(CachingDnsResolver::new(Arc::new(SystemDnsResolver)))
+}
+
+fn destination_dns_cache_for_config(
+    config: &CoreConfig,
+    resolver: Arc<dyn DnsResolver>,
+) -> Arc<dyn DnsResolver> {
+    if config.dns.disable_cache {
+        resolver
+    } else if config.dns.serve_stale {
+        Arc::new(CachingDnsResolver::with_stale_ttl(
+            resolver,
+            Duration::from_secs(u64::from(config.dns.serve_expired_ttl)),
+        ))
+    } else {
+        Arc::new(CachingDnsResolver::new(resolver))
+    }
 }
 
 #[derive(Debug)]
@@ -1233,9 +1249,9 @@ mod tests {
 
     use super::{
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
-        host_only_dns_resolver_for_config, static_host_index, static_only_dns_resolver_for_config,
-        take_name_server_policy_set, Core, DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy,
-        TunRuntimeOptions, TunRuntimeProfile,
+        destination_dns_cache_for_config, host_only_dns_resolver_for_config, static_host_index,
+        static_only_dns_resolver_for_config, take_name_server_policy_set, Core, DnsRules,
+        DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions, TunRuntimeProfile,
     };
 
     struct StaticResolver;
@@ -1254,6 +1270,44 @@ mod tests {
     }
 
     struct PendingResolver;
+
+    struct NegativeCountingResolver(AtomicUsize);
+
+    #[async_trait]
+    impl DnsResolver for NegativeCountingResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Err(TransportError::DnsNameError(domain.to_owned(), port))
+        }
+    }
+
+    #[tokio::test]
+    async fn destination_dns_disable_cache_controls_core_owned_negative_cache() {
+        let mut config = parse_xray_json(
+            r#"{
+                "inbounds": [],
+                "outbounds": [{ "tag": "direct", "protocol": "freedom" }]
+            }"#,
+        )
+        .unwrap()
+        .config;
+        let cached_inner = Arc::new(NegativeCountingResolver(AtomicUsize::new(0)));
+        let cached =
+            destination_dns_cache_for_config(&config, cached_inner.clone() as Arc<dyn DnsResolver>);
+        assert!(cached.resolve("missing.example", 443).await.is_err());
+        assert!(cached.resolve("missing.example", 443).await.is_err());
+        assert_eq!(cached_inner.0.load(Ordering::Relaxed), 1);
+
+        let uncached_inner = Arc::new(NegativeCountingResolver(AtomicUsize::new(0)));
+        config.dns.disable_cache = true;
+        let uncached = destination_dns_cache_for_config(
+            &config,
+            uncached_inner.clone() as Arc<dyn DnsResolver>,
+        );
+        assert!(uncached.resolve("missing.example", 443).await.is_err());
+        assert!(uncached.resolve("missing.example", 443).await.is_err());
+        assert_eq!(uncached_inner.0.load(Ordering::Relaxed), 2);
+    }
 
     #[test]
     fn dns_runtime_resources_follow_runtime_profiles() {

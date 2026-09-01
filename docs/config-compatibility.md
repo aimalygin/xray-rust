@@ -1013,9 +1013,14 @@ matching Xray-core's effective behavior. The Xray object subset requires `addres
 `queryStrategy`, `finalQuery`, `tag`, and `timeoutMs`. `domains` may be an array or one
 comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
-Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
-Special `localhost`/`fakedns` clients, routed DoQ, `clientIp`, cache/stale
-controls, and parallel queries are rejected until their
+Top-level `disableFallback`, `disableFallbackIfMatch`, `disableCache`,
+`serveStale`, and `serveExpiredTTL` are also supported. `serveStale: true`
+requires caching plus an explicit `serveExpiredTTL` from 1 through 86400
+seconds. Xray treats zero as an unbounded stale lifetime; this mobile-oriented
+core rejects that value rather than silently retaining records forever.
+Per-server cache/stale overrides remain unsupported because the current cache
+is owned once per Core rather than once per upstream. Special
+`localhost`/`fakedns` clients, routed DoQ, `clientIp`, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
 
 Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
@@ -1104,6 +1109,16 @@ typed outcome instead of opening duplicate routed DNS/VLESS sessions. One
 managed destination cache and single-flight table is shared by every
 SOCKS/HTTP listener, TUN consumer, and startup probe in a `Core` runtime; a
 separate `Core` owns a separate cache.
+Authoritative NXDOMAIN and NODATA outcomes use a separate fixed 30-second
+negative TTL. Transport, timeout, malformed-response, and aggregate upstream
+unavailability errors are never cached. When bounded stale service is enabled,
+an expired positive result is returned with no remaining authoritative TTL
+while exactly one background refresh owns that key's existing single-flight
+slot. Refresh success atomically replaces the entry; failure retains it only
+until the configured stale deadline. Negative outcomes are never served stale.
+`disableCache: true` bypasses this Core-owned destination cache but does not
+change the platform/system bootstrap resolver, matching Xray's `localhost`
+exception.
 
 For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
 resolution is `dns.hosts` → configured `dns.servers`: classic, `tcp://`, and
@@ -1393,8 +1408,8 @@ normal UDP path. Fake-IP takes precedence over raw proxying. When a later TUN,
 SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
 is restored before routing. VLESS carries that domain for remote resolution;
 Freedom resolves it through the managed routed resolver, including in mobile
-`StaticOnly` mode. Managed `dns.servers` routed DoQ transport, `clientIp`,
-negative/stale caching, and the broader
+`StaticOnly` mode. Managed `dns.servers` routed DoQ transport, per-server cache
+policy, `clientIp`, and the broader
 Xray DNS feature set are not implemented. This does not limit the DNS
 outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled

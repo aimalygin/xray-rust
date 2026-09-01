@@ -580,11 +580,27 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
 
     func testResolvedDnsConfigurationKeepsFakeIPAnchorWithSupportedDnsPolicyFields() {
         let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
-            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"},"queryStrategy":"UseIPv4","disableFallback":true,"disableFallbackIfMatch":true}}"#,
+            configJSON: #"{"dns":{"fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16"},"queryStrategy":"UseIPv4","disableCache":false,"serveStale":true,"serveExpiredTTL":3600,"disableFallback":true,"disableFallbackIfMatch":true}}"#,
             explicit: .system
         )
 
         XCTAssertEqual(configuration, .localDNSAnchor)
+    }
+
+    func testResolvedDnsConfigurationRejectsUnboundedOrContradictoryCachePolicy() {
+        for dns in [
+            #"{"serveStale":true}"#,
+            #"{"serveStale":true,"serveExpiredTTL":0}"#,
+            #"{"serveStale":true,"serveExpiredTTL":86401}"#,
+            #"{"disableCache":true,"serveStale":true,"serveExpiredTTL":60}"#,
+        ] {
+            let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
+                configJSON: "{\"dns\":\(dns)}",
+                explicit: .system
+            )
+
+            XCTAssertNil(configuration, "dns=\(dns)")
+        }
     }
 
     func testResolvedDnsConfigurationRejectsIPv4FakeIPWithIPv6OnlyStrategy() {

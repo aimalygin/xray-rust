@@ -54,6 +54,11 @@ release series.
   operations, and mobile preflight pinning; the TUN anchor supports both UDP
   and length-prefixed TCP clients. DoH and DoQ currently open one connection
   per exchange; DoQ uses exact ALPN `doq` and one bidirectional stream.
+- Added a typed 30-second NXDOMAIN/NODATA cache and optional bounded
+  stale-while-revalidate for positive destination answers. Global Xray
+  `disableCache`, `serveStale`, and `serveExpiredTTL` fields are supported;
+  transport failures are never cached, refreshes remain single-flight, and an
+  explicit 1-through-86400-second stale window is required.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

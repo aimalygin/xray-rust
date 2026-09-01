@@ -25,7 +25,8 @@ use crate::{
     StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
     XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
     XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
-    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, OBSERVATORY_PROBE_TIMEOUT,
+    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
+    OBSERVATORY_PROBE_TIMEOUT,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
@@ -882,11 +883,43 @@ impl Parser<'_> {
                 "hosts",
                 "tag",
                 "queryStrategy",
+                "disableCache",
+                "serveStale",
+                "serveExpiredTTL",
                 "disableFallback",
                 "disableFallbackIfMatch",
             ],
         );
         let query_strategy = self.parse_dns_query_strategy(dns);
+        let disable_cache = self
+            .optional_bool_at(dns, "disableCache", "$.dns.disableCache".to_owned())
+            .unwrap_or(false);
+        let serve_stale = self
+            .optional_bool_at(dns, "serveStale", "$.dns.serveStale".to_owned())
+            .unwrap_or(false);
+        let serve_expired_ttl = self
+            .optional_u32_at(dns, "serveExpiredTTL", "$.dns.serveExpiredTTL".to_owned())
+            .unwrap_or(0);
+        if serve_stale && disable_cache {
+            self.error(
+                "$.dns.serveStale",
+                "dns serveStale requires caching; disableCache must be false",
+            );
+        }
+        if serve_stale && serve_expired_ttl == 0 {
+            self.error(
+                "$.dns.serveExpiredTTL",
+                "dns serveStale requires an explicit nonzero bounded serveExpiredTTL",
+            );
+        }
+        if serve_expired_ttl > MAX_DNS_SERVE_EXPIRED_TTL_SECONDS {
+            self.error(
+                "$.dns.serveExpiredTTL",
+                format!(
+                    "dns serveExpiredTTL must not exceed {MAX_DNS_SERVE_EXPIRED_TTL_SECONDS} seconds"
+                ),
+            );
+        }
         DnsConfig {
             fake_ip: self.parse_dns_fake_ip(dns),
             servers: self.parse_dns_servers(dns, query_strategy),
@@ -896,6 +929,9 @@ impl Parser<'_> {
                 .unwrap_or_default()
                 .to_owned(),
             query_strategy,
+            disable_cache,
+            serve_stale,
+            serve_expired_ttl,
             disable_fallback: self
                 .optional_bool_at(dns, "disableFallback", "$.dns.disableFallback".to_owned())
                 .unwrap_or(false),

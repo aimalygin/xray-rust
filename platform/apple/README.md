@@ -152,6 +152,12 @@ clients remain length-prefixed for TCP/DoT and are translated frame-by-frame
 into bounded HTTP/2 DoH POST requests or single-stream DoQ exchanges. Fake-IP
 profiles keep local synthesis precedence for every transport at the anchor.
 
+The Core-owned destination cache supports global `disableCache`, `serveStale`,
+and `serveExpiredTTL`. Stale service requires an explicit bounded 1-through-
+86400-second window; zero/unbounded and per-server cache overrides fail config
+validation. NXDOMAIN/NODATA are cached for 30 seconds, while transport failures
+are never cached.
+
 The checked-in `directTunConfigJSON` intentionally has no fake-IP DNS. Direct
 profiles are not automatically migrated to fake-IP; when used unchanged they
 require an explicit host `dnsServers` or `xrayDNSServers` override. The
