@@ -71,6 +71,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         outbounds: vec![outbound],
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
+        observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     };
@@ -114,6 +115,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
         }],
         default_outbound_tag: Some("proxy".to_owned()),
         routing: RoutingConfig::default(),
+        observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     };

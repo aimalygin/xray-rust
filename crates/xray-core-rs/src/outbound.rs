@@ -3,7 +3,7 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -682,6 +682,92 @@ pub struct OutboundSelectionSnapshot {
     pub groups: Vec<OutboundSelectorGroupSnapshot>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundHealthState {
+    Unknown,
+    Healthy,
+    Unhealthy,
+}
+
+impl OutboundHealthState {
+    const UNKNOWN: u8 = 0;
+    const HEALTHY: u8 = 1;
+    const UNHEALTHY: u8 = 2;
+
+    fn from_u8(value: u8) -> Self {
+        match value {
+            Self::HEALTHY => Self::Healthy,
+            Self::UNHEALTHY => Self::Unhealthy,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundHealthFailure {
+    Timeout,
+    Transport,
+    Tls,
+    Io,
+    MalformedHttpResponse,
+    HttpStatus(u16),
+}
+
+impl OutboundHealthFailure {
+    const NONE: usize = 0;
+    const TIMEOUT: usize = 1;
+    const TRANSPORT: usize = 2;
+    const TLS: usize = 3;
+    const IO: usize = 4;
+    const MALFORMED_HTTP_RESPONSE: usize = 5;
+    const HTTP_STATUS_BASE: usize = 1 << 16;
+
+    fn encode(self) -> usize {
+        match self {
+            Self::Timeout => Self::TIMEOUT,
+            Self::Transport => Self::TRANSPORT,
+            Self::Tls => Self::TLS,
+            Self::Io => Self::IO,
+            Self::MalformedHttpResponse => Self::MALFORMED_HTTP_RESPONSE,
+            Self::HttpStatus(status) => Self::HTTP_STATUS_BASE + usize::from(status),
+        }
+    }
+
+    fn decode(value: usize) -> Option<Self> {
+        match value {
+            Self::NONE => None,
+            Self::TIMEOUT => Some(Self::Timeout),
+            Self::TRANSPORT => Some(Self::Transport),
+            Self::TLS => Some(Self::Tls),
+            Self::IO => Some(Self::Io),
+            Self::MALFORMED_HTTP_RESPONSE => Some(Self::MalformedHttpResponse),
+            value if value >= Self::HTTP_STATUS_BASE => {
+                u16::try_from(value - Self::HTTP_STATUS_BASE)
+                    .ok()
+                    .map(Self::HttpStatus)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundHealthStatusSnapshot {
+    pub outbound_tag: String,
+    pub state: OutboundHealthState,
+    pub delay_ms: Option<u64>,
+    pub last_try_unix_ms: Option<u64>,
+    pub last_seen_unix_ms: Option<u64>,
+    pub consecutive_failures: u64,
+    pub last_failure: Option<OutboundHealthFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundHealthSnapshot {
+    pub revision: u64,
+    pub outbounds: Vec<OutboundHealthStatusSnapshot>,
+}
+
 impl OutboundNode {
     pub fn id(&self) -> OutboundNodeId {
         self.id
@@ -838,6 +924,17 @@ impl OutboundGraph {
             .and_then(|id| self.selector_group(*id))
     }
 
+    pub fn leaf_nodes_matching_prefixes(&self, prefixes: &[String]) -> Vec<OutboundNodeId> {
+        let mut nodes = self
+            .first_tag_node
+            .iter()
+            .filter(|(tag, _)| prefixes.iter().any(|prefix| tag.starts_with(prefix)))
+            .map(|(tag, node)| (tag.as_str(), *node))
+            .collect::<Vec<_>>();
+        nodes.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        nodes.into_iter().map(|(_, node)| node).collect()
+    }
+
     pub fn default_node(&self) -> Option<OutboundNodeId> {
         self.default_node
     }
@@ -868,6 +965,29 @@ struct OutboundSelectorGroupState {
     round_robin_cursor: AtomicU64,
 }
 
+#[derive(Debug)]
+struct OutboundHealthAtomicState {
+    state: AtomicU8,
+    delay_ms: AtomicU64,
+    last_try_unix_ms: AtomicU64,
+    last_seen_unix_ms: AtomicU64,
+    consecutive_failures: AtomicU64,
+    last_failure: AtomicUsize,
+}
+
+impl Default for OutboundHealthAtomicState {
+    fn default() -> Self {
+        Self {
+            state: AtomicU8::new(OutboundHealthState::UNKNOWN),
+            delay_ms: AtomicU64::new(u64::MAX),
+            last_try_unix_ms: AtomicU64::new(0),
+            last_seen_unix_ms: AtomicU64::new(0),
+            consecutive_failures: AtomicU64::new(0),
+            last_failure: AtomicUsize::new(OutboundHealthFailure::NONE),
+        }
+    }
+}
+
 /// Small mutable layer over an immutable outbound graph.
 ///
 /// Candidate membership never changes. An override is one release-store and
@@ -877,6 +997,7 @@ struct OutboundSelectorGroupState {
 pub struct OutboundSelectionOverlay {
     graph: Arc<OutboundGraph>,
     groups: Box<[OutboundSelectorGroupState]>,
+    health: Box<[OutboundHealthAtomicState]>,
     revision: AtomicU64,
     update_lock: Mutex<()>,
 }
@@ -890,9 +1011,14 @@ impl OutboundSelectionOverlay {
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
+        let health = (0..graph.leaf_count)
+            .map(|_| OutboundHealthAtomicState::default())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         Self {
             graph,
             groups,
+            health,
             revision: AtomicU64::new(0),
             update_lock: Mutex::new(()),
         }
@@ -971,6 +1097,101 @@ impl OutboundSelectionOverlay {
         }
     }
 
+    pub fn health_snapshot(&self) -> OutboundHealthSnapshot {
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let outbounds = self
+            .health
+            .iter()
+            .enumerate()
+            .filter_map(|(index, health)| {
+                let node = self.graph.nodes().get(index)?;
+                let outbound_tag = node.tag()?.to_owned();
+                let state = OutboundHealthState::from_u8(health.state.load(Ordering::Acquire));
+                let delay_ms = health.delay_ms.load(Ordering::Acquire);
+                let last_try_unix_ms = health.last_try_unix_ms.load(Ordering::Acquire);
+                let last_seen_unix_ms = health.last_seen_unix_ms.load(Ordering::Acquire);
+                Some(OutboundHealthStatusSnapshot {
+                    outbound_tag,
+                    state,
+                    delay_ms: (delay_ms != u64::MAX).then_some(delay_ms),
+                    last_try_unix_ms: (last_try_unix_ms != 0).then_some(last_try_unix_ms),
+                    last_seen_unix_ms: (last_seen_unix_ms != 0).then_some(last_seen_unix_ms),
+                    consecutive_failures: health.consecutive_failures.load(Ordering::Acquire),
+                    last_failure: OutboundHealthFailure::decode(
+                        health.last_failure.load(Ordering::Acquire),
+                    ),
+                })
+            })
+            .collect();
+        OutboundHealthSnapshot {
+            revision: self.revision.load(Ordering::Acquire),
+            outbounds,
+        }
+    }
+
+    pub(crate) fn record_health_success(
+        &self,
+        node: OutboundNodeId,
+        delay: Duration,
+        now_unix_ms: u64,
+    ) {
+        let Some(health) = self.health_state(node) else {
+            return;
+        };
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        health.delay_ms.store(
+            delay.as_millis().min(u128::from(u64::MAX)) as u64,
+            Ordering::Release,
+        );
+        health
+            .last_try_unix_ms
+            .store(now_unix_ms, Ordering::Release);
+        health
+            .last_seen_unix_ms
+            .store(now_unix_ms, Ordering::Release);
+        health.consecutive_failures.store(0, Ordering::Release);
+        health
+            .last_failure
+            .store(OutboundHealthFailure::NONE, Ordering::Release);
+        health
+            .state
+            .store(OutboundHealthState::HEALTHY, Ordering::Release);
+        self.revision.fetch_add(1, Ordering::AcqRel);
+    }
+
+    pub(crate) fn record_health_failure(
+        &self,
+        node: OutboundNodeId,
+        failure: OutboundHealthFailure,
+        now_unix_ms: u64,
+    ) {
+        let Some(health) = self.health_state(node) else {
+            return;
+        };
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        health.delay_ms.store(u64::MAX, Ordering::Release);
+        health
+            .last_try_unix_ms
+            .store(now_unix_ms, Ordering::Release);
+        health.consecutive_failures.fetch_add(1, Ordering::AcqRel);
+        health
+            .last_failure
+            .store(failure.encode(), Ordering::Release);
+        health
+            .state
+            .store(OutboundHealthState::UNHEALTHY, Ordering::Release);
+        self.revision.fetch_add(1, Ordering::AcqRel);
+    }
+
     fn select(&self, group_tag: &str) -> Result<OutboundNodeId, CoreError> {
         let (group_index, group) = self.group_for_tag(group_tag)?;
         let state = &self.groups[group_index];
@@ -981,23 +1202,21 @@ impl OutboundSelectionOverlay {
                 .copied()
                 .ok_or(CoreError::NoSupportedOutbound);
         }
-        if group.members().is_empty() {
-            return group
-                .fallback_tag()
-                .and_then(|tag| self.graph.node_for_tag(tag))
-                .ok_or(CoreError::NoSupportedOutbound);
-        }
-        let member_index = match group.strategy() {
-            RoutingBalancerStrategy::Random => {
-                rand::thread_rng().gen_range(0..group.members().len())
-            }
+        let selected = match group.strategy() {
+            RoutingBalancerStrategy::Random => self.select_random_eligible(group),
             RoutingBalancerStrategy::RoundRobin => {
                 let cursor = state.round_robin_cursor.fetch_add(1, Ordering::Relaxed);
-                usize::try_from(cursor % group.members().len() as u64)
-                    .expect("round-robin remainder fits usize")
+                self.select_round_robin_eligible(group, cursor)
             }
+            RoutingBalancerStrategy::LeastPing => self.select_least_ping(group),
         };
-        Ok(group.members()[member_index])
+        selected
+            .or_else(|| {
+                group
+                    .fallback_tag()
+                    .and_then(|tag| self.graph.node_for_tag(tag))
+            })
+            .ok_or(CoreError::NoSupportedOutbound)
     }
 
     fn group_for_tag(&self, group_tag: &str) -> Result<(usize, &OutboundSelectorGroup), CoreError> {
@@ -1009,6 +1228,75 @@ impl OutboundSelectionOverlay {
             .ok_or_else(|| CoreError::OutboundSelectorGroupNotFound(group_tag.to_owned()))?;
         let index = node.index - self.graph.leaf_count;
         Ok((index, &self.graph.selector_groups[index]))
+    }
+
+    fn health_state(&self, node: OutboundNodeId) -> Option<&OutboundHealthAtomicState> {
+        (node.graph_identity == self.graph.identity)
+            .then(|| self.health.get(node.index))
+            .flatten()
+    }
+
+    fn is_eligible(&self, node: OutboundNodeId) -> bool {
+        self.health_state(node).is_some_and(|health| {
+            OutboundHealthState::from_u8(health.state.load(Ordering::Acquire))
+                != OutboundHealthState::Unhealthy
+        })
+    }
+
+    fn select_random_eligible(&self, group: &OutboundSelectorGroup) -> Option<OutboundNodeId> {
+        let eligible_count = group
+            .members()
+            .iter()
+            .filter(|node| self.is_eligible(**node))
+            .count();
+        if eligible_count == 0 {
+            return None;
+        }
+        let selected = rand::thread_rng().gen_range(0..eligible_count);
+        group
+            .members()
+            .iter()
+            .copied()
+            .filter(|node| self.is_eligible(*node))
+            .nth(selected)
+    }
+
+    fn select_round_robin_eligible(
+        &self,
+        group: &OutboundSelectorGroup,
+        cursor: u64,
+    ) -> Option<OutboundNodeId> {
+        let eligible_count = group
+            .members()
+            .iter()
+            .filter(|node| self.is_eligible(**node))
+            .count();
+        if eligible_count == 0 {
+            return None;
+        }
+        let selected = usize::try_from(cursor % eligible_count as u64)
+            .expect("round-robin remainder fits usize");
+        group
+            .members()
+            .iter()
+            .copied()
+            .filter(|node| self.is_eligible(*node))
+            .nth(selected)
+    }
+
+    fn select_least_ping(&self, group: &OutboundSelectorGroup) -> Option<OutboundNodeId> {
+        group
+            .members()
+            .iter()
+            .copied()
+            .filter_map(|node| {
+                let health = self.health_state(node)?;
+                (OutboundHealthState::from_u8(health.state.load(Ordering::Acquire))
+                    == OutboundHealthState::Healthy)
+                    .then(|| (health.delay_ms.load(Ordering::Acquire), node))
+            })
+            .min_by_key(|(delay_ms, _)| *delay_ms)
+            .map(|(_, node)| node)
     }
 }
 
@@ -1261,6 +1549,10 @@ impl OutboundRouter {
 
     pub fn selection(&self) -> &OutboundSelectionOverlay {
         self.factory.selection()
+    }
+
+    pub fn selection_handle(&self) -> Arc<OutboundSelectionOverlay> {
+        self.factory.selection_handle()
     }
 
     fn config(&self) -> &CoreConfig {
@@ -3083,6 +3375,7 @@ mod tests {
                 }],
                 ..Default::default()
             },
+            observatory: None,
             dns: Default::default(),
             policy: Default::default(),
         }
@@ -4250,6 +4543,121 @@ mod tests {
         assert_eq!(first.tag.as_deref(), Some("proxy-a"));
         assert_eq!(second.tag.as_deref(), Some("proxy-b"));
         assert_eq!(third.tag.as_deref(), Some("proxy-a"));
+    }
+
+    #[test]
+    fn round_robin_selector_skips_known_unhealthy_members_and_uses_fallback() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        router
+            .selection()
+            .record_health_failure(proxy_a, OutboundHealthFailure::Timeout, 1_000);
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
+
+        router
+            .selection()
+            .record_health_failure(proxy_b, OutboundHealthFailure::Transport, 2_000);
+        let selected = router
+            .select_tcp_outbound_for_session(None, &target)
+            .unwrap();
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn least_ping_selects_lowest_healthy_delay_with_stable_tag_tiebreak() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::LeastPing,
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let proxy_b = graph.node_for_tag("proxy-b").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+        let target = domain_tcp_target("example.test");
+
+        router
+            .selection()
+            .record_health_success(proxy_a, Duration::from_millis(40), 1_000);
+        router
+            .selection()
+            .record_health_success(proxy_b, Duration::from_millis(10), 1_000);
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(selected.tag.as_deref(), Some("proxy-b"));
+
+        router
+            .selection()
+            .record_health_success(proxy_a, Duration::from_millis(10), 2_000);
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(selected.tag.as_deref(), Some("proxy-a"));
+    }
+
+    #[test]
+    fn health_snapshot_is_coherent_and_uses_structured_failures() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+
+        router.selection().record_health_failure(
+            proxy_a,
+            OutboundHealthFailure::HttpStatus(503),
+            12_345,
+        );
+        let snapshot = router.selection().health_snapshot();
+        let status = snapshot
+            .outbounds
+            .iter()
+            .find(|status| status.outbound_tag == "proxy-a")
+            .unwrap();
+
+        assert_eq!(snapshot.revision, 1);
+        assert_eq!(status.state, OutboundHealthState::Unhealthy);
+        assert_eq!(status.delay_ms, None);
+        assert_eq!(status.last_try_unix_ms, Some(12_345));
+        assert_eq!(status.last_seen_unix_ms, None);
+        assert_eq!(status.consecutive_failures, 1);
+        assert_eq!(
+            status.last_failure,
+            Some(OutboundHealthFailure::HttpStatus(503))
+        );
+    }
+
+    #[test]
+    fn explicit_override_remains_authoritative_when_member_is_unhealthy() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        ))));
+        let proxy_a = graph.node_for_tag("proxy-a").unwrap();
+        let router = OutboundRouter::from_factory(Arc::new(OutboundFactory::new(graph)));
+
+        router
+            .selection()
+            .record_health_failure(proxy_a, OutboundHealthFailure::Timeout, 1_000);
+        router
+            .selection()
+            .set_override("automatic", "proxy-a")
+            .unwrap();
+        let selected = router
+            .select_tcp_outbound_for_session_with_tag(
+                None,
+                &domain_tcp_target("example.test"),
+                true,
+            )
+            .unwrap();
+
+        assert_eq!(selected.tag.as_deref(), Some("proxy-a"));
     }
 
     #[test]

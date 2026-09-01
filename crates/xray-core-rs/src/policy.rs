@@ -344,6 +344,7 @@ mod tests {
             }],
             default_outbound_tag: Some("direct".to_owned()),
             routing: Default::default(),
+            observatory: None,
             dns: Default::default(),
             policy: PolicyConfig {
                 levels: BTreeMap::from([(level, policy)]),

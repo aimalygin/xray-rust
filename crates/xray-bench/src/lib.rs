@@ -8565,6 +8565,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             rules,
             ..Default::default()
         },
+        observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }
@@ -10048,6 +10049,7 @@ fn route_probe_config(
             rules: routing_rules,
             ..Default::default()
         },
+        observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     })

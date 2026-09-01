@@ -1543,6 +1543,7 @@ fn rust_core_config_with_transport(
         }],
         default_outbound_tag: None,
         routing: RoutingConfig::default(),
+        observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }

@@ -226,12 +226,12 @@ adding unfinished Phase 2 features.
   replaced rule/geodata snapshots. Full configuration replacement may continue
   to use a new core handle.
 
-The first selection increment is now implemented on the `v0.5` development
-line: Xray-compatible prefix selector groups, random/round-robin policy,
-fallback tags, and atomic validated overrides share the graph's existing leaf
-handler pools. URL tests, health state, deterministic health failover,
-health-aware load balancing, chaining, and the C ABI projection remain the next
-increments of this Phase 2 item.
+The first two selection increments are now implemented on the `v0.5`
+development line. Xray-compatible prefix selector groups, random/round-robin/
+`leastPing`, fallback tags, atomic validated overrides, bounded lifecycle-owned
+URL tests, typed health snapshots, and deterministic health failover share the
+graph's existing leaf handler pools. Cycle-free chaining and the C ABI
+projection remain the next increments of this Phase 2 item.
 
 ### Mobile SDK and management API
 

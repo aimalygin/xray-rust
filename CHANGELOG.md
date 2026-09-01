@@ -22,8 +22,12 @@ release series.
   prefixes into sorted graph nodes, `balancerTag` rules support random,
   round-robin, and fallback selection, and a shared atomic override/snapshot
   API switches new flows without rebuilding handlers or their transport pools.
-  Health-backed `leastPing` and `leastLoad` remain fail-closed until the next
-  slice.
+- Added the bounded Xray-compatible `observatory` subset and health-backed
+  selection. Lifecycle-owned HTTP(S) URL probes publish typed, redacted health
+  snapshots; random and round-robin skip known-dead candidates, while
+  `leastPing` deterministically selects the lowest healthy delay and falls back
+  when no healthy candidate remains. Explicit overrides remain authoritative.
+  `leastLoad`, chaining, and the selector/health C ABI projection remain.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

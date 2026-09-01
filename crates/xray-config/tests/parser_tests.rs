@@ -2,7 +2,7 @@ use std::{
     fs,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use prost::Message;
@@ -1555,7 +1555,7 @@ fn rejects_unknown_routing_balancer_rule_reference_with_path() {
 }
 
 #[test]
-fn rejects_health_backed_routing_balancer_strategy_until_supported() {
+fn parses_least_ping_routing_balancer_strategy() {
     let raw = raw_with_routing(
         r#""balancers": [{
           "tag": "automatic",
@@ -1564,7 +1564,88 @@ fn rejects_health_backed_routing_balancer_strategy_until_supported() {
         }]"#,
     );
 
+    let parsed = parse_xray_json(&raw).expect("leastPing balancer should parse");
+
+    assert_eq!(
+        parsed.config.routing.balancers[0].strategy,
+        xray_config::RoutingBalancerStrategy::LeastPing
+    );
+}
+
+#[test]
+fn rejects_least_load_routing_balancer_strategy_until_supported() {
+    let raw = raw_with_routing(
+        r#""balancers": [{
+          "tag": "automatic",
+          "selector": ["proxy"],
+          "strategy": { "type": "leastLoad" }
+        }]"#,
+    );
+
     assert_parse_error_path(&raw, "$.routing.balancers[0].strategy.type");
+}
+
+#[test]
+fn parses_xray_observatory_with_compound_duration() {
+    let raw = raw_with_observatory(
+        r#"{
+          "subjectSelector": ["proxy-", "direct"],
+          "probeURL": "https://probe.example/generate_204",
+          "probeInterval": "1m30.5s",
+          "enableConcurrency": true
+        }"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("observatory should parse");
+    let observatory = parsed.config.observatory.expect("observatory model");
+
+    assert_eq!(observatory.subject_selectors, vec!["proxy-", "direct"]);
+    assert_eq!(observatory.probe_url, "https://probe.example/generate_204");
+    assert_eq!(observatory.probe_interval, Duration::from_millis(90_500));
+    assert!(observatory.enable_concurrency);
+}
+
+#[test]
+fn observatory_uses_xray_defaults() {
+    let parsed = parse_xray_json(&raw_with_observatory("{}"))
+        .expect("empty observatory should use defaults");
+    let observatory = parsed.config.observatory.expect("observatory model");
+
+    assert!(observatory.subject_selectors.is_empty());
+    assert_eq!(
+        observatory.probe_url,
+        xray_config::DEFAULT_OBSERVATORY_PROBE_URL
+    );
+    assert_eq!(
+        observatory.probe_interval,
+        xray_config::DEFAULT_OBSERVATORY_PROBE_INTERVAL
+    );
+    assert!(!observatory.enable_concurrency);
+}
+
+#[test]
+fn observatory_zero_duration_uses_xray_default_interval() {
+    let parsed = parse_xray_json(&raw_with_observatory(r#"{"probeInterval":"0s"}"#))
+        .expect("zero Xray duration should select the observer default");
+
+    assert_eq!(
+        parsed.config.observatory.unwrap().probe_interval,
+        xray_config::DEFAULT_OBSERVATORY_PROBE_INTERVAL
+    );
+}
+
+#[test]
+fn rejects_observatory_interval_outside_mobile_bounds() {
+    let raw = raw_with_observatory(r#"{"probeInterval":"250ms"}"#);
+
+    assert_parse_error_path(&raw, "$.observatory.probeInterval");
+}
+
+#[test]
+fn rejects_non_array_observatory_subject_selector() {
+    let raw = raw_with_observatory(r#"{"subjectSelector":"proxy"}"#);
+
+    assert_parse_error_path(&raw, "$.observatory.subjectSelector");
 }
 
 #[test]
@@ -5697,6 +5778,16 @@ fn raw_with_routing(routing: &str) -> String {
         &format!(r#","routing":{{{routing}}}"#),
     );
     raw
+}
+
+fn raw_with_observatory(observatory: &str) -> String {
+    format!(
+        r#"{{
+          "observatory": {observatory},
+          "inbounds": [],
+          "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    )
 }
 
 fn raw_with_inbound_extra(extra: &str) -> String {

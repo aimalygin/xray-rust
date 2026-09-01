@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    time::Duration,
 };
 
 use uuid::Uuid;
@@ -44,8 +45,22 @@ pub struct CoreConfig {
     pub outbounds: Vec<OutboundConfig>,
     pub default_outbound_tag: Option<String>,
     pub routing: RoutingConfig,
+    pub observatory: Option<ObservatoryConfig>,
     pub dns: DnsConfig,
     pub policy: PolicyConfig,
+}
+
+pub const DEFAULT_OBSERVATORY_PROBE_URL: &str = "https://www.google.com/generate_204";
+pub const DEFAULT_OBSERVATORY_PROBE_INTERVAL: Duration = Duration::from_secs(10);
+pub const OBSERVATORY_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Xray-compatible periodic URL probe configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservatoryConfig {
+    pub subject_selectors: Vec<String>,
+    pub probe_url: String,
+    pub probe_interval: Duration,
+    pub enable_concurrency: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -79,6 +94,7 @@ pub enum RoutingBalancerStrategy {
     #[default]
     Random,
     RoundRobin,
+    LeastPing,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

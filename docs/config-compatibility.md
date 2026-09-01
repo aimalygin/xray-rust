@@ -42,7 +42,8 @@ exposes an unauthenticated proxy to the network.
 | --- | --- |
 | `inbounds` | Supported subset below |
 | `outbounds` | Supported subset below |
-| `routing` | `field` rules only |
+| `routing` | Ordered `field` rules and selector-group subset below |
+| `observatory` | Bounded periodic HTTP(S) URL probes for tagged outbounds |
 | `dns` | Hosts, string/object servers with managed selection policy, global `queryStrategy`, and `fakeIp` subset |
 | `policy` | Level/system fields are parsed; runtime timeout/buffer behavior is a subset |
 | `log` | Accepted for input compatibility, but runtime file logging is configured through the embedding API |
@@ -858,7 +859,8 @@ Supported routing configuration:
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, and `port`;
 - destination: exactly one of `outboundTag` or `balancerTag`;
 - `routing.balancers` with `tag`, prefix-based `selector`, optional
-  `fallbackTag`, and `random` (the default) or `roundRobin` strategy.
+  `fallbackTag`, and `random` (the default), `roundRobin`, or `leastPing`
+  strategy.
 
 `network` accepts Xray-compatible `tcp`/`udp` strings or arrays, including a
 comma-separated string. `port` accepts a number or comma/range string over
@@ -873,13 +875,41 @@ strategy sees them. An empty prefix selects every tagged outbound. At most 256
 balancers and 4,096 selector prefixes are accepted per configuration.
 
 `random` selects a candidate independently for each new flow. `roundRobin`
-uses one atomic cursor shared by every router backed by the core's factory. If
-no selector matches, `fallbackTag` is used; without a valid fallback the route
-fails closed. The core API can install or clear a validated per-group override
-atomically. The override affects only new flows, while already opened flows and
-the lazy handler/transport pools remain intact. `leastPing`, `leastLoad`, and
-non-empty strategy `settings` are rejected until the health subsystem can
-honor them.
+uses one atomic cursor shared by every router backed by the core's factory.
+Both treat unknown health as eligible and skip candidates known to be
+unhealthy. `leastPing` requires a successful observation and deterministically
+chooses the lowest delay, using lexicographic candidate order to break ties.
+If no eligible candidate remains, `fallbackTag` is used; without a valid
+fallback the route fails closed. The core API can install or clear a validated
+per-group override atomically. An explicit override is authoritative even when
+that member is currently unhealthy. It affects only new flows, while already
+opened flows and lazy handler/transport pools remain intact. `leastLoad` and
+non-empty strategy `settings` remain unsupported.
+
+## Observatory and outbound health
+
+The top-level `observatory` object accepts Xray's `subjectSelector`, `probeURL`,
+`probeInterval`, and `enableConcurrency` fields. `subjectSelector` is an array
+of outbound-tag prefixes; matching tagged leaves are deduplicated and sorted.
+An empty selector array disables the observer. An omitted or empty `probeURL`
+uses Xray's `https://www.google.com/generate_204` default. Only safe HTTP and
+HTTPS URLs accepted by the startup-probe parser are allowed.
+
+`probeInterval` uses Xray/Go duration syntax such as `10s`, `1m30s`, or
+`1.5s`. Missing, empty, or `0s` selects the 10-second Xray default; explicit
+values are bounded to 1 second through 24 hours. Each probe has a fixed
+5-second timeout and considers HTTP 2xx/3xx healthy. Sequential mode sleeps
+for the interval after each outbound, matching Xray's pacing. Concurrent mode
+probes at most four outbounds at once, then sleeps for the interval after the
+full round.
+
+The observer starts only after the core and any configured startup probe have
+started successfully. It dials each leaf directly by tag, so routing rules and
+selector state cannot redirect its measurement. Stop cancels the observer with
+the rest of the core runtime. Rust health snapshots expose unknown/healthy/
+unhealthy state, delay, last-try and last-success timestamps, consecutive
+failure count, and a typed redacted failure category; raw URLs and transport
+error strings are not retained.
 
 Domain matchers:
 

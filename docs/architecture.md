@@ -70,13 +70,21 @@ node, and an explicit missing default remains an error when selected.
 
 The factory owns lazy per-leaf TCP, UDP, DNS, and shared VLESS caches together
 with one small mutable selection overlay. Random and atomic round-robin policy
-run over immutable group membership; a validated atomic override can redirect
-new flows without restarting the core. Because the leaf cache is unchanged,
-switching away and back reuses the same gRPC/XHTTP pool. The router owns session
-matching only; it resolves direct or `balancerTag` results through the graph and
-asks the factory for the compiled leaf handler. Unsupported handlers still fail
-when selected rather than making unrelated routes unusable at core construction
+run over immutable group membership; `leastPing` reads the same overlay's
+lock-free health atoms. A validated atomic override can redirect new flows
+without restarting the core. Because the leaf cache is unchanged, switching
+away and back reuses the same gRPC/XHTTP pool. The router owns session matching
+only; it resolves direct or `balancerTag` results through the graph and asks the
+factory for the compiled leaf handler. Unsupported handlers still fail when
+selected rather than making unrelated routes unusable at core construction
 time.
+
+A lifecycle-owned observatory task reuses the startup probe's bounded HTTP(S)
+dial path, but selects each configured leaf directly by tag. Health writes and
+snapshots are serialized by the overlay update lock; flow selection reads only
+atomics. Release/acquire publication makes a successful delay visible before
+the healthy state, while stopped cores abort the observer with every other
+runtime task.
 
 ### TCP candidate dialing
 

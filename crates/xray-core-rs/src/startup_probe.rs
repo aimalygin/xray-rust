@@ -83,6 +83,26 @@ pub(crate) async fn run_startup_probe(
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
 ) -> Result<(), StartupProbeError> {
+    run_outbound_url_probe(
+        outbound_router,
+        options,
+        destination_resolver,
+        bootstrap_resolver,
+        transport_dialer,
+        "xray-rust-startup-probe",
+    )
+    .await
+    .map(|_| ())
+}
+
+pub(crate) async fn run_outbound_url_probe(
+    outbound_router: &OutboundRouter,
+    options: StartupProbeOptions,
+    destination_resolver: &dyn DnsResolver,
+    bootstrap_resolver: &dyn DnsResolver,
+    transport_dialer: &TransportDialer,
+    user_agent: &str,
+) -> Result<Duration, StartupProbeError> {
     let timeout_ms = options.timeout.as_millis();
     let url = diagnostic_probe_url(&options.url);
     timeout(
@@ -94,6 +114,7 @@ pub(crate) async fn run_startup_probe(
             bootstrap_resolver,
             transport_dialer,
             None,
+            user_agent,
         ),
     )
     .await
@@ -113,7 +134,9 @@ async fn run_startup_probe_inner(
     bootstrap_resolver: &dyn DnsResolver,
     transport_dialer: &TransportDialer,
     tls_connector: Option<&TlsConnector>,
-) -> Result<(), StartupProbeError> {
+    user_agent: &str,
+) -> Result<Duration, StartupProbeError> {
+    let started_at = tokio::time::Instant::now();
     let parsed = parse_probe_url(&options.url)?;
     let url = parsed.diagnostic_label();
     let step_timeout = options.timeout;
@@ -187,8 +210,8 @@ async fn run_startup_probe_inner(
 
     let host = host_header_value(&parsed);
     let request = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: xray-rust-startup-probe\r\nConnection: close\r\n\r\n",
-        parsed.path_and_query, host
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {}\r\nConnection: close\r\n\r\n",
+        parsed.path_and_query, host, user_agent
     );
     timeout(step_timeout, stream.write_all(request.as_bytes()))
         .await
@@ -215,7 +238,7 @@ async fn run_startup_probe_inner(
     let status = parse_http_status_line(&status_line)
         .ok_or_else(|| StartupProbeError::MalformedHttpResponse(url.clone()))?;
     if (200..400).contains(&status) {
-        Ok(())
+        Ok(started_at.elapsed())
     } else {
         Err(StartupProbeError::HttpStatus { url, status })
     }
@@ -620,6 +643,7 @@ mod https_tests {
             }],
             default_outbound_tag: Some("direct".to_owned()),
             routing: RoutingConfig::default(),
+            observatory: None,
             dns: Default::default(),
             policy: Default::default(),
         }
@@ -724,6 +748,7 @@ mod https_tests {
                 &resolver,
                 &transport_dialer,
                 Some(&tls),
+                "xray-rust-startup-probe",
             ),
         )
         .await

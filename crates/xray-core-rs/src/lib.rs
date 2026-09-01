@@ -27,6 +27,7 @@ mod dns;
 mod dns_outbound;
 mod dns_outbound_runtime;
 mod fake_dns;
+mod health;
 mod http;
 mod outbound;
 mod policy;
@@ -51,9 +52,10 @@ pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
     open_vless_udp_stream_with_resolver_and_dialer, DnsOutbound, OutboundFactory, OutboundGraph,
-    OutboundNode, OutboundNodeId, OutboundNodeKind, OutboundRouter, OutboundSelectionOverlay,
-    OutboundSelectionSnapshot, OutboundSelectorGroup, OutboundSelectorGroupSnapshot, TcpOutbound,
-    UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
+    OutboundHealthFailure, OutboundHealthSnapshot, OutboundHealthState,
+    OutboundHealthStatusSnapshot, OutboundNode, OutboundNodeId, OutboundNodeKind, OutboundRouter,
+    OutboundSelectionOverlay, OutboundSelectionSnapshot, OutboundSelectorGroup,
+    OutboundSelectorGroupSnapshot, TcpOutbound, UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -226,6 +228,8 @@ pub enum CoreError {
     UnauthenticatedLanExposure,
     #[error("invalid fake-IP configuration")]
     InvalidFakeIpConfiguration,
+    #[error("invalid observatory probe URL")]
+    InvalidObservatoryProbeUrl,
     #[error("outbound network is not supported")]
     UnsupportedOutboundNetwork,
     #[error("outbound security is not supported")]
@@ -512,6 +516,11 @@ impl Core {
         tun_runtime_options: TunRuntimeOptions,
         managed_dns_resolver: bool,
     ) -> Result<Self, CoreError> {
+        if config.observatory.as_ref().is_some_and(|observatory| {
+            startup_probe::parse_probe_url(&observatory.probe_url).is_err()
+        }) {
+            return Err(CoreError::InvalidObservatoryProbeUrl);
+        }
         if config.dns.fake_ip.as_ref().is_some_and(|fake_ip| {
             fake_ip.enabled
                 && fake_dns::FakeIpMapper::from_config(
@@ -605,6 +614,10 @@ impl Core {
 
     pub fn outbound_selection_snapshot(&self) -> OutboundSelectionSnapshot {
         self.outbound_selection().snapshot()
+    }
+
+    pub fn outbound_health_snapshot(&self) -> OutboundHealthSnapshot {
+        self.outbound_selection().health_snapshot()
     }
 
     fn runtime_dns_resolvers(
@@ -865,6 +878,30 @@ impl Core {
             }
             self.runtime_logger
                 .debug(|| format!("Debug startupProbe success url={probe_url}"));
+        }
+
+        if let Some(observatory) = config.observatory.clone() {
+            let nodes = outbound_router
+                .graph()
+                .leaf_nodes_matching_prefixes(&observatory.subject_selectors);
+            if !nodes.is_empty() {
+                let runtime = health::ObservatoryRuntime::new(
+                    observatory,
+                    nodes,
+                    Arc::clone(&outbound_router),
+                    outbound_router.selection_handle(),
+                    Arc::clone(&runtime_dns_resolvers.destination),
+                    Arc::clone(&runtime_dns_resolvers.bootstrap),
+                    Arc::clone(&self.transport_dialer),
+                );
+                let task =
+                    tokio::spawn(health::run_observatory(runtime, self.shutdown.subscribe()));
+                self.runtime
+                    .as_mut()
+                    .expect("running core retains runtime state")
+                    .tasks
+                    .push(task);
+            }
         }
 
         Ok(())

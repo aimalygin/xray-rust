@@ -16,19 +16,25 @@ use crate::{
     DnsQTypeRange, DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport,
     DomainHostIndex, DomainMatcher, DomainNameMode, GrpcSettings, HappyEyeballsSettings,
     HttpUpgradeSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, Network,
-    OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig,
-    PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
-    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingBalancer,
-    RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule,
-    RoutingRuleTarget, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
-    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, MAX_DNS_SERVER_TIMEOUT_MS,
+    ObservatoryConfig, OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig,
+    PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange,
+    QuicParamsSettings, QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher,
+    RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
+    RoutingPortRange, RoutingRule, RoutingRuleTarget, SniffingDestination, SocketOptions,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
+    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
+    XhttpXmuxSettings, DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL,
+    MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
 const MAX_ROUTING_BALANCERS: usize = 256;
 const MAX_ROUTING_BALANCER_SELECTORS: usize = 4_096;
+const MAX_OBSERVATORY_SUBJECT_SELECTORS: usize = 4_096;
+const MIN_OBSERVATORY_PROBE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+const MAX_OBSERVATORY_PROBE_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(24 * 60 * 60);
 const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
 const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
 const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
@@ -131,6 +137,43 @@ enum LegacyDnsNonIpMode {
     Reject,
     Drop,
     Skip,
+}
+
+fn parse_xray_duration(raw: &str) -> Option<std::time::Duration> {
+    if raw.is_empty() || raw.starts_with(['-', '+']) {
+        return None;
+    }
+
+    let mut rest = raw;
+    let mut total_seconds = 0.0f64;
+    while !rest.is_empty() {
+        let number_end = rest
+            .char_indices()
+            .take_while(|(_, ch)| ch.is_ascii_digit() || *ch == '.')
+            .map(|(index, ch)| index + ch.len_utf8())
+            .last()?;
+        let number = rest[..number_end].parse::<f64>().ok()?;
+        if !number.is_finite() || number < 0.0 {
+            return None;
+        }
+        rest = &rest[number_end..];
+        let (unit, multiplier) = [
+            ("ns", 1e-9),
+            ("us", 1e-6),
+            ("µs", 1e-6),
+            ("μs", 1e-6),
+            ("ms", 1e-3),
+            ("s", 1.0),
+            ("m", 60.0),
+            ("h", 3600.0),
+        ]
+        .into_iter()
+        .find(|(unit, _)| rest.starts_with(unit))?;
+        total_seconds += number * multiplier;
+        rest = &rest[unit.len()..];
+    }
+
+    std::time::Duration::try_from_secs_f64(total_seconds).ok()
 }
 
 fn insert_domain_matchers(
@@ -536,6 +579,7 @@ impl Parser<'_> {
         let inbounds = self.parse_inbounds();
         let outbounds = self.parse_outbounds();
         let routing = self.parse_routing();
+        let observatory = self.parse_observatory();
         let dns = self.parse_dns();
         let policy = self.parse_policy();
         let default_outbound_tag = outbounds.first().and_then(|outbound| outbound.tag.clone());
@@ -545,6 +589,7 @@ impl Parser<'_> {
             outbounds,
             default_outbound_tag,
             routing,
+            observatory,
             dns,
             policy,
         }
@@ -554,8 +599,135 @@ impl Parser<'_> {
         self.reject_unknown_fields(
             self.root,
             "$",
-            &["log", "inbounds", "outbounds", "routing", "dns", "policy"],
+            &[
+                "log",
+                "inbounds",
+                "outbounds",
+                "routing",
+                "observatory",
+                "dns",
+                "policy",
+            ],
         );
+    }
+
+    fn parse_observatory(&mut self) -> Option<ObservatoryConfig> {
+        let observatory = self.root.get("observatory")?;
+        let path = "$.observatory";
+        if observatory.is_null() {
+            return None;
+        }
+        if !observatory.is_object() {
+            self.error(path, "observatory must be an object or null");
+            return None;
+        }
+        self.reject_unknown_fields(
+            observatory,
+            path,
+            &[
+                "subjectSelector",
+                "probeURL",
+                "probeInterval",
+                "enableConcurrency",
+            ],
+        );
+
+        let subject_selectors = match observatory.get("subjectSelector") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(values)) => {
+                if values.len() > MAX_OBSERVATORY_SUBJECT_SELECTORS {
+                    self.error(
+                        format!("{path}.subjectSelector"),
+                        format!(
+                            "observatory contains {} subject selectors; maximum supported per configuration is {MAX_OBSERVATORY_SUBJECT_SELECTORS}",
+                            values.len()
+                        ),
+                    );
+                    return None;
+                }
+                let mut selectors = Vec::with_capacity(values.len());
+                for (index, value) in values.iter().enumerate() {
+                    let Some(value) = value.as_str() else {
+                        self.error(
+                            format!("{path}.subjectSelector[{index}]"),
+                            "observatory subject selector must be a string",
+                        );
+                        return None;
+                    };
+                    selectors.push(value.to_owned());
+                }
+                selectors
+            }
+            Some(_) => {
+                self.error(
+                    format!("{path}.subjectSelector"),
+                    "observatory subjectSelector must be an array",
+                );
+                return None;
+            }
+        };
+        let probe_url = match observatory.get("probeURL") {
+            None | Some(Value::Null) => DEFAULT_OBSERVATORY_PROBE_URL.to_owned(),
+            Some(Value::String(value)) if value.is_empty() => {
+                DEFAULT_OBSERVATORY_PROBE_URL.to_owned()
+            }
+            Some(Value::String(value)) => value.clone(),
+            Some(_) => {
+                self.error(
+                    format!("{path}.probeURL"),
+                    "observatory probeURL must be a string or null",
+                );
+                return None;
+            }
+        };
+        let probe_interval = match observatory.get("probeInterval") {
+            None | Some(Value::Null) => DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+            Some(Value::String(value)) if value.is_empty() => DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+            Some(Value::String(value)) => match parse_xray_duration(value) {
+                Some(duration) if duration.is_zero() => DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+                Some(duration)
+                    if (MIN_OBSERVATORY_PROBE_INTERVAL..=MAX_OBSERVATORY_PROBE_INTERVAL)
+                        .contains(&duration) =>
+                {
+                    duration
+                }
+                Some(_) => {
+                    self.error(
+                        format!("{path}.probeInterval"),
+                        "observatory probeInterval must be between 1s and 24h",
+                    );
+                    return None;
+                }
+                None => {
+                    self.error(
+                        format!("{path}.probeInterval"),
+                        "observatory probeInterval must be a valid Xray duration string",
+                    );
+                    return None;
+                }
+            },
+            Some(_) => {
+                self.error(
+                    format!("{path}.probeInterval"),
+                    "observatory probeInterval must be a duration string or null",
+                );
+                return None;
+            }
+        };
+        let enable_concurrency = self
+            .optional_bool_at(
+                observatory,
+                "enableConcurrency",
+                format!("{path}.enableConcurrency"),
+            )
+            .unwrap_or(false);
+
+        Some(ObservatoryConfig {
+            subject_selectors,
+            probe_url,
+            probe_interval,
+            enable_concurrency,
+        })
     }
 
     fn parse_dns(&mut self) -> DnsConfig {
@@ -1587,11 +1759,14 @@ impl Parser<'_> {
             Some(Value::String(kind)) if kind.eq_ignore_ascii_case("roundrobin") => {
                 Some(RoutingBalancerStrategy::RoundRobin)
             }
+            Some(Value::String(kind)) if kind.eq_ignore_ascii_case("leastping") => {
+                Some(RoutingBalancerStrategy::LeastPing)
+            }
             Some(Value::String(kind)) => {
                 self.error(
                     format!("{strategy_path}.type"),
                     format!(
-                        "unsupported routing balancer strategy `{kind}`; health-backed leastPing and leastLoad are not implemented yet"
+                        "unsupported routing balancer strategy `{kind}`; leastLoad is not implemented yet"
                     ),
                 );
                 None

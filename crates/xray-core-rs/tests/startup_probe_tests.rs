@@ -45,6 +45,7 @@ fn config_with_outbounds(outbounds: Vec<OutboundConfig>, default: Option<&str>) 
         outbounds,
         default_outbound_tag: default.map(ToOwned::to_owned),
         routing: RoutingConfig::default(),
+        observatory: None,
         dns: Default::default(),
         policy: Default::default(),
     }

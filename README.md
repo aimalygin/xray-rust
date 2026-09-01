@@ -56,9 +56,9 @@ The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 | Area | Implemented | Important limits |
 | --- | --- | --- |
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
-| Outbounds | Freedom/direct, VLESS client over TCP, and DNS | No VMess, Trojan, Shadowsocks, WireGuard, balancers, or outbound chaining |
+| Outbounds | Freedom/direct, VLESS client over TCP, DNS, and health-aware selector groups | No VMess, Trojan, Shadowsocks, WireGuard, `leastLoad`, or outbound chaining |
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
-| Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray-style string/object DNS server selection, routed multi-address A/AAAA/CNAME resolution with global/per-server `queryStrategy` and TTL-aware cache, ordered `dns.hosts` IP arrays, one bounded per-Core fake-IP mapper, and ordered DNS-outbound Direct/Drop/Return/Hijack policy shared by TUN, SOCKS TCP/UDP, and HTTP CONNECT; `Reject` is a warned legacy alias for `Return` with REFUSED, while Direct supports UDP/TCP rewrite plus TCP/TLS/REALITY `streamSettings` | No `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
+| Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, Xray `routing.balancers` plus bounded `observatory` URL health checks, Xray-style DNS server selection, routed multi-address resolution, TTL-aware cache, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | No `leastLoad`, outbound chaining, `UseSystem` route probing, managed `dns.servers` DoH/DoT/DoQ, negative/stale cache, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
 
 See [project status](docs/status.md) and
