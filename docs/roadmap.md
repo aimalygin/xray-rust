@@ -208,8 +208,8 @@ adding unfinished Phase 2 features.
   hardened, including their bounded connection lifecycles.
 - Keep the implemented typed negative cache and bounded positive-answer
   stale-while-revalidate behavior hardened.
-- Provide an injectable platform system resolver and explicit bootstrap route
-  behavior.
+- Keep the implemented injectable platform resolver and explicit
+  `System`/`StaticOnly` bootstrap-route behavior hardened.
 - Preserve bounded query concurrency, cancellation, cache ownership, and
   recursion protection across TUN, SOCKS, HTTP, and probes.
 
@@ -267,6 +267,12 @@ answers while a single-flight refresh runs in the background. Global
 requires an explicit 1-through-86400-second window. Xray's unbounded zero value
 and per-server overrides remain fail-closed until their lifecycle/resource
 ownership can be represented safely.
+Managed Rust embeddings can now inject a platform resolver without discarding
+`dns.hosts`, configured `dns.servers`, routed query transport, or the shared
+destination cache. `System` uses that dependency only as the no-server
+destination fallback and the non-recursive upstream/carrier bootstrap;
+`StaticOnly` ignores it and remains fail-closed outside pinned hosts. The same
+dependency is preserved when `Core::start` rebuilds the routed runtime resolver.
 
 ### Mobile SDK and management API
 

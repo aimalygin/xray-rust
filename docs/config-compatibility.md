@@ -1124,7 +1124,10 @@ For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
 resolution is `dns.hosts` → configured `dns.servers`: classic, `tcp://`, and
 `tls://` clients are routed, while `tcp+local://` clients intentionally dial directly.
 When no `dns.servers` are
-configured, unresolved names use the cached operating-system resolver. Authoritative
+configured, unresolved names use the cached operating-system resolver by
+default. A Rust embedding can replace that platform boundary through
+`Core::with_platform_dns_resolver` (or its TUN-options variant) without losing
+managed hosts, servers, routing, or cache ownership. Authoritative
 NXDOMAIN and A+AAAA NODATA advance to the next configured server, matching
 Xray-core's ordered failover. If no later server succeeds, an authoritative
 negative result is terminal and does not leak into the operating-system
@@ -1141,9 +1144,14 @@ through the transport API when their surrounding operation has a stricter
 deadline.
 `StaticOnly` uses the same routed path and then fails closed; its separate
 bootstrap resolver never uses `dns.servers` or the operating-system resolver.
-Explicitly injected fallback resolvers remain trusted integration dependencies;
-their results are used as-is, while the no-server call is still bounded by the
-same five-second fallback deadline.
+In managed `System` mode, a platform resolver injected through the dedicated
+constructor remains a trusted integration dependency: `dns.hosts` runs first,
+the no-server destination call retains its five-second deadline, and endpoint
+bootstrap inherits its enclosing operation deadline. Managed `StaticOnly`
+ignores that dependency. The lower-level `with_dns_resolver` and
+`with_runtime_dependencies*` constructors instead inject a complete resolver
+as-is and deliberately bypass managed `dns.servers`; they remain useful for
+deterministic tests and integrations that own the entire DNS policy.
 The two `disableFallback*` fields control Xray's fallback phase within the
 configured name-server list. They are independent from endpoint bootstrap: in
 `System` mode a domain-valued DNS upstream may still use the operating-system

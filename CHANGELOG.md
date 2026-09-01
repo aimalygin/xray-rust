@@ -59,6 +59,12 @@ release series.
   `disableCache`, `serveStale`, and `serveExpiredTTL` fields are supported;
   transport failures are never cached, refreshes remain single-flight, and an
   explicit 1-through-86400-second stale window is required.
+- Added managed platform-resolver injection for Rust embeddings. The new
+  constructors retain `dns.hosts`, configured servers, routed query transport,
+  and cache ownership; `System` uses the dependency only for no-server
+  destination fallback and non-recursive endpoint bootstrap, while
+  `StaticOnly` ignores it and remains fail-closed. Runtime startup preserves
+  the same dependency instead of silently restoring `getaddrinfo`.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

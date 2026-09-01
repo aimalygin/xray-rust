@@ -95,8 +95,8 @@ pub enum DnsBootstrapMode {
     /// fail closed when neither can answer. Bootstrap itself uses only
     /// `dns.hosts`, so it cannot recurse through a tunnel-local DNS anchor.
     /// Mobile VPN integrations should use this after installing that anchor.
-    /// Constructors with an explicitly injected resolver keep using it as a
-    /// trusted integration dependency.
+    /// Low-level constructors that inject a complete resolver bypass managed
+    /// DNS policy and therefore do not use this mode.
     StaticOnly,
 }
 
@@ -349,6 +349,7 @@ pub struct Core {
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
+    managed_dns_fallback_resolver: Option<Arc<dyn DnsResolver>>,
     dns_rules: DnsRules,
     managed_dns_resolver: bool,
     transport_dialer: Arc<TransportDialer>,
@@ -359,25 +360,21 @@ pub struct Core {
     runtime_logger: RuntimeLogger,
 }
 
+struct CoreDnsDependencies {
+    destination: Arc<dyn DnsResolver>,
+    bootstrap: Option<Arc<dyn DnsResolver>>,
+    managed_fallback: Option<Arc<dyn DnsResolver>>,
+    rules: DnsRules,
+    managed: bool,
+}
+
 impl Core {
-    pub fn new(mut config: CoreConfig) -> Result<Self, CoreError> {
-        let system_resolver = system_dns_resolver();
-        let dns_rules = DnsRules::from_config(&mut config);
-        let dns_resolver = configured_dns_resolver_for_config(
-            &config,
-            Arc::clone(&system_resolver),
-            dns_rules.clone(),
-        );
-        let dns_bootstrap_resolver =
-            host_only_dns_resolver_for_config(&config, system_resolver, dns_rules.hosts_only());
-        Self::build(
+    pub fn new(config: CoreConfig) -> Result<Self, CoreError> {
+        Self::with_managed_dns_dependencies(
             config,
-            dns_resolver,
-            Some(dns_bootstrap_resolver),
-            dns_rules,
+            system_dns_resolver(),
             Arc::new(TransportDialer::system()?),
             TunRuntimeOptions::default(),
-            true,
         )
     }
 
@@ -393,92 +390,124 @@ impl Core {
         let dns_rules = DnsRules::injected(&mut config);
         Self::build(
             config,
-            Arc::clone(&dns_resolver),
-            Some(dns_resolver),
-            dns_rules,
+            CoreDnsDependencies {
+                destination: Arc::clone(&dns_resolver),
+                bootstrap: Some(dns_resolver),
+                managed_fallback: None,
+                rules: dns_rules,
+                managed: false,
+            },
             Arc::new(TransportDialer::system()?),
             TunRuntimeOptions::default(),
-            false,
         )
     }
 
     pub fn with_tun_runtime_options(
-        mut config: CoreConfig,
+        config: CoreConfig,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
-        let system_resolver = system_dns_resolver();
-        let dns_rules = DnsRules::from_config(&mut config);
-        let (dns_resolver, dns_bootstrap_resolver) = match tun_runtime_options.dns_bootstrap {
-            DnsBootstrapMode::System => (
-                configured_dns_resolver_for_config(
-                    &config,
-                    Arc::clone(&system_resolver),
-                    dns_rules.clone(),
-                ),
-                Some(host_only_dns_resolver_for_config(
-                    &config,
-                    system_resolver,
-                    dns_rules.hosts_only(),
-                )),
-            ),
-            DnsBootstrapMode::StaticOnly => {
-                let resolver = static_only_dns_resolver_for_config(
-                    &config,
-                    Arc::clone(&dns_rules.static_hosts),
-                );
-                (Arc::clone(&resolver), Some(resolver))
-            }
-        };
-        Self::build(
+        Self::with_managed_dns_dependencies(
             config,
-            dns_resolver,
-            dns_bootstrap_resolver,
-            dns_rules,
+            system_dns_resolver(),
             Arc::new(TransportDialer::system()?),
             tun_runtime_options,
-            true,
+        )
+    }
+
+    /// Creates a managed-DNS core with an embedding-provided platform resolver.
+    ///
+    /// In [`DnsBootstrapMode::System`], the resolver is used only after
+    /// `dns.hosts` for destination fallback and non-recursive upstream/carrier
+    /// bootstrap. Configured `dns.servers` remain active for destinations and
+    /// are never used to bootstrap themselves. [`DnsBootstrapMode::StaticOnly`]
+    /// ignores this dependency and continues to fail closed outside
+    /// `dns.hosts`.
+    pub fn with_platform_dns_resolver(
+        config: CoreConfig,
+        platform_dns_resolver: Arc<dyn DnsResolver>,
+    ) -> Result<Self, CoreError> {
+        Self::with_platform_dns_resolver_and_tun_options(
+            config,
+            platform_dns_resolver,
+            TunRuntimeOptions::default(),
+        )
+    }
+
+    /// The tun-policy variant of [`Core::with_platform_dns_resolver`].
+    pub fn with_platform_dns_resolver_and_tun_options(
+        config: CoreConfig,
+        platform_dns_resolver: Arc<dyn DnsResolver>,
+        tun_runtime_options: TunRuntimeOptions,
+    ) -> Result<Self, CoreError> {
+        Self::with_managed_dns_dependencies(
+            config,
+            platform_dns_resolver,
+            Arc::new(TransportDialer::system()?),
+            tun_runtime_options,
         )
     }
 
     /// Creates a core whose System-mode direct DNS sockets and managed TUN
     /// routed Freedom DNS sockets share the dialer's socket-protection policy.
     pub fn with_transport_dialer_and_tun_options(
-        mut config: CoreConfig,
+        config: CoreConfig,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
     ) -> Result<Self, CoreError> {
-        let system_resolver = system_dns_resolver();
-        let dns_rules = DnsRules::from_config(&mut config);
-        let (dns_resolver, dns_bootstrap_resolver) = match tun_runtime_options.dns_bootstrap {
-            DnsBootstrapMode::System => (
-                configured_dns_resolver_for_config_with_socket_protector(
-                    &config,
-                    Arc::clone(&system_resolver),
-                    dns_rules.clone(),
-                    transport_dialer.socket_protector_arc(),
-                ),
-                Some(host_only_dns_resolver_for_config(
-                    &config,
-                    system_resolver,
-                    dns_rules.hosts_only(),
-                )),
-            ),
-            DnsBootstrapMode::StaticOnly => {
-                let resolver = static_only_dns_resolver_for_config(
-                    &config,
-                    Arc::clone(&dns_rules.static_hosts),
-                );
-                (Arc::clone(&resolver), Some(resolver))
-            }
-        };
-        Self::build(
+        Self::with_managed_dns_dependencies(
             config,
-            dns_resolver,
-            dns_bootstrap_resolver,
-            dns_rules,
+            system_dns_resolver(),
             transport_dialer,
             tun_runtime_options,
-            true,
+        )
+    }
+
+    fn with_managed_dns_dependencies(
+        mut config: CoreConfig,
+        platform_dns_resolver: Arc<dyn DnsResolver>,
+        transport_dialer: Arc<TransportDialer>,
+        tun_runtime_options: TunRuntimeOptions,
+    ) -> Result<Self, CoreError> {
+        let dns_rules = DnsRules::from_config(&mut config);
+        let (dns_resolver, dns_bootstrap_resolver, managed_dns_fallback_resolver) =
+            match tun_runtime_options.dns_bootstrap {
+                DnsBootstrapMode::System => (
+                    configured_dns_resolver_for_config_with_socket_protector(
+                        &config,
+                        Arc::clone(&platform_dns_resolver),
+                        dns_rules.clone(),
+                        transport_dialer.socket_protector_arc(),
+                    ),
+                    Some(host_only_dns_resolver_for_config(
+                        &config,
+                        Arc::clone(&platform_dns_resolver),
+                        dns_rules.hosts_only(),
+                    )),
+                    Some(platform_dns_resolver),
+                ),
+                DnsBootstrapMode::StaticOnly => {
+                    let resolver = static_only_dns_resolver_for_config(
+                        &config,
+                        Arc::clone(&dns_rules.static_hosts),
+                    );
+                    (
+                        Arc::clone(&resolver),
+                        Some(resolver),
+                        Some(Arc::new(FailClosedDnsResolver) as Arc<dyn DnsResolver>),
+                    )
+                }
+            };
+        Self::build(
+            config,
+            CoreDnsDependencies {
+                destination: dns_resolver,
+                bootstrap: dns_bootstrap_resolver,
+                managed_fallback: managed_dns_fallback_resolver,
+                rules: dns_rules,
+                managed: true,
+            },
+            transport_dialer,
+            tun_runtime_options,
         )
     }
 
@@ -490,12 +519,15 @@ impl Core {
         let dns_rules = DnsRules::injected(&mut config);
         Self::build(
             config,
-            Arc::clone(&dns_resolver),
-            Some(dns_resolver),
-            dns_rules,
+            CoreDnsDependencies {
+                destination: Arc::clone(&dns_resolver),
+                bootstrap: Some(dns_resolver),
+                managed_fallback: None,
+                rules: dns_rules,
+                managed: false,
+            },
             transport_dialer,
             TunRuntimeOptions::default(),
-            false,
         )
     }
 
@@ -509,23 +541,23 @@ impl Core {
         let dns_rules = DnsRules::injected(&mut config);
         Self::build(
             config,
-            dns_resolver,
-            dns_bootstrap_resolver,
-            dns_rules,
+            CoreDnsDependencies {
+                destination: dns_resolver,
+                bootstrap: dns_bootstrap_resolver,
+                managed_fallback: None,
+                rules: dns_rules,
+                managed: false,
+            },
             transport_dialer,
             tun_runtime_options,
-            false,
         )
     }
 
     fn build(
         mut config: CoreConfig,
-        dns_resolver: Arc<dyn DnsResolver>,
-        dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
-        dns_rules: DnsRules,
+        dns: CoreDnsDependencies,
         transport_dialer: Arc<TransportDialer>,
         tun_runtime_options: TunRuntimeOptions,
-        managed_dns_resolver: bool,
     ) -> Result<Self, CoreError> {
         if config.observatory.as_ref().is_some_and(|observatory| {
             startup_probe::parse_probe_url(&observatory.probe_url).is_err()
@@ -566,10 +598,11 @@ impl Core {
             shutdown,
             tun,
             runtime: None,
-            dns_resolver,
-            dns_bootstrap_resolver,
-            dns_rules,
-            managed_dns_resolver,
+            dns_resolver: dns.destination,
+            dns_bootstrap_resolver: dns.bootstrap,
+            managed_dns_fallback_resolver: dns.managed_fallback,
+            dns_rules: dns.rules,
+            managed_dns_resolver: dns.managed,
             transport_dialer,
             outbound_router,
             connection_registry: Arc::new(ConnectionRegistry::new()),
@@ -696,10 +729,11 @@ impl Core {
             )) as Arc<dyn DnsQueryTransport>
         });
         let destination = if self.managed_dns_resolver {
-            let fallback: Arc<dyn DnsResolver> = match self.tun_runtime_options.dns_bootstrap {
-                DnsBootstrapMode::System => system_dns_resolver(),
-                DnsBootstrapMode::StaticOnly => Arc::new(FailClosedDnsResolver),
-            };
+            let fallback = self
+                .managed_dns_fallback_resolver
+                .as_ref()
+                .cloned()
+                .expect("managed DNS retains its destination fallback resolver");
             let resolver = configured_dns_resolver_from_config_with_transport(
                 config.as_ref(),
                 fallback,
@@ -1132,6 +1166,7 @@ fn host_only_dns_resolver_for_config(
     )
 }
 
+#[cfg(test)]
 fn configured_dns_resolver_for_config(
     config: &CoreConfig,
     fallback: Arc<dyn DnsResolver>,
@@ -1250,8 +1285,9 @@ mod tests {
     use super::{
         configured_dns_resolver_for_config, configured_dns_resolver_from_config_with_transport,
         destination_dns_cache_for_config, host_only_dns_resolver_for_config, static_host_index,
-        static_only_dns_resolver_for_config, take_name_server_policy_set, Core, DnsRules,
-        DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions, TunRuntimeProfile,
+        static_only_dns_resolver_for_config, take_name_server_policy_set, Core, DnsBootstrapMode,
+        DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions,
+        TunRuntimeProfile,
     };
 
     struct StaticResolver;
@@ -1270,6 +1306,28 @@ mod tests {
     }
 
     struct PendingResolver;
+
+    struct CountingResolver {
+        calls: AtomicUsize,
+        address: IpAddr,
+    }
+
+    impl CountingResolver {
+        fn new(address: IpAddr) -> Self {
+            Self {
+                calls: AtomicUsize::new(0),
+                address,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl DnsResolver for CountingResolver {
+        async fn resolve(&self, _domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            Ok(SocketAddr::new(self.address, port))
+        }
+    }
 
     struct NegativeCountingResolver(AtomicUsize);
 
@@ -1838,6 +1896,148 @@ mod tests {
                 "198.51.100.12:443".parse().expect("static IPv4 address"),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn managed_platform_resolver_survives_runtime_dns_rebuild() {
+        let raw = r#"{
+            "dns": {
+              "hosts": {
+                "full:pinned.example": "198.51.100.10"
+              }
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let platform = Arc::new(CountingResolver::new(IpAddr::V4(Ipv4Addr::new(
+            203, 0, 113, 90,
+        ))));
+        let core = Core::with_platform_dns_resolver(parsed.config, platform.clone())
+            .expect("core should initialize");
+
+        assert_eq!(
+            core.dns_bootstrap_resolver
+                .as_ref()
+                .unwrap()
+                .resolve("pinned.example", 443)
+                .await
+                .unwrap(),
+            SocketAddr::from(([198, 51, 100, 10], 443))
+        );
+        assert_eq!(platform.calls.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            core.dns_resolver
+                .resolve("platform-before-start.example", 443)
+                .await
+                .unwrap(),
+            SocketAddr::from(([203, 0, 113, 90], 443))
+        );
+
+        let runtime = core.runtime_dns_resolvers(&core.config, &core.outbound_router, false);
+        assert_eq!(
+            runtime
+                .destination
+                .resolve("platform-after-start.example", 8443)
+                .await
+                .unwrap(),
+            SocketAddr::from(([203, 0, 113, 90], 8443))
+        );
+        assert_eq!(
+            runtime
+                .bootstrap
+                .resolve("upstream-bootstrap.example", 853)
+                .await
+                .unwrap(),
+            SocketAddr::from(([203, 0, 113, 90], 853))
+        );
+        assert_eq!(platform.calls.load(Ordering::Relaxed), 3);
+    }
+
+    #[tokio::test]
+    async fn managed_platform_resolver_keeps_configured_servers_destination_only() {
+        let raw = r#"{
+            "dns": {
+              "servers": ["192.0.2.53"]
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let platform = Arc::new(CountingResolver::new(IpAddr::V4(Ipv4Addr::new(
+            203, 0, 113, 91,
+        ))));
+        let core = Core::with_platform_dns_resolver(parsed.config, platform.clone())
+            .expect("core should initialize");
+
+        assert_eq!(core.dns_rules.name_servers.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            core.dns_bootstrap_resolver
+                .as_ref()
+                .unwrap()
+                .resolve("carrier-bootstrap.example", 53)
+                .await
+                .unwrap(),
+            SocketAddr::from(([203, 0, 113, 91], 53))
+        );
+        assert_eq!(platform.calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn managed_static_only_dns_ignores_platform_resolver() {
+        let raw = r#"{
+            "dns": {
+              "hosts": {
+                "full:pinned.example": "198.51.100.11"
+              }
+            },
+            "inbounds": [],
+            "outbounds": [
+                { "tag": "direct", "protocol": "freedom" }
+            ]
+        }"#;
+        let parsed = parse_xray_json(raw).expect("config should parse");
+        let platform = Arc::new(CountingResolver::new(IpAddr::V4(Ipv4Addr::new(
+            203, 0, 113, 92,
+        ))));
+        let core = Core::with_platform_dns_resolver_and_tun_options(
+            parsed.config,
+            platform.clone(),
+            TunRuntimeOptions {
+                dns_bootstrap: DnsBootstrapMode::StaticOnly,
+                ..TunRuntimeOptions::default()
+            },
+        )
+        .expect("core should initialize");
+
+        assert_eq!(
+            core.dns_resolver
+                .resolve("pinned.example", 443)
+                .await
+                .unwrap(),
+            SocketAddr::from(([198, 51, 100, 11], 443))
+        );
+        assert!(matches!(
+            core.dns_bootstrap_resolver
+                .as_ref()
+                .unwrap()
+                .resolve("unpinned.example", 443)
+                .await,
+            Err(TransportError::NoResolvedAddress(domain, 443))
+                if domain == "unpinned.example"
+        ));
+
+        let runtime = core.runtime_dns_resolvers(&core.config, &core.outbound_router, false);
+        assert!(runtime
+            .destination
+            .resolve("still-unpinned.example", 443)
+            .await
+            .is_err());
+        assert_eq!(platform.calls.load(Ordering::Relaxed), 0);
     }
 
     #[derive(Default)]

@@ -159,8 +159,10 @@ rather than leaving detached network tasks behind.
 The operating-system `getaddrinfo` used by optional `System` bootstrap is the
 exception: Tokio's blocking lookup may finish after its caller times out.
 Mobile full-tunnel adapters avoid that path after start by pinning bootstrap
-addresses and selecting `StaticOnly`; a future native async bootstrap backend
-should remove this platform limitation for long-running server embeddings.
+addresses and selecting `StaticOnly`. Long-running Rust embeddings can instead
+install a native asynchronous platform backend through
+`Core::with_platform_dns_resolver`; the dependency remains separate from
+managed destination servers and survives the runtime resolver rebuild.
 `xray-core-rs` supplies a transport-aware query service. Classic DNS,
 `tcp://`, and certificate-verified `tls://` exchanges open through the normal
 outbound router; `tcp+local://`
