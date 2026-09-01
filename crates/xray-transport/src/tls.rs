@@ -50,13 +50,16 @@ struct ClientConfigKey {
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-enum Http3ClientConfigKey {
+enum QuicClientConfigKey {
     System {
         allow_insecure: bool,
         pinned_peer_cert_sha256: Vec<[u8; 32]>,
         verify_peer_cert_by_name: Vec<String>,
+        alpn: Vec<u8>,
     },
-    Pinned,
+    Pinned {
+        alpn: Vec<u8>,
+    },
 }
 
 /// Where a connector's rustls configs come from. The two kinds are mutually
@@ -76,11 +79,12 @@ pub struct TlsConnector {
     /// a shape once per connector family rather than once per clone --
     /// `tls_connector_clones_share_one_config_cache` pins that.
     source: Arc<ConfigSource>,
-    /// HTTP/3 deliberately bypasses uTLS shaping and the ordinary stream
-    /// config cache. Keeping its own semantic cache preserves QUIC session
-    /// tickets while coalescing configs that differ only in ignored
-    /// fingerprint or configured ALPN fields.
-    http3_configs: Arc<Mutex<HashMap<Http3ClientConfigKey, Arc<rustls::ClientConfig>>>>,
+    /// QUIC deliberately bypasses uTLS shaping and the ordinary stream config
+    /// cache. Keeping its own semantic cache preserves QUIC session tickets
+    /// while coalescing configs that differ only in ignored fingerprint or
+    /// configured stream-ALPN fields. The QUIC application ALPN remains part
+    /// of the key so HTTP/3 and DoQ can never share a config.
+    quic_configs: Arc<Mutex<HashMap<QuicClientConfigKey, Arc<rustls::ClientConfig>>>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
 }
 
@@ -102,7 +106,7 @@ impl TlsConnector {
     pub fn system() -> Result<Self, TransportError> {
         Ok(Self {
             source: Arc::new(ConfigSource::Cached(Mutex::new(HashMap::new()))),
-            http3_configs: Arc::new(Mutex::new(HashMap::new())),
+            quic_configs: Arc::new(Mutex::new(HashMap::new())),
             socket_protector: None,
         })
     }
@@ -123,7 +127,7 @@ impl TlsConnector {
     pub fn with_pinned_client_config(client_config: Arc<rustls::ClientConfig>) -> Self {
         Self {
             source: Arc::new(ConfigSource::Pinned(client_config)),
-            http3_configs: Arc::new(Mutex::new(HashMap::new())),
+            quic_configs: Arc::new(Mutex::new(HashMap::new())),
             socket_protector: None,
         }
     }
@@ -156,22 +160,35 @@ impl TlsConnector {
         &self,
         config: &TlsClientConfig,
     ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
+        self.quic_client_config_for(config, b"h3")
+    }
+
+    /// Builds an unshaped TLS 1.3 configuration for one QUIC application
+    /// protocol while preserving the connector's trust policy and cache.
+    pub(crate) fn quic_client_config_for(
+        &self,
+        config: &TlsClientConfig,
+        alpn: &[u8],
+    ) -> Result<Arc<rustls::ClientConfig>, TransportError> {
         // A prebuilt config cannot carry Xray's per-outbound verification
-        // policy. Reject before consulting its shape-independent H3 cache so
+        // policy. Reject before consulting its shape-independent QUIC cache so
         // a previously cached permissive config cannot bypass this guard.
         if matches!(&*self.source, ConfigSource::Pinned(_)) {
             reject_custom_verification_with_prebuilt_config(config)?;
         }
         let key = match &*self.source {
-            ConfigSource::Cached(_) => Http3ClientConfigKey::System {
+            ConfigSource::Cached(_) => QuicClientConfigKey::System {
                 allow_insecure: config.allow_insecure,
                 pinned_peer_cert_sha256: config.pinned_peer_cert_sha256.clone(),
                 verify_peer_cert_by_name: config.verify_peer_cert_by_name.clone(),
+                alpn: alpn.to_vec(),
             },
-            ConfigSource::Pinned(_) => Http3ClientConfigKey::Pinned,
+            ConfigSource::Pinned(_) => QuicClientConfigKey::Pinned {
+                alpn: alpn.to_vec(),
+            },
         };
         let mut configs = self
-            .http3_configs
+            .quic_configs
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(cached) = configs.get(&key) {
@@ -188,9 +205,9 @@ impl TlsConnector {
             )?,
             ConfigSource::Pinned(pinned) => (**pinned).clone(),
         };
-        client_config.alpn_protocols = vec![b"h3".to_vec()];
+        client_config.alpn_protocols = vec![alpn.to_vec()];
         client_config.client_hello_customizer = None;
-        validate_http3_client_config(&client_config)?;
+        validate_quic_client_config(&client_config)?;
         let client_config = Arc::new(client_config);
         configs.insert(key, Arc::clone(&client_config));
         Ok(client_config)
@@ -370,12 +387,10 @@ pub(crate) fn parse_tls_server_name(
         .map_err(|_| TransportError::InvalidTlsServerName(server_name.to_owned()))
 }
 
-fn validate_http3_client_config(
-    client_config: &rustls::ClientConfig,
-) -> Result<(), TransportError> {
+fn validate_quic_client_config(client_config: &rustls::ClientConfig) -> Result<(), TransportError> {
     let mut probe = client_config.clone();
     probe.resumption = rustls::client::Resumption::disabled();
-    let server_name = parse_tls_server_name("h3-preflight.invalid")?;
+    let server_name = parse_tls_server_name("quic-preflight.invalid")?;
     rustls::quic::ClientConnection::new(
         Arc::new(probe),
         rustls::quic::Version::V1,
@@ -1014,6 +1029,25 @@ mod http3_tests {
             .expect("cached H3 verification-name config");
         assert!(Arc::ptr_eq(&named_config, &named_again));
         assert!(!Arc::ptr_eq(&first, &named_config));
+    }
+
+    #[test]
+    fn quic_tls_cache_separates_http3_and_doq_application_protocols() {
+        let connector = TlsConnector::system().expect("system TLS connector");
+        let h3 = connector
+            .quic_client_config_for(&input(false, &["ignored"], Some("chrome")), b"h3")
+            .expect("HTTP/3 QUIC config");
+        let doq = connector
+            .quic_client_config_for(&input(false, &["ignored"], Some("chrome")), b"doq")
+            .expect("DoQ QUIC config");
+        let doq_again = connector
+            .quic_client_config_for(&input(false, &[], None), b"doq")
+            .expect("cached DoQ QUIC config");
+
+        assert_eq!(h3.alpn_protocols, [b"h3".to_vec()]);
+        assert_eq!(doq.alpn_protocols, [b"doq".to_vec()]);
+        assert!(!Arc::ptr_eq(&h3, &doq));
+        assert!(Arc::ptr_eq(&doq, &doq_again));
     }
 
     #[test]

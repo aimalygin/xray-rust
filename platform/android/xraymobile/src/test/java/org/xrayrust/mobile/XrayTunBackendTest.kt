@@ -350,6 +350,10 @@ class XrayTunBackendTest {
                 ),
             ),
         )
+        assertEquals(
+            AndroidDnsBootstrapDomain("doq.example", 853, rejectsTunnelOwnedAddress = true),
+            dnsServerBootstrapUpstreamDomain("QUIC+LOCAL://DoQ.Example."),
+        )
         assertNull(dnsServerBootstrapUpstreamDomain("https://192.0.2.53/dns-query"))
     }
 
@@ -385,6 +389,9 @@ class XrayTunBackendTest {
             "https://2001:db8::53/dns-query",
             "https://$XRAY_TUN_DNS_ANCHOR/dns-query",
             "https+local://[fd00:7872::1]/dns-query",
+            "quic://resolver.example",
+            "quic+local://resolver.example/dns-query",
+            "quic+local://$XRAY_TUN_DNS_ANCHOR",
             mapOf("address" to "tcp+local://resolver.example/path"),
             mapOf("address" to "tcp://resolver.example", "port" to "53"),
             mapOf("address" to "tcp://resolver.example", "port" to 65_536),

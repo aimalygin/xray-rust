@@ -614,7 +614,8 @@ private fun hasDnsTcpUrlScheme(server: String): Boolean {
         scheme.equals("tcp+local", ignoreCase = true) ||
         scheme.equals("tls", ignoreCase = true) ||
         scheme.equals("https", ignoreCase = true) ||
-        scheme.equals("https+local", ignoreCase = true)
+        scheme.equals("https+local", ignoreCase = true) ||
+        scheme.equals("quic+local", ignoreCase = true)
 }
 
 private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootstrapDomain? {
@@ -630,7 +631,8 @@ private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootst
         scheme.equals("https+local", ignoreCase = true)
     val defaultPort = when {
         isHttps -> 443
-        scheme.equals("tls", ignoreCase = true) -> 853
+        scheme.equals("tls", ignoreCase = true) ||
+            scheme.equals("quic+local", ignoreCase = true) -> 853
         else -> 53
     }
     require(server.regionMatches(schemeSeparator + 1, "//", 0, 2)) {

@@ -15,9 +15,10 @@ use xray_proxy::vless::{
 };
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr};
 use xray_transport::{
-    dns_response_matches_query, exchange_dns_https_h2, protect_udp_socket, BoxedTransportStream,
-    ConnectorConfig, DnsQueryDispatch, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind,
-    DnsResolver, HappyEyeballsConfig, NameServer, TlsClientConfig, TlsConnector, TransportDialer,
+    dns_response_matches_query, exchange_dns_https_h2, exchange_dns_quic_candidates,
+    protect_udp_socket, BoxedTransportStream, ConnectorConfig, DnsQueryDispatch, DnsQueryMetadata,
+    DnsQueryTransport, DnsQueryTransportKind, DnsResolver, HappyEyeballsConfig, NameServer,
+    TlsClientConfig, TlsConnector, TransportDialer,
 };
 
 use crate::dns_outbound_runtime::DnsDirectExecutor;
@@ -335,6 +336,32 @@ impl RoutedDnsQueryTransport {
             .await
             .map_err(io::Error::other)?;
         exchange_dns_https_h2(stream, server, https_path, query).await
+    }
+
+    async fn exchange_quic(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+        query: &[u8],
+    ) -> io::Result<Vec<u8>> {
+        if metadata.dispatch != DnsQueryDispatch::Local {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "routed DNS-over-QUIC is not supported",
+            ));
+        }
+        let connector = self.tls_connector.as_deref().map_err(|message| {
+            io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+        })?;
+        let candidates = self.resolved_servers(server).await?;
+        exchange_dns_quic_candidates(
+            server,
+            &candidates,
+            query,
+            self.transport_dialer.socket_protector_arc(),
+            connector,
+        )
+        .await
     }
 
     async fn open_tcp_stream(
@@ -861,6 +888,7 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
             DnsQueryTransportKind::Tcp => self.exchange_tcp(server, metadata, query).await,
             DnsQueryTransportKind::Tls => self.exchange_tls(server, metadata, query).await,
             DnsQueryTransportKind::Https => self.exchange_https(server, metadata, query).await,
+            DnsQueryTransportKind::Quic => self.exchange_quic(server, metadata, query).await,
         }
     }
 }

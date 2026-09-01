@@ -204,8 +204,8 @@ adding unfinished Phase 2 features.
 
 ### DNS
 
-- Keep the implemented routed managed DoT and DoH paths hardened; add DoQ where
-  the existing QUIC stack can be reused without increasing lifecycle risk.
+- Keep the implemented routed managed DoT/DoH and provider-local DoQ paths
+  hardened, including their bounded connection lifecycles.
 - Add negative caching and bounded stale-while-revalidate behavior.
 - Provide an injectable platform system resolver and explicit bootstrap route
   behavior.
@@ -254,6 +254,11 @@ HTTP/2, and exchange bounded RFC 8484 POST messages. Both the UDP and TCP sides
 of the TUN DNS anchor translate through the same managed operation cap; DoH
 currently opens one HTTP/2 connection per exchange rather than retaining a
 pool.
+Provider-local `quic+local://` name servers now default to port 853, advertise
+exact ALPN `doq`, and exchange one RFC 9250 length-prefixed query on one QUIC v1
+bidirectional stream. The initial lifecycle remains deliberately bounded to one
+protected QUIC connection per query; routed DoQ and connection pooling are not
+claimed.
 
 ### Mobile SDK and management API
 

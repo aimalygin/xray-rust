@@ -231,8 +231,8 @@ impl fmt::Debug for H3ConnectConfig {
 pub enum H3Error {
     #[error("HTTP/3 requires at least one resolved UDP candidate")]
     NoResolvedCandidate,
-    #[error("HTTP/3 requires TLS ALPN to be exactly `h3`")]
-    InvalidAlpn,
+    #[error("QUIC requires TLS ALPN to be exactly `{expected}`")]
+    InvalidAlpn { expected: &'static str },
     #[error("QUIC version {requested:?} is not implemented; phase one is fail-closed on v1")]
     UnsupportedQuicVersion { requested: H3QuicVersion },
     #[error(
@@ -444,12 +444,36 @@ impl H3Client {
 
 /// Connects one protected UDP destination and starts its HTTP/3 driver.
 pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
+    let (endpoint, connection, diagnostics) = connect_quic_transport(config, b"h3").await?;
+    let (mut h3_connection, send_request) =
+        client::new(h3_quinn::Connection::new(connection.clone()))
+            .await
+            .map_err(H3Error::Http3Connection)?;
+    let task = tokio::spawn(async move { poll_fn(|cx| h3_connection.poll_close(cx)).await });
+    let driver = Arc::new(H3ConnectionDriver {
+        endpoint,
+        connection,
+        task,
+    });
+
+    Ok(H3Client {
+        send_request,
+        driver,
+        diagnostics,
+    })
+}
+
+pub(crate) async fn connect_quic_transport(
+    config: H3ConnectConfig,
+    expected_alpn: &'static [u8],
+) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
     if config.tls_config.alpn_protocols.len() != 1
-        || config.tls_config.alpn_protocols[0].as_slice() != b"h3"
+        || config.tls_config.alpn_protocols[0].as_slice() != expected_alpn
     {
-        return Err(H3Error::InvalidAlpn);
+        let expected = std::str::from_utf8(expected_alpn).unwrap_or("<binary>");
+        return Err(H3Error::InvalidAlpn { expected });
     }
 
     let (endpoint_config, client_config) = build_quinn_config(&config)?;
@@ -471,22 +495,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
         .connect_with(client_config, remote_addr, &config.server_name)
         .map_err(H3Error::ConnectStart)?;
     let connection = connecting.await.map_err(H3Error::Connect)?;
-    let (mut h3_connection, send_request) =
-        client::new(h3_quinn::Connection::new(connection.clone()))
-            .await
-            .map_err(H3Error::Http3Connection)?;
-    let task = tokio::spawn(async move { poll_fn(|cx| h3_connection.poll_close(cx)).await });
-    let driver = Arc::new(H3ConnectionDriver {
-        endpoint,
-        connection,
-        task,
-    });
-
-    Ok(H3Client {
-        send_request,
-        driver,
-        diagnostics,
-    })
+    Ok((endpoint, connection, diagnostics))
 }
 
 /// Connects the first successful protected UDP candidate.

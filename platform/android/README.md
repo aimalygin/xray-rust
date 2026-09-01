@@ -79,7 +79,8 @@ applicable `dns.hosts` rule. Bare host keys use Xray's exact/full semantics.
 `XrayVpnService` uses the stricter mobile policy automatically. Before calling
 `Builder.establish()`, it resolves domain-valued VLESS server addresses and
 domain-valued `dns.servers` with Android's system resolver. This includes
-`tcp://`, `tcp+local://`, `tls://`, `https://`, and `https+local://` endpoints;
+`tcp://`, `tcp+local://`, `tls://`, `https://`, `https+local://`, and
+`quic+local://` endpoints;
 an IP-literal URL needs no
 bootstrap lookup. It preserves every usable A/AAAA result in resolver order,
 removes duplicates, and writes a nonempty exact `full:` IP array under
@@ -90,10 +91,11 @@ changed.
 
 `tcp://`, `tls://`, and `https://` use normal Freedom/VLESS selection and an
 object server's `tag`. A `+local` URL instead bypasses the Xray router and opens
-a system/local TCP socket passed through `VpnService.protect(fd)`. Every domain
-host still uses mobile bootstrap pinning. Schemes are case-insensitive; default
-ports are 53 for TCP, 853 for TLS, and 443 for HTTPS. TCP/TLS accept only an
-IPv4/domain/bracketed-IPv6 authority with an optional nonzero port. HTTPS also
+a system/local transport socket passed through `VpnService.protect(fd)`. Every
+domain host still uses mobile bootstrap pinning. Schemes are case-insensitive;
+default ports are 53 for TCP, 853 for TLS/DoQ, and 443 for HTTPS. TCP/TLS/DoQ
+accept only an IPv4/domain/bracketed-IPv6 authority with an optional nonzero
+port. HTTPS also
 accepts an ASCII path/query (default `/`) but rejects userinfo, fragments,
 backslashes, unbracketed IPv6, whitespace/control characters, and malformed
 brackets. For an object server the URL port wins.
@@ -141,8 +143,9 @@ local DNS endpoint, the reference service also installs `198.18.0.1` with
 `Builder.addDnsServer`. Apps that override `buildTunnel()` retain control of all
 other addresses, routes, and application exclusions. The endpoint accepts UDP
 and length-prefixed TCP queries. UDP clients are translated to the configured
-TCP, DoT, or DoH transport. TCP clients remain length-prefixed for TCP/DoT and
-are translated frame-by-frame into bounded HTTP/2 DoH POST requests for HTTPS.
+TCP, DoT, DoH, or DoQ transport. TCP clients remain length-prefixed for TCP/DoT
+and are translated frame-by-frame into bounded HTTP/2 DoH POST requests or
+single-stream DoQ exchanges.
 
 Fake-IP does not itself provide the real address needed by a Freedom outbound.
 When `dns.fakeIp.enabled` is true and `dns.servers` is empty, the reference

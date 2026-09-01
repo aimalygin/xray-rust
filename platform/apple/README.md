@@ -111,6 +111,8 @@ and defaults to port 853. `https://host[:port][/path][?query]` adds
 certificate-verified HTTP/2 DoH over the routed carrier; `https+local://...`
 uses the provider-local protected socket instead. HTTPS defaults to port 443
 and path `/`.
+`quic+local://host[:port]` uses a protected provider-local UDP socket with
+QUIC v1 and exact ALPN `doq`; it defaults to port 853 and is authority-only.
 
 Stream URL schemes are case-insensitive. TCP/TLS intentionally accept only an
 authority: IPv4, a domain, or bracketed IPv6, followed by an optional nonzero
@@ -145,10 +147,10 @@ IPv4 `198.18.0.1`. Invalid explicit values fail startup, and start options take
 precedence over persistent provider configuration. The local anchor proxies
 both UDP and TCP/53. A `tcp://` upstream uses the configured outbound route;
 `tcp+local://` is the explicit routing exception described above. UDP client
-messages are translated onto configured TCP, DoT, or DoH upstreams. TCP clients
-remain length-prefixed for TCP/DoT and are translated frame-by-frame into
-bounded HTTP/2 DoH POST requests for HTTPS. Fake-IP profiles keep local
-synthesis precedence for every transport at the anchor.
+messages are translated onto configured TCP, DoT, DoH, or DoQ upstreams. TCP
+clients remain length-prefixed for TCP/DoT and are translated frame-by-frame
+into bounded HTTP/2 DoH POST requests or single-stream DoQ exchanges. Fake-IP
+profiles keep local synthesis precedence for every transport at the anchor.
 
 The checked-in `directTunConfigJSON` intentionally has no fake-IP DNS. Direct
 profiles are not automatically migrated to fake-IP; when used unchanged they
@@ -196,7 +198,7 @@ The selected test mode, transport, and trusted upstream remain selected when a
 new VLESS URL is imported; choose `Config JSON` to disable the override.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS server and every domain-valued classic, TCP, DoT, or DoH DNS
+domain VLESS server and every domain-valued classic, TCP, DoT, DoH, or DoQ DNS
 endpoint. An IP-literal stream URL needs no system lookup. URL modes use their
 embedded/default port for endpoint safety checks and pin a domain host
 into `dns.hosts`; the original server URI, object policy fields, and `tag` stay

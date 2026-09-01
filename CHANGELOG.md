@@ -47,12 +47,13 @@ release series.
   revisioned opening/active inventory, addressable close, and cumulative
   per-outbound accounting. Swift and Kotlin also expose the seven typed TUN
   diagnostic queues under the existing diagnostic capability bit.
-- Added managed encrypted DNS transports for strict routed `tls://` DoT and
-  routed/provider-local HTTP/2 DoH (`https://` / `https+local://`). Both use
+- Added managed encrypted DNS transports for strict routed `tls://` DoT,
+  routed/provider-local HTTP/2 DoH (`https://` / `https+local://`), and
+  provider-local `quic+local://` DoQ. All use
   non-recursive bootstrap resolution, certificate/name verification, bounded
   operations, and mobile preflight pinning; the TUN anchor supports both UDP
-  and length-prefixed TCP clients. DoH currently opens one HTTP/2 connection
-  per exchange.
+  and length-prefixed TCP clients. DoH and DoQ currently open one connection
+  per exchange; DoQ uses exact ALPN `doq` and one bidirectional stream.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

@@ -335,12 +335,15 @@ fn parse_dns_tcp_server_uri(
         (DnsServerTransport::TcpLocal, 53)
     } else if scheme.eq_ignore_ascii_case("tls") {
         (DnsServerTransport::TlsRouted, 853)
+    } else if scheme.eq_ignore_ascii_case("quic+local") {
+        (DnsServerTransport::QuicLocal, 853)
     } else {
         return Ok(None);
     };
     let Some(authority) = remainder.strip_prefix("//") else {
         return Err(
-            "dns stream server URL must use `tcp://`, `tcp+local://`, or `tls://`".to_owned(),
+            "dns stream server URL must use `tcp://`, `tcp+local://`, `tls://`, or `quic+local://`"
+                .to_owned(),
         );
     };
     if address

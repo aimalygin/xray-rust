@@ -1018,6 +1018,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 ConfigDnsServerTransport::TlsRouted => NameServerTransport::TlsRouted,
                 ConfigDnsServerTransport::HttpsRouted => NameServerTransport::HttpsRouted,
                 ConfigDnsServerTransport::HttpsLocal => NameServerTransport::HttpsLocal,
+                ConfigDnsServerTransport::QuicLocal => NameServerTransport::QuicLocal,
             };
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
@@ -1641,7 +1642,8 @@ mod tests {
                 "tcp+local://[2001:db8::53]",
                 "tls://secure-resolver.example",
                 "https://doh.example/dns-query",
-                "https+local://192.0.2.54:8443/custom?profile=mobile"
+                "https+local://192.0.2.54:8443/custom?profile=mobile",
+                "quic+local://doq.example"
               ]
             },
             "inbounds": [],
@@ -1663,10 +1665,12 @@ mod tests {
                 NameServerTransport::TlsRouted,
                 NameServerTransport::HttpsRouted,
                 NameServerTransport::HttpsLocal,
+                NameServerTransport::QuicLocal,
             ]
         );
         assert_eq!(policies.https_path(4), Some("/dns-query"));
         assert_eq!(policies.https_path(5), Some("/custom?profile=mobile"));
+        assert_eq!(policies.https_path(6), None);
     }
 
     #[test]

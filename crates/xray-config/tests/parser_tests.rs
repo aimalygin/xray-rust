@@ -2588,6 +2588,67 @@ fn rejects_non_authority_dns_over_tls_urls() {
 }
 
 #[test]
+fn parses_local_dns_over_quic_authority_forms_with_port_853_default() {
+    let raw = raw_with_dns_servers(
+        r#"
+          "quic+local://resolver.example",
+          "QUIC+LOCAL://192.0.2.53:8853",
+          "quic+local://[2001:db8::53]"
+        "#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("local DNS-over-QUIC URLs should parse");
+    let actual = parsed
+        .config
+        .dns
+        .servers
+        .iter()
+        .map(|server| (server.transport(), server.endpoint()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        [
+            (
+                DnsServerTransport::QuicLocal,
+                DnsServerEndpoint::Domain {
+                    domain: "resolver.example".to_owned(),
+                    port: 853,
+                },
+            ),
+            (
+                DnsServerTransport::QuicLocal,
+                DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 8853))),
+            ),
+            (
+                DnsServerTransport::QuicLocal,
+                DnsServerEndpoint::Ip(SocketAddr::new(
+                    IpAddr::V6("2001:db8::53".parse().unwrap()),
+                    853,
+                )),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn rejects_unsupported_or_malformed_dns_over_quic_urls() {
+    for address in [
+        "quic://resolver.example",
+        "quic+local://",
+        "quic+local:/resolver.example",
+        "quic+local://user@resolver.example",
+        "quic+local://resolver.example/dns-query",
+        "quic+local://resolver.example:0",
+        "quic+local://2001:db8::53",
+        "quic+local://198.18.0.1",
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
+
+        assert_parse_error_path(&raw, "$.dns.servers[0]");
+    }
+}
+
+#[test]
 fn tcp_dns_object_ignores_object_port_and_keeps_policy_fields() {
     let raw = raw_with_dns_servers(
         r#"{

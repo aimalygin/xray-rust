@@ -1321,7 +1321,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             scheme.caseInsensitiveCompare("tcp+local") == .orderedSame ||
             scheme.caseInsensitiveCompare("tls") == .orderedSame ||
             scheme.caseInsensitiveCompare("https") == .orderedSame ||
-            scheme.caseInsensitiveCompare("https+local") == .orderedSame
+            scheme.caseInsensitiveCompare("https+local") == .orderedSame ||
+            scheme.caseInsensitiveCompare("quic+local") == .orderedSame
     }
 
     private static func dnsTCPBootstrapUpstream(
@@ -1342,7 +1343,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         let defaultPort: UInt16
         if isHTTPS {
             defaultPort = 443
-        } else if scheme.caseInsensitiveCompare("tls") == .orderedSame {
+        } else if scheme.caseInsensitiveCompare("tls") == .orderedSame ||
+                    scheme.caseInsensitiveCompare("quic+local") == .orderedSame {
             defaultPort = 853
         } else {
             defaultPort = 53

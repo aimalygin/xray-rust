@@ -991,8 +991,9 @@ platform route-capability provider; it is not silently treated as `UseIP`.
 accepts IP addresses, socket addresses, domain names with an optional nonzero
 port, `tcp://host[:port]` / `tcp+local://host[:port]`, routed
 `tls://host[:port]`, and `https://host[:port][/path][?query]` /
-`https+local://host[:port][/path][?query]`. Schemes are case-insensitive, TCP
-defaults to port `53`, TLS to `853`, and HTTPS to `443`; bracketed IPv6
+`https+local://host[:port][/path][?query]`, plus provider-local
+`quic+local://host[:port]`. Schemes are case-insensitive, TCP defaults to port
+`53`, TLS and DoQ to `853`, and HTTPS to `443`; bracketed IPv6
 literals are supported, and these transports are used from the first query
 rather than as a truncation retry. `tcp://`, `tls://`, and `https://` enter
 normal outbound routing; the `+local` forms bypass routing and open protected
@@ -1000,7 +1001,10 @@ direct sockets. DoT and DoH wrap the selected carrier in certificate-verified
 TLS and derive SNI/verification identity from the configured domain or IP
 literal. DoH negotiates HTTP/2 and sends bounded RFC 8484 POST messages; an
 omitted path becomes `/`, while a query-only suffix is attached to that path.
-TCP/TLS URLs are authority-only. HTTPS permits an ASCII path/query but rejects
+DoQ uses a protected provider-local UDP socket, QUIC v1, exact ALPN `doq`, and
+one RFC 9250 bidirectional stream per connection and query. Routed DoQ and DoQ
+connection pooling are not implemented. TCP/TLS/DoQ URLs are authority-only.
+HTTPS permits an ASCII path/query but rejects
 userinfo, fragments, backslashes, whitespace/control characters, scoped or
 unbracketed IPv6, and zero ports. In an object entry, the port embedded in the
 stream URI is authoritative and the separate `port` field is ignored after validation,
@@ -1010,8 +1014,8 @@ matching Xray-core's effective behavior. The Xray object subset requires `addres
 comma-separated string and supports bare keyword, `keyword:`, `domain:`,
 `full:`, `regexp:`, `dotless:`, `geosite:`, `ext:`, and `ext-domain:` rules.
 Top-level `disableFallback` and `disableFallbackIfMatch` are also supported.
-Special `localhost`/`fakedns` clients, DoQ URL transport, `clientIp`,
-cache/stale controls, and parallel queries are rejected until their
+Special `localhost`/`fakedns` clients, routed DoQ, `clientIp`, cache/stale
+controls, and parallel queries are rejected until their
 runtime semantics exist; they are not silently approximated as classic UDP.
 
 Object servers support Xray's `expectedIPs`, legacy `expectIPs` alias, and
@@ -1389,8 +1393,8 @@ normal UDP path. Fake-IP takes precedence over raw proxying. When a later TUN,
 SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
 is restored before routing. VLESS carries that domain for remote resolution;
 Freedom resolves it through the managed routed resolver, including in mobile
-`StaticOnly` mode. Managed `dns.servers`
-DoQ transport, `clientIp`, negative/stale caching, and the broader
+`StaticOnly` mode. Managed `dns.servers` routed DoQ transport, `clientIp`,
+negative/stale caching, and the broader
 Xray DNS feature set are not implemented. This does not limit the DNS
 outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled

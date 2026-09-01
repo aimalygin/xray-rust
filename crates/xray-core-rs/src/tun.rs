@@ -2493,8 +2493,9 @@ async fn open_tcp_bridge_stream(
             upstream.transport(),
             xray_config::DnsServerTransport::HttpsRouted
                 | xray_config::DnsServerTransport::HttpsLocal
+                | xray_config::DnsServerTransport::QuicLocal
         ) {
-            return dns_proxy::open_dns_https_tcp_bridge(upstream, context);
+            return dns_proxy::open_managed_dns_tcp_bridge(upstream, context);
         }
         if upstream.is_local() {
             let candidates = dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;

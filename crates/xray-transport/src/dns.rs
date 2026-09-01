@@ -596,6 +596,8 @@ pub enum DnsQueryTransportKind {
     Tls,
     /// DNS over HTTPS with RFC 8484 POST messages.
     Https,
+    /// DNS over QUIC with one RFC 9250 stream per query.
+    Quic,
 }
 
 /// Determines whether a DNS exchange enters the routing layer.
@@ -664,6 +666,8 @@ pub enum NameServerTransport {
     HttpsRouted,
     /// Start immediately with local DNS over HTTPS.
     HttpsLocal,
+    /// Start immediately with local DNS over QUIC.
+    QuicLocal,
 }
 
 /// Exchanges already encoded DNS messages with a configured name server.
@@ -780,8 +784,111 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
                     .map_err(io::Error::other)?;
                 exchange_dns_https_h2(stream, server, https_path, query).await
             }
+            DnsQueryTransportKind::Quic => {
+                if metadata.dispatch != DnsQueryDispatch::Local {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "routed DNS-over-QUIC is not supported",
+                    ));
+                }
+                let connector = self.tls_connector.as_deref().map_err(|message| {
+                    io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+                })?;
+                exchange_dns_quic_candidates(
+                    server,
+                    &server_addrs,
+                    query,
+                    self.socket_protector.clone(),
+                    connector,
+                )
+                .await
+            }
         }
     }
+}
+
+/// Exchanges one DNS message over the first usable protected QUIC candidate.
+pub async fn exchange_dns_quic_candidates(
+    server: &NameServer,
+    server_addrs: &[SocketAddr],
+    query: &[u8],
+    socket_protector: Option<Arc<dyn SocketProtector>>,
+    tls_connector: &TlsConnector,
+) -> io::Result<Vec<u8>> {
+    if query.is_empty() || query.len() > usize::from(u16::MAX) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "DNS-over-QUIC query size is invalid",
+        ));
+    }
+    let tls = dns_tls_client_config(server);
+    let tls_config = tls_connector
+        .quic_client_config_for(&tls, b"doq")
+        .map_err(io::Error::other)?;
+    let server_name = tls.server_name;
+    let mut last_error = None;
+    for remote_addr in server_addrs.iter().copied() {
+        let config = crate::stream::H3ConnectConfig {
+            remote_addr,
+            server_name: server_name.clone(),
+            tls_config: Arc::clone(&tls_config),
+            socket_protector: socket_protector.clone(),
+            quic: crate::stream::H3QuicConfig::default(),
+        };
+        let (endpoint, connection, _) =
+            match crate::stream::connect_quic_transport(config, b"doq").await {
+                Ok(connected) => connected,
+                Err(error) => {
+                    last_error = Some(io::Error::other(error));
+                    continue;
+                }
+            };
+        let result = exchange_dns_quic_stream(&connection, query).await;
+        let code = quinn::VarInt::from_u32(0);
+        connection.close(code, b"DNS-over-QUIC exchange complete");
+        endpoint.close(code, b"DNS-over-QUIC exchange complete");
+        match result {
+            Ok(response) => return Ok(response),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "DNS-over-QUIC server has no usable address",
+        )
+    }))
+}
+
+async fn exchange_dns_quic_stream(
+    connection: &quinn::Connection,
+    query: &[u8],
+) -> io::Result<Vec<u8>> {
+    let (mut send, mut recv) = connection.open_bi().await.map_err(io::Error::other)?;
+    send.write_u16(u16::try_from(query.len()).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "DNS-over-QUIC query is too large",
+        )
+    })?)
+    .await?;
+    send.write_all(query).await?;
+    send.finish().map_err(io::Error::other)?;
+
+    let response_len = usize::from(recv.read_u16().await?);
+    if response_len == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "DNS-over-QUIC response is empty",
+        ));
+    }
+    let mut response = vec![0; response_len];
+    recv.read_exact(&mut response)
+        .await
+        .map_err(io::Error::other)?;
+    let trailing = recv.read_to_end(0).await.map_err(io::Error::other)?;
+    debug_assert!(trailing.is_empty());
+    Ok(response)
 }
 
 /// Exchanges one RFC 8484 POST over an already authenticated HTTP/2 stream.
@@ -1353,6 +1460,10 @@ impl ConfiguredDnsResolver {
                         )
                     })?,
                 ),
+            ),
+            NameServerTransport::QuicLocal => (
+                DnsQueryTransportKind::Quic,
+                DnsQueryMetadata::local(name_server.tag.as_deref()),
             ),
         };
         let result = match query_strategy {
@@ -2455,6 +2566,9 @@ mod tests {
 
     use bytes::{Bytes, BytesMut};
     use http::{header, Method, Response};
+    use quinn::crypto::rustls::QuicServerConfig;
+    use rcgen::{generate_simple_self_signed, CertifiedKey};
+    use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, UdpSocket};
     use tokio::sync::{oneshot, Barrier, Notify};
@@ -2464,14 +2578,14 @@ mod tests {
     };
 
     use super::{
-        build_dns_query_with_id, exchange_dns_https_h2, parse_dns_response, query_udp_dns_server,
-        select_name_server_indices, CachingDnsResolver, CompiledNameServerPolicies,
-        ConfiguredDnsAddresses, ConfiguredDnsAnswer, ConfiguredDnsResolver, DnsHostTarget,
-        DnsLookup, DnsQueryDispatch, DnsQueryMetadata, DnsQueryStrategy, DnsQueryTransport,
-        DnsQueryTransportKind, DnsRecordType, DnsResolver, NameServer, NameServerPolicy,
-        NameServerTransport, DNS_CACHE_MAX_ENTRIES,
+        build_dns_query_with_id, exchange_dns_https_h2, exchange_dns_quic_candidates,
+        parse_dns_response, query_udp_dns_server, select_name_server_indices, CachingDnsResolver,
+        CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
+        ConfiguredDnsResolver, DnsHostTarget, DnsLookup, DnsQueryDispatch, DnsQueryMetadata,
+        DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
+        NameServer, NameServerPolicy, NameServerTransport, DNS_CACHE_MAX_ENTRIES,
     };
-    use crate::{SocketHandle, SocketProtector, TransportError};
+    use crate::{SocketHandle, SocketProtector, TlsConnector, TransportError};
 
     #[test]
     fn build_dns_query_uses_injected_transaction_id() {
@@ -2704,6 +2818,82 @@ mod tests {
         )
         .await
         .expect("DNS-over-HTTPS exchange should complete");
+
+        assert_eq!(actual, dns_response);
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dns_over_quic_uses_doq_alpn_and_one_length_prefixed_stream() {
+        let server_name = "resolver.example";
+        let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD049)
+            .expect("test query should encode");
+        let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 45));
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec![server_name.to_owned()])
+                .expect("generate DNS-over-QUIC test certificate");
+        let certificate = cert.der().clone();
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let mut server_tls = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate.clone()], key)
+            .unwrap();
+        server_tls.alpn_protocols = vec![b"doq".to_vec()];
+        let server_crypto = QuicServerConfig::try_from(server_tls).unwrap();
+        let server_endpoint = quinn::Endpoint::server(
+            quinn::ServerConfig::with_crypto(Arc::new(server_crypto)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        )
+        .unwrap();
+        let server_addr = server_endpoint.local_addr().unwrap();
+        let expected_query = query.clone();
+        let expected_response = dns_response.clone();
+        let server_task = tokio::spawn(async move {
+            let incoming = server_endpoint
+                .accept()
+                .await
+                .expect("client should open one QUIC connection");
+            let connection = incoming.await.expect("QUIC handshake should complete");
+            let (mut send, mut recv) = connection
+                .accept_bi()
+                .await
+                .expect("client should open one DoQ stream");
+            let query_len = usize::from(recv.read_u16().await.unwrap());
+            let mut received = vec![0; query_len];
+            recv.read_exact(&mut received).await.unwrap();
+            assert_eq!(received, expected_query);
+            assert!(recv.read_to_end(0).await.unwrap().is_empty());
+            send.write_u16(u16::try_from(expected_response.len()).unwrap())
+                .await
+                .unwrap();
+            send.write_all(&expected_response).await.unwrap();
+            send.finish().unwrap();
+            connection.closed().await;
+        });
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(certificate).unwrap();
+        let client_tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let connector = TlsConnector::with_pinned_client_config(Arc::new(client_tls));
+        let actual = exchange_dns_quic_candidates(
+            &NameServer::Domain {
+                domain: server_name.to_owned(),
+                port: server_addr.port(),
+            },
+            &[server_addr],
+            &query,
+            None,
+            &connector,
+        )
+        .await
+        .expect("DNS-over-QUIC exchange should complete");
 
         assert_eq!(actual, dns_response);
         server_task.await.unwrap();
@@ -4204,7 +4394,8 @@ mod tests {
                 }
                 DnsQueryTransportKind::Tcp
                 | DnsQueryTransportKind::Tls
-                | DnsQueryTransportKind::Https => {
+                | DnsQueryTransportKind::Https
+                | DnsQueryTransportKind::Quic => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 25)))
                 }
             }
@@ -5500,7 +5691,8 @@ mod tests {
                 DnsQueryTransportKind::Udp => Ok(build_test_truncated_response(query)),
                 DnsQueryTransportKind::Tcp
                 | DnsQueryTransportKind::Tls
-                | DnsQueryTransportKind::Https => {
+                | DnsQueryTransportKind::Https
+                | DnsQueryTransportKind::Quic => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 66)))
                 }
             }

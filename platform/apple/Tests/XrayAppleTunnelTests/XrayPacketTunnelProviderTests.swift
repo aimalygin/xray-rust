@@ -718,6 +718,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #""https://DoH.Example/dns-query""#,
             #""HTTPS+LOCAL://192.0.2.53:8443/custom?profile=mobile""#,
             #""https://[2001:db8::53]/dns-query""#,
+            #""QUIC+LOCAL://DoQ.Example""#,
             #"{"address":"tcp+local://resolver.example","port":0,"tag":"dns-local"}"#,
             #"{"address":"https://resolver.example/dns-query","port":0,"tag":"dns-doh"}"#,
         ] {
@@ -758,6 +759,9 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #""https://2001:db8::53/dns-query""#,
             #""https://198.18.0.1/dns-query""#,
             #""https+local://[fd00:7872::2]/dns-query""#,
+            #""quic://resolver.example""#,
+            #""quic+local://resolver.example/dns-query""#,
+            #""quic+local://198.18.0.1""#,
             #"{"address":"tcp+local://resolver.example/path"}"#,
             #"{"address":"tcp://resolver.example","port":"53"}"#,
             #"{"address":"tcp://resolver.example","port":65536}"#,

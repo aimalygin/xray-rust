@@ -162,6 +162,8 @@ pub enum DnsServerTransport {
     HttpsRouted,
     /// DNS over HTTPS dialed directly through the local network stack.
     HttpsLocal,
+    /// DNS over QUIC dialed directly through the local network stack.
+    QuicLocal,
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;

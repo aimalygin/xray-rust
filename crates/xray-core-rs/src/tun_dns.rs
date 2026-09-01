@@ -106,7 +106,9 @@ impl DnsProxyUpstream {
     pub(super) fn is_local(&self) -> bool {
         matches!(
             self.transport(),
-            xray_config::DnsServerTransport::TcpLocal | xray_config::DnsServerTransport::HttpsLocal
+            xray_config::DnsServerTransport::TcpLocal
+                | xray_config::DnsServerTransport::HttpsLocal
+                | xray_config::DnsServerTransport::QuicLocal
         )
     }
 
@@ -127,44 +129,60 @@ impl DnsProxyUpstream {
     }
 }
 
-pub(super) fn open_dns_https_tcp_bridge(
+pub(super) fn open_managed_dns_tcp_bridge(
     upstream: &DnsProxyUpstream,
     context: &TunRuntimeContext,
 ) -> Result<BoxedTransportStream, crate::CoreError> {
     debug_assert!(matches!(
         upstream.transport(),
-        xray_config::DnsServerTransport::HttpsRouted | xray_config::DnsServerTransport::HttpsLocal
+        xray_config::DnsServerTransport::HttpsRouted
+            | xray_config::DnsServerTransport::HttpsLocal
+            | xray_config::DnsServerTransport::QuicLocal
     ));
     let query_transport = context.dns_query_transport.clone().ok_or_else(|| {
         std::io::Error::other("managed DNS query transport is unavailable for DNS-over-HTTPS")
     })?;
-    let https_path = upstream
-        .https_path()
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "DNS-over-HTTPS upstream is missing its request path",
-            )
-        })?
-        .to_owned();
+    let (query_kind, https_path) = match upstream.transport() {
+        xray_config::DnsServerTransport::HttpsRouted
+        | xray_config::DnsServerTransport::HttpsLocal => (
+            xray_transport::DnsQueryTransportKind::Https,
+            Some(
+                upstream
+                    .https_path()
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "DNS-over-HTTPS upstream is missing its request path",
+                        )
+                    })?
+                    .to_owned(),
+            ),
+        ),
+        xray_config::DnsServerTransport::QuicLocal => {
+            (xray_transport::DnsQueryTransportKind::Quic, None)
+        }
+        _ => unreachable!("managed DNS bridge only handles DoH and DoQ"),
+    };
     let name_server = upstream.name_server();
     let inbound_tag = upstream.inbound_tag().to_owned();
     let local = upstream.is_local();
-    Ok(spawn_dns_https_tcp_bridge(
+    Ok(spawn_managed_dns_tcp_bridge(
         query_transport,
         name_server,
         inbound_tag,
         local,
+        query_kind,
         https_path,
     ))
 }
 
-fn spawn_dns_https_tcp_bridge(
+fn spawn_managed_dns_tcp_bridge(
     query_transport: Arc<dyn DnsQueryTransport>,
     name_server: xray_transport::NameServer,
     inbound_tag: String,
     local: bool,
-    https_path: String,
+    query_kind: xray_transport::DnsQueryTransportKind,
+    https_path: Option<String>,
 ) -> BoxedTransportStream {
     let (client, mut worker) = tokio::io::duplex(MAX_DNS_TCP_WIRE_MESSAGE_SIZE * 2 + 4);
     tokio::spawn(async move {
@@ -177,20 +195,17 @@ fn spawn_dns_https_tcp_bridge(
             if worker.read_exact(&mut query).await.is_err() {
                 return;
             }
-            let metadata = if local {
+            let mut metadata = if local {
                 xray_transport::DnsQueryMetadata::local(Some(&inbound_tag))
             } else {
                 xray_transport::DnsQueryMetadata::new(Some(&inbound_tag))
+            };
+            if let Some(https_path) = https_path.as_deref() {
+                metadata = metadata.with_https_path(https_path);
             }
-            .with_https_path(&https_path);
             let Ok(Ok(response)) = timeout(
                 DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-                query_transport.exchange(
-                    &name_server,
-                    xray_transport::DnsQueryTransportKind::Https,
-                    metadata,
-                    &query,
-                ),
+                query_transport.exchange(&name_server, query_kind, metadata, &query),
             )
             .await
             else {
@@ -3601,6 +3616,35 @@ async fn proxy_udp_payload(
                 .await;
                 (target, "managed-doh", attempt)
             }
+            xray_config::DnsServerTransport::QuicLocal => {
+                let target = upstream.target(RoutingNetwork::Udp);
+                let Some(query_transport) = context.dns_query_transport.as_ref() else {
+                    record_dns_udp_failure(context, DnsUdpFailurePhase::Open);
+                    continue;
+                };
+                let name_server = upstream.name_server();
+                let metadata =
+                    xray_transport::DnsQueryMetadata::local(Some(upstream.inbound_tag()));
+                let attempt = timeout(
+                    candidate_deadline.saturating_duration_since(TokioInstant::now()),
+                    async {
+                        let response = query_transport
+                            .exchange(
+                                &name_server,
+                                xray_transport::DnsQueryTransportKind::Quic,
+                                metadata,
+                                &packet.payload,
+                            )
+                            .await?;
+                        context.tun.record_udp_remote_open(false);
+                        context.tun.record_udp_remote_written(packet.payload.len());
+                        context.tun.record_udp_remote_read(response.len());
+                        Ok(DnsUpstreamResponse::Payload(Bytes::from(response)))
+                    },
+                )
+                .await;
+                (target, "managed-doq", attempt)
+            }
         };
         let response = match attempt {
             Ok(Ok(response)) => response,
@@ -4412,6 +4456,7 @@ mod tests {
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct RecordedDnsHttpsCall {
         server: xray_transport::NameServer,
+        transport: xray_transport::DnsQueryTransportKind,
         dispatch: xray_transport::DnsQueryDispatch,
         inbound_tag: Option<String>,
         https_path: Option<String>,
@@ -4430,14 +4475,9 @@ mod tests {
             metadata: xray_transport::DnsQueryMetadata<'_>,
             query: &[u8],
         ) -> std::io::Result<Vec<u8>> {
-            if transport != xray_transport::DnsQueryTransportKind::Https {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "test transport expected HTTPS",
-                ));
-            }
             self.calls.lock().unwrap().push(RecordedDnsHttpsCall {
                 server: server.clone(),
+                transport,
                 dispatch: metadata.dispatch,
                 inbound_tag: metadata.inbound_tag.map(str::to_owned),
                 https_path: metadata.https_path.map(str::to_owned),
@@ -4704,12 +4744,13 @@ mod tests {
             domain: "resolver.example".to_owned(),
             port: 8443,
         };
-        let mut bridge = spawn_dns_https_tcp_bridge(
+        let mut bridge = spawn_managed_dns_tcp_bridge(
             transport,
             server.clone(),
             "dns-doh".to_owned(),
             true,
-            "/dns-query?profile=mobile".to_owned(),
+            xray_transport::DnsQueryTransportKind::Https,
+            Some("/dns-query?profile=mobile".to_owned()),
         );
         let query = dns_a_query(0xD048, "example.com");
 
@@ -4728,9 +4769,53 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             &[RecordedDnsHttpsCall {
                 server,
+                transport: xray_transport::DnsQueryTransportKind::Https,
                 dispatch: xray_transport::DnsQueryDispatch::Local,
                 inbound_tag: Some("dns-doh".to_owned()),
                 https_path: Some("/dns-query?profile=mobile".to_owned()),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_quic_tcp_bridge_translates_framed_queries_without_http_metadata() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let transport: Arc<dyn DnsQueryTransport> = Arc::new(RecordingDnsHttpsTransport {
+            calls: Arc::clone(&calls),
+        });
+        let server = xray_transport::NameServer::Domain {
+            domain: "resolver.example".to_owned(),
+            port: 8853,
+        };
+        let mut bridge = spawn_managed_dns_tcp_bridge(
+            transport,
+            server.clone(),
+            "dns-doq".to_owned(),
+            true,
+            xray_transport::DnsQueryTransportKind::Quic,
+            None,
+        );
+        let query = dns_a_query(0xD049, "example.net");
+
+        bridge
+            .write_u16(u16::try_from(query.len()).unwrap())
+            .await
+            .unwrap();
+        bridge.write_all(&query).await.unwrap();
+        bridge.flush().await.unwrap();
+        let response_len = usize::from(bridge.read_u16().await.unwrap());
+        let mut response = vec![0; response_len];
+        bridge.read_exact(&mut response).await.unwrap();
+
+        assert!(dns_response_matches_query(&query, &response));
+        assert_eq!(
+            calls.lock().unwrap().as_slice(),
+            &[RecordedDnsHttpsCall {
+                server,
+                transport: xray_transport::DnsQueryTransportKind::Quic,
+                dispatch: xray_transport::DnsQueryDispatch::Local,
+                inbound_tag: Some("dns-doq".to_owned()),
+                https_path: None,
             }]
         );
     }
@@ -6355,6 +6440,7 @@ mod tests {
               "tcp+local://192.0.2.53",
               "https://192.0.2.53/dns-query",
               "https+local://192.0.2.53:8443/custom?profile=mobile",
+              "quic+local://192.0.2.53:8853",
               "tcp://192.0.2.53"
             ]
           },
@@ -6365,7 +6451,7 @@ mod tests {
             .config;
         let plan = DnsProxyPlan::from_config(&config).unwrap();
 
-        assert_eq!(plan.upstreams().len(), 5);
+        assert_eq!(plan.upstreams().len(), 6);
         assert_eq!(
             plan.upstreams()
                 .iter()
@@ -6377,6 +6463,7 @@ mod tests {
                 xray_config::DnsServerTransport::TcpLocal,
                 xray_config::DnsServerTransport::HttpsRouted,
                 xray_config::DnsServerTransport::HttpsLocal,
+                xray_config::DnsServerTransport::QuicLocal,
             ]
         );
         assert_eq!(plan.upstreams()[3].https_path(), Some("/dns-query"));
@@ -6384,6 +6471,7 @@ mod tests {
             plan.upstreams()[4].https_path(),
             Some("/custom?profile=mobile")
         );
+        assert_eq!(plan.upstreams()[5].https_path(), None);
     }
 
     #[test]
