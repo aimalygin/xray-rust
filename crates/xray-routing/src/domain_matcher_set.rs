@@ -9,6 +9,11 @@ use thiserror::Error;
 
 use crate::{DomainMatcher, DomainNameMode};
 
+/// Small routing rules are more common than geosite-sized matcher sets. A
+/// linear scan avoids a hash lookup (and an ASCII-case normalization pass) for
+/// each rule while the indexed representation still handles large sets.
+const LINEAR_MATCHER_LIMIT: usize = 8;
+
 /// Query-ready set of `full:`, `domain:`, `keyword:` and `regexp:` matchers
 /// belonging to one rule.
 ///
@@ -26,6 +31,7 @@ pub struct DomainMatcherSet {
 }
 
 struct DomainMatcherSetInner {
+    linear: Option<Box<[DomainMatcher]>>,
     full: HashSet<Box<str>>,
     suffix: HashSet<Box<str>>,
     keywords: Vec<Box<str>>,
@@ -70,6 +76,9 @@ impl DomainMatcherSet {
         let Some(inner) = &self.inner else {
             return false;
         };
+        if let Some(matchers) = &inner.linear {
+            return matchers.iter().any(|matcher| matcher.matches(domain));
+        }
         let domain = lowercase_ascii(domain);
         inner.full.contains(domain.as_ref())
             || inner.matches_suffix(&domain)
@@ -80,6 +89,9 @@ impl DomainMatcherSet {
 
 impl DomainMatcherSetInner {
     fn pattern_bytes(&self) -> usize {
+        if let Some(matchers) = &self.linear {
+            return matchers.iter().map(matcher_pattern_bytes).sum();
+        }
         self.full.iter().map(|name| name.len()).sum::<usize>()
             + self.suffix.iter().map(|name| name.len()).sum::<usize>()
             + self
@@ -111,6 +123,12 @@ impl DomainMatcherSetInner {
     fn matches_regex(&self, domain: &str) -> bool {
         self.regex.iter().any(|regex| regex.is_match(domain))
     }
+
+    fn matcher_kind_count(&self, select: fn(&DomainMatcher) -> bool) -> usize {
+        self.linear.as_deref().map_or(0, |matchers| {
+            matchers.iter().filter(|matcher| select(matcher)).count()
+        })
+    }
 }
 
 impl fmt::Debug for DomainMatcherSet {
@@ -119,10 +137,41 @@ impl fmt::Debug for DomainMatcherSet {
             self.inner.as_ref().map_or(0, |inner| select(inner))
         };
         f.debug_struct("DomainMatcherSet")
-            .field("full", &counts(|inner| inner.full.len()))
-            .field("suffix", &counts(|inner| inner.suffix.len()))
-            .field("keyword", &counts(|inner| inner.keywords.len()))
-            .field("regex", &counts(|inner| inner.regex.len()))
+            .field(
+                "full",
+                &counts(|inner| {
+                    inner.full.len()
+                        + inner
+                            .matcher_kind_count(|matcher| matches!(matcher, DomainMatcher::Full(_)))
+                }),
+            )
+            .field(
+                "suffix",
+                &counts(|inner| {
+                    inner.suffix.len()
+                        + inner.matcher_kind_count(|matcher| {
+                            matches!(matcher, DomainMatcher::Suffix(_))
+                        })
+                }),
+            )
+            .field(
+                "keyword",
+                &counts(|inner| {
+                    inner.keywords.len()
+                        + inner.matcher_kind_count(|matcher| {
+                            matches!(matcher, DomainMatcher::Keyword(_))
+                        })
+                }),
+            )
+            .field(
+                "regex",
+                &counts(|inner| {
+                    inner.regex.len()
+                        + inner.matcher_kind_count(|matcher| {
+                            matches!(matcher, DomainMatcher::Regex(_))
+                        })
+                }),
+            )
             .field("matcher_count", &self.matcher_count)
             .finish()
     }
@@ -134,7 +183,8 @@ impl PartialEq for DomainMatcherSet {
             && match (&self.inner, &other.inner) {
                 (None, None) => true,
                 (Some(a), Some(b)) => {
-                    a.full == b.full
+                    a.linear == b.linear
+                        && a.full == b.full
                         && a.suffix == b.suffix
                         && a.keywords == b.keywords
                         && a.regex
@@ -155,8 +205,9 @@ pub enum DomainMatcherSetError {
     Keyword(#[from] aho_corasick::BuildError),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct DomainMatcherSetBuilder {
+    linear: Option<Vec<DomainMatcher>>,
     full: HashSet<Box<str>>,
     suffix: HashSet<Box<str>>,
     keywords: Vec<Box<str>>,
@@ -164,10 +215,33 @@ pub struct DomainMatcherSetBuilder {
     matcher_count: usize,
 }
 
+impl Default for DomainMatcherSetBuilder {
+    fn default() -> Self {
+        Self {
+            linear: Some(Vec::new()),
+            full: HashSet::new(),
+            suffix: HashSet::new(),
+            keywords: Vec::new(),
+            regex: Vec::new(),
+            matcher_count: 0,
+        }
+    }
+}
+
 impl DomainMatcherSetBuilder {
     /// Adds one matcher; the already compiled regex of a `regexp:` matcher is
     /// shared, not recompiled.
     pub fn insert(&mut self, matcher: &DomainMatcher, mode: DomainNameMode) {
+        if let Some(linear) = &mut self.linear {
+            if self.matcher_count < LINEAR_MATCHER_LIMIT {
+                let matcher = normalize_linear_matcher(matcher, mode);
+                if !linear.contains(&matcher) {
+                    linear.push(matcher);
+                }
+            } else {
+                self.linear = None;
+            }
+        }
         match matcher {
             DomainMatcher::Keyword(keyword) => self.keywords.push(lowercase_boxed(keyword)),
             DomainMatcher::Full(domain) => {
@@ -189,31 +263,75 @@ impl DomainMatcherSetBuilder {
         if self.matcher_count == 0 {
             return Ok(DomainMatcherSet::default());
         }
-        let keyword_automaton = if self.keywords.is_empty() {
-            None
-        } else {
-            Some(
-                AhoCorasick::builder()
-                    .kind(Some(AhoCorasickKind::ContiguousNFA))
-                    .start_kind(StartKind::Unanchored)
-                    .build(self.keywords.iter().map(|keyword| keyword.as_bytes()))?,
-            )
-        };
+        let matcher_count = self.matcher_count;
+        let (linear, full, suffix, keywords, keyword_automaton, regex) =
+            if let Some(linear) = self.linear {
+                (
+                    Some(linear.into_boxed_slice()),
+                    HashSet::new(),
+                    HashSet::new(),
+                    Vec::new(),
+                    None,
+                    Vec::new(),
+                )
+            } else {
+                let keyword_automaton = if self.keywords.is_empty() {
+                    None
+                } else {
+                    Some(
+                        AhoCorasick::builder()
+                            .kind(Some(AhoCorasickKind::ContiguousNFA))
+                            .start_kind(StartKind::Unanchored)
+                            .build(self.keywords.iter().map(|keyword| keyword.as_bytes()))?,
+                    )
+                };
+                (
+                    None,
+                    self.full,
+                    self.suffix,
+                    self.keywords,
+                    keyword_automaton,
+                    self.regex,
+                )
+            };
         Ok(DomainMatcherSet {
             inner: Some(Arc::new(DomainMatcherSetInner {
-                full: self.full,
-                suffix: self.suffix,
-                keywords: self.keywords,
+                linear,
+                full,
+                suffix,
+                keywords,
                 keyword_automaton,
-                regex: self.regex,
+                regex,
             })),
-            matcher_count: self.matcher_count,
+            matcher_count,
         })
     }
 }
 
 fn lowercase_boxed(value: &str) -> Box<str> {
     value.to_ascii_lowercase().into_boxed_str()
+}
+
+fn normalize_linear_matcher(matcher: &DomainMatcher, mode: DomainNameMode) -> DomainMatcher {
+    match matcher {
+        DomainMatcher::Keyword(keyword) => DomainMatcher::Keyword(keyword.to_ascii_lowercase()),
+        DomainMatcher::Full(domain) => {
+            DomainMatcher::Full(mode.pattern(domain).to_ascii_lowercase())
+        }
+        DomainMatcher::Suffix(suffix) => {
+            DomainMatcher::Suffix(mode.pattern(suffix).to_ascii_lowercase())
+        }
+        DomainMatcher::Regex(matcher) => DomainMatcher::Regex(matcher.clone()),
+    }
+}
+
+fn matcher_pattern_bytes(matcher: &DomainMatcher) -> usize {
+    match matcher {
+        DomainMatcher::Keyword(pattern)
+        | DomainMatcher::Full(pattern)
+        | DomainMatcher::Suffix(pattern) => pattern.len(),
+        DomainMatcher::Regex(matcher) => matcher.pattern().len(),
+    }
 }
 
 fn lowercase_ascii(value: &str) -> Cow<'_, str> {
@@ -293,6 +411,41 @@ mod tests {
         ));
         assert_eq!(cloned, set);
         assert!(cloned.matches("a.test"));
+    }
+
+    #[test]
+    fn small_sets_use_the_linear_fast_path_without_retaining_indexes() {
+        let set = compile(&["a.test", "b.test"], &["suffix.test"], &["kw"], &["^rx$"]);
+        let inner = set.inner.as_deref().unwrap();
+
+        assert_eq!(inner.linear.as_deref().unwrap().len(), 5);
+        assert!(inner.full.is_empty());
+        assert!(inner.suffix.is_empty());
+        assert!(inner.keywords.is_empty());
+        assert!(inner.keyword_automaton.is_none());
+        assert!(inner.regex.is_empty());
+        assert!(set.matches("B.TEST"));
+        assert!(set.matches("deep.SUFFIX.test"));
+        assert!(set.matches("prefix-KW-suffix"));
+        assert!(set.matches("RX"));
+    }
+
+    #[test]
+    fn sets_above_the_linear_limit_use_the_compiled_indexes() {
+        let full = (0..=LINEAR_MATCHER_LIMIT)
+            .map(|index| format!("host-{index}.test"))
+            .collect::<Vec<_>>();
+        let matchers = full
+            .iter()
+            .map(|name| DomainMatcher::Full(name.clone()))
+            .collect::<Vec<_>>();
+        let set = DomainMatcherSet::compile(&matchers, DomainNameMode::Routing).unwrap();
+        let inner = set.inner.as_deref().unwrap();
+
+        assert!(inner.linear.is_none());
+        assert_eq!(inner.full.len(), LINEAR_MATCHER_LIMIT + 1);
+        assert!(set.matches("HOST-8.TEST"));
+        assert!(!set.matches("missing.test"));
     }
 
     #[test]

@@ -199,6 +199,9 @@ fn merge_ranges<T: AddressBits>(ranges: &mut Vec<InclusiveRange<T>>) {
 }
 
 fn ranges_contain<T: AddressBits>(ranges: &[InclusiveRange<T>], address: T) -> bool {
+    if let [range] = ranges {
+        return range.contains(address);
+    }
     let insertion = ranges.partition_point(|range| range.start <= address);
     insertion > 0 && address <= ranges[insertion - 1].end
 }
@@ -314,7 +317,8 @@ impl IpMatcherSet {
     }
 
     pub fn matches(&self, address: IpAddr) -> bool {
-        self.positive.contains(address) || self.inverse.lookup(address) == Some(false)
+        self.positive.contains(address)
+            || (!self.inverse.is_empty() && self.inverse.lookup(address) == Some(false))
     }
 }
 

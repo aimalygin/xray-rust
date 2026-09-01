@@ -9,6 +9,14 @@ release series.
 
 ## Unreleased
 
+- Restored small-rule routing performance lost before v0.5 when the shared
+  domain and IP indexes replaced linear matchers. Domain sets of at most eight
+  entries now retain a linear fast path while geosite-sized sets keep their
+  compiled hash/automaton indexes; single IP ranges and empty inverse sets also
+  avoid the generic range search. On the same release probe, 4096-rule DNS
+  selector last-hit latency fell from 91.5 to 26.4 microseconds without
+  regressing the 4096-matcher indexed path, and the 64-rule IP route probe fell
+  from 472 to 367 nanoseconds.
 - Started the `v0.5` development line with additive C ABI minor-version and
   capability discovery. The canonical Swift and Kotlin adapters expose the
   loaded ABI version and capability mask and reject incompatible major or
