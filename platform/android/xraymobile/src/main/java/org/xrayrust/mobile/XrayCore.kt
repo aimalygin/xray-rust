@@ -30,6 +30,7 @@ enum class XrayFfiCapability(val mask: Long) {
     TunDiagnosticEvents(1L shl 11),
     OutboundSelection(1L shl 12),
     OutboundHealth(1L shl 13),
+    ConnectionManagement(1L shl 14),
 }
 
 data class XrayFfiInfo(
@@ -98,6 +99,75 @@ data class XrayOutboundHealthStatus(
     val httpStatus: Int?,
 )
 
+enum class XrayConnectionState(val wireValue: String) {
+    Opening("opening"),
+    Active("active"),
+    ;
+
+    companion object {
+        internal fun fromWireValue(value: String): XrayConnectionState =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("unknown connection state: $value")
+    }
+}
+
+enum class XrayConnectionNetwork(val wireValue: String) {
+    Tcp("tcp"),
+    Udp("udp"),
+    ;
+
+    companion object {
+        internal fun fromWireValue(value: String): XrayConnectionNetwork =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("unknown connection network: $value")
+    }
+}
+
+enum class XrayConnectionAddressType(val wireValue: String) {
+    Ip("ip"),
+    Domain("domain"),
+    ;
+
+    companion object {
+        internal fun fromWireValue(value: String): XrayConnectionAddressType =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("unknown connection address type: $value")
+    }
+}
+
+data class XrayConnectionSnapshot(
+    val schemaVersion: Int,
+    val revision: Long,
+    val connections: List<XrayConnectionInfo>,
+)
+
+data class XrayConnectionInfo(
+    val id: Long,
+    val state: XrayConnectionState,
+    val inboundTag: String?,
+    val outboundTag: String?,
+    val network: XrayConnectionNetwork,
+    val addressType: XrayConnectionAddressType,
+    val address: String,
+    val port: Int,
+    val startedUnixMs: Long,
+)
+
+data class XrayOutboundAccountingSnapshot(
+    val schemaVersion: Int,
+    val revision: Long,
+    val outbounds: List<XrayOutboundAccounting>,
+)
+
+data class XrayOutboundAccounting(
+    val outboundTag: String?,
+    val openedConnections: Long,
+    val completedConnections: Long,
+    val hostClosedConnections: Long,
+    val uplinkBytes: Long,
+    val downlinkBytes: Long,
+)
+
 internal fun parseOutboundSelectionSnapshot(json: String): XrayOutboundSelectionSnapshot {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
@@ -143,6 +213,61 @@ internal fun parseOutboundHealthSnapshot(json: String): XrayOutboundHealthSnapsh
         )
     }
     return XrayOutboundHealthSnapshot(
+        schemaVersion = schemaVersion,
+        revision = root.getLong("revision"),
+        outbounds = outbounds,
+    )
+}
+
+internal fun parseConnectionSnapshot(json: String): XrayConnectionSnapshot {
+    val root = JSONObject(json)
+    val schemaVersion = root.getInt("schemaVersion")
+    require(schemaVersion == 1) {
+        "unsupported connection snapshot schema: $schemaVersion"
+    }
+    val connectionsJson = root.getJSONArray("connections")
+    val connections = List(connectionsJson.length()) { connectionIndex ->
+        val connection = connectionsJson.getJSONObject(connectionIndex)
+        XrayConnectionInfo(
+            id = connection.getLong("id"),
+            state = XrayConnectionState.fromWireValue(connection.getString("state")),
+            inboundTag = connection.optionalString("inboundTag"),
+            outboundTag = connection.optionalString("outboundTag"),
+            network = XrayConnectionNetwork.fromWireValue(connection.getString("network")),
+            addressType = XrayConnectionAddressType.fromWireValue(
+                connection.getString("addressType"),
+            ),
+            address = connection.getString("address"),
+            port = connection.getInt("port"),
+            startedUnixMs = connection.getLong("startedUnixMs"),
+        )
+    }
+    return XrayConnectionSnapshot(
+        schemaVersion = schemaVersion,
+        revision = root.getLong("revision"),
+        connections = connections,
+    )
+}
+
+internal fun parseOutboundAccountingSnapshot(json: String): XrayOutboundAccountingSnapshot {
+    val root = JSONObject(json)
+    val schemaVersion = root.getInt("schemaVersion")
+    require(schemaVersion == 1) {
+        "unsupported outbound accounting snapshot schema: $schemaVersion"
+    }
+    val outboundsJson = root.getJSONArray("outbounds")
+    val outbounds = List(outboundsJson.length()) { outboundIndex ->
+        val outbound = outboundsJson.getJSONObject(outboundIndex)
+        XrayOutboundAccounting(
+            outboundTag = outbound.optionalString("outboundTag"),
+            openedConnections = outbound.getLong("openedConnections"),
+            completedConnections = outbound.getLong("completedConnections"),
+            hostClosedConnections = outbound.getLong("hostClosedConnections"),
+            uplinkBytes = outbound.getLong("uplinkBytes"),
+            downlinkBytes = outbound.getLong("downlinkBytes"),
+        )
+    }
+    return XrayOutboundAccountingSnapshot(
         schemaVersion = schemaVersion,
         revision = root.getLong("revision"),
         outbounds = outbounds,
@@ -272,6 +397,26 @@ class XrayCore private constructor(handle: Long) : Closeable {
         return parseOutboundHealthSnapshot(
             withDataPathHandle { nativeOutboundHealthSnapshotJson(it) },
         )
+    }
+
+    fun connectionSnapshot(): XrayConnectionSnapshot {
+        requireCapability(XrayFfiCapability.ConnectionManagement)
+        return parseConnectionSnapshot(
+            withDataPathHandle { nativeConnectionSnapshotJson(it) },
+        )
+    }
+
+    fun outboundAccountingSnapshot(): XrayOutboundAccountingSnapshot {
+        requireCapability(XrayFfiCapability.ConnectionManagement)
+        return parseOutboundAccountingSnapshot(
+            withDataPathHandle { nativeOutboundAccountingSnapshotJson(it) },
+        )
+    }
+
+    fun closeConnection(id: Long) {
+        requireCapability(XrayFfiCapability.ConnectionManagement)
+        require(id > 0) { "connection id must be positive" }
+        withDataPathHandle { nativeCloseConnection(it, id) }
     }
 
     fun pushPacket(packet: ByteArray, length: Int = packet.size) {
@@ -446,6 +591,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeClearOutboundSelectorOverride(handle: Long, groupTag: String)
     private external fun nativeOutboundSelectionSnapshotJson(handle: Long): String
     private external fun nativeOutboundHealthSnapshotJson(handle: Long): String
+    private external fun nativeConnectionSnapshotJson(handle: Long): String
+    private external fun nativeOutboundAccountingSnapshotJson(handle: Long): String
+    private external fun nativeCloseConnection(handle: Long, connectionId: Long)
     private external fun nativeSetSocketProtector(handle: Long, protector: SocketProtector)
     private external fun nativeSetTunFd(
         handle: Long,

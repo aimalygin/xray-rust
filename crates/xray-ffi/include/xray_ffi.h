@@ -196,7 +196,8 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_TUN_STATS = 1 << 10,
   XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS = 1 << 11,
   XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION = 1 << 12,
-  XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH = 1 << 13
+  XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH = 1 << 13,
+  XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT = 1 << 14
 } XrayFfiCapability;
 
 uint32_t xray_ffi_version_major(void);
@@ -254,6 +255,22 @@ XrayStatus xray_core_outbound_health_snapshot_json(
     char *buffer,
     size_t buffer_len,
     size_t *written,
+    XrayError **error);
+XrayStatus xray_core_connection_snapshot_json(
+    const XrayCoreHandle *handle,
+    char *buffer,
+    size_t buffer_len,
+    size_t *written,
+    XrayError **error);
+XrayStatus xray_core_outbound_accounting_snapshot_json(
+    const XrayCoreHandle *handle,
+    char *buffer,
+    size_t buffer_len,
+    size_t *written,
+    XrayError **error);
+XrayStatus xray_core_close_connection(
+    XrayCoreHandle *handle,
+    uint64_t connection_id,
     XrayError **error);
 XrayStatus xray_core_set_socket_protect_callback(
     XrayCoreHandle *handle,

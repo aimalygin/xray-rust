@@ -41,6 +41,9 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_clear_outbound_selector_override",
         "xray_core_outbound_selection_snapshot_json",
         "xray_core_outbound_health_snapshot_json",
+        "xray_core_connection_snapshot_json",
+        "xray_core_outbound_accounting_snapshot_json",
+        "xray_core_close_connection",
         "xray_core_start",
         "xray_core_stop",
         "xray_core_free",
@@ -82,6 +85,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS = 1 << 11"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION = 1 << 12"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH = 1 << 13"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT = 1 << 14"));
 
     for field in [
         "struct_size",
@@ -175,10 +179,14 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("xray_core_set_dns_bootstrap_mode"));
     assert!(core.contains("public static let outboundSelection"));
     assert!(core.contains("public static let outboundHealth"));
+    assert!(core.contains("public static let connectionManagement"));
     assert!(core.contains("public func setOutboundSelectorOverride("));
     assert!(core.contains("public func clearOutboundSelectorOverride("));
     assert!(core.contains("public func outboundSelectionSnapshot()"));
     assert!(core.contains("public func outboundHealthSnapshot()"));
+    assert!(core.contains("public func connectionSnapshot()"));
+    assert!(core.contains("public func outboundAccountingSnapshot()"));
+    assert!(core.contains("public func closeConnection(id: UInt64)"));
     assert!(core.contains("tunFileDescriptor"));
     assert!(core.contains("xray_tun_push_packet"));
     assert!(core.contains("xray_tun_poll_packet"));
@@ -405,8 +413,12 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("fun clearOutboundSelectorOverride("));
     assert!(core.contains("fun outboundSelectionSnapshot()"));
     assert!(core.contains("fun outboundHealthSnapshot()"));
+    assert!(core.contains("fun connectionSnapshot()"));
+    assert!(core.contains("fun outboundAccountingSnapshot()"));
+    assert!(core.contains("fun closeConnection(id: Long)"));
     assert!(core.contains("OutboundSelection(1L shl 12)"));
     assert!(core.contains("OutboundHealth(1L shl 13)"));
+    assert!(core.contains("ConnectionManagement(1L shl 14)"));
     assert!(core.contains("fileLoggingDirectory: File? = null"));
     assert!(core.contains("nativeSetFileLogging"));
     assert!(core.contains("XrayTunRuntimeProfile"));
@@ -436,6 +448,9 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("xray_core_clear_outbound_selector_override"));
     assert!(jni.contains("xray_core_outbound_selection_snapshot_json"));
     assert!(jni.contains("xray_core_outbound_health_snapshot_json"));
+    assert!(jni.contains("xray_core_connection_snapshot_json"));
+    assert!(jni.contains("xray_core_outbound_accounting_snapshot_json"));
+    assert!(jni.contains("xray_core_close_connection"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
@@ -446,6 +461,9 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeClearOutboundSelectorOverride"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeOutboundSelectionSnapshotJson"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeOutboundHealthSnapshotJson"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeConnectionSnapshotJson"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeOutboundAccountingSnapshotJson"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection"));
 
     let jni_new = jni
         .find("Java_org_xrayrust_mobile_XrayCore_nativeNew")
@@ -992,6 +1010,9 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_clear_outbound_selector_override",
     "xray_core_outbound_selection_snapshot_json",
     "xray_core_outbound_health_snapshot_json",
+    "xray_core_connection_snapshot_json",
+    "xray_core_outbound_accounting_snapshot_json",
+    "xray_core_close_connection",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -1071,6 +1092,7 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH;
+  capabilities &= XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT;
   (void)capabilities;
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_geodata_search_dir_exclusive(handle, ".", &error);
@@ -1112,6 +1134,11 @@ static void use_xray_ffi_api(void) {
       handle, message, sizeof(message), &message_written, &error);
   (void)xray_core_outbound_health_snapshot_json(
       handle, message, sizeof(message), &message_written, &error);
+  (void)xray_core_connection_snapshot_json(
+      handle, message, sizeof(message), &message_written, &error);
+  (void)xray_core_outbound_accounting_snapshot_json(
+      handle, message, sizeof(message), &message_written, &error);
+  (void)xray_core_close_connection(handle, 1, &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);

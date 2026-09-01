@@ -2451,6 +2451,7 @@ dependencies = [
  "tokio",
  "xray-config",
  "xray-core-rs",
+ "xray-routing",
  "xray-transport",
  "xray-tun",
 ]

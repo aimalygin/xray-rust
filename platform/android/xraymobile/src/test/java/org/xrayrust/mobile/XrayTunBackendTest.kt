@@ -38,6 +38,7 @@ class XrayTunBackendTest {
     fun ffiVersionValidationAcceptsCurrentAndNewerMinor() {
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 1))
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 2))
+        validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 3))
     }
 
     @Test
@@ -72,6 +73,7 @@ class XrayTunBackendTest {
     fun outboundCapabilitiesKeepStableAbiBits() {
         assertEquals(1L shl 12, XrayFfiCapability.OutboundSelection.mask)
         assertEquals(1L shl 13, XrayFfiCapability.OutboundHealth.mask)
+        assertEquals(1L shl 14, XrayFfiCapability.ConnectionManagement.mask)
     }
 
     @Test
@@ -107,6 +109,27 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun connectionAndAccountingSnapshotsParseVersionedWireContracts() {
+        val connections = parseConnectionSnapshot(
+            """{"schemaVersion":1,"revision":9,"connections":[{"id":17,"state":"active","inboundTag":"tun-in","outboundTag":"direct","network":"udp","addressType":"ip","address":"127.0.0.1","port":53,"startedUnixMs":42}]}""",
+        )
+        assertEquals(9L, connections.revision)
+        assertEquals(17L, connections.connections[0].id)
+        assertEquals(XrayConnectionState.Active, connections.connections[0].state)
+        assertEquals(XrayConnectionNetwork.Udp, connections.connections[0].network)
+        assertEquals(XrayConnectionAddressType.Ip, connections.connections[0].addressType)
+        assertEquals(53, connections.connections[0].port)
+
+        val accounting = parseOutboundAccountingSnapshot(
+            """{"schemaVersion":1,"revision":10,"outbounds":[{"outboundTag":"direct","openedConnections":3,"completedConnections":2,"hostClosedConnections":1,"uplinkBytes":64,"downlinkBytes":96}]}""",
+        )
+        assertEquals(10L, accounting.revision)
+        assertEquals("direct", accounting.outbounds[0].outboundTag)
+        assertEquals(1L, accounting.outbounds[0].hostClosedConnections)
+        assertEquals(96L, accounting.outbounds[0].downlinkBytes)
+    }
+
+    @Test
     fun outboundSnapshotParsersRejectUnknownSchemaVersions() {
         assertThrows(IllegalArgumentException::class.java) {
             parseOutboundSelectionSnapshot(
@@ -115,6 +138,16 @@ class XrayTunBackendTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             parseOutboundHealthSnapshot(
+                """{"schemaVersion":2,"revision":0,"outbounds":[]}""",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseConnectionSnapshot(
+                """{"schemaVersion":2,"revision":0,"connections":[]}""",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            parseOutboundAccountingSnapshot(
                 """{"schemaVersion":2,"revision":0,"outbounds":[]}""",
             )
         }

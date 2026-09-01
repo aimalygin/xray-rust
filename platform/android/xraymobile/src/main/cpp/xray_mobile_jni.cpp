@@ -302,7 +302,7 @@ int32_t protect_socket(int32_t fd, void *user_data) {
   jint env_status =
       protector->vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
   if (env_status == JNI_EDETACHED) {
-    if (protector->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+    if (protector->vm->AttachCurrentThread(reinterpret_cast<void **>(&env), nullptr) != JNI_OK) {
       return 0;
     }
     attached = true;
@@ -497,6 +497,53 @@ Java_org_xrayrust_mobile_XrayCore_nativeOutboundHealthSnapshotJson(
       core_from_handle(handle),
       xray_core_outbound_health_snapshot_json,
       "xray returned an invalid outbound health snapshot length");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeConnectionSnapshotJson(
+    JNIEnv *env,
+    jobject,
+    jlong handle) {
+  return snapshot_json(
+      env,
+      core_from_handle(handle),
+      xray_core_connection_snapshot_json,
+      "xray returned an invalid connection snapshot length");
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeOutboundAccountingSnapshotJson(
+    JNIEnv *env,
+    jobject,
+    jlong handle) {
+  return snapshot_json(
+      env,
+      core_from_handle(handle),
+      xray_core_outbound_accounting_snapshot_json,
+      "xray returned an invalid outbound accounting snapshot length");
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jlong connection_id) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+  if (connection_id <= 0) {
+    throw_illegal_argument(env, "connection id must be positive");
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_close_connection(
+      native->core,
+      static_cast<uint64_t>(connection_id),
+      &error);
+  check_status(env, status, error);
 }
 
 extern "C" JNIEXPORT void JNICALL

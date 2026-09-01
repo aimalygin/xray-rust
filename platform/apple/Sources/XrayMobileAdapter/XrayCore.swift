@@ -137,6 +137,9 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let outboundHealth = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH.rawValue)
     )
+    public static let connectionManagement = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT.rawValue)
+    )
 }
 
 public struct XrayFFIInfo: Equatable, Sendable {
@@ -238,6 +241,94 @@ public struct XrayOutboundHealthStatus: Codable, Equatable, Sendable {
     public let consecutiveFailures: UInt64
     public let lastFailureKind: XrayOutboundHealthFailureKind?
     public let httpStatus: UInt16?
+}
+
+public enum XrayConnectionState: String, Codable, Equatable, Sendable {
+    case opening
+    case active
+}
+
+public enum XrayConnectionNetwork: String, Codable, Equatable, Sendable {
+    case tcp
+    case udp
+}
+
+public enum XrayConnectionAddressType: String, Codable, Equatable, Sendable {
+    case ip
+    case domain
+}
+
+public struct XrayConnectionSnapshot: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let revision: UInt64
+    public let connections: [XrayConnectionInfo]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case revision
+        case connections
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "unsupported connection snapshot schema: \(schemaVersion)"
+            )
+        }
+        revision = try container.decode(UInt64.self, forKey: .revision)
+        connections = try container.decode([XrayConnectionInfo].self, forKey: .connections)
+    }
+}
+
+public struct XrayConnectionInfo: Codable, Equatable, Sendable {
+    public let id: UInt64
+    public let state: XrayConnectionState
+    public let inboundTag: String?
+    public let outboundTag: String?
+    public let network: XrayConnectionNetwork
+    public let addressType: XrayConnectionAddressType
+    public let address: String
+    public let port: UInt16
+    public let startedUnixMs: UInt64
+}
+
+public struct XrayOutboundAccountingSnapshot: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let revision: UInt64
+    public let outbounds: [XrayOutboundAccounting]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case revision
+        case outbounds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "unsupported outbound accounting snapshot schema: \(schemaVersion)"
+            )
+        }
+        revision = try container.decode(UInt64.self, forKey: .revision)
+        outbounds = try container.decode([XrayOutboundAccounting].self, forKey: .outbounds)
+    }
+}
+
+public struct XrayOutboundAccounting: Codable, Equatable, Sendable {
+    public let outboundTag: String?
+    public let openedConnections: UInt64
+    public let completedConnections: UInt64
+    public let hostClosedConnections: UInt64
+    public let uplinkBytes: UInt64
+    public let downlinkBytes: UInt64
 }
 
 /// Controls whether the core may use the platform resolver for bootstrap lookups.
@@ -974,6 +1065,30 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
+    public func connectionSnapshot() throws -> XrayConnectionSnapshot {
+        try requireCapability(.connectionManagement)
+        return try withSharedHandle { handle in
+            let data = try snapshotJSON(handle: handle, kind: .connections)
+            return try JSONDecoder().decode(XrayConnectionSnapshot.self, from: data)
+        }
+    }
+
+    public func outboundAccountingSnapshot() throws -> XrayOutboundAccountingSnapshot {
+        try requireCapability(.connectionManagement)
+        return try withSharedHandle { handle in
+            let data = try snapshotJSON(handle: handle, kind: .accounting)
+            return try JSONDecoder().decode(XrayOutboundAccountingSnapshot.self, from: data)
+        }
+    }
+
+    public func closeConnection(id: UInt64) throws {
+        try requireCapability(.connectionManagement)
+        try withSharedHandle { handle in
+            var error: OpaquePointer?
+            try check(xray_core_close_connection(handle, id, &error), error: error)
+        }
+    }
+
     public func pushPacket(_ packet: Data) throws {
         try withDataPathHandle { handle in
             var error: OpaquePointer?
@@ -1509,6 +1624,8 @@ public final class XrayCore: @unchecked Sendable {
     private enum SnapshotKind {
         case selection
         case health
+        case connections
+        case accounting
     }
 
     private func snapshotJSON(handle: OpaquePointer, kind: SnapshotKind) throws -> Data {
@@ -1532,6 +1649,22 @@ public final class XrayCore: @unchecked Sendable {
                 &requiredLength,
                 &error
             )
+        case .connections:
+            queryStatus = xray_core_connection_snapshot_json(
+                handle,
+                nil,
+                0,
+                &requiredLength,
+                &error
+            )
+        case .accounting:
+            queryStatus = xray_core_outbound_accounting_snapshot_json(
+                handle,
+                nil,
+                0,
+                &requiredLength,
+                &error
+            )
         }
         try check(queryStatus, error: error)
 
@@ -1549,6 +1682,22 @@ public final class XrayCore: @unchecked Sendable {
                 )
             case .health:
                 return xray_core_outbound_health_snapshot_json(
+                    handle,
+                    pointer.baseAddress,
+                    pointer.count,
+                    &written,
+                    &error
+                )
+            case .connections:
+                return xray_core_connection_snapshot_json(
+                    handle,
+                    pointer.baseAddress,
+                    pointer.count,
+                    &written,
+                    &error
+                )
+            case .accounting:
+                return xray_core_outbound_accounting_snapshot_json(
                     handle,
                     pointer.baseAddress,
                     pointer.count,

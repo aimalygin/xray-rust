@@ -231,21 +231,23 @@ development line. Xray-compatible prefix selector groups, random/round-robin/
 `leastPing`, bounded rolling-window `leastLoad`, fallback tags, atomic validated
 overrides, bounded lifecycle-owned URL tests, typed health snapshots, and
 deterministic health failover share the graph's existing leaf handler pools.
-ABI 1.2 exposes capability-gated atomic
-override/clear plus versioned, redacted selection and health snapshots through
-equivalent Swift and Kotlin APIs. Xray `proxySettings` with explicit
+ABI 1.2 exposes capability-gated atomic override/clear plus versioned,
+redacted selection and health snapshots through equivalent Swift and Kotlin
+APIs. Xray `proxySettings` with explicit
 `transportLayer: true` now creates validated cycle-free TCP graph edges and
 layers supported security/stream transports over the nested carrier without
 bypassing socket protection. UDP/protocol-layer, REALITY, and XHTTP HTTP/3
 chaining remain fail-closed subsets. Connection inventory now also covers TUN
 TCP/UDP transport sessions with addressable cancellation and byte accounting.
-The next management work is the C/Swift/Kotlin projection and structured
-diagnostics.
+ABI 1.3 projects its versioned inventory, accounting, and close operations
+through equivalent Swift and Kotlin APIs. The next management work is
+structured diagnostics and SOCKS UDP registration.
 
 ### Mobile SDK and management API
 
-- Keep the implemented ABI minor-version/capability discovery and ABI 1.2
-  selector/health projection backward-compatible while extending the FFI.
+- Keep the implemented ABI minor-version/capability discovery, ABI 1.2
+  selector/health projection, and ABI 1.3 connection-management projection
+  backward-compatible while extending the FFI.
 - Expose typed connection inventory, connection close, per-outbound accounting,
   health, and structured diagnostic events. Do not add an in-core HTTP server.
 - Bring Android profile import, statistics, and event coverage to parity with
@@ -257,7 +259,8 @@ diagnostics.
 The version/capability foundation and cross-platform selection/health surface
 are implemented. A core-owned registry now supplies typed connection
 inventory, addressable cancellation, and cumulative per-outbound accounting
-for routed SOCKS/HTTP/TUN TCP and TUN UDP flows. C/Swift/Kotlin projection,
+for routed SOCKS/HTTP/TUN TCP and TUN UDP flows. ABI 1.3 and equivalent Swift/
+Kotlin models expose inventory, cumulative per-outbound accounting, and close.
 SOCKS UDP registration, structured diagnostics, broader Android host parity,
 and device soak remain.
 

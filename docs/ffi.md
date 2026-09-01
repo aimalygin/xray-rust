@@ -8,10 +8,11 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.2`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.3`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
-and health methods additionally require the corresponding ABI 1.2 capability
-bit before calling the optional symbols.
+and health methods require the corresponding ABI 1.2 capability bits; their
+connection-management methods require the ABI 1.3 capability bit before
+calling optional symbols.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -45,8 +46,8 @@ compatibility checks.
 5. Call `xray_core_load_config_json` exactly once successfully.
 6. Read `xray_core_config_warnings` and surface non-empty diagnostics.
 7. Call `xray_core_start`.
-8. Use the packet, statistics, diagnostic-event, selector-override, and
-   outbound-snapshot APIs.
+8. Use the packet, statistics, diagnostic-event, selector-override,
+   outbound-snapshot, and connection-management APIs.
 9. Call `xray_core_stop`.
 10. Release the handle with `xray_core_free`.
 
@@ -88,7 +89,7 @@ successful config load and must not overlap lifecycle/configuration operations.
 
 ## Outbound selection and health
 
-ABI minor 1.2 adds two independent capabilities:
+ABI 1.2 adds two independent capabilities:
 
 | Capability | Optional surface |
 | --- | --- |
@@ -148,6 +149,69 @@ errors, or credentials. Consumers must reject an unsupported `schemaVersion`
 rather than guessing its meaning. The checked-in Swift and Kotlin models do
 this decoding and expose equivalent public operations.
 
+## Connection management
+
+ABI 1.3 adds `XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT`. When present, hosts
+may call `xray_core_connection_snapshot_json`,
+`xray_core_outbound_accounting_snapshot_json`, and
+`xray_core_close_connection`. Both snapshots use the same two-pass UTF-8
+contract as the outbound snapshots and currently use schema version 1.
+
+The connection document is an ID-sorted point-in-time inventory:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 9,
+  "connections": [
+    {
+      "id": 17,
+      "state": "active",
+      "inboundTag": "tun-in",
+      "outboundTag": "direct",
+      "network": "udp",
+      "addressType": "ip",
+      "address": "127.0.0.1",
+      "port": 53,
+      "startedUnixMs": 1788220800000
+    }
+  ]
+}
+```
+
+States are `opening` and `active`; networks are `tcp` and `udp`; address types
+are `ip` and `domain`. Tags are nullable. Targets are intentionally visible to
+the owning host because per-connection display and close are the purpose of the
+surface; credentials and free-form transport errors are not included.
+
+The accounting document keeps cumulative totals after flows leave the active
+inventory:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 10,
+  "outbounds": [
+    {
+      "outboundTag": "direct",
+      "openedConnections": 3,
+      "completedConnections": 2,
+      "hostClosedConnections": 1,
+      "uplinkBytes": 64,
+      "downlinkBytes": 96
+    }
+  ]
+}
+```
+
+`xray_core_close_connection` accepts a nonzero ID from a recent connection
+snapshot. It marks the host-close request before signalling cancellation, so a
+concurrent flow exit is still attributed correctly. Zero and IDs that are no
+longer registered return `XRAY_STATUS_INVALID_ARGUMENT`. A successful call is
+idempotent only while that entry remains registered; callers should refresh the
+snapshot rather than retrying a disappeared ID. The current registry covers
+routed SOCKS/HTTP/TUN TCP and TUN UDP sessions.
+
 ## Threading
 
 Serialize all configuration and lifecycle calls for a handle:
@@ -157,10 +221,10 @@ Serialize all configuration and lifecycle calls for a handle:
 - every pre-load `xray_core_set_*` call;
 - `xray_core_free`.
 
-The selector override/clear calls are the exception: they use the shared
-runtime gate and may overlap packet/statistics calls, snapshot reads, and each
-other. The two snapshot calls have the same shared-call behavior. None of
-these four calls may overlap load/start/stop/free.
+The selector override/clear and connection-close calls are the exception: they
+use the shared runtime gate and may overlap packet/statistics calls, snapshot
+reads, and each other. All four snapshot calls have the same shared-call
+behavior. None of these shared calls may overlap load/start/stop/free.
 
 The header explicitly permits `xray_tun_poll_packets` to run concurrently with
 `xray_tun_push_packet`, `xray_tun_poll_packet`, and `xray_tun_stats` on the same

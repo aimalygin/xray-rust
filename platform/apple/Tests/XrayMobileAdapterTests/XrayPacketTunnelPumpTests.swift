@@ -208,7 +208,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testFFIInfoReportsCurrentCapabilities() {
         let info = XrayCore.ffiInfo
 
-        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 2))
+        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 3))
         XCTAssertTrue(info.supports(.configWarnings))
         XCTAssertTrue(info.supports(.geodataSearch))
         XCTAssertTrue(info.supports(.socketProtection))
@@ -223,6 +223,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertTrue(info.supports(.tunDiagnosticEvents))
         XCTAssertTrue(info.supports(.outboundSelection))
         XCTAssertTrue(info.supports(.outboundHealth))
+        XCTAssertTrue(info.supports(.connectionManagement))
         XCTAssertFalse(info.supports(XrayFFICapabilities(rawValue: 1 << 63)))
     }
 
@@ -259,9 +260,36 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertEqual(snapshot.outbounds[0].httpStatus, 503)
     }
 
+    func testConnectionAndAccountingSnapshotsDecodeVersionedWireContracts() throws {
+        let connections = #"{"schemaVersion":1,"revision":9,"connections":[{"id":17,"state":"active","inboundTag":"tun-in","outboundTag":"direct","network":"udp","addressType":"ip","address":"127.0.0.1","port":53,"startedUnixMs":42}]}"#
+        let accounting = #"{"schemaVersion":1,"revision":10,"outbounds":[{"outboundTag":"direct","openedConnections":3,"completedConnections":2,"hostClosedConnections":1,"uplinkBytes":64,"downlinkBytes":96}]}"#
+
+        let connectionSnapshot = try JSONDecoder().decode(
+            XrayConnectionSnapshot.self,
+            from: Data(connections.utf8)
+        )
+        XCTAssertEqual(connectionSnapshot.revision, 9)
+        XCTAssertEqual(connectionSnapshot.connections[0].id, 17)
+        XCTAssertEqual(connectionSnapshot.connections[0].state, .active)
+        XCTAssertEqual(connectionSnapshot.connections[0].network, .udp)
+        XCTAssertEqual(connectionSnapshot.connections[0].addressType, .ip)
+        XCTAssertEqual(connectionSnapshot.connections[0].port, 53)
+
+        let accountingSnapshot = try JSONDecoder().decode(
+            XrayOutboundAccountingSnapshot.self,
+            from: Data(accounting.utf8)
+        )
+        XCTAssertEqual(accountingSnapshot.revision, 10)
+        XCTAssertEqual(accountingSnapshot.outbounds[0].outboundTag, "direct")
+        XCTAssertEqual(accountingSnapshot.outbounds[0].hostClosedConnections, 1)
+        XCTAssertEqual(accountingSnapshot.outbounds[0].downlinkBytes, 96)
+    }
+
     func testOutboundSnapshotsRejectUnknownSchemaVersions() {
         let selection = #"{"schemaVersion":2,"revision":0,"groups":[]}"#
         let health = #"{"schemaVersion":2,"revision":0,"outbounds":[]}"#
+        let connections = #"{"schemaVersion":2,"revision":0,"connections":[]}"#
+        let accounting = #"{"schemaVersion":2,"revision":0,"outbounds":[]}"#
 
         XCTAssertThrowsError(
             try JSONDecoder().decode(
@@ -273,6 +301,18 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
             try JSONDecoder().decode(
                 XrayOutboundHealthSnapshot.self,
                 from: Data(health.utf8)
+            )
+        )
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                XrayConnectionSnapshot.self,
+                from: Data(connections.utf8)
+            )
+        )
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                XrayOutboundAccountingSnapshot.self,
+                from: Data(accounting.utf8)
             )
         )
     }

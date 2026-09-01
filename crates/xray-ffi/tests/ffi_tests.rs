@@ -1,15 +1,16 @@
 use std::ffi::{CStr, CString};
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use xray_ffi::{
-    xray_core_clear_outbound_selector_override, xray_core_config_warnings, xray_core_free,
-    xray_core_load_config_json, xray_core_new, xray_core_outbound_health_snapshot_json,
-    xray_core_outbound_selection_snapshot_json, xray_core_set_dns_bootstrap_mode,
-    xray_core_set_file_logging, xray_core_set_geodata_search_dir,
+    xray_core_clear_outbound_selector_override, xray_core_close_connection,
+    xray_core_config_warnings, xray_core_connection_snapshot_json, xray_core_free,
+    xray_core_load_config_json, xray_core_new, xray_core_outbound_accounting_snapshot_json,
+    xray_core_outbound_health_snapshot_json, xray_core_outbound_selection_snapshot_json,
+    xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging, xray_core_set_geodata_search_dir,
     xray_core_set_geodata_search_dir_exclusive, xray_core_set_outbound_selector_override,
     xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
@@ -24,13 +25,13 @@ use xray_ffi::{
     XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent,
     XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent, XRAY_FFI_ABI_MAJOR, XRAY_FFI_ABI_MINOR,
     XRAY_FFI_CAPABILITIES, XRAY_FFI_CAPABILITY_CONFIG_WARNINGS,
-    XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY, XRAY_FFI_CAPABILITY_FILE_LOGGING,
-    XRAY_FFI_CAPABILITY_GEODATA_SEARCH, XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH,
-    XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION, XRAY_FFI_CAPABILITY_SOCKET_PROTECTION,
-    XRAY_FFI_CAPABILITY_STARTUP_PROBE, XRAY_FFI_CAPABILITY_TUN_BATCH_POLL,
-    XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS, XRAY_FFI_CAPABILITY_TUN_FD,
-    XRAY_FFI_CAPABILITY_TUN_PACKET_IO, XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES,
-    XRAY_FFI_CAPABILITY_TUN_STATS,
+    XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT, XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY,
+    XRAY_FFI_CAPABILITY_FILE_LOGGING, XRAY_FFI_CAPABILITY_GEODATA_SEARCH,
+    XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH, XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION,
+    XRAY_FFI_CAPABILITY_SOCKET_PROTECTION, XRAY_FFI_CAPABILITY_STARTUP_PROBE,
+    XRAY_FFI_CAPABILITY_TUN_BATCH_POLL, XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS,
+    XRAY_FFI_CAPABILITY_TUN_FD, XRAY_FFI_CAPABILITY_TUN_PACKET_IO,
+    XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES, XRAY_FFI_CAPABILITY_TUN_STATS,
 };
 
 #[test]
@@ -54,7 +55,8 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_TUN_STATS
         | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS
         | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
-        | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH;
+        | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH
+        | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -346,6 +348,154 @@ fn ffi_health_snapshot_has_stable_redacted_schema() {
                 && status["lastFailureKind"].is_null()
                 && status["httpStatus"].is_null()
         }));
+
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_connection_and_accounting_snapshots_have_stable_empty_schema() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    let connections = read_snapshot_json(core, xray_core_connection_snapshot_json, &mut err);
+    assert_eq!(connections["schemaVersion"], 1);
+    assert_eq!(connections["revision"], 0);
+    assert_eq!(connections["connections"], serde_json::json!([]));
+
+    let accounting =
+        read_snapshot_json(core, xray_core_outbound_accounting_snapshot_json, &mut err);
+    assert_eq!(accounting["schemaVersion"], 1);
+    assert_eq!(accounting["revision"], 0);
+    assert_eq!(accounting["outbounds"], serde_json::json!([]));
+
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_connection_snapshot_close_and_accounting_control_live_socks_flow() {
+    let inbound_port = reserve_loopback_port();
+    let echo_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let echo_addr = echo_listener.local_addr().unwrap();
+    let echo_thread = thread::spawn(move || {
+        let (mut stream, _) = echo_listener.accept().unwrap();
+        let mut buffer = [0_u8; 1024];
+        loop {
+            let read = stream.read(&mut buffer).unwrap();
+            if read == 0 {
+                break;
+            }
+            stream.write_all(&buffer[..read]).unwrap();
+        }
+    });
+
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(format!(
+        r#"{{
+          "inbounds": [{{
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": {inbound_port},
+            "settings": {{ "udp": false }}
+          }}],
+          "outbounds": [{{ "tag": "direct", "protocol": "freedom" }}]
+        }}"#
+    ))
+    .unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        unsafe { xray_core_start(core, &mut err) },
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(err)
+    );
+
+    let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, inbound_port)).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    client.write_all(&[5, 1, 0]).unwrap();
+    let mut method = [0_u8; 2];
+    client.read_exact(&mut method).unwrap();
+    assert_eq!(method, [5, 0]);
+    let SocketAddr::V4(echo_addr) = echo_addr else {
+        panic!("echo listener must be IPv4");
+    };
+    let mut connect = vec![5, 1, 0, 1];
+    connect.extend_from_slice(&echo_addr.ip().octets());
+    connect.extend_from_slice(&echo_addr.port().to_be_bytes());
+    client.write_all(&connect).unwrap();
+    let mut response = [0_u8; 10];
+    client.read_exact(&mut response).unwrap();
+    assert_eq!(&response[..2], &[5, 0]);
+
+    let payload = b"ffi managed connection";
+    client.write_all(payload).unwrap();
+    let mut echoed = vec![0_u8; payload.len()];
+    client.read_exact(&mut echoed).unwrap();
+    assert_eq!(echoed, payload);
+
+    let snapshot = read_snapshot_json(core, xray_core_connection_snapshot_json, &mut err);
+    let connection = &snapshot["connections"][0];
+    assert_eq!(connection["state"], "active");
+    assert_eq!(connection["inboundTag"], "socks-in");
+    assert_eq!(connection["outboundTag"], "direct");
+    assert_eq!(connection["network"], "tcp");
+    assert_eq!(connection["addressType"], "ip");
+    assert_eq!(connection["port"], echo_addr.port());
+    let connection_id = connection["id"].as_u64().unwrap();
+
+    assert_eq!(
+        unsafe { xray_core_close_connection(core, connection_id, &mut err) },
+        XrayStatus::Ok
+    );
+    let mut byte = [0_u8; 1];
+    assert_eq!(client.read(&mut byte).unwrap(), 0);
+
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        let snapshot = read_snapshot_json(core, xray_core_connection_snapshot_json, &mut err);
+        if snapshot["connections"].as_array().unwrap().is_empty() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "connection stayed registered");
+        thread::yield_now();
+    }
+    let accounting =
+        read_snapshot_json(core, xray_core_outbound_accounting_snapshot_json, &mut err);
+    let direct = &accounting["outbounds"][0];
+    assert_eq!(direct["outboundTag"], "direct");
+    assert_eq!(direct["openedConnections"], 1);
+    assert_eq!(direct["completedConnections"], 1);
+    assert_eq!(direct["hostClosedConnections"], 1);
+    assert_eq!(direct["uplinkBytes"], payload.len());
+    assert_eq!(direct["downlinkBytes"], payload.len());
+
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    unsafe { xray_core_free(core) };
+    echo_thread.join().unwrap();
+}
+
+#[test]
+fn ffi_close_connection_rejects_zero_and_unknown_ids() {
+    let mut err = std::ptr::null_mut();
+    let core = loaded_core(&mut err);
+
+    assert_eq!(
+        unsafe { xray_core_close_connection(core, 0, &mut err) },
+        XrayStatus::InvalidArgument
+    );
+    assert_error(&mut err, XrayStatus::InvalidArgument, "must be nonzero");
+
+    assert_eq!(
+        unsafe { xray_core_close_connection(core, 42, &mut err) },
+        XrayStatus::InvalidArgument
+    );
+    assert_error(&mut err, XrayStatus::InvalidArgument, "was not found");
 
     unsafe { xray_core_free(core) };
 }
@@ -2609,6 +2759,14 @@ fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     ));
     std::fs::create_dir_all(&dir).expect("temp dir should be created");
     dir
+}
+
+fn reserve_loopback_port() -> u16 {
+    TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .expect("bind temporary loopback listener")
+        .local_addr()
+        .expect("read temporary loopback listener address")
+        .port()
 }
 
 fn minimal_geosite_data() -> Vec<u8> {

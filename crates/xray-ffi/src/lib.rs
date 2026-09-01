@@ -15,15 +15,16 @@ use xray_config::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dirs,
 };
 use xray_core_rs::{
-    Core, DnsBootstrapMode, OutboundHealthFailure, OutboundHealthState, RuntimeLogConfig,
-    RuntimeLogger, StartupProbeOptions, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat,
-    TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
+    ConnectionId, ConnectionState, Core, DnsBootstrapMode, OutboundHealthFailure,
+    OutboundHealthState, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy,
+    TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
 };
+use xray_routing::{Network, TargetAddr};
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 2;
+pub const XRAY_FFI_ABI_MINOR: u32 = 3;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -39,6 +40,7 @@ pub const XRAY_FFI_CAPABILITY_TUN_STATS: u64 = 1 << 10;
 pub const XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS: u64 = 1 << 11;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION: u64 = 1 << 12;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH: u64 = 1 << 13;
+pub const XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT: u64 = 1 << 14;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -53,7 +55,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_TUN_STATS
     | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS
     | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
-    | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH;
+    | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH
+    | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1223,10 +1226,139 @@ pub unsafe extern "C" fn xray_core_outbound_health_snapshot_json(
     }
 }
 
+/// Copies the version-1 active connection inventory JSON document.
+///
+/// Buffer and concurrency semantics match
+/// `xray_core_outbound_selection_snapshot_json`.
+///
+/// # Safety
+///
+/// The pointer and concurrency requirements are the same as
+/// `xray_core_outbound_selection_snapshot_json`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_connection_snapshot_json(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_snapshot_json_inner(
+                handle,
+                buffer,
+                buffer_len,
+                written,
+                SnapshotKind::Connections,
+                error,
+            )
+        })
+    }
+}
+
+/// Copies the version-1 cumulative per-outbound accounting JSON document.
+///
+/// Buffer and concurrency semantics match
+/// `xray_core_outbound_selection_snapshot_json`.
+///
+/// # Safety
+///
+/// The pointer and concurrency requirements are the same as
+/// `xray_core_outbound_selection_snapshot_json`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_outbound_accounting_snapshot_json(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_snapshot_json_inner(
+                handle,
+                buffer,
+                buffer_len,
+                written,
+                SnapshotKind::Accounting,
+                error,
+            )
+        })
+    }
+}
+
+/// Requests cancellation of one active or opening managed connection.
+///
+/// # Safety
+///
+/// `handle` must either be null or a live core handle. This function may run
+/// concurrently with data-path and snapshot calls, but not lifecycle calls or
+/// `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_close_connection(
+    handle: *mut XrayCoreHandle,
+    connection_id: u64,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_close_connection_inner(handle, connection_id, error)
+        })
+    }
+}
+
+unsafe fn xray_core_close_connection_inner(
+    handle: *mut XrayCoreHandle,
+    connection_id: u64,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+    let handle = match unsafe { shared_handle(handle, error) } {
+        Ok(handle) => handle,
+        Err(status) => return status,
+    };
+    let Some(connection_id) = ConnectionId::from_raw(connection_id) else {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::InvalidArgument,
+                "connection id must be nonzero",
+            );
+        }
+        return XrayStatus::InvalidArgument;
+    };
+    let core = match unsafe { loaded_core(handle, error) } {
+        Ok(core) => core,
+        Err(status) => return status,
+    };
+    match core.close_connection(connection_id) {
+        Ok(_) => XrayStatus::Ok,
+        Err(source) => unsafe {
+            set_error(error, XrayStatus::InvalidArgument, source.to_string());
+            XrayStatus::InvalidArgument
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum SnapshotKind {
     Selection,
     Health,
+    Connections,
+    Accounting,
+}
+
+impl SnapshotKind {
+    fn output_name(self) -> &'static str {
+        match self {
+            Self::Selection | Self::Health => "outbound snapshot",
+            Self::Connections => "connection snapshot",
+            Self::Accounting => "outbound accounting snapshot",
+        }
+    }
 }
 
 unsafe fn xray_core_snapshot_json_inner(
@@ -1254,11 +1386,13 @@ unsafe fn xray_core_snapshot_json_inner(
     let json = match kind {
         SnapshotKind::Selection => outbound_selection_snapshot_json(core),
         SnapshotKind::Health => outbound_health_snapshot_json(core),
+        SnapshotKind::Connections => connection_snapshot_json(core),
+        SnapshotKind::Accounting => outbound_accounting_snapshot_json(core),
     };
     unsafe {
         write_utf8_output(
             &json,
-            "outbound snapshot",
+            kind.output_name(),
             buffer,
             buffer_len,
             written,
@@ -3511,6 +3645,69 @@ fn outbound_health_snapshot_json(core: &Core) -> String {
                 "consecutiveFailures": status.consecutive_failures,
                 "lastFailureKind": last_failure_kind,
                 "httpStatus": http_status,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schemaVersion": 1,
+        "revision": snapshot.revision,
+        "outbounds": outbounds,
+    })
+    .to_string()
+}
+
+fn connection_snapshot_json(core: &Core) -> String {
+    let snapshot = core.connection_snapshot();
+    let connections = snapshot
+        .connections
+        .into_iter()
+        .map(|connection| {
+            let state = match connection.state {
+                ConnectionState::Opening => "opening",
+                ConnectionState::Active => "active",
+            };
+            let network = match connection.network {
+                Network::Tcp => "tcp",
+                Network::Udp => "udp",
+            };
+            let (address_type, address) = match connection.target.addr {
+                TargetAddr::Ip(ip) => ("ip", ip.to_string()),
+                TargetAddr::Domain(domain) => ("domain", domain),
+            };
+            serde_json::json!({
+                "id": connection.id.get(),
+                "state": state,
+                "inboundTag": connection.inbound_tag,
+                "outboundTag": connection.outbound_tag,
+                "network": network,
+                "addressType": address_type,
+                "address": address,
+                "port": connection.target.port,
+                "startedUnixMs": connection.started_unix_ms,
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::json!({
+        "schemaVersion": 1,
+        "revision": snapshot.revision,
+        "connections": connections,
+    })
+    .to_string()
+}
+
+fn outbound_accounting_snapshot_json(core: &Core) -> String {
+    let snapshot = core.outbound_accounting_snapshot();
+    let outbounds = snapshot
+        .outbounds
+        .into_iter()
+        .map(|accounting| {
+            serde_json::json!({
+                "outboundTag": accounting.outbound_tag,
+                "openedConnections": accounting.opened_connections,
+                "completedConnections": accounting.completed_connections,
+                "hostClosedConnections": accounting.host_closed_connections,
+                "uplinkBytes": accounting.uplink_bytes,
+                "downlinkBytes": accounting.downlink_bytes,
             })
         })
         .collect::<Vec<_>>();
