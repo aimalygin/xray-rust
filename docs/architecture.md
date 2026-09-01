@@ -161,8 +161,9 @@ exception: Tokio's blocking lookup may finish after its caller times out.
 Mobile full-tunnel adapters avoid that path after start by pinning bootstrap
 addresses and selecting `StaticOnly`; a future native async bootstrap backend
 should remove this platform limitation for long-running server embeddings.
-`xray-core-rs` supplies a transport-aware query service. Classic DNS and
-`tcp://` exchanges open through the normal outbound router; `tcp+local://`
+`xray-core-rs` supplies a transport-aware query service. Classic DNS,
+`tcp://`, and certificate-verified `tls://` exchanges open through the normal
+outbound router; `tcp+local://`
 resolves only through the bootstrap role and opens a protected direct TCP
 socket without invoking routing. Every compiled name-server policy carries
 its effective `dns.tag` as query metadata. The router sees that synthetic DNS
@@ -293,7 +294,10 @@ the tag cannot obtain the bypass. Every routed or local `dns.servers` exchange
 also acquires a Core-wide, non-waiting operation permit before resolution or
 dialing. The permit covers Freedom, VLESS, selected DNS outbounds, UDP, TCP,
 and TLS uniformly, so unique cache-miss names cannot escape the runtime profile
-by choosing a different managed transport.
+by choosing a different managed transport. The same selected routed TCP
+carrier is the lower layer for DoT, so bootstrap isolation and outbound graph
+selection happen before TLS while SNI and certificate verification retain the
+configured name-server identity.
 
 `Core::start` constructs one ingress-neutral DNS-outbound executor and one
 optional FakeIP mapper, then shares them with TUN, SOCKS TCP/UDP, and HTTP

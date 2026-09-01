@@ -989,13 +989,16 @@ platform route-capability provider; it is not silently treated as `UseIP`.
 
 `dns.servers` accepts at most eight string or object entries. String shorthand
 accepts IP addresses, socket addresses, domain names with an optional nonzero
-port, and `tcp://host[:port]` / `tcp+local://host[:port]`. TCP schemes are
-case-insensitive, default to port `53`, support bracketed IPv6 literals, and
-use TCP from the first query rather than as a truncation retry. `tcp://` enters
-normal outbound routing; `tcp+local://` bypasses routing and opens a protected
-direct socket. The accepted URI subset is deliberately authority-only:
+port, `tcp://host[:port]` / `tcp+local://host[:port]`, and routed
+`tls://host[:port]`. Schemes are case-insensitive, TCP defaults to port `53`,
+TLS defaults to port `853`, bracketed IPv6 literals are supported, and these
+transports are used from the first query rather than as a truncation retry.
+`tcp://` and `tls://` enter normal outbound routing; `tcp+local://` bypasses
+routing and opens a protected direct socket. DoT wraps the selected carrier in
+certificate-verified TLS and derives SNI/verification name from the configured
+domain or IP literal. The accepted URI subset is deliberately authority-only:
 userinfo, paths, queries, fragments, whitespace, scoped IPv6, and zero ports
-fail closed. In an object entry, the port embedded in the TCP URI is
+fail closed. In an object entry, the port embedded in the TCP/TLS URI is
 authoritative and the separate `port` field is ignored after validation,
 matching Xray-core's effective behavior. The Xray object subset requires `address`, supports
 `port` (`0` or omission means `53`), `domains`, `skipFallback`, per-server
@@ -1095,8 +1098,8 @@ SOCKS/HTTP listener, TUN consumer, and startup probe in a `Core` runtime; a
 separate `Core` owns a separate cache.
 
 For managed runtimes, including TUN, SOCKS, HTTP, and startup probes, `System`
-resolution is `dns.hosts` → configured `dns.servers`: classic and `tcp://`
-clients are routed, while `tcp+local://` clients intentionally dial directly.
+resolution is `dns.hosts` → configured `dns.servers`: classic, `tcp://`, and
+`tls://` clients are routed, while `tcp+local://` clients intentionally dial directly.
 When no `dns.servers` are
 configured, unresolved names use the cached operating-system resolver. Authoritative
 NXDOMAIN and A+AAAA NODATA advance to the next configured server, matching
@@ -1126,7 +1129,7 @@ resolver to find the upstream itself, but never to retry the original qname.
 When fake-IP is disabled and at least one usable server is present, TUN clients
 can use `198.18.0.1:53` as a local UDP/TCP DNS proxy. The proxy keeps
 server order and removes duplicates by endpoint, effective tag, and transport.
-Classic and `tcp://` attempts enter the normal outbound router, so Freedom
+Classic, `tcp://`, and `tls://` attempts enter the normal outbound router, so Freedom
 sockets retain platform socket protection and VLESS routes do not gain a
 hidden direct-DNS bypass. `tcp+local://` deliberately skips route selection and
 uses the same protected, non-recursive direct dialer as managed DNS. DNS
@@ -1383,7 +1386,7 @@ SOCKS, or HTTP TCP/UDP flow targets a mapped fake address, the original domain
 is restored before routing. VLESS carries that domain for remote resolution;
 Freedom resolves it through the managed routed resolver, including in mobile
 `StaticOnly` mode. Managed `dns.servers`
-DoH/DoT/DoQ transports, `clientIp`, negative/stale caching, and the broader
+DoH/DoQ transports, `clientIp`, negative/stale caching, and the broader
 Xray DNS feature set are not implemented. This does not limit the DNS
 outbound's documented TLS/REALITY `streamSettings`. The public resolver result
 carries every candidate and TTL metadata. An explicitly enabled

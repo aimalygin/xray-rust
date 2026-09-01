@@ -3415,7 +3415,8 @@ async fn proxy_udp_payload(
                 (target, outbound_label, attempt)
             }
             xray_config::DnsServerTransport::TcpRouted
-            | xray_config::DnsServerTransport::TcpLocal => {
+            | xray_config::DnsServerTransport::TcpLocal
+            | xray_config::DnsServerTransport::TlsRouted => {
                 let target = upstream.target(RoutingNetwork::Tcp);
                 let selected = if upstream.is_local() {
                     Ok((None, "local"))
@@ -3628,6 +3629,23 @@ async fn open_dns_tcp_pooled_connection(
             )
             .await?
         }
+    };
+    let stream = if upstream.transport() == xray_config::DnsServerTransport::TlsRouted {
+        let connector = context.dns_tls_connector.as_deref().map_err(|message| {
+            std::io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+        })?;
+        let name_server = match upstream {
+            DnsProxyUpstream::Ip { addr, .. } => xray_transport::NameServer::Socket(*addr),
+            DnsProxyUpstream::Domain { domain, port, .. } => xray_transport::NameServer::Domain {
+                domain: domain.clone(),
+                port: *port,
+            },
+        };
+        connector
+            .connect_stream(stream, &crate::dns::dns_tls_client_config(&name_server))
+            .await?
+    } else {
+        stream
     };
     context.tun.record_udp_remote_open(false);
     Ok(DnsTcpPooledConnection {

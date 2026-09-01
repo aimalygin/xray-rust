@@ -2412,6 +2412,68 @@ fn parses_case_insensitive_tcp_dns_schemes_and_authority_forms() {
 }
 
 #[test]
+fn parses_dns_over_tls_authority_forms_with_port_853_default() {
+    let raw = raw_with_dns_servers(
+        r#"
+          "tls://resolver.example",
+          "TLS://192.0.2.53:8853",
+          "tls://[2001:db8::53]"
+        "#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("DNS-over-TLS authority forms should parse");
+    let actual = parsed
+        .config
+        .dns
+        .servers
+        .iter()
+        .map(|server| (server.transport(), server.endpoint()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual,
+        [
+            (
+                DnsServerTransport::TlsRouted,
+                DnsServerEndpoint::Domain {
+                    domain: "resolver.example".to_owned(),
+                    port: 853,
+                },
+            ),
+            (
+                DnsServerTransport::TlsRouted,
+                DnsServerEndpoint::Ip(SocketAddr::from(([192, 0, 2, 53], 8853))),
+            ),
+            (
+                DnsServerTransport::TlsRouted,
+                DnsServerEndpoint::Ip(SocketAddr::new(
+                    IpAddr::V6("2001:db8::53".parse().unwrap()),
+                    853,
+                )),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn rejects_non_authority_dns_over_tls_urls() {
+    for address in [
+        "tls://",
+        "tls:/resolver.example",
+        "tls://user@resolver.example",
+        "tls://resolver.example/dns-query",
+        "tls://resolver.example?query",
+        "tls://resolver.example#fragment",
+        "tls://2001:db8::53",
+        "tls://resolver.example:0",
+    ] {
+        let raw = raw_with_dns_servers(&format!(r#""{address}""#));
+
+        assert_parse_error_path(&raw, "$.dns.servers[0]");
+    }
+}
+
+#[test]
 fn tcp_dns_object_ignores_object_port_and_keeps_policy_fields() {
     let raw = raw_with_dns_servers(
         r#"{

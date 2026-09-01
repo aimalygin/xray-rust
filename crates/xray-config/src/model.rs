@@ -156,6 +156,8 @@ pub enum DnsServerTransport {
     TcpRouted,
     /// DNS over TCP dialed directly through the local network stack.
     TcpLocal,
+    /// DNS over TLS dispatched through Xray routing.
+    TlsRouted,
 }
 
 pub const DEFAULT_DNS_SERVER_TIMEOUT_MS: u64 = 4_000;

@@ -17,7 +17,7 @@ use xray_routing::{Network as RoutingNetwork, Target, TargetAddr};
 use xray_transport::{
     dns_response_matches_query, protect_udp_socket, BoxedTransportStream, ConnectorConfig,
     DnsQueryDispatch, DnsQueryMetadata, DnsQueryTransport, DnsQueryTransportKind, DnsResolver,
-    HappyEyeballsConfig, NameServer, TransportDialer,
+    HappyEyeballsConfig, NameServer, TlsClientConfig, TlsConnector, TransportDialer,
 };
 
 use crate::dns_outbound_runtime::DnsDirectExecutor;
@@ -59,6 +59,7 @@ pub(crate) struct RoutedDnsQueryTransport {
     forbidden_servers: Arc<[SocketAddr]>,
     direct_executor: Arc<DnsDirectExecutor>,
     operation_permits: Arc<Semaphore>,
+    tls_connector: Result<Arc<TlsConnector>, String>,
 }
 
 impl RoutedDnsQueryTransport {
@@ -100,7 +101,16 @@ impl RoutedDnsQueryTransport {
             forbidden_servers: forbidden_servers.into(),
             direct_executor,
             operation_permits: Arc::new(Semaphore::new(max_concurrent_operations.max(1))),
+            tls_connector: TlsConnector::system()
+                .map(Arc::new)
+                .map_err(|error| error.to_string()),
         }
+    }
+
+    #[cfg(test)]
+    fn with_tls_connector(mut self, tls_connector: Arc<TlsConnector>) -> Self {
+        self.tls_connector = Ok(tls_connector);
+        self
     }
 
     fn try_reserve_operation(&self) -> io::Result<OwnedSemaphorePermit> {
@@ -261,13 +271,58 @@ impl RoutedDnsQueryTransport {
         metadata: DnsQueryMetadata<'_>,
         query: &[u8],
     ) -> io::Result<Vec<u8>> {
+        if metadata.dispatch == DnsQueryDispatch::Routed {
+            let target = self.target(server, RoutingNetwork::Tcp);
+            if let Some(outbound) = self
+                .outbound_router
+                .select_dns_outbound_for_session(metadata.inbound_tag, &target)
+                .map_err(io::Error::other)?
+            {
+                if !self.outbound_router.is_dns_client_tag(metadata.inbound_tag) {
+                    return Err(untrusted_dns_outbound_error());
+                }
+                return self
+                    .exchange_selected_dns_outbound(&target, &outbound, query)
+                    .await;
+            }
+        }
+        let mut stream = self.open_tcp_stream(server, metadata).await?;
+        exchange_dns_tcp_message(&mut stream, query).await
+    }
+
+    async fn exchange_tls(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+        query: &[u8],
+    ) -> io::Result<Vec<u8>> {
+        if metadata.dispatch == DnsQueryDispatch::Local {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "local DNS over TLS is not supported",
+            ));
+        }
+        let stream = self.open_tcp_stream(server, metadata).await?;
+        let tls_connector = self.tls_connector.as_deref().map_err(|message| {
+            io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+        })?;
+        let mut stream = tls_connector
+            .connect_stream(stream, &dns_tls_client_config(server))
+            .await
+            .map_err(io::Error::other)?;
+        exchange_dns_tcp_message(&mut stream, query).await
+    }
+
+    async fn open_tcp_stream(
+        &self,
+        server: &NameServer,
+        metadata: DnsQueryMetadata<'_>,
+    ) -> io::Result<BoxedTransportStream> {
         let target = self.target(server, RoutingNetwork::Tcp);
         if metadata.dispatch == DnsQueryDispatch::Local {
             let candidates = self.resolved_servers(server).await?;
-            let mut stream =
-                open_local_dns_tcp_stream(self.transport_dialer.as_ref(), &target, &candidates)
-                    .await?;
-            return exchange_dns_tcp_message(&mut stream, query).await;
+            return open_local_dns_tcp_stream(self.transport_dialer.as_ref(), &target, &candidates)
+                .await;
         }
         // Keep routed TCP name-server selection non-recursive for the same
         // SkipDNSResolve reason as the UDP path above.
@@ -279,16 +334,22 @@ impl RoutedDnsQueryTransport {
             if !self.outbound_router.is_dns_client_tag(metadata.inbound_tag) {
                 return Err(untrusted_dns_outbound_error());
             }
-            return self
-                .exchange_selected_dns_outbound(&target, &outbound, query)
-                .await;
+            let session = DirectDnsTcpSession::open(
+                &target,
+                &outbound,
+                self.bootstrap_resolver.as_ref(),
+                self.transport_dialer.as_ref(),
+                self.forbidden_servers.as_ref(),
+            )
+            .await?;
+            return Ok(session.into_stream());
         }
         let selected = self
             .outbound_router
             .select_tcp_outbound_for_session_with_tag(metadata.inbound_tag, &target, false)
             .map_err(io::Error::other)?;
 
-        let mut stream = match selected.outbound {
+        Ok(match selected.outbound {
             outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
                 let candidates = self.resolved_servers(server).await?;
                 open_routed_freedom_dns_tcp_stream(
@@ -333,9 +394,22 @@ impl RoutedDnsQueryTransport {
                 .await
                 .map_err(io::Error::other)?
             }
-        };
+        })
+    }
+}
 
-        exchange_dns_tcp_message(&mut stream, query).await
+pub(crate) fn dns_tls_client_config(server: &NameServer) -> TlsClientConfig {
+    let server_name = match server {
+        NameServer::Socket(address) => address.ip().to_string(),
+        NameServer::Domain { domain, .. } => domain.clone(),
+    };
+    TlsClientConfig {
+        server_name,
+        allow_insecure: false,
+        pinned_peer_cert_sha256: Vec::new(),
+        verify_peer_cert_by_name: Vec::new(),
+        alpn: Vec::new(),
+        fingerprint: None,
     }
 }
 
@@ -755,6 +829,7 @@ impl DnsQueryTransport for RoutedDnsQueryTransport {
             }
             DnsQueryTransportKind::Udp => self.exchange_udp(server, metadata, query).await,
             DnsQueryTransportKind::Tcp => self.exchange_tcp(server, metadata, query).await,
+            DnsQueryTransportKind::Tls => self.exchange_tls(server, metadata, query).await,
         }
     }
 }
@@ -2691,5 +2766,75 @@ mod tests {
         assert_eq!(response, expected_response);
         assert_eq!(bootstrap.calls.load(Ordering::Relaxed), 1);
         server.await.expect("join managed DNS TCP server");
+    }
+
+    #[tokio::test]
+    async fn managed_dns_over_tls_uses_bootstrap_and_routed_freedom() {
+        let server_domain = "managed-dot.test";
+        let query = dns_query(0x4312, "answer-over-dot.test");
+        let expected_response = dns_response(&query);
+        let (client_config, server_config) = dns_tls_configs(server_domain);
+        let (server_addr, server) = spawn_dns_tls_server(server_config, query.clone()).await;
+        let bootstrap = Arc::new(CandidateBootstrapResolver {
+            expected_domain: server_domain,
+            expected_port: server_addr.port(),
+            candidates: vec![server_addr],
+            calls: AtomicUsize::new(0),
+        });
+        let protector = Arc::new(CountingSocketProtector::default());
+        let dialer = Arc::new(
+            TransportDialer::system_with_socket_protector(Some(protector.clone()))
+                .expect("build protected DNS-over-TLS dialer"),
+        );
+        let config = Arc::new(CoreConfig {
+            inbounds: Vec::new(),
+            outbounds: vec![OutboundConfig {
+                tag: Some("direct".to_owned()),
+                proxy_settings: None,
+                stream: StreamSettings {
+                    network: Network::Tcp,
+                    transport: StreamTransport::Raw,
+                    security: StreamSecurity::None,
+                    quic_params: None,
+                    socket_options: None,
+                },
+                settings: OutboundSettings::Freedom,
+            }],
+            default_outbound_tag: Some("direct".to_owned()),
+            routing: RoutingConfig::default(),
+            observatory: None,
+            dns: DnsConfig::default(),
+            policy: PolicyConfig::default(),
+        });
+        let transport = RoutedDnsQueryTransport::new(
+            Arc::new(OutboundRouter::new(config)),
+            bootstrap.clone(),
+            dialer,
+            Vec::new(),
+        )
+        .with_tls_connector(Arc::new(TlsConnector::with_pinned_client_config(
+            client_config,
+        )));
+
+        let response = timeout(
+            Duration::from_secs(2),
+            transport.exchange(
+                &NameServer::Domain {
+                    domain: server_domain.to_owned(),
+                    port: server_addr.port(),
+                },
+                DnsQueryTransportKind::Tls,
+                DnsQueryMetadata::new(Some("managed-dns")),
+                &query,
+            ),
+        )
+        .await
+        .expect("managed DNS-over-TLS exchange should not stall")
+        .expect("managed DNS-over-TLS exchange should succeed");
+
+        assert_eq!(response, expected_response);
+        assert_eq!(bootstrap.calls.load(Ordering::Relaxed), 1);
+        assert_eq!(protector.calls.load(Ordering::Relaxed), 1);
+        server.await.expect("join managed DNS-over-TLS server");
     }
 }

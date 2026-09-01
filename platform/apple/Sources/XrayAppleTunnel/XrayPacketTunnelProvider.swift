@@ -1318,7 +1318,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         let scheme = String(server[..<separator])
         return scheme.caseInsensitiveCompare("tcp") == .orderedSame ||
-            scheme.caseInsensitiveCompare("tcp+local") == .orderedSame
+            scheme.caseInsensitiveCompare("tcp+local") == .orderedSame ||
+            scheme.caseInsensitiveCompare("tls") == .orderedSame
     }
 
     private static func dnsTCPBootstrapUpstream(
@@ -1333,6 +1334,10 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         else {
             return nil
         }
+        let scheme = String(server[..<schemeSeparator])
+        let defaultPort: UInt16 = scheme.caseInsensitiveCompare("tls") == .orderedSame
+            ? 853
+            : 53
         let authorityPrefix = server.index(after: schemeSeparator)
         guard server[authorityPrefix...].hasPrefix("//") else {
             return nil
@@ -1362,7 +1367,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             let remainderStart = authority.index(after: closingBracket)
             let remainder = authority[remainderStart...]
             if remainder.isEmpty {
-                port = 53
+                port = defaultPort
             } else {
                 guard remainder.first == ":",
                       let parsedPort = dnsTCPURLPort(
@@ -1391,7 +1396,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 port = parsedPort
             } else {
                 host = authority
-                port = 53
+                port = defaultPort
             }
             guard !host.isEmpty else {
                 return nil

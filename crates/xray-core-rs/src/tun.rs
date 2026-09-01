@@ -21,7 +21,8 @@ use xray_config::{
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{
     dns_response_matches_query, protect_udp_socket, BoxedTransportStream, DnsLookup,
-    DnsQueryStrategy as TransportDnsQueryStrategy, DnsResolver, TransportDialer, TransportError,
+    DnsQueryStrategy as TransportDnsQueryStrategy, DnsResolver, TlsConnector, TransportDialer,
+    TransportError,
 };
 use xray_tun::{
     TunEndpoint, TunError, TunTcpBufferState, TunTcpFlowSummaryEvent, TunTcpOpenErrorEvent,
@@ -870,6 +871,9 @@ pub(crate) async fn serve_tun_endpoint(
     let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
     let fake_ip_mapper = dns_outbound_runtime.fake_ip_mapper();
     let dns_mode = TunDnsMode::from_config(config.as_ref(), fake_ip_mapper);
+    let dns_tls_connector = TlsConnector::system()
+        .map(Arc::new)
+        .map_err(|error| Arc::<str>::from(error.to_string()));
     let runtime_context = TunRuntimeContext {
         inbound_tag,
         sniffing,
@@ -879,6 +883,7 @@ pub(crate) async fn serve_tun_endpoint(
         dns_resolver,
         dns_bootstrap_resolver,
         dns_outbound_runtime,
+        dns_tls_connector,
         transport_dialer,
         connection_registry,
         stack_tx,
@@ -1419,6 +1424,7 @@ struct TunRuntimeContext {
     dns_resolver: Arc<dyn DnsResolver>,
     dns_bootstrap_resolver: Option<Arc<dyn DnsResolver>>,
     dns_outbound_runtime: Arc<crate::dns_outbound_runtime::DnsOutboundRuntime>,
+    dns_tls_connector: Result<Arc<TlsConnector>, Arc<str>>,
     transport_dialer: Arc<TransportDialer>,
     connection_registry: Arc<ConnectionRegistry>,
     stack_tx: mpsc::Sender<StackEvent>,

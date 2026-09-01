@@ -1012,6 +1012,7 @@ fn take_name_server_policy_set(config: &mut CoreConfig) -> Arc<CompiledNameServe
                 ConfigDnsServerTransport::Classic => NameServerTransport::Classic,
                 ConfigDnsServerTransport::TcpRouted => NameServerTransport::TcpRouted,
                 ConfigDnsServerTransport::TcpLocal => NameServerTransport::TcpLocal,
+                ConfigDnsServerTransport::TlsRouted => NameServerTransport::TlsRouted,
             };
             let query_strategy = transport_dns_query_strategy(server.query_strategy());
             let final_query = server.final_query();
@@ -1631,7 +1632,8 @@ mod tests {
               "servers": [
                 "192.0.2.53",
                 "tcp://resolver.example:5353",
-                "tcp+local://[2001:db8::53]"
+                "tcp+local://[2001:db8::53]",
+                "tls://secure-resolver.example"
               ]
             },
             "inbounds": [],
@@ -1650,6 +1652,7 @@ mod tests {
                 NameServerTransport::Classic,
                 NameServerTransport::TcpRouted,
                 NameServerTransport::TcpLocal,
+                NameServerTransport::TlsRouted,
             ]
         );
     }

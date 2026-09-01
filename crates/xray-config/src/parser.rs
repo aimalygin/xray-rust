@@ -209,15 +209,19 @@ fn parse_dns_tcp_server_uri(
     let Some((scheme, remainder)) = address.split_once(':') else {
         return Ok(None);
     };
-    let transport = if scheme.eq_ignore_ascii_case("tcp") {
-        DnsServerTransport::TcpRouted
+    let (transport, default_port) = if scheme.eq_ignore_ascii_case("tcp") {
+        (DnsServerTransport::TcpRouted, 53)
     } else if scheme.eq_ignore_ascii_case("tcp+local") {
-        DnsServerTransport::TcpLocal
+        (DnsServerTransport::TcpLocal, 53)
+    } else if scheme.eq_ignore_ascii_case("tls") {
+        (DnsServerTransport::TlsRouted, 853)
     } else {
         return Ok(None);
     };
     let Some(authority) = remainder.strip_prefix("//") else {
-        return Err("dns TCP server URL must use `tcp://` or `tcp+local://`".to_owned());
+        return Err(
+            "dns stream server URL must use `tcp://`, `tcp+local://`, or `tls://`".to_owned(),
+        );
     };
     if address
         .chars()
@@ -251,7 +255,7 @@ fn parse_dns_tcp_server_uri(
             return Err("dns TCP server URL contains a malformed bracketed IPv6 host".to_owned());
         }
         let port = match suffix {
-            "" => 53,
+            "" => default_port,
             suffix => {
                 let Some(port) = suffix.strip_prefix(':') else {
                     return Err(
@@ -277,7 +281,7 @@ fn parse_dns_tcp_server_uri(
         }
         let (host, port) = match authority.split_once(':') {
             Some((host, port)) => (host, parse_dns_tcp_server_port(port)?),
-            None => (authority, 53),
+            None => (authority, default_port),
         };
         if host.is_empty() {
             return Err("dns TCP server URL must include a host".to_owned());

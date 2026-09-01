@@ -12,8 +12,9 @@ use tokio::time;
 use xray_routing::{DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcherSet};
 
 use crate::{
-    canonicalize_socket_addr, connect_tcp_happy_eyeballs, HappyEyeballsConfig, SocketHandle,
-    SocketProtector, TransportError,
+    canonicalize_socket_addr, connect_tcp_happy_eyeballs, BoxedTransportStream,
+    HappyEyeballsConfig, SocketHandle, SocketProtector, TlsClientConfig, TlsConnector,
+    TransportError,
 };
 
 /// A DNS lookup result containing every usable address and its remaining TTL.
@@ -588,6 +589,8 @@ fn filter_dns_lookup_by_strategy(
 pub enum DnsQueryTransportKind {
     Udp,
     Tcp,
+    /// DNS over TLS with RFC 7858 length-prefixed DNS messages.
+    Tls,
 }
 
 /// Determines whether a DNS exchange enters the routing layer.
@@ -640,6 +643,8 @@ pub enum NameServerTransport {
     TcpRouted,
     /// Start immediately with local TCP, bypassing configured routing.
     TcpLocal,
+    /// Start immediately with routed DNS over TLS.
+    TlsRouted,
 }
 
 /// Exchanges already encoded DNS messages with a configured name server.
@@ -664,6 +669,7 @@ pub trait DnsQueryTransport: Send + Sync {
 struct DirectDnsQueryTransport {
     bootstrap_resolver: Arc<dyn DnsResolver>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
+    tls_connector: Result<Arc<TlsConnector>, String>,
 }
 
 impl DirectDnsQueryTransport {
@@ -674,6 +680,9 @@ impl DirectDnsQueryTransport {
         Self {
             bootstrap_resolver,
             socket_protector,
+            tls_connector: TlsConnector::system()
+                .map(Arc::new)
+                .map_err(|error| error.to_string()),
         }
     }
 
@@ -717,6 +726,19 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
                     &server_addrs,
                     query,
                     self.socket_protector.as_deref(),
+                )
+                .await
+            }
+            DnsQueryTransportKind::Tls => {
+                let connector = self.tls_connector.as_deref().map_err(|message| {
+                    io::Error::other(format!("DNS TLS connector unavailable: {message}"))
+                })?;
+                exchange_direct_tls_candidates(
+                    server,
+                    &server_addrs,
+                    query,
+                    self.socket_protector.as_deref(),
+                    connector,
                 )
                 .await
             }
@@ -1182,6 +1204,10 @@ impl ConfiguredDnsResolver {
             NameServerTransport::TcpLocal => (
                 DnsQueryTransportKind::Tcp,
                 DnsQueryMetadata::local(name_server.tag.as_deref()),
+            ),
+            NameServerTransport::TlsRouted => (
+                DnsQueryTransportKind::Tls,
+                DnsQueryMetadata::new(name_server.tag.as_deref()),
             ),
         };
         let result = match query_strategy {
@@ -1756,8 +1782,44 @@ async fn exchange_direct_tcp_candidates(
     query: &[u8],
     socket_protector: Option<&dyn SocketProtector>,
 ) -> io::Result<Vec<u8>> {
-    let query_len = u16::try_from(query.len())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "dns tcp query is too large"))?;
+    let mut stream = open_direct_tcp_candidates(server_addrs, socket_protector).await?;
+    exchange_direct_tcp_message(&mut stream, query).await
+}
+
+async fn exchange_direct_tls_candidates(
+    server: &NameServer,
+    server_addrs: &[SocketAddr],
+    query: &[u8],
+    socket_protector: Option<&dyn SocketProtector>,
+    tls_connector: &TlsConnector,
+) -> io::Result<Vec<u8>> {
+    let stream = open_direct_tcp_candidates(server_addrs, socket_protector).await?;
+    let mut stream = tls_connector
+        .connect_stream(stream, &dns_tls_client_config(server))
+        .await
+        .map_err(io::Error::other)?;
+    exchange_direct_tcp_message(&mut stream, query).await
+}
+
+fn dns_tls_client_config(server: &NameServer) -> TlsClientConfig {
+    let server_name = match server {
+        NameServer::Socket(address) => address.ip().to_string(),
+        NameServer::Domain { domain, .. } => domain.clone(),
+    };
+    TlsClientConfig {
+        server_name,
+        allow_insecure: false,
+        pinned_peer_cert_sha256: Vec::new(),
+        verify_peer_cert_by_name: Vec::new(),
+        alpn: Vec::new(),
+        fingerprint: None,
+    }
+}
+
+async fn open_direct_tcp_candidates(
+    server_addrs: &[SocketAddr],
+    socket_protector: Option<&dyn SocketProtector>,
+) -> io::Result<BoxedTransportStream> {
     let prioritize_ipv6 = server_addrs
         .first()
         .is_some_and(|address| canonicalize_socket_addr(*address).is_ipv6());
@@ -1766,9 +1828,18 @@ async fn exchange_direct_tcp_candidates(
         try_delay: DNS_LOCAL_TCP_FALLBACK_DELAY,
         ..HappyEyeballsConfig::default()
     };
-    let mut stream = connect_tcp_happy_eyeballs(server_addrs, socket_protector, &happy_eyeballs)
+    let stream = connect_tcp_happy_eyeballs(server_addrs, socket_protector, &happy_eyeballs)
         .await
         .map_err(io::Error::other)?;
+    Ok(Box::new(stream))
+}
+
+async fn exchange_direct_tcp_message<S>(stream: &mut S, query: &[u8]) -> io::Result<Vec<u8>>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized,
+{
+    let query_len = u16::try_from(query.len())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "dns tcp query is too large"))?;
     stream.write_u16(query_len).await?;
     stream.write_all(query).await?;
     stream.flush().await?;
@@ -3889,7 +3960,7 @@ mod tests {
                     response.extend_from_slice(&query[12..]);
                     Ok(response)
                 }
-                DnsQueryTransportKind::Tcp => {
+                DnsQueryTransportKind::Tcp | DnsQueryTransportKind::Tls => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 25)))
                 }
             }
@@ -4338,6 +4409,42 @@ mod tests {
                 dispatch: DnsQueryDispatch::Local,
                 inbound_tag: Some("dns-local".to_owned()),
                 domain: "tcp-local.test".to_owned(),
+            }]
+        );
+    }
+
+    #[tokio::test]
+    async fn configured_dns_tls_starts_with_tagged_routed_tls() {
+        let server = NameServer::Socket(SocketAddr::from(([192, 0, 2, 12], 853)));
+        let mut policy = NameServerPolicy::new(server.clone());
+        policy.tag = Some("dns-tls".to_owned());
+        policy.transport = NameServerTransport::TlsRouted;
+        policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let transport = Arc::new(RecordingPolicyTransport {
+            truncated_server: None,
+            answer: Ipv4Addr::new(192, 0, 2, 76),
+            calls: Mutex::new(Vec::new()),
+        });
+        let resolver = ConfiguredDnsResolver::new(
+            DomainHostIndex::default(),
+            Vec::new(),
+            Arc::new(RejectingResolver),
+        )
+        .with_name_server_policies(vec![policy])
+        .with_query_strategy(DnsQueryStrategy::UseIpv4)
+        .with_query_transport(transport.clone());
+
+        let resolved = resolver.resolve("tls-routed.test", 443).await.unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 76], 443)));
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [TaggedDnsCall {
+                server,
+                transport: DnsQueryTransportKind::Tls,
+                dispatch: DnsQueryDispatch::Routed,
+                inbound_tag: Some("dns-tls".to_owned()),
+                domain: "tls-routed.test".to_owned(),
             }]
         );
     }
@@ -5078,7 +5185,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(7)).await;
             match transport {
                 DnsQueryTransportKind::Udp => Ok(build_test_truncated_response(query)),
-                DnsQueryTransportKind::Tcp => {
+                DnsQueryTransportKind::Tcp | DnsQueryTransportKind::Tls => {
                     Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 66)))
                 }
             }

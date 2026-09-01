@@ -713,6 +713,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #""tcp://192.0.2.53""#,
             #""TCP+LOCAL://[2001:db8::53]:5353""#,
             #""Tcp://Resolver.Example.:5353""#,
+            #""TLS://Resolver.Example""#,
+            #""tls://192.0.2.53""#,
             #"{"address":"tcp+local://resolver.example","port":0,"tag":"dns-local"}"#,
         ] {
             let configuration = XrayPacketTunnelProvider.resolvedDNSConfiguration(
@@ -743,6 +745,8 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
             #""tcp://resolver\u0001.example""#,
             #""tcp://198.18.0.1""#,
             #""tcp://198.18.0.1:5353""#,
+            #""tls://resolver.example/dns-query""#,
+            #""tls://198.18.0.1""#,
             #"{"address":"tcp+local://resolver.example/path"}"#,
             #"{"address":"tcp://resolver.example","port":"53"}"#,
             #"{"address":"tcp://resolver.example","port":65536}"#,

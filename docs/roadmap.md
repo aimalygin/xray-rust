@@ -204,8 +204,9 @@ adding unfinished Phase 2 features.
 
 ### DNS
 
-- Add managed DoH and DoT, followed by DoQ where the existing QUIC stack can be
-  reused without increasing lifecycle risk.
+- Keep the implemented routed managed DoT path hardened; add DoH, followed by
+  DoQ where the existing QUIC stack can be reused without increasing lifecycle
+  risk.
 - Add negative caching and bounded stale-while-revalidate behavior.
 - Provide an injectable platform system resolver and explicit bootstrap route
   behavior.
@@ -244,7 +245,10 @@ through equivalent Swift and Kotlin APIs. SOCKS UDP now registers one managed
 connection per admitted `(client, target)` flow across Freedom, VLESS/XUDP, and
 DNS outbound paths. The existing seven typed TUN diagnostic queues have
 equivalent Swift and Kotlin/JNI polling surfaces under the original diagnostic
-capability bit.
+capability bit. Routed `tls://` managed name servers now use port 853 by
+default and layer certificate-verified DNS-over-TLS over the selected
+Freedom/VLESS/chained TCP carrier; the TUN raw-DNS proxy applies the same
+bootstrap, socket-protection, bounded pooling, and cancellation rules.
 
 ### Mobile SDK and management API
 

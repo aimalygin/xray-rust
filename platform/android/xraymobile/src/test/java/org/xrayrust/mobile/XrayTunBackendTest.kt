@@ -332,6 +332,11 @@ class XrayTunBackendTest {
                 ),
             ),
         )
+        assertEquals(
+            AndroidDnsBootstrapDomain("secure.example", 853, rejectsTunnelOwnedAddress = true),
+            dnsServerBootstrapUpstreamDomain("TLS://Secure.Example."),
+        )
+        assertNull(dnsServerBootstrapUpstreamDomain("tls://192.0.2.53"))
     }
 
     @Test
@@ -357,6 +362,8 @@ class XrayTunBackendTest {
             "tcp://$XRAY_TUN_DNS_ANCHOR:5353",
             "tcp://10.7.0.1:5353",
             "tcp+local://[fd00:7872::1]:5353",
+            "tls://resolver.example/dns-query",
+            "tls://$XRAY_TUN_DNS_ANCHOR",
             mapOf("address" to "tcp+local://resolver.example/path"),
             mapOf("address" to "tcp://resolver.example", "port" to "53"),
             mapOf("address" to "tcp://resolver.example", "port" to 65_536),

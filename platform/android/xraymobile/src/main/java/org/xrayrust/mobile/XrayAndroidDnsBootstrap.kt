@@ -611,7 +611,8 @@ private fun hasDnsTcpUrlScheme(server: String): Boolean {
     }
     val scheme = server.substring(0, separator)
     return scheme.equals("tcp", ignoreCase = true) ||
-        scheme.equals("tcp+local", ignoreCase = true)
+        scheme.equals("tcp+local", ignoreCase = true) ||
+        scheme.equals("tls", ignoreCase = true)
 }
 
 private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootstrapDomain? {
@@ -621,6 +622,13 @@ private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootst
     val schemeSeparator = server.indexOf(':')
     require(schemeSeparator > 0 && hasDnsTcpUrlScheme(server)) {
         "unsupported DNS TCP server URL scheme"
+    }
+    val defaultPort = if (
+        server.substring(0, schemeSeparator).equals("tls", ignoreCase = true)
+    ) {
+        853
+    } else {
+        53
     }
     require(server.regionMatches(schemeSeparator + 1, "//", 0, 2)) {
         "DNS TCP server URL must use an authority"
@@ -648,7 +656,7 @@ private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootst
         }
         val remainder = authority.substring(closingBracket + 1)
         port = if (remainder.isEmpty()) {
-            53
+            defaultPort
         } else {
             require(remainder.startsWith(':')) {
                 "DNS TCP server URL contains data after its host"
@@ -668,7 +676,7 @@ private fun dnsServerBootstrapDomainFromTcpUrl(server: String): AndroidDnsBootst
             port = parseDnsTcpUrlPort(authority.substring(portSeparator + 1))
         } else {
             host = authority
-            port = 53
+            port = defaultPort
         }
         require(host.isNotEmpty()) { "DNS TCP server URL host must not be empty" }
     }
