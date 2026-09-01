@@ -9,6 +9,22 @@ release series.
 
 ## Unreleased
 
+- Started the `v0.5` development line with additive C ABI minor-version and
+  capability discovery. The canonical Swift and Kotlin adapters expose the
+  loaded ABI version and capability mask and reject incompatible major or
+  insufficient minor revisions before allocating a core handle.
+- Split outbound topology, lazy handler construction, and routing policy into
+  an immutable `OutboundGraph`, a shared `OutboundFactory`, and
+  `OutboundRouter`. Each `Core` now owns one graph/factory before start, so
+  future selector and health state can reuse transport pools without rebuilding
+  the core.
+- Added Xray-compatible selector groups: `routing.balancers` expands tag
+  prefixes into sorted graph nodes, `balancerTag` rules support random,
+  round-robin, and fallback selection, and a shared atomic override/snapshot
+  API switches new flows without rebuilding handlers or their transport pools.
+  Health-backed `leastPing` and `leastLoad` remain fail-closed until the next
+  slice.
+
 ## 0.4.1-rc.4 - 2026-08-31
 
 - Fixed an XHTTP/2 `stream-up` deadlock where a concurrent downlink poll could

@@ -4,6 +4,7 @@ import XrayRust
 public enum XrayCoreError: Error, CustomStringConvertible, CustomNSError, LocalizedError {
     case status(code: XrayStatus, message: String)
     case incompatibleFFIMajorVersion(expected: UInt32, actual: UInt32)
+    case incompatibleFFIMinorVersion(required: UInt32, actual: UInt32)
     case invalidPacketPollSize(Int)
     case invalidPacketBatchLimits(maxPackets: Int, maxPacketBytes: Int)
     case packetBatchSizeOverflow(maxPackets: Int, maxPacketBytes: Int)
@@ -18,6 +19,8 @@ public enum XrayCoreError: Error, CustomStringConvertible, CustomNSError, Locali
             return "xray status \(code): \(message)"
         case let .incompatibleFFIMajorVersion(expected, actual):
             return "incompatible xray FFI ABI major: expected \(expected), got \(actual)"
+        case let .incompatibleFFIMinorVersion(required, actual):
+            return "incompatible xray FFI ABI minor: require at least \(required), got \(actual)"
         case let .invalidPacketPollSize(maxBytes):
             return "packet poll buffer size must be between 1 and 65535 bytes, got \(maxBytes)"
         case let .invalidPacketBatchLimits(maxPackets, maxPacketBytes):
@@ -61,6 +64,8 @@ public enum XrayCoreError: Error, CustomStringConvertible, CustomNSError, Locali
             return 7
         case .invalidUtf8:
             return 8
+        case .incompatibleFFIMinorVersion:
+            return 9
         }
     }
 
@@ -70,6 +75,75 @@ public enum XrayCoreError: Error, CustomStringConvertible, CustomNSError, Locali
 
     public var errorDescription: String? {
         description
+    }
+}
+
+public struct XrayFFIVersion: Equatable, Sendable {
+    public let major: UInt32
+    public let minor: UInt32
+
+    public init(major: UInt32, minor: UInt32) {
+        self.major = major
+        self.minor = minor
+    }
+}
+
+public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
+    public let rawValue: UInt64
+
+    public init(rawValue: UInt64) {
+        self.rawValue = rawValue
+    }
+
+    public static let configWarnings = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_CONFIG_WARNINGS.rawValue)
+    )
+    public static let geodataSearch = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_GEODATA_SEARCH.rawValue)
+    )
+    public static let socketProtection = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_SOCKET_PROTECTION.rawValue)
+    )
+    public static let startupProbe = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_STARTUP_PROBE.rawValue)
+    )
+    public static let fileLogging = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_FILE_LOGGING.rawValue)
+    )
+    public static let tunPacketIO = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_PACKET_IO.rawValue)
+    )
+    public static let tunFileDescriptor = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_FD.rawValue)
+    )
+    public static let tunBatchPoll = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_BATCH_POLL.rawValue)
+    )
+    public static let tunRuntimeProfiles = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES.rawValue)
+    )
+    public static let dnsBootstrapPolicy = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY.rawValue)
+    )
+    public static let tunStats = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_STATS.rawValue)
+    )
+    public static let tunDiagnosticEvents = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS.rawValue)
+    )
+}
+
+public struct XrayFFIInfo: Equatable, Sendable {
+    public let version: XrayFFIVersion
+    public let capabilities: XrayFFICapabilities
+
+    public init(version: XrayFFIVersion, capabilities: XrayFFICapabilities) {
+        self.version = version
+        self.capabilities = capabilities
+    }
+
+    public func supports(_ capability: XrayFFICapabilities) -> Bool {
+        capabilities.contains(capability)
     }
 }
 
@@ -470,6 +544,7 @@ private extension XrayTcpSlowFlowKind {
 
 public final class XrayCore: @unchecked Sendable {
     static let expectedFFIMajorVersion: UInt32 = 1
+    static let minimumFFIMinorVersion: UInt32 = 1
     static let maximumPolledPacketBytes = 65_535
     static let maximumPacketBatchBytes = 4 * 1_024 * 1_024
 
@@ -477,6 +552,16 @@ public final class XrayCore: @unchecked Sendable {
     private var handle: OpaquePointer?
     private var dataPathEnabled = false
     private var retainedSocketProtectContext: Unmanaged<XraySocketProtectContext>?
+
+    public static var ffiInfo: XrayFFIInfo {
+        XrayFFIInfo(
+            version: XrayFFIVersion(
+                major: xray_ffi_version_major(),
+                minor: xray_ffi_version_minor()
+            ),
+            capabilities: XrayFFICapabilities(rawValue: xray_ffi_capabilities())
+        )
+    }
 
     public static func tunRuntimeProfile(named rawValue: String) -> XrayTunRuntimeProfile {
         switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
@@ -535,7 +620,11 @@ public final class XrayCore: @unchecked Sendable {
         tunPacketFormat: XrayTunFdPacketFormat = XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
         tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED
     ) throws {
-        try Self.validateFFIMajorVersion(xray_ffi_version_major())
+        let ffiInfo = Self.ffiInfo
+        try Self.validateFFIVersion(
+            major: ffiInfo.version.major,
+            minor: ffiInfo.version.minor
+        )
 
         var error: OpaquePointer?
         XrayMobileLog.info(
@@ -680,11 +769,17 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
-    static func validateFFIMajorVersion(_ actual: UInt32) throws {
-        guard actual == expectedFFIMajorVersion else {
+    static func validateFFIVersion(major: UInt32, minor: UInt32) throws {
+        guard major == expectedFFIMajorVersion else {
             throw XrayCoreError.incompatibleFFIMajorVersion(
                 expected: expectedFFIMajorVersion,
-                actual: actual
+                actual: major
+            )
+        }
+        guard minor >= minimumFFIMinorVersion else {
+            throw XrayCoreError.incompatibleFFIMinorVersion(
+                required: minimumFFIMinorVersion,
+                actual: minor
             )
         }
     }

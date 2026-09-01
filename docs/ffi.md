@@ -7,19 +7,32 @@ source of truth for declarations and enum values.
 
 ## ABI version
 
-Call `xray_ffi_version_major()` before creating a handle. The current ABI major
-is `1`, and the checked-in Swift and JNI adapters reject any other major.
+Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
+handle. The current ABI version is `1.1`. The checked-in Swift and JNI adapters
+reject any major other than `1` and require minor `1` or newer.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
 compile against the header shipped with the exact native artifact and should
 not infer compatibility from the Rust crate version.
 
+Within one major, the minor version is additive. A newer minor may add symbols,
+enum values, capability bits, or append-only fields governed by an explicit
+size negotiation rule. It does not remove or reinterpret an older surface.
+
+`xray_ffi_capabilities()` returns a 64-bit mask describing the optional
+surfaces present in the loaded library. Use the `XRAY_FFI_CAPABILITY_*` values
+from the header and preserve/ignore unknown bits. A capability bit is added in
+the same change as its optional API; it does not override major/minor
+compatibility checks.
+
 ## Recommended lifecycle
 
-1. Verify `xray_ffi_version_major()`.
-2. Allocate a handle with `xray_core_new`.
-3. Configure optional pre-load settings:
+1. Verify `xray_ffi_version_major()` and require a sufficient
+   `xray_ffi_version_minor()`.
+2. Read `xray_ffi_capabilities()` and select only supported optional surfaces.
+3. Allocate a handle with `xray_core_new`.
+4. Configure optional pre-load settings:
    - geodata search directory;
    - file logging;
    - startup probe;
@@ -27,12 +40,12 @@ not infer compatibility from the Rust crate version.
    - direct TUN fd and its ownership;
    - TCP timing collection;
    - TUN runtime profile.
-4. Call `xray_core_load_config_json` exactly once successfully.
-5. Read `xray_core_config_warnings` and surface non-empty diagnostics.
-6. Call `xray_core_start`.
-7. Use the packet, statistics, and diagnostic-event APIs.
-8. Call `xray_core_stop`.
-9. Release the handle with `xray_core_free`.
+5. Call `xray_core_load_config_json` exactly once successfully.
+6. Read `xray_core_config_warnings` and surface non-empty diagnostics.
+7. Call `xray_core_start`.
+8. Use the packet, statistics, and diagnostic-event APIs.
+9. Call `xray_core_stop`.
+10. Release the handle with `xray_core_free`.
 
 A handle does not support config replacement. Create a new handle for a new
 config or a fresh lifecycle. `xray_core_free(NULL)` is allowed and attempts to

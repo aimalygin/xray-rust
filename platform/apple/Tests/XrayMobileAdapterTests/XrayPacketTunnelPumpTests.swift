@@ -180,18 +180,48 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         }
     }
 
-    func testFFIMajorVersionValidationAcceptsCurrentABI() {
-        XCTAssertNoThrow(try XrayCore.validateFFIMajorVersion(1))
+    func testFFIVersionValidationAcceptsCurrentAndNewerMinorABI() {
+        XCTAssertNoThrow(try XrayCore.validateFFIVersion(major: 1, minor: 1))
+        XCTAssertNoThrow(try XrayCore.validateFFIVersion(major: 1, minor: 2))
     }
 
-    func testFFIMajorVersionValidationRejectsIncompatibleABI() {
-        XCTAssertThrowsError(try XrayCore.validateFFIMajorVersion(2)) { error in
+    func testFFIVersionValidationRejectsIncompatibleMajorABI() {
+        XCTAssertThrowsError(try XrayCore.validateFFIVersion(major: 2, minor: 1)) { error in
             guard case let XrayCoreError.incompatibleFFIMajorVersion(expected, actual) = error else {
                 return XCTFail("unexpected error: \(error)")
             }
             XCTAssertEqual(expected, 1)
             XCTAssertEqual(actual, 2)
         }
+    }
+
+    func testFFIVersionValidationRejectsOlderMinorABI() {
+        XCTAssertThrowsError(try XrayCore.validateFFIVersion(major: 1, minor: 0)) { error in
+            guard case let XrayCoreError.incompatibleFFIMinorVersion(required, actual) = error else {
+                return XCTFail("unexpected error: \(error)")
+            }
+            XCTAssertEqual(required, 1)
+            XCTAssertEqual(actual, 0)
+        }
+    }
+
+    func testFFIInfoReportsCurrentCapabilities() {
+        let info = XrayCore.ffiInfo
+
+        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 1))
+        XCTAssertTrue(info.supports(.configWarnings))
+        XCTAssertTrue(info.supports(.geodataSearch))
+        XCTAssertTrue(info.supports(.socketProtection))
+        XCTAssertTrue(info.supports(.startupProbe))
+        XCTAssertTrue(info.supports(.fileLogging))
+        XCTAssertTrue(info.supports(.tunPacketIO))
+        XCTAssertTrue(info.supports(.tunFileDescriptor))
+        XCTAssertTrue(info.supports(.tunBatchPoll))
+        XCTAssertTrue(info.supports(.tunRuntimeProfiles))
+        XCTAssertTrue(info.supports(.dnsBootstrapPolicy))
+        XCTAssertTrue(info.supports(.tunStats))
+        XCTAssertTrue(info.supports(.tunDiagnosticEvents))
+        XCTAssertFalse(info.supports(XrayFFICapabilities(rawValue: 1 << 63)))
     }
 
     func testLifecycleGateWaitsForAllDataPathCallsAndBlocksLateReaders() {

@@ -18,6 +18,7 @@ final class XrayCoreErrorTests: XCTestCase {
         let codes = [
             XrayCoreError.status(code: XRAY_STATUS_PANIC, message: "x").errorCode,
             XrayCoreError.incompatibleFFIMajorVersion(expected: 1, actual: 2).errorCode,
+            XrayCoreError.incompatibleFFIMinorVersion(required: 1, actual: 0).errorCode,
             XrayCoreError.missingHandle.errorCode,
             XrayCoreError.notRunning.errorCode,
             XrayCoreError.invalidUtf8.errorCode,

@@ -3,16 +3,17 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings, QuicParamsSettings,
-    RoutingDomainStrategy, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
-    TargetAddr, VlessUser, XhttpSettings,
+    RoutingBalancerStrategy, RoutingDomainStrategy, RoutingRule, RoutingRuleTarget, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -34,10 +35,14 @@ use xray_transport::{
 use crate::policy::effective_policy_for_level;
 use crate::{CompiledDnsOutboundPolicy, CoreError};
 
+#[cfg(test)]
+use xray_config::RoutingBalancer;
+
 const VISION_FLOW: &str = "xtls-rprx-vision";
 const VISION_UDP443_FLOW: &str = "xtls-rprx-vision-udp443";
 const DNS_OUTBOUND_HARD_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 static NEXT_DNS_OUTBOUND_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
+static NEXT_OUTBOUND_GRAPH_RUNTIME_IDENTITY: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VisionFlow {
@@ -608,6 +613,457 @@ struct CachedOutboundEntry {
     vless: OnceLock<Result<VlessTcpOutbound, CachedOutboundError>>,
 }
 
+/// Opaque identity of one configured node in one immutable outbound graph.
+///
+/// The graph identity prevents a node selected from one core configuration
+/// from being compiled accidentally by another core's factory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct OutboundNodeId {
+    graph_identity: u64,
+    index: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundNodeKind {
+    Freedom,
+    Vless,
+    Dns,
+    Selector,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundNode {
+    id: OutboundNodeId,
+    tag: Option<String>,
+    kind: OutboundNodeKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundSelectorGroup {
+    node: OutboundNodeId,
+    tag: String,
+    members: Box<[OutboundNodeId]>,
+    strategy: RoutingBalancerStrategy,
+    fallback_tag: Option<String>,
+}
+
+impl OutboundSelectorGroup {
+    pub fn node(&self) -> OutboundNodeId {
+        self.node
+    }
+
+    pub fn tag(&self) -> &str {
+        &self.tag
+    }
+
+    pub fn members(&self) -> &[OutboundNodeId] {
+        &self.members
+    }
+
+    pub fn strategy(&self) -> RoutingBalancerStrategy {
+        self.strategy
+    }
+
+    pub fn fallback_tag(&self) -> Option<&str> {
+        self.fallback_tag.as_deref()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundSelectorGroupSnapshot {
+    pub tag: String,
+    pub candidates: Vec<String>,
+    pub override_tag: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutboundSelectionSnapshot {
+    pub revision: u64,
+    pub groups: Vec<OutboundSelectorGroupSnapshot>,
+}
+
+impl OutboundNode {
+    pub fn id(&self) -> OutboundNodeId {
+        self.id
+    }
+
+    pub fn tag(&self) -> Option<&str> {
+        self.tag.as_deref()
+    }
+
+    pub fn kind(&self) -> OutboundNodeKind {
+        self.kind
+    }
+}
+
+/// Immutable topology and tag index for one core configuration.
+///
+/// Protocol handlers are deliberately absent from this type. They are owned
+/// by [`OutboundFactory`], so future selector/group nodes can refer to stable
+/// graph nodes without duplicating connection pools or protocol state.
+#[derive(Debug)]
+pub struct OutboundGraph {
+    identity: u64,
+    config: Arc<CoreConfig>,
+    nodes: Box<[OutboundNode]>,
+    leaf_count: usize,
+    first_tag_node: HashMap<String, OutboundNodeId>,
+    selector_groups: Box<[OutboundSelectorGroup]>,
+    first_group_node: HashMap<String, OutboundNodeId>,
+    default_node: Option<OutboundNodeId>,
+    unresolved_default_tag: bool,
+}
+
+impl OutboundGraph {
+    pub fn new(config: Arc<CoreConfig>) -> Self {
+        let identity = NEXT_OUTBOUND_GRAPH_RUNTIME_IDENTITY.fetch_add(1, Ordering::Relaxed);
+        let mut nodes = config
+            .outbounds
+            .iter()
+            .enumerate()
+            .map(|(index, outbound)| OutboundNode {
+                id: OutboundNodeId {
+                    graph_identity: identity,
+                    index,
+                },
+                tag: outbound.tag.clone(),
+                kind: match outbound.settings {
+                    OutboundSettings::Freedom => OutboundNodeKind::Freedom,
+                    OutboundSettings::Vless(_) => OutboundNodeKind::Vless,
+                    OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
+                },
+            })
+            .collect::<Vec<_>>();
+        let leaf_count = nodes.len();
+        let mut first_tag_node = HashMap::with_capacity(nodes.len());
+        for node in &nodes {
+            if let Some(tag) = node.tag.as_ref() {
+                first_tag_node.entry(tag.clone()).or_insert(node.id);
+            }
+        }
+        let default_node = config
+            .default_outbound_tag
+            .as_deref()
+            .and_then(|tag| first_tag_node.get(tag).copied())
+            .or_else(|| {
+                if config.default_outbound_tag.is_none() {
+                    nodes.first().map(OutboundNode::id)
+                } else {
+                    None
+                }
+            });
+        let unresolved_default_tag =
+            config.default_outbound_tag.is_some() && default_node.is_none();
+
+        let mut selector_groups = Vec::with_capacity(config.routing.balancers.len());
+        let mut first_group_node = HashMap::with_capacity(config.routing.balancers.len());
+        for balancer in &config.routing.balancers {
+            let mut selected_tags = first_tag_node
+                .iter()
+                .filter(|(tag, _)| {
+                    balancer
+                        .selectors
+                        .iter()
+                        .any(|selector| tag.starts_with(selector))
+                })
+                .map(|(tag, node)| (tag.as_str(), *node))
+                .collect::<Vec<_>>();
+            selected_tags.sort_unstable_by(|left, right| left.0.cmp(right.0));
+            let group_node = OutboundNodeId {
+                graph_identity: identity,
+                index: nodes.len(),
+            };
+            nodes.push(OutboundNode {
+                id: group_node,
+                tag: Some(balancer.tag.clone()),
+                kind: OutboundNodeKind::Selector,
+            });
+            first_group_node
+                .entry(balancer.tag.clone())
+                .or_insert(group_node);
+            selector_groups.push(OutboundSelectorGroup {
+                node: group_node,
+                tag: balancer.tag.clone(),
+                members: selected_tags
+                    .into_iter()
+                    .map(|(_, node)| node)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+                strategy: balancer.strategy,
+                fallback_tag: balancer.fallback_tag.clone(),
+            });
+        }
+
+        Self {
+            identity,
+            config,
+            nodes: nodes.into_boxed_slice(),
+            leaf_count,
+            first_tag_node,
+            selector_groups: selector_groups.into_boxed_slice(),
+            first_group_node,
+            default_node,
+            unresolved_default_tag,
+        }
+    }
+
+    pub fn nodes(&self) -> &[OutboundNode] {
+        &self.nodes
+    }
+
+    pub fn node(&self, id: OutboundNodeId) -> Option<&OutboundNode> {
+        (id.graph_identity == self.identity)
+            .then(|| self.nodes.get(id.index))
+            .flatten()
+    }
+
+    pub fn node_for_tag(&self, tag: &str) -> Option<OutboundNodeId> {
+        self.first_tag_node.get(tag).copied()
+    }
+
+    pub fn selector_groups(&self) -> &[OutboundSelectorGroup] {
+        &self.selector_groups
+    }
+
+    pub fn selector_group(&self, id: OutboundNodeId) -> Option<&OutboundSelectorGroup> {
+        if id.graph_identity != self.identity || id.index < self.leaf_count {
+            return None;
+        }
+        self.selector_groups.get(id.index - self.leaf_count)
+    }
+
+    pub fn selector_group_for_tag(&self, tag: &str) -> Option<&OutboundSelectorGroup> {
+        self.first_group_node
+            .get(tag)
+            .and_then(|id| self.selector_group(*id))
+    }
+
+    pub fn default_node(&self) -> Option<OutboundNodeId> {
+        self.default_node
+    }
+
+    pub fn has_unresolved_default_tag(&self) -> bool {
+        self.unresolved_default_tag
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    fn config(&self) -> &CoreConfig {
+        self.config.as_ref()
+    }
+
+    fn configured_outbound(&self, id: OutboundNodeId) -> Option<&OutboundConfig> {
+        if id.graph_identity != self.identity || id.index >= self.leaf_count {
+            return None;
+        }
+        self.config.outbounds.get(id.index)
+    }
+}
+
+#[derive(Debug)]
+struct OutboundSelectorGroupState {
+    override_member: AtomicUsize,
+    round_robin_cursor: AtomicU64,
+}
+
+/// Small mutable layer over an immutable outbound graph.
+///
+/// Candidate membership never changes. An override is one release-store and
+/// every new flow observes it with an acquire-load; existing flows keep their
+/// already selected handler and transport resources.
+#[derive(Debug)]
+pub struct OutboundSelectionOverlay {
+    graph: Arc<OutboundGraph>,
+    groups: Box<[OutboundSelectorGroupState]>,
+    revision: AtomicU64,
+    update_lock: Mutex<()>,
+}
+
+impl OutboundSelectionOverlay {
+    fn new(graph: Arc<OutboundGraph>) -> Self {
+        let groups = (0..graph.selector_groups().len())
+            .map(|_| OutboundSelectorGroupState {
+                override_member: AtomicUsize::new(0),
+                round_robin_cursor: AtomicU64::new(0),
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Self {
+            graph,
+            groups,
+            revision: AtomicU64::new(0),
+            update_lock: Mutex::new(()),
+        }
+    }
+
+    pub fn set_override(&self, group_tag: &str, outbound_tag: &str) -> Result<u64, CoreError> {
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (group_index, group) = self.group_for_tag(group_tag)?;
+        let member_index = group
+            .members()
+            .iter()
+            .position(|member| {
+                self.graph
+                    .node(*member)
+                    .and_then(OutboundNode::tag)
+                    .is_some_and(|tag| tag == outbound_tag)
+            })
+            .ok_or_else(|| CoreError::OutboundSelectorCandidateNotFound {
+                group: group_tag.to_owned(),
+                outbound: outbound_tag.to_owned(),
+            })?;
+        self.groups[group_index]
+            .override_member
+            .store(member_index + 1, Ordering::Release);
+        Ok(self.revision.fetch_add(1, Ordering::AcqRel) + 1)
+    }
+
+    pub fn clear_override(&self, group_tag: &str) -> Result<u64, CoreError> {
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let (group_index, _) = self.group_for_tag(group_tag)?;
+        self.groups[group_index]
+            .override_member
+            .store(0, Ordering::Release);
+        Ok(self.revision.fetch_add(1, Ordering::AcqRel) + 1)
+    }
+
+    pub fn snapshot(&self) -> OutboundSelectionSnapshot {
+        let _update = self
+            .update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let groups = self
+            .graph
+            .selector_groups()
+            .iter()
+            .enumerate()
+            .map(|(index, group)| {
+                let candidates = group
+                    .members()
+                    .iter()
+                    .filter_map(|member| self.graph.node(*member)?.tag().map(ToOwned::to_owned))
+                    .collect();
+                let override_member = self.groups[index].override_member.load(Ordering::Acquire);
+                let override_tag = override_member
+                    .checked_sub(1)
+                    .and_then(|member| group.members().get(member))
+                    .and_then(|member| self.graph.node(*member))
+                    .and_then(OutboundNode::tag)
+                    .map(ToOwned::to_owned);
+                OutboundSelectorGroupSnapshot {
+                    tag: group.tag().to_owned(),
+                    candidates,
+                    override_tag,
+                }
+            })
+            .collect();
+        OutboundSelectionSnapshot {
+            revision: self.revision.load(Ordering::Acquire),
+            groups,
+        }
+    }
+
+    fn select(&self, group_tag: &str) -> Result<OutboundNodeId, CoreError> {
+        let (group_index, group) = self.group_for_tag(group_tag)?;
+        let state = &self.groups[group_index];
+        if let Some(member_index) = state.override_member.load(Ordering::Acquire).checked_sub(1) {
+            return group
+                .members()
+                .get(member_index)
+                .copied()
+                .ok_or(CoreError::NoSupportedOutbound);
+        }
+        if group.members().is_empty() {
+            return group
+                .fallback_tag()
+                .and_then(|tag| self.graph.node_for_tag(tag))
+                .ok_or(CoreError::NoSupportedOutbound);
+        }
+        let member_index = match group.strategy() {
+            RoutingBalancerStrategy::Random => {
+                rand::thread_rng().gen_range(0..group.members().len())
+            }
+            RoutingBalancerStrategy::RoundRobin => {
+                let cursor = state.round_robin_cursor.fetch_add(1, Ordering::Relaxed);
+                usize::try_from(cursor % group.members().len() as u64)
+                    .expect("round-robin remainder fits usize")
+            }
+        };
+        Ok(group.members()[member_index])
+    }
+
+    fn group_for_tag(&self, group_tag: &str) -> Result<(usize, &OutboundSelectorGroup), CoreError> {
+        let node = self
+            .graph
+            .first_group_node
+            .get(group_tag)
+            .copied()
+            .ok_or_else(|| CoreError::OutboundSelectorGroupNotFound(group_tag.to_owned()))?;
+        let index = node.index - self.graph.leaf_count;
+        Ok((index, &self.graph.selector_groups[index]))
+    }
+}
+
+/// Owns the lazily compiled handlers and transport resources for one graph.
+///
+/// Sharing one factory across routers or future selector policies guarantees
+/// that a configured node has exactly one cache and one set of stateful
+/// transport pools for the lifetime of the core.
+#[derive(Debug)]
+pub struct OutboundFactory {
+    graph: Arc<OutboundGraph>,
+    entries: Box<[CachedOutboundEntry]>,
+    selection: Arc<OutboundSelectionOverlay>,
+}
+
+impl OutboundFactory {
+    pub fn new(graph: Arc<OutboundGraph>) -> Self {
+        let entries = (0..graph.leaf_count)
+            .map(|_| CachedOutboundEntry::default())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let selection = Arc::new(OutboundSelectionOverlay::new(Arc::clone(&graph)));
+        Self {
+            graph,
+            entries,
+            selection,
+        }
+    }
+
+    pub fn graph(&self) -> &OutboundGraph {
+        self.graph.as_ref()
+    }
+
+    pub fn graph_handle(&self) -> Arc<OutboundGraph> {
+        Arc::clone(&self.graph)
+    }
+
+    pub fn selection(&self) -> &OutboundSelectionOverlay {
+        self.selection.as_ref()
+    }
+
+    pub fn selection_handle(&self) -> Arc<OutboundSelectionOverlay> {
+        Arc::clone(&self.selection)
+    }
+
+    fn entry(&self, node: OutboundNodeId) -> Result<&CachedOutboundEntry, CachedOutboundError> {
+        if self.graph.node(node).is_none() {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        self.entries
+            .get(node.index)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DnsRoutePortRange {
     start: u16,
@@ -734,73 +1190,94 @@ impl DnsRoutePrefilter {
     }
 }
 
-/// Persistent outbound selector and lazy compiler for one immutable core config.
+/// Persistent routing policy over one immutable outbound graph and factory.
 ///
 /// Routing-rule order remains authoritative, duplicate outbound tags resolve to
 /// their first configured entry, and invalid outbounds are compiled only when
-/// selected. Keep one router alive for the lifetime of that config: recreating
-/// it per selection also recreates stateful transport resources such as gRPC
-/// and XHTTP connection pools.
+/// selected. Routers created from the same factory share stateful transport
+/// resources such as gRPC and XHTTP connection pools.
 #[derive(Debug)]
 pub struct OutboundRouter {
-    config: Arc<CoreConfig>,
-    first_tag_index: HashMap<String, usize>,
+    factory: Arc<OutboundFactory>,
     dns_route_prefilter: DnsRoutePrefilter,
     default_is_dns: bool,
     default_requires_selection: bool,
-    entries: Box<[CachedOutboundEntry]>,
 }
 
 impl OutboundRouter {
     pub fn new(config: Arc<CoreConfig>) -> Self {
-        let mut first_tag_index = HashMap::with_capacity(config.outbounds.len());
-        for (index, outbound) in config.outbounds.iter().enumerate() {
-            if let Some(tag) = outbound.tag.as_ref() {
-                first_tag_index.entry(tag.clone()).or_insert(index);
-            }
-        }
-        let is_dns_index =
-            |index: usize| matches!(config.outbounds[index].settings, OutboundSettings::Dns(_));
+        let graph = Arc::new(OutboundGraph::new(config));
+        Self::from_factory(Arc::new(OutboundFactory::new(graph)))
+    }
+
+    pub fn from_factory(factory: Arc<OutboundFactory>) -> Self {
+        let graph = factory.graph();
         let dns_route_prefilter =
-            DnsRoutePrefilter::new(config.routing.rules.iter().filter(|rule| {
-                first_tag_index
-                    .get(&rule.outbound_tag)
-                    .is_some_and(|index| is_dns_index(*index))
+            DnsRoutePrefilter::new(graph.config().routing.rules.iter().filter(|rule| {
+                match &rule.target {
+                    RoutingRuleTarget::Outbound(tag) => graph
+                        .node_for_tag(tag)
+                        .and_then(|id| graph.node(id))
+                        .is_some_and(|node| node.kind() == OutboundNodeKind::Dns),
+                    RoutingRuleTarget::Balancer(tag) => {
+                        graph.selector_group_for_tag(tag).is_some_and(|group| {
+                            group.members().iter().any(|member| {
+                                graph
+                                    .node(*member)
+                                    .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+                            }) || group
+                                .fallback_tag()
+                                .and_then(|tag| graph.node_for_tag(tag))
+                                .and_then(|node| graph.node(node))
+                                .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+                        })
+                    }
+                }
             }));
-        let default_index = config
-            .default_outbound_tag
-            .as_deref()
-            .and_then(|tag| first_tag_index.get(tag).copied())
-            .or_else(|| config.default_outbound_tag.is_none().then_some(0))
-            .filter(|index| *index < config.outbounds.len());
-        let default_is_dns = default_index.is_some_and(is_dns_index);
-        let default_requires_selection =
-            config.default_outbound_tag.is_some() && default_index.is_none();
-        let entries = (0..config.outbounds.len())
-            .map(|_| CachedOutboundEntry::default())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let default_is_dns = graph
+            .default_node()
+            .and_then(|id| graph.node(id))
+            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns);
+        let default_requires_selection = graph.has_unresolved_default_tag();
         Self {
-            config,
-            first_tag_index,
+            factory,
             dns_route_prefilter,
             default_is_dns,
             default_requires_selection,
-            entries,
         }
     }
 
+    pub fn graph(&self) -> &OutboundGraph {
+        self.factory.graph()
+    }
+
+    pub fn factory(&self) -> &OutboundFactory {
+        self.factory.as_ref()
+    }
+
+    pub fn factory_handle(&self) -> Arc<OutboundFactory> {
+        Arc::clone(&self.factory)
+    }
+
+    pub fn selection(&self) -> &OutboundSelectionOverlay {
+        self.factory.selection()
+    }
+
+    fn config(&self) -> &CoreConfig {
+        self.graph().config()
+    }
+
     pub fn select_tcp_outbound(&self) -> Result<TcpOutbound, CoreError> {
-        let index = self.select_configured_index(None, None, None, None, None)?;
-        self.cached_tcp_outbound(index)
+        let node = self.select_configured_node(None, None, None, None, None)?;
+        self.factory.cached_tcp_outbound(node)
     }
 
     pub(crate) fn select_tcp_outbound_direct(
         &self,
         outbound_tag: Option<&str>,
     ) -> Result<TcpOutbound, CoreError> {
-        let index = self.select_configured_index_direct(outbound_tag)?;
-        self.cached_tcp_outbound(index)
+        let node = self.select_configured_node_direct(outbound_tag)?;
+        self.factory.cached_tcp_outbound(node)
     }
 
     pub fn select_tcp_outbound_for_session(
@@ -808,14 +1285,14 @@ impl OutboundRouter {
         inbound_tag: Option<&str>,
         target: &Target,
     ) -> Result<TcpOutbound, CoreError> {
-        let index = self.select_configured_index(
+        let node = self.select_configured_node(
             inbound_tag,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
             Some(target.port),
         )?;
-        self.cached_tcp_outbound(index)
+        self.factory.cached_tcp_outbound(node)
     }
 
     /// Selects a TCP outbound from the original session metadata and retains
@@ -831,7 +1308,7 @@ impl OutboundRouter {
         target: &Target,
         include_tag: bool,
     ) -> Result<SelectedTcpOutbound, CoreError> {
-        let index = self.select_configured_index(
+        let node = self.select_configured_node(
             inbound_tag,
             target_domain(target),
             target_ip(target),
@@ -839,9 +1316,9 @@ impl OutboundRouter {
             Some(target.port),
         )?;
         let tag = include_tag
-            .then(|| self.config.outbounds[index].tag.clone())
+            .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
-        let outbound = self.cached_tcp_outbound(index)?;
+        let outbound = self.factory.cached_tcp_outbound(node)?;
         Ok(SelectedTcpOutbound { outbound, tag })
     }
 
@@ -853,12 +1330,12 @@ impl OutboundRouter {
         resolved_ip: Option<&IpAddr>,
         include_tag: bool,
     ) -> Result<SelectedTcpOutbound, CoreError> {
-        let index =
-            self.select_configured_index_with_resolved_ip(inbound_tag, target, resolved_ip)?;
+        let node =
+            self.select_configured_node_with_resolved_ip(inbound_tag, target, resolved_ip)?;
         let tag = include_tag
-            .then(|| self.config.outbounds[index].tag.clone())
+            .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
-        let outbound = self.cached_tcp_outbound(index)?;
+        let outbound = self.factory.cached_tcp_outbound(node)?;
         Ok(SelectedTcpOutbound { outbound, tag })
     }
 
@@ -868,10 +1345,10 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<TcpOutbound, CoreError> {
-        let index = self
-            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+        let node = self
+            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        self.cached_tcp_outbound(index)
+        self.factory.cached_tcp_outbound(node)
     }
 
     pub(crate) async fn select_tcp_session_outbound_with_resolver(
@@ -880,16 +1357,20 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<TcpSessionOutbound, CoreError> {
-        let index = self
-            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+        let node = self
+            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        if matches!(
-            self.config.outbounds[index].settings,
-            OutboundSettings::Dns(_)
-        ) {
-            self.cached_dns_outbound(index).map(TcpSessionOutbound::Dns)
+        if self
+            .graph()
+            .node(node)
+            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+        {
+            self.factory
+                .cached_dns_outbound(node)
+                .map(TcpSessionOutbound::Dns)
         } else {
-            self.cached_tcp_outbound(index)
+            self.factory
+                .cached_tcp_outbound(node)
                 .map(TcpSessionOutbound::Transport)
         }
     }
@@ -901,13 +1382,13 @@ impl OutboundRouter {
         include_tag: bool,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<SelectedTcpOutbound, CoreError> {
-        let index = self
-            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+        let node = self
+            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
         let tag = include_tag
-            .then(|| self.config.outbounds[index].tag.clone())
+            .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
-        let outbound = self.cached_tcp_outbound(index)?;
+        let outbound = self.factory.cached_tcp_outbound(node)?;
         Ok(SelectedTcpOutbound { outbound, tag })
     }
 
@@ -916,14 +1397,14 @@ impl OutboundRouter {
         inbound_tag: Option<&str>,
         target: &Target,
     ) -> Result<UdpOutbound, CoreError> {
-        let index = self.select_configured_index(
+        let node = self.select_configured_node(
             inbound_tag,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
             Some(target.port),
         )?;
-        self.cached_udp_outbound(index)
+        self.factory.cached_udp_outbound(node)
     }
 
     /// Returns the selected DNS message handler without treating regular
@@ -937,20 +1418,21 @@ impl OutboundRouter {
         if !self.may_select_dns_outbound(inbound_tag, target) {
             return Ok(None);
         }
-        let index = self.select_configured_index(
+        let node = self.select_configured_node(
             inbound_tag,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
             Some(target.port),
         )?;
-        if !matches!(
-            self.config.outbounds[index].settings,
-            OutboundSettings::Dns(_)
-        ) {
+        if !self
+            .graph()
+            .node(node)
+            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+        {
             return Ok(None);
         }
-        self.cached_dns_outbound(index).map(Some)
+        self.factory.cached_dns_outbound(node).map(Some)
     }
 
     pub async fn select_dns_outbound_for_session_with_resolver(
@@ -962,16 +1444,17 @@ impl OutboundRouter {
         if !self.may_select_dns_outbound(inbound_tag, target) {
             return Ok(None);
         }
-        let index = self
-            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+        let node = self
+            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        if !matches!(
-            self.config.outbounds[index].settings,
-            OutboundSettings::Dns(_)
-        ) {
+        if !self
+            .graph()
+            .node(node)
+            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+        {
             return Ok(None);
         }
-        self.cached_dns_outbound(index).map(Some)
+        self.factory.cached_dns_outbound(node).map(Some)
     }
 
     fn may_select_dns_outbound(&self, inbound_tag: Option<&str>, target: &Target) -> bool {
@@ -989,11 +1472,11 @@ impl OutboundRouter {
         let Some(inbound_tag) = inbound_tag else {
             return false;
         };
-        self.config
+        self.config()
             .dns
             .servers
             .iter()
-            .any(|server| server.effective_tag(&self.config.dns.tag) == inbound_tag)
+            .any(|server| server.effective_tag(&self.config().dns.tag) == inbound_tag)
     }
 
     pub async fn select_udp_outbound_for_session_with_resolver(
@@ -1002,10 +1485,10 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<UdpOutbound, CoreError> {
-        let index = self
-            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+        let node = self
+            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        self.cached_udp_outbound(index)
+        self.factory.cached_udp_outbound(node)
     }
 
     pub(crate) async fn select_udp_session_outbound_with_resolver(
@@ -1014,167 +1497,196 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<UdpSessionOutbound, CoreError> {
-        let index = self
-            .select_configured_index_with_resolver(inbound_tag, target, dns_resolver)
+        let node = self
+            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
             .await?;
-        if matches!(
-            self.config.outbounds[index].settings,
-            OutboundSettings::Dns(_)
-        ) {
-            self.cached_dns_outbound(index).map(UdpSessionOutbound::Dns)
+        if self
+            .graph()
+            .node(node)
+            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+        {
+            self.factory
+                .cached_dns_outbound(node)
+                .map(UdpSessionOutbound::Dns)
         } else {
-            self.cached_udp_outbound(index)
+            self.factory
+                .cached_udp_outbound(node)
                 .map(UdpSessionOutbound::Transport)
         }
     }
 
-    fn select_configured_index(
+    fn select_configured_node(
         &self,
         inbound_tag: Option<&str>,
         target_domain: Option<&str>,
         target_ip: Option<&IpAddr>,
         target_network: Option<Network>,
         target_port: Option<u16>,
-    ) -> Result<usize, CoreError> {
-        let routed_tag = select_routed_outbound_tag(
-            &self.config,
+    ) -> Result<OutboundNodeId, CoreError> {
+        let routed_target = select_routed_target(
+            self.config(),
             inbound_tag,
             target_domain,
             target_ip,
             target_network,
             target_port,
         );
-        match routed_tag.or(self.config.default_outbound_tag.as_deref()) {
-            Some(tag) => self.index_for_tag(tag),
-            None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
-            None => Ok(0),
+        match routed_target {
+            Some(target) => self.node_for_target(target),
+            None => self.select_default_configured_node(),
         }
     }
 
     #[cfg(test)]
-    fn select_configured_index_with_resolved_ip(
+    fn select_configured_node_with_resolved_ip(
         &self,
         inbound_tag: Option<&str>,
         target: &Target,
         resolved_ip: Option<&IpAddr>,
-    ) -> Result<usize, CoreError> {
-        if let Some(routed_tag) = select_routed_outbound_tag(
-            &self.config,
+    ) -> Result<OutboundNodeId, CoreError> {
+        if let Some(routed_target) = select_routed_target(
+            self.config(),
             inbound_tag,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
             Some(target.port),
         ) {
-            return self.index_for_tag(routed_tag);
+            return self.node_for_target(routed_target);
         }
 
-        if self.config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+        if self.config().routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
             if let Some(resolved_ip) = resolved_ip {
-                if let Some(routed_tag) = select_routed_outbound_tag(
-                    &self.config,
+                if let Some(routed_target) = select_routed_target(
+                    self.config(),
                     inbound_tag,
                     target_domain(target),
                     Some(resolved_ip),
                     Some(target_network(target)),
                     Some(target.port),
                 ) {
-                    return self.index_for_tag(routed_tag);
+                    return self.node_for_target(routed_target);
                 }
             }
         }
 
-        self.select_default_configured_index()
+        self.select_default_configured_node()
     }
 
-    async fn select_configured_index_with_resolver(
+    async fn select_configured_node_with_resolver(
         &self,
         inbound_tag: Option<&str>,
         target: &Target,
         dns_resolver: &dyn DnsResolver,
-    ) -> Result<usize, CoreError> {
-        if let Some(routed_tag) = select_routed_outbound_tag(
-            &self.config,
+    ) -> Result<OutboundNodeId, CoreError> {
+        if let Some(routed_target) = select_routed_target(
+            self.config(),
             inbound_tag,
             target_domain(target),
             target_ip(target),
             Some(target_network(target)),
             Some(target.port),
         ) {
-            return self.index_for_tag(routed_tag);
+            return self.node_for_target(routed_target);
         }
 
-        if self.config.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+        if self.config().routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
             if let Some(domain) = target_domain(target) {
                 if let Ok(resolved) = dns_resolver.resolve_all(domain, target.port).await {
-                    if let Some(routed_tag) = select_routed_outbound_tag_with_resolved_ips(
-                        &self.config,
+                    if let Some(routed_target) = select_routed_target_with_resolved_ips(
+                        self.config(),
                         inbound_tag,
                         Some(domain),
                         resolved.socket_addrs(),
                         Some(target_network(target)),
                         Some(target.port),
                     ) {
-                        return self.index_for_tag(routed_tag);
+                        return self.node_for_target(routed_target);
                     }
                 }
             }
         }
 
-        self.select_default_configured_index()
+        self.select_default_configured_node()
     }
 
-    fn select_configured_index_direct(
+    fn select_configured_node_direct(
         &self,
         outbound_tag: Option<&str>,
-    ) -> Result<usize, CoreError> {
-        match outbound_tag.or(self.config.default_outbound_tag.as_deref()) {
-            Some(tag) => self.index_for_tag(tag),
-            None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
-            None => Ok(0),
+    ) -> Result<OutboundNodeId, CoreError> {
+        match outbound_tag {
+            Some(tag) => self.node_for_tag(tag),
+            None => self.select_default_configured_node(),
         }
     }
 
-    fn select_default_configured_index(&self) -> Result<usize, CoreError> {
-        match self.config.default_outbound_tag.as_deref() {
-            Some(tag) => self.index_for_tag(tag),
-            None if self.config.outbounds.is_empty() => Err(CoreError::NoSupportedOutbound),
-            None => Ok(0),
-        }
-    }
-
-    fn index_for_tag(&self, tag: &str) -> Result<usize, CoreError> {
-        self.first_tag_index
-            .get(tag)
-            .copied()
+    fn select_default_configured_node(&self) -> Result<OutboundNodeId, CoreError> {
+        self.graph()
+            .default_node()
             .ok_or(CoreError::NoSupportedOutbound)
     }
 
-    fn cached_tcp_outbound(&self, index: usize) -> Result<TcpOutbound, CoreError> {
-        let cached = self.entries[index]
+    fn node_for_tag(&self, tag: &str) -> Result<OutboundNodeId, CoreError> {
+        self.graph()
+            .node_for_tag(tag)
+            .ok_or(CoreError::NoSupportedOutbound)
+    }
+
+    fn node_for_target(&self, target: &RoutingRuleTarget) -> Result<OutboundNodeId, CoreError> {
+        match target {
+            RoutingRuleTarget::Outbound(tag) => self.node_for_tag(tag),
+            RoutingRuleTarget::Balancer(tag) => self.selection().select(tag),
+        }
+    }
+}
+
+impl OutboundFactory {
+    pub(crate) fn cached_tcp_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<TcpOutbound, CoreError> {
+        let cached = self
+            .entry(node)
+            .map_err(CachedOutboundError::into_core_error)?
             .tcp
-            .get_or_init(|| self.compile_tcp_outbound(index));
+            .get_or_init(|| self.compile_tcp_outbound(node));
         clone_cached_outbound(cached)
     }
 
-    fn cached_udp_outbound(&self, index: usize) -> Result<UdpOutbound, CoreError> {
-        let cached = self.entries[index]
+    pub(crate) fn cached_udp_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<UdpOutbound, CoreError> {
+        let cached = self
+            .entry(node)
+            .map_err(CachedOutboundError::into_core_error)?
             .udp
-            .get_or_init(|| self.compile_udp_outbound(index));
+            .get_or_init(|| self.compile_udp_outbound(node));
         clone_cached_outbound(cached)
     }
 
-    fn cached_dns_outbound(&self, index: usize) -> Result<DnsOutbound, CoreError> {
-        let cached = self.entries[index]
+    pub(crate) fn cached_dns_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<DnsOutbound, CoreError> {
+        let cached = self
+            .entry(node)
+            .map_err(CachedOutboundError::into_core_error)?
             .dns
-            .get_or_init(|| self.compile_dns_outbound(index));
+            .get_or_init(|| self.compile_dns_outbound(node));
         clone_cached_outbound(cached)
     }
 
-    fn cached_vless_outbound(&self, index: usize) -> Result<VlessTcpOutbound, CachedOutboundError> {
-        let cached = self.entries[index].vless.get_or_init(|| {
-            build_vless_tcp_outbound(&self.config.outbounds[index])
-                .map_err(CachedOutboundError::from_core_error)
+    fn cached_vless_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<VlessTcpOutbound, CachedOutboundError> {
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let cached = self.entry(node)?.vless.get_or_init(|| {
+            build_vless_tcp_outbound(configured).map_err(CachedOutboundError::from_core_error)
         });
         match cached {
             Ok(outbound) => Ok(outbound.clone()),
@@ -1182,8 +1694,14 @@ impl OutboundRouter {
         }
     }
 
-    fn compile_tcp_outbound(&self, index: usize) -> Result<TcpOutbound, CachedOutboundError> {
-        let outbound = &self.config.outbounds[index];
+    fn compile_tcp_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<TcpOutbound, CachedOutboundError> {
+        let outbound = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
         if outbound.stream.network != Network::Tcp {
             return Err(CachedOutboundError::UnsupportedOutboundNetwork);
         }
@@ -1200,13 +1718,19 @@ impl OutboundRouter {
                 Ok(build_freedom_tcp_outbound(&outbound.stream))
             }
             OutboundSettings::Vless(_) => self
-                .cached_vless_outbound(index)
+                .cached_vless_outbound(node)
                 .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
         }
     }
 
-    fn compile_udp_outbound(&self, index: usize) -> Result<UdpOutbound, CachedOutboundError> {
-        let outbound = &self.config.outbounds[index];
+    fn compile_udp_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<UdpOutbound, CachedOutboundError> {
+        let outbound = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
         match &outbound.settings {
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
@@ -1222,18 +1746,25 @@ impl OutboundRouter {
                 if outbound.stream.network != Network::Tcp {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
                 }
-                self.cached_vless_outbound(index)
+                self.cached_vless_outbound(node)
                     .map(|outbound| UdpOutbound::Vless(Box::new(outbound)))
             }
         }
     }
 
-    fn compile_dns_outbound(&self, index: usize) -> Result<DnsOutbound, CachedOutboundError> {
-        let configured = &self.config.outbounds[index];
+    fn compile_dns_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<DnsOutbound, CachedOutboundError> {
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
         match &configured.settings {
             OutboundSettings::Dns(settings) => {
                 let conn_idle =
-                    effective_policy_for_level(&self.config, Some(settings.user_level)).conn_idle;
+                    effective_policy_for_level(self.graph.config(), Some(settings.user_level))
+                        .conn_idle;
                 DnsOutbound::new_with_stream(settings.clone(), &configured.stream, conn_idle)
                     .map_err(CachedOutboundError::from_core_error)
             }
@@ -1929,14 +2460,14 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
     }
 }
 
-fn select_routed_outbound_tag<'a>(
+fn select_routed_target<'a>(
     config: &'a CoreConfig,
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_ip: Option<&IpAddr>,
     target_network: Option<Network>,
     target_port: Option<u16>,
-) -> Option<&'a str> {
+) -> Option<&'a RoutingRuleTarget> {
     config
         .routing
         .rules
@@ -1950,17 +2481,17 @@ fn select_routed_outbound_tag<'a>(
                 target_port,
             )
         })
-        .map(|rule| rule.outbound_tag.as_str())
+        .map(|rule| &rule.target)
 }
 
-fn select_routed_outbound_tag_with_resolved_ips<'a>(
+fn select_routed_target_with_resolved_ips<'a>(
     config: &'a CoreConfig,
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_addrs: &[SocketAddr],
     target_network: Option<Network>,
     target_port: Option<u16>,
-) -> Option<&'a str> {
+) -> Option<&'a RoutingRuleTarget> {
     config
         .routing
         .rules
@@ -1976,7 +2507,7 @@ fn select_routed_outbound_tag_with_resolved_ips<'a>(
                 )
             })
         })
-        .map(|rule| rule.outbound_tag.as_str())
+        .map(|rule| &rule.target)
 }
 
 fn target_domain(target: &Target) -> Option<&str> {
@@ -2548,7 +3079,7 @@ mod tests {
                     port_ranges: Vec::new(),
                     domain_matchers: DomainMatcherSet::default(),
                     ip_matchers: Default::default(),
-                    outbound_tag: "direct".to_owned(),
+                    target: RoutingRuleTarget::Outbound("direct".to_owned()),
                 }],
                 ..Default::default()
             },
@@ -2657,7 +3188,7 @@ mod tests {
             port_ranges: Vec::new(),
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
-            outbound_tag: tag.to_owned(),
+            target: RoutingRuleTarget::Outbound(tag.to_owned()),
         }
     }
 
@@ -2669,7 +3200,7 @@ mod tests {
             domain_matchers: compile_domain_matchers(&[DomainMatcher::Full(domain.to_owned())])
                 .unwrap(),
             ip_matchers: ip_matcher_set(IpCidr::full(IpAddr::V4(ip))),
-            outbound_tag: tag.to_owned(),
+            target: RoutingRuleTarget::Outbound(tag.to_owned()),
         }
     }
 
@@ -2680,7 +3211,7 @@ mod tests {
             port_ranges: Vec::new(),
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
-            outbound_tag: outbound_tag.to_owned(),
+            target: RoutingRuleTarget::Outbound(outbound_tag.to_owned()),
         }
     }
 
@@ -2695,7 +3226,7 @@ mod tests {
             port_ranges: vec![port_range],
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
-            outbound_tag: outbound_tag.to_owned(),
+            target: RoutingRuleTarget::Outbound(outbound_tag.to_owned()),
         }
     }
 
@@ -3227,7 +3758,7 @@ mod tests {
                 .collect(),
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
-            outbound_tag: "dns-out".to_owned(),
+            target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
         }];
 
         let router = OutboundRouter::new(Arc::new(config));
@@ -3620,6 +4151,253 @@ mod tests {
     }
 
     #[test]
+    fn outbound_graph_preserves_order_kind_first_tag_and_default_identity() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("duplicate"),
+            direct_selection_vless("duplicate"),
+            dns_selection_outbound("dns-out", DnsOutboundSettings::default()),
+        ];
+        config.default_outbound_tag = Some("duplicate".to_owned());
+        let graph = OutboundGraph::new(Arc::new(config));
+
+        assert_eq!(graph.nodes().len(), 3);
+        assert_eq!(graph.nodes()[0].tag(), Some("duplicate"));
+        assert_eq!(graph.nodes()[0].kind(), OutboundNodeKind::Freedom);
+        assert_eq!(graph.nodes()[1].kind(), OutboundNodeKind::Vless);
+        assert_eq!(graph.nodes()[2].kind(), OutboundNodeKind::Dns);
+        assert_eq!(graph.node_for_tag("duplicate"), Some(graph.nodes()[0].id()));
+        assert_eq!(graph.default_node(), Some(graph.nodes()[0].id()));
+        assert!(!graph.has_unresolved_default_tag());
+    }
+
+    #[test]
+    fn outbound_graph_retains_an_unresolved_default_reference() {
+        let mut config = direct_selection_config();
+        config.default_outbound_tag = Some("missing".to_owned());
+        let graph = OutboundGraph::new(Arc::new(config));
+
+        assert_eq!(graph.default_node(), None);
+        assert!(graph.has_unresolved_default_tag());
+    }
+
+    fn selector_group_config(strategy: RoutingBalancerStrategy) -> CoreConfig {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_vless("proxy-b"),
+            direct_selection_freedom("direct"),
+            direct_selection_vless("proxy-a"),
+        ];
+        config.default_outbound_tag = Some("direct".to_owned());
+        config.routing.balancers = vec![RoutingBalancer {
+            tag: "automatic".to_owned(),
+            selectors: vec!["proxy-".to_owned()],
+            strategy,
+            fallback_tag: Some("direct".to_owned()),
+        }];
+        config.routing.rules = vec![RoutingRule {
+            inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: Default::default(),
+            target: RoutingRuleTarget::Balancer("automatic".to_owned()),
+        }];
+        config
+    }
+
+    #[test]
+    fn outbound_graph_expands_selector_prefixes_in_sorted_tag_order() {
+        let graph = OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        )));
+        let group = graph
+            .selector_group_for_tag("automatic")
+            .expect("selector group node");
+        let tags = group
+            .members()
+            .iter()
+            .map(|member| graph.node(*member).unwrap().tag().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(graph.nodes().len(), 4);
+        assert_eq!(group.node(), graph.nodes()[3].id());
+        assert_eq!(graph.nodes()[3].kind(), OutboundNodeKind::Selector);
+        assert_eq!(tags, vec!["proxy-a", "proxy-b"]);
+        assert_eq!(group.fallback_tag(), Some("direct"));
+    }
+
+    #[test]
+    fn round_robin_selector_uses_one_shared_atomic_cursor() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        ))));
+        let factory = Arc::new(OutboundFactory::new(graph));
+        let first_router = OutboundRouter::from_factory(Arc::clone(&factory));
+        let second_router = OutboundRouter::from_factory(factory);
+        let target = domain_tcp_target("example.test");
+
+        let first = first_router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        let second = second_router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        let third = first_router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+
+        assert_eq!(first.tag.as_deref(), Some("proxy-a"));
+        assert_eq!(second.tag.as_deref(), Some("proxy-b"));
+        assert_eq!(third.tag.as_deref(), Some("proxy-a"));
+    }
+
+    #[test]
+    fn selector_override_switches_atomically_and_reuses_compiled_handlers() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        ))));
+        let factory = Arc::new(OutboundFactory::new(graph));
+        let first_router = OutboundRouter::from_factory(Arc::clone(&factory));
+        let second_router = OutboundRouter::from_factory(factory);
+        let target = domain_tcp_target("example.test");
+
+        assert_eq!(
+            first_router
+                .selection()
+                .set_override("automatic", "proxy-a")
+                .unwrap(),
+            1
+        );
+        let first = first_router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(first.tag.as_deref(), Some("proxy-a"));
+
+        assert_eq!(
+            second_router
+                .selection()
+                .set_override("automatic", "proxy-b")
+                .unwrap(),
+            2
+        );
+        let second = first_router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        assert_eq!(second.tag.as_deref(), Some("proxy-b"));
+
+        second_router
+            .selection()
+            .set_override("automatic", "proxy-a")
+            .unwrap();
+        let first_again = second_router
+            .select_tcp_outbound_for_session_with_tag(None, &target, true)
+            .unwrap();
+        let (TcpOutbound::Vless(first), TcpOutbound::Vless(first_again)) =
+            (first.outbound, first_again.outbound)
+        else {
+            panic!("selector members should be VLESS outbounds");
+        };
+        assert!(Arc::ptr_eq(&first.payload, &first_again.payload));
+
+        let snapshot = second_router.selection().snapshot();
+        assert_eq!(snapshot.revision, 3);
+        assert_eq!(snapshot.groups[0].tag, "automatic");
+        assert_eq!(snapshot.groups[0].candidates, vec!["proxy-a", "proxy-b"]);
+        assert_eq!(snapshot.groups[0].override_tag.as_deref(), Some("proxy-a"));
+    }
+
+    #[test]
+    fn selector_override_rejects_unknown_groups_and_non_members() {
+        let router = OutboundRouter::new(Arc::new(selector_group_config(
+            RoutingBalancerStrategy::RoundRobin,
+        )));
+
+        assert!(matches!(
+            router.selection().set_override("missing", "proxy-a"),
+            Err(CoreError::OutboundSelectorGroupNotFound(group)) if group == "missing"
+        ));
+        assert!(matches!(
+            router.selection().set_override("automatic", "direct"),
+            Err(CoreError::OutboundSelectorCandidateNotFound { group, outbound })
+                if group == "automatic" && outbound == "direct"
+        ));
+        assert_eq!(router.selection().snapshot().revision, 0);
+    }
+
+    #[test]
+    fn empty_selector_group_uses_its_fallback_tag() {
+        let mut config = selector_group_config(RoutingBalancerStrategy::Random);
+        config.routing.balancers[0].selectors = vec!["absent".to_owned()];
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_tcp_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .unwrap();
+
+        assert!(matches!(selected, TcpOutbound::Freedom));
+    }
+
+    #[test]
+    fn dns_prefilter_preserves_balancer_routes_that_can_select_dns() {
+        let mut config = direct_selection_config();
+        config.outbounds = vec![
+            direct_selection_freedom("direct"),
+            dns_selection_outbound("dns-primary", DnsOutboundSettings::default()),
+        ];
+        config.default_outbound_tag = Some("direct".to_owned());
+        config.routing.balancers = vec![RoutingBalancer {
+            tag: "dns-group".to_owned(),
+            selectors: vec!["dns-".to_owned()],
+            strategy: RoutingBalancerStrategy::Random,
+            fallback_tag: None,
+        }];
+        config.routing.rules[0].target = RoutingRuleTarget::Balancer("dns-group".to_owned());
+        let router = OutboundRouter::new(Arc::new(config));
+
+        let selected = router
+            .select_dns_outbound_for_session(None, &domain_tcp_target("example.test"))
+            .expect("select DNS group");
+
+        assert!(selected.is_some());
+    }
+
+    #[test]
+    fn outbound_factory_rejects_a_node_from_another_graph() {
+        let first_graph = OutboundGraph::new(Arc::new(direct_selection_config()));
+        let foreign_node = first_graph
+            .node_for_tag("proxy")
+            .expect("foreign graph proxy node");
+        let second_graph = Arc::new(OutboundGraph::new(Arc::new(direct_selection_config())));
+        let factory = OutboundFactory::new(second_graph);
+
+        assert!(matches!(
+            factory.cached_tcp_outbound(foreign_node),
+            Err(CoreError::NoSupportedOutbound)
+        ));
+    }
+
+    #[test]
+    fn routers_sharing_a_factory_share_one_compiled_handler() {
+        let graph = Arc::new(OutboundGraph::new(Arc::new(direct_selection_config())));
+        let factory = Arc::new(OutboundFactory::new(graph));
+        let first_router = OutboundRouter::from_factory(Arc::clone(&factory));
+        let second_router = OutboundRouter::from_factory(Arc::clone(&factory));
+
+        let first = first_router.select_tcp_outbound_direct(None).unwrap();
+        let second = second_router.select_tcp_outbound_direct(None).unwrap();
+        let (TcpOutbound::Vless(first), TcpOutbound::Vless(second)) = (first, second) else {
+            panic!("expected the configured VLESS default");
+        };
+
+        assert!(Arc::ptr_eq(&first.payload, &second.payload));
+        assert!(Arc::ptr_eq(
+            &first_router.factory_handle(),
+            &second_router.factory_handle()
+        ));
+    }
+
+    #[test]
     fn outbound_router_direct_selector_uses_default_tag_without_routing() {
         let router = OutboundRouter::new(Arc::new(direct_selection_config()));
         let selected = router.select_tcp_outbound_direct(None).unwrap();
@@ -3662,7 +4440,12 @@ mod tests {
         let selected = router.select_tcp_outbound().unwrap();
 
         assert!(matches!(selected, TcpOutbound::Freedom));
-        assert_eq!(router.first_tag_index.get("duplicate"), Some(&0));
+        let duplicate = router
+            .graph()
+            .node_for_tag("duplicate")
+            .and_then(|id| router.graph().node(id))
+            .expect("resolve duplicate tag");
+        assert_eq!(duplicate.kind(), OutboundNodeKind::Freedom);
     }
 
     #[test]
@@ -3676,20 +4459,20 @@ mod tests {
         let router = OutboundRouter::new(Arc::new(config));
         let target = domain_tcp_target("example.test");
 
-        assert!(router.entries[2].tcp.get().is_none());
+        assert!(router.factory.entries[2].tcp.get().is_none());
         assert!(matches!(
             router
                 .select_tcp_outbound_for_session(Some("socks-in"), &target)
                 .unwrap(),
             TcpOutbound::Freedom
         ));
-        assert!(router.entries[2].tcp.get().is_none());
+        assert!(router.factory.entries[2].tcp.get().is_none());
 
         let error = router
             .select_tcp_outbound_for_session(Some("api"), &target)
             .unwrap_err();
         assert!(matches!(error, CoreError::UnsupportedOutboundNetwork));
-        assert!(router.entries[2].tcp.get().is_some());
+        assert!(router.factory.entries[2].tcp.get().is_some());
         let cached_error = router
             .select_tcp_outbound_for_session(Some("api"), &target)
             .unwrap_err();

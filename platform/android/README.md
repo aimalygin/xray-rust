@@ -57,7 +57,8 @@ artifact directory.
 - `XrayTunBackend.FileDescriptor`: default direct borrowed raw-IP fd path.
 - `XrayTunBackend.PacketPump`: fallback with reusable direct buffers and
   batched blocking poll.
-- `xray_mobile_jni.cpp`: checked JNI-to-C-ABI bridge with an ABI-major guard.
+- `xray_mobile_jni.cpp`: checked JNI-to-C-ABI bridge with ABI major/minor
+  validation and public capability discovery.
 
 When `XrayCore.create` receives a `VpnService`, outbound TCP and UDP sockets are
 passed through `VpnService.protect(fd)` before use. With

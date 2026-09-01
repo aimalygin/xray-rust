@@ -180,7 +180,26 @@ typedef struct XrayCoreHandle XrayCoreHandle;
 typedef struct XrayError XrayError;
 typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
 
+/* Capability bits are additive within one ABI major. Preserve and ignore
+ * unknown bits so a newer library remains usable through its older surface. */
+typedef enum XrayFfiCapability {
+  XRAY_FFI_CAPABILITY_CONFIG_WARNINGS = 1 << 0,
+  XRAY_FFI_CAPABILITY_GEODATA_SEARCH = 1 << 1,
+  XRAY_FFI_CAPABILITY_SOCKET_PROTECTION = 1 << 2,
+  XRAY_FFI_CAPABILITY_STARTUP_PROBE = 1 << 3,
+  XRAY_FFI_CAPABILITY_FILE_LOGGING = 1 << 4,
+  XRAY_FFI_CAPABILITY_TUN_PACKET_IO = 1 << 5,
+  XRAY_FFI_CAPABILITY_TUN_FD = 1 << 6,
+  XRAY_FFI_CAPABILITY_TUN_BATCH_POLL = 1 << 7,
+  XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES = 1 << 8,
+  XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY = 1 << 9,
+  XRAY_FFI_CAPABILITY_TUN_STATS = 1 << 10,
+  XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS = 1 << 11
+} XrayFfiCapability;
+
 uint32_t xray_ffi_version_major(void);
+uint32_t xray_ffi_version_minor(void);
+uint64_t xray_ffi_capabilities(void);
 
 XrayCoreHandle *xray_core_new(XrayError **error);
 /* Searches dir first, then the process default geodata directories. */

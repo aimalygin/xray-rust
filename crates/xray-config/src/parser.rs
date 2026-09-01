@@ -18,15 +18,17 @@ use crate::{
     HttpUpgradeSettings, InboundConfig, InboundProtocol, InboundSniffingConfig, IpCidr, Network,
     OutboundConfig, OutboundProtocol, OutboundSettings, PolicyConfig, PolicyLevelConfig,
     PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
-    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingConfig,
-    RoutingDomainStrategy, RoutingPortRange, RoutingRule, SniffingDestination, SocketOptions,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
-    VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpPaddingMethod,
-    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
-    XhttpXmuxSettings, MAX_DNS_SERVER_TIMEOUT_MS,
+    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingBalancer,
+    RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy, RoutingPortRange, RoutingRule,
+    RoutingRuleTarget, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
+    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
+    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, MAX_DNS_SERVER_TIMEOUT_MS,
 };
 
 const MAX_ROUTING_RULES: usize = 4_096;
+const MAX_ROUTING_BALANCERS: usize = 256;
+const MAX_ROUTING_BALANCER_SELECTORS: usize = 4_096;
 const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
 const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
 const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
@@ -1404,10 +1406,203 @@ impl Parser<'_> {
 
         let domain_strategy = self.parse_routing_domain_strategy(routing);
 
-        self.reject_non_empty_array(routing, "balancers", "$.routing.balancers".to_owned());
+        let balancers = self.parse_routing_balancers(routing);
+        let balancer_tags = balancers
+            .iter()
+            .map(|balancer| balancer.tag.as_str())
+            .collect::<HashSet<_>>();
         RoutingConfig {
-            rules: self.parse_routing_rules(routing),
+            rules: self.parse_routing_rules(routing, &balancer_tags),
+            balancers,
             domain_strategy,
+        }
+    }
+
+    fn parse_routing_balancers(&mut self, routing: &Value) -> Vec<RoutingBalancer> {
+        let Some(raw_balancers) = routing.get("balancers") else {
+            return Vec::new();
+        };
+        let Some(balancers) = raw_balancers.as_array() else {
+            self.error("$.routing.balancers", "field `balancers` must be an array");
+            return Vec::new();
+        };
+        if balancers.len() > MAX_ROUTING_BALANCERS {
+            self.error(
+                "$.routing.balancers",
+                format!(
+                    "routing config contains {} balancers; maximum supported per configuration is {MAX_ROUTING_BALANCERS}",
+                    balancers.len()
+                ),
+            );
+            return Vec::new();
+        }
+
+        let mut seen_tags = HashSet::with_capacity(balancers.len());
+        let mut selector_count = 0usize;
+        balancers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, balancer)| {
+                let parsed = self.parse_routing_balancer(balancer, index, &mut selector_count)?;
+                if !seen_tags.insert(parsed.tag.clone()) {
+                    self.error(
+                        format!("$.routing.balancers[{index}].tag"),
+                        format!("duplicate routing balancer tag {:?}", parsed.tag),
+                    );
+                    return None;
+                }
+                Some(parsed)
+            })
+            .collect()
+    }
+
+    fn parse_routing_balancer(
+        &mut self,
+        balancer: &Value,
+        index: usize,
+        selector_count: &mut usize,
+    ) -> Option<RoutingBalancer> {
+        let path = format!("$.routing.balancers[{index}]");
+        if !balancer.is_object() {
+            self.error(&path, "routing balancer must be an object");
+            return None;
+        }
+        self.reject_unknown_fields(
+            balancer,
+            &path,
+            &["tag", "selector", "strategy", "fallbackTag"],
+        );
+
+        let tag_path = format!("{path}.tag");
+        let tag = self.optional_string_at(balancer, "tag", tag_path.clone())?;
+        if tag.is_empty() {
+            self.error(tag_path, "routing balancer tag cannot be empty");
+            return None;
+        }
+
+        let selector_path = format!("{path}.selector");
+        let selectors = match balancer.get("selector") {
+            Some(Value::String(selector)) => vec![selector.clone()],
+            Some(Value::Array(values)) => {
+                let mut selectors = Vec::with_capacity(values.len());
+                for (selector_index, selector) in values.iter().enumerate() {
+                    let Some(selector) = selector.as_str() else {
+                        self.error(
+                            format!("{selector_path}[{selector_index}]"),
+                            "routing balancer selector must be a string",
+                        );
+                        return None;
+                    };
+                    selectors.push(selector.to_owned());
+                }
+                selectors
+            }
+            Some(_) => {
+                self.error(
+                    selector_path,
+                    "routing balancer selector must be a string or array",
+                );
+                return None;
+            }
+            None => {
+                self.error(selector_path, "missing routing balancer selector");
+                return None;
+            }
+        };
+        if selectors.is_empty() {
+            self.error(
+                format!("{path}.selector"),
+                "routing balancer selector cannot be empty",
+            );
+            return None;
+        }
+        *selector_count = selector_count.saturating_add(selectors.len());
+        if *selector_count > MAX_ROUTING_BALANCER_SELECTORS {
+            self.error(
+                format!("{path}.selector"),
+                format!(
+                    "configuration exceeds the routing balancer selector budget (maximum {MAX_ROUTING_BALANCER_SELECTORS})"
+                ),
+            );
+            return None;
+        }
+
+        let strategy = self.parse_routing_balancer_strategy(balancer, &path)?;
+        let fallback_tag = match balancer.get("fallbackTag") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(tag)) if tag.is_empty() => None,
+            Some(Value::String(tag)) => Some(tag.clone()),
+            Some(_) => {
+                self.error(
+                    format!("{path}.fallbackTag"),
+                    "routing balancer fallbackTag must be a string or null",
+                );
+                return None;
+            }
+        };
+
+        Some(RoutingBalancer {
+            tag: tag.to_owned(),
+            selectors,
+            strategy,
+            fallback_tag,
+        })
+    }
+
+    fn parse_routing_balancer_strategy(
+        &mut self,
+        balancer: &Value,
+        balancer_path: &str,
+    ) -> Option<RoutingBalancerStrategy> {
+        let Some(strategy) = balancer.get("strategy") else {
+            return Some(RoutingBalancerStrategy::Random);
+        };
+        if strategy.is_null() {
+            return Some(RoutingBalancerStrategy::Random);
+        }
+        let strategy_path = format!("{balancer_path}.strategy");
+        if !strategy.is_object() {
+            self.error(
+                strategy_path,
+                "routing balancer strategy must be an object or null",
+            );
+            return None;
+        }
+        self.reject_unknown_fields(strategy, &strategy_path, &["type", "settings"]);
+        if let Some(settings) = strategy.get("settings") {
+            match settings {
+                Value::Null => {}
+                Value::Object(settings) if settings.is_empty() => {}
+                _ => self.error(
+                    format!("{strategy_path}.settings"),
+                    "routing balancer strategy settings are unsupported",
+                ),
+            }
+        }
+        match strategy.get("type") {
+            None | Some(Value::Null) => Some(RoutingBalancerStrategy::Random),
+            Some(Value::String(kind)) if kind.eq_ignore_ascii_case("random") => {
+                Some(RoutingBalancerStrategy::Random)
+            }
+            Some(Value::String(kind)) if kind.eq_ignore_ascii_case("roundrobin") => {
+                Some(RoutingBalancerStrategy::RoundRobin)
+            }
+            Some(Value::String(kind)) => {
+                self.error(
+                    format!("{strategy_path}.type"),
+                    format!(
+                        "unsupported routing balancer strategy `{kind}`; health-backed leastPing and leastLoad are not implemented yet"
+                    ),
+                );
+                None
+            }
+            Some(_) => {
+                self.error(
+                    format!("{strategy_path}.type"),
+                    "routing balancer strategy type must be a string or null",
+                );
+                None
+            }
         }
     }
 
@@ -1429,7 +1624,11 @@ impl Parser<'_> {
         }
     }
 
-    fn parse_routing_rules(&mut self, routing: &Value) -> Vec<RoutingRule> {
+    fn parse_routing_rules(
+        &mut self,
+        routing: &Value,
+        balancer_tags: &HashSet<&str>,
+    ) -> Vec<RoutingRule> {
         let Some(raw_rules) = routing.get("rules") else {
             return Vec::new();
         };
@@ -1452,11 +1651,16 @@ impl Parser<'_> {
         rules
             .iter()
             .enumerate()
-            .filter_map(|(index, rule)| self.parse_routing_rule(rule, index))
+            .filter_map(|(index, rule)| self.parse_routing_rule(rule, index, balancer_tags))
             .collect()
     }
 
-    fn parse_routing_rule(&mut self, rule: &Value, index: usize) -> Option<RoutingRule> {
+    fn parse_routing_rule(
+        &mut self,
+        rule: &Value,
+        index: usize,
+        balancer_tags: &HashSet<&str>,
+    ) -> Option<RoutingRule> {
         let rule_path = format!("$.routing.rules[{index}]");
         if !rule.is_object() {
             self.error(&rule_path, "routing rule must be an object");
@@ -1475,6 +1679,7 @@ impl Parser<'_> {
                 "domains",
                 "ip",
                 "outboundTag",
+                "balancerTag",
                 "ruleTag",
             ],
         );
@@ -1494,22 +1699,42 @@ impl Parser<'_> {
             return None;
         }
 
-        let outbound_tag_path = format!("{rule_path}.outboundTag");
-        let Some(outbound_tag) =
-            self.optional_string_at(rule, "outboundTag", outbound_tag_path.clone())
-        else {
-            if rule.get("outboundTag").is_none() {
-                self.error(outbound_tag_path, "missing routing rule outboundTag");
-            }
-            return None;
-        };
-        if outbound_tag.is_empty() {
+        let outbound_tag = rule.get("outboundTag").filter(|value| !value.is_null());
+        let balancer_tag = rule.get("balancerTag").filter(|value| !value.is_null());
+        if outbound_tag.is_some() && balancer_tag.is_some() {
             self.error(
-                outbound_tag_path,
-                "routing rule outboundTag cannot be empty",
+                format!("{rule_path}.balancerTag"),
+                "routing rule cannot combine outboundTag and balancerTag",
             );
             return None;
         }
+        let target = if outbound_tag.is_some() {
+            let path = format!("{rule_path}.outboundTag");
+            let tag = self.optional_string_at(rule, "outboundTag", path.clone())?;
+            if tag.is_empty() {
+                self.error(path, "routing rule outboundTag cannot be empty");
+                return None;
+            }
+            RoutingRuleTarget::Outbound(tag.to_owned())
+        } else if balancer_tag.is_some() {
+            let path = format!("{rule_path}.balancerTag");
+            let tag = self.optional_string_at(rule, "balancerTag", path.clone())?;
+            if tag.is_empty() {
+                self.error(path, "routing rule balancerTag cannot be empty");
+                return None;
+            }
+            if !balancer_tags.contains(tag) {
+                self.error(path, format!("routing balancer {tag:?} is not configured"));
+                return None;
+            }
+            RoutingRuleTarget::Balancer(tag.to_owned())
+        } else {
+            self.error(
+                format!("{rule_path}.outboundTag"),
+                "routing rule requires outboundTag or balancerTag",
+            );
+            return None;
+        };
 
         let inbound_tags =
             self.optional_string_array_at(rule, "inboundTag", format!("{rule_path}.inboundTag"))?;
@@ -1524,7 +1749,7 @@ impl Parser<'_> {
             port_ranges,
             domain_matchers,
             ip_matchers,
-            outbound_tag: outbound_tag.to_owned(),
+            target,
         })
     }
 

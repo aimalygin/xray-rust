@@ -51,6 +51,7 @@ pub struct CoreConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RoutingConfig {
     pub rules: Vec<RoutingRule>,
+    pub balancers: Vec<RoutingBalancer>,
     pub domain_strategy: RoutingDomainStrategy,
 }
 
@@ -59,6 +60,25 @@ pub enum RoutingDomainStrategy {
     #[default]
     AsIs,
     IpIfNonMatch,
+}
+
+/// Xray-compatible outbound selector group from `routing.balancers`.
+///
+/// Each selector is a tag prefix. The runtime expands the prefixes against
+/// configured tagged outbounds once when it builds the immutable graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutingBalancer {
+    pub tag: String,
+    pub selectors: Vec<String>,
+    pub strategy: RoutingBalancerStrategy,
+    pub fallback_tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RoutingBalancerStrategy {
+    #[default]
+    Random,
+    RoundRobin,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -206,7 +226,21 @@ pub struct RoutingRule {
     pub port_ranges: Vec<RoutingPortRange>,
     pub domain_matchers: DomainMatcherSet,
     pub ip_matchers: IpMatcherSet,
-    pub outbound_tag: String,
+    pub target: RoutingRuleTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoutingRuleTarget {
+    Outbound(String),
+    Balancer(String),
+}
+
+impl RoutingRuleTarget {
+    pub fn tag(&self) -> &str {
+        match self {
+            Self::Outbound(tag) | Self::Balancer(tag) => tag,
+        }
+    }
 }
 
 impl RoutingRule {

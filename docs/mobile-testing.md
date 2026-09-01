@@ -21,8 +21,8 @@ cargo test --locked -p xray-ffi --test mobile_artifacts_tests -- --nocapture
 bash scripts/tests/check-mobile-toolchains.test.sh
 ```
 
-They validate the public header, required exported symbols, adapter ABI-major
-checks, target matrices, and build-script guards.
+They validate the public header, required exported symbols, adapter ABI version
+and capability discovery, target matrices, and build-script guards.
 
 ## Apple XCFramework
 

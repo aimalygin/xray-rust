@@ -21,6 +21,35 @@ use xray_core_rs::{
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
 
+pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
+pub const XRAY_FFI_ABI_MINOR: u32 = 1;
+
+pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
+pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
+pub const XRAY_FFI_CAPABILITY_SOCKET_PROTECTION: u64 = 1 << 2;
+pub const XRAY_FFI_CAPABILITY_STARTUP_PROBE: u64 = 1 << 3;
+pub const XRAY_FFI_CAPABILITY_FILE_LOGGING: u64 = 1 << 4;
+pub const XRAY_FFI_CAPABILITY_TUN_PACKET_IO: u64 = 1 << 5;
+pub const XRAY_FFI_CAPABILITY_TUN_FD: u64 = 1 << 6;
+pub const XRAY_FFI_CAPABILITY_TUN_BATCH_POLL: u64 = 1 << 7;
+pub const XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES: u64 = 1 << 8;
+pub const XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY: u64 = 1 << 9;
+pub const XRAY_FFI_CAPABILITY_TUN_STATS: u64 = 1 << 10;
+pub const XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS: u64 = 1 << 11;
+
+pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
+    | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
+    | XRAY_FFI_CAPABILITY_SOCKET_PROTECTION
+    | XRAY_FFI_CAPABILITY_STARTUP_PROBE
+    | XRAY_FFI_CAPABILITY_FILE_LOGGING
+    | XRAY_FFI_CAPABILITY_TUN_PACKET_IO
+    | XRAY_FFI_CAPABILITY_TUN_FD
+    | XRAY_FFI_CAPABILITY_TUN_BATCH_POLL
+    | XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES
+    | XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY
+    | XRAY_FFI_CAPABILITY_TUN_STATS
+    | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XrayStatus {
@@ -474,7 +503,24 @@ impl SocketProtector for FfiSocketProtector {
 
 #[no_mangle]
 pub extern "C" fn xray_ffi_version_major() -> u32 {
-    1
+    XRAY_FFI_ABI_MAJOR
+}
+
+/// Returns the additive revision of ABI major 1.
+///
+/// Consumers must reject an unsupported major before interpreting this value.
+/// Within one major, a newer minor only adds symbols, capability bits, enum
+/// values, or size-negotiated structure tails.
+#[no_mangle]
+pub extern "C" fn xray_ffi_version_minor() -> u32 {
+    XRAY_FFI_ABI_MINOR
+}
+
+/// Returns the optional and independently discoverable surfaces implemented by
+/// this library. Unknown bits are reserved for future additive ABI revisions.
+#[no_mangle]
+pub extern "C" fn xray_ffi_capabilities() -> u64 {
+    XRAY_FFI_CAPABILITIES
 }
 
 /// Allocates a new core handle.

@@ -12,8 +12,8 @@ use xray_config::{
     DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport, DomainMatcherSet,
     HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, QuicBbrProfile,
     QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealityShortId,
-    RoutingDomainStrategy, SniffingDestination, StreamSecurity, StreamTransport, TargetAddr,
-    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
+    RoutingDomainStrategy, RoutingRuleTarget, SniffingDestination, StreamSecurity, StreamTransport,
+    TargetAddr, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
     XhttpSettings, XhttpUplinkDataPlacement,
 };
 
@@ -1049,7 +1049,10 @@ fn parses_field_routing_rule_with_inbound_tag() {
     );
     assert!(parsed.config.routing.rules[0].domain_matchers.is_empty());
     assert!(parsed.config.routing.rules[0].ip_matchers.is_empty());
-    assert_eq!(parsed.config.routing.rules[0].outbound_tag, "proxy");
+    assert_eq!(
+        parsed.config.routing.rules[0].target,
+        RoutingRuleTarget::Outbound("proxy".to_owned())
+    );
 }
 
 #[test]
@@ -1149,7 +1152,10 @@ fn accepts_routing_rule_with_missing_outbound_tag_reference() {
 
     let parsed = parse_xray_json(&raw).expect("config should parse");
 
-    assert_eq!(parsed.config.routing.rules[0].outbound_tag, "api");
+    assert_eq!(
+        parsed.config.routing.rules[0].target,
+        RoutingRuleTarget::Outbound("api".to_owned())
+    );
 }
 
 #[test]
@@ -1491,10 +1497,74 @@ fn rejects_missing_routing_rule_outbound_tag_with_path() {
 }
 
 #[test]
-fn rejects_non_empty_routing_balancers_with_path() {
+fn parses_xray_routing_balancer_and_balancer_rule_target() {
+    let raw = raw_with_routing(
+        r#""balancers": [{
+          "tag": "automatic",
+          "selector": "pro",
+          "strategy": { "type": "roundRobin", "settings": {} },
+          "fallbackTag": "direct"
+        }],
+        "rules": [{
+          "type": "field",
+          "domain": ["full:example.test"],
+          "balancerTag": "automatic"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("balancer config should parse");
+    let balancer = &parsed.config.routing.balancers[0];
+    assert_eq!(balancer.tag, "automatic");
+    assert_eq!(balancer.selectors, vec!["pro"]);
+    assert_eq!(
+        balancer.strategy,
+        xray_config::RoutingBalancerStrategy::RoundRobin
+    );
+    assert_eq!(balancer.fallback_tag.as_deref(), Some("direct"));
+    assert_eq!(
+        parsed.config.routing.rules[0].target,
+        RoutingRuleTarget::Balancer("automatic".to_owned())
+    );
+}
+
+#[test]
+fn routing_balancer_defaults_to_random_and_accepts_empty_prefix() {
+    let raw = raw_with_routing(r#""balancers": [{ "tag": "all", "selector": [""] }]"#);
+
+    let parsed = parse_xray_json(&raw).expect("default random balancer should parse");
+
+    assert_eq!(
+        parsed.config.routing.balancers[0].strategy,
+        xray_config::RoutingBalancerStrategy::Random
+    );
+    assert_eq!(parsed.config.routing.balancers[0].selectors, vec![""]);
+}
+
+#[test]
+fn rejects_missing_routing_balancer_selector_with_path() {
     let raw = raw_with_routing(r#""balancers": [{ "tag": "fallback" }]"#);
 
-    assert_parse_error_path(&raw, "$.routing.balancers");
+    assert_parse_error_path(&raw, "$.routing.balancers[0].selector");
+}
+
+#[test]
+fn rejects_unknown_routing_balancer_rule_reference_with_path() {
+    let raw = raw_with_routing(r#""rules": [{ "type": "field", "balancerTag": "missing" }]"#);
+
+    assert_parse_error_path(&raw, "$.routing.rules[0].balancerTag");
+}
+
+#[test]
+fn rejects_health_backed_routing_balancer_strategy_until_supported() {
+    let raw = raw_with_routing(
+        r#""balancers": [{
+          "tag": "automatic",
+          "selector": ["proxy"],
+          "strategy": { "type": "leastPing" }
+        }]"#,
+    );
+
+    assert_parse_error_path(&raw, "$.routing.balancers[0].strategy.type");
 }
 
 #[test]

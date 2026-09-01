@@ -35,6 +35,40 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun ffiVersionValidationAcceptsCurrentAndNewerMinor() {
+        validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 1))
+        validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 2))
+    }
+
+    @Test
+    fun ffiVersionValidationRejectsWrongMajorAndOlderMinor() {
+        val majorError = assertThrows(IllegalStateException::class.java) {
+            validateXrayFfiVersion(XrayFfiVersion(major = 2, minor = 1))
+        }
+        assertTrue(majorError.message?.contains("expected 1, got 2") == true)
+
+        val minorError = assertThrows(IllegalStateException::class.java) {
+            validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 0))
+        }
+        assertTrue(minorError.message?.contains("at least 1, got 0") == true)
+    }
+
+    @Test
+    fun ffiInfoPreservesUnknownBitsAndReportsKnownCapabilities() {
+        val unknown = 1L shl 63
+        val info = XrayFfiInfo(
+            version = XrayFfiVersion(major = 1, minor = 1),
+            capabilityMask = XrayFfiCapability.ConfigWarnings.mask or
+                XrayFfiCapability.TunFileDescriptor.mask or unknown,
+        )
+
+        assertTrue(info.supports(XrayFfiCapability.ConfigWarnings))
+        assertTrue(info.supports(XrayFfiCapability.TunFileDescriptor))
+        assertFalse(info.supports(XrayFfiCapability.StartupProbe))
+        assertEquals(unknown, info.capabilityMask and unknown)
+    }
+
+    @Test
     fun bootstrapDomainsUseCanonicalDnsIdentity() {
         assertEquals("server.example", normalizeBootstrapDomain("Server.Example."))
     }

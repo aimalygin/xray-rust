@@ -28,6 +28,10 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "XrayUdpQuicBlockedEvent",
         "XrayCoreHandle",
         "XrayError",
+        "XrayFfiCapability",
+        "xray_ffi_version_major",
+        "xray_ffi_version_minor",
+        "xray_ffi_capabilities",
         "xray_core_new",
         "xray_core_set_geodata_search_dir",
         "xray_core_set_geodata_search_dir_exclusive",
@@ -70,6 +74,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("int32_t profile,\n    XrayError **error);"));
     assert!(header.contains("XRAY_DNS_BOOTSTRAP_MODE_SYSTEM = 0"));
     assert!(header.contains("XRAY_DNS_BOOTSTRAP_MODE_STATIC_ONLY = 1"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_CONFIG_WARNINGS = 1 << 0"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS = 1 << 11"));
 
     for field in [
         "struct_size",
@@ -143,7 +149,13 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(package.contains("XrayRust.xcframework"));
     assert!(core.contains("import XrayRust"));
     assert!(core.contains("xray_ffi_version_major()"));
+    assert!(core.contains("xray_ffi_version_minor()"));
+    assert!(core.contains("xray_ffi_capabilities()"));
     assert!(core.contains("expectedFFIMajorVersion: UInt32 = 1"));
+    assert!(core.contains("minimumFFIMinorVersion: UInt32 = 1"));
+    assert!(core.contains("public struct XrayFFIVersion"));
+    assert!(core.contains("public struct XrayFFICapabilities: OptionSet"));
+    assert!(core.contains("public struct XrayFFIInfo"));
     assert!(core.contains("xray_core_set_socket_protect_callback"));
     assert!(core.contains("xray_core_set_geodata_search_dir"));
     assert!(core.contains("xray_core_set_geodata_search_dir_exclusive"));
@@ -172,7 +184,7 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(pump.contains("packetFlow.writePackets"));
 
     let swift_version_check = core
-        .find("try Self.validateFFIMajorVersion(xray_ffi_version_major())")
+        .find("try Self.validateFFIVersion(")
         .expect("Swift adapter should validate the FFI ABI");
     let swift_core_new = core
         .find("guard let handle = xray_core_new(&error)")
@@ -366,6 +378,10 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(!build.contains("\"src/main/jniLibs\""));
     assert!(build.contains("JvmTarget.JVM_1_8"));
     assert!(core.contains("System.loadLibrary(\"xray_ffi\")"));
+    assert!(core.contains("fun ffiInfo(): XrayFfiInfo"));
+    assert!(core.contains("nativeFfiVersionMajor()"));
+    assert!(core.contains("nativeFfiVersionMinor()"));
+    assert!(core.contains("nativeFfiCapabilities()"));
     assert!(core.contains("nativeSetSocketProtector"));
     assert!(core.contains("XrayStartupProbeOptions"));
     assert!(core.contains("startupProbe"));
@@ -386,7 +402,13 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(service.contains("pollPacket"));
     assert!(jni.contains("xray_core_set_socket_protect_callback"));
     assert!(jni.contains("xray_ffi_version_major()"));
+    assert!(jni.contains("xray_ffi_version_minor()"));
+    assert!(jni.contains("xray_ffi_capabilities()"));
     assert!(jni.contains("kExpectedFfiMajorVersion = 1"));
+    assert!(jni.contains("kMinimumFfiMinorVersion = 1"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeFfiVersionMajor"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeFfiVersionMinor"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeFfiCapabilities"));
     assert!(jni.contains("xray_core_set_startup_probe"));
     assert!(jni.contains("xray_core_set_tun_fd"));
     assert!(jni.contains("xray_core_set_tun_collect_tcp_timings"));
@@ -933,6 +955,8 @@ fn contains_exported_symbol(nm_stdout: &str, symbol: &str) -> bool {
 
 const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_ffi_version_major",
+    "xray_ffi_version_minor",
+    "xray_ffi_capabilities",
     "xray_core_new",
     "xray_core_set_geodata_search_dir",
     "xray_core_set_geodata_search_dir_exclusive",
@@ -1008,8 +1032,14 @@ static void use_xray_ffi_api(void) {
   size_t packet_lengths[4] = {0};
   size_t packet_count = 0;
   uint64_t stats_probe = 0;
+  uint64_t capabilities = 0;
 
   (void)xray_ffi_version_major();
+  (void)xray_ffi_version_minor();
+  capabilities = xray_ffi_capabilities();
+  capabilities &= XRAY_FFI_CAPABILITY_CONFIG_WARNINGS;
+  capabilities &= XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS;
+  (void)capabilities;
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_geodata_search_dir_exclusive(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);

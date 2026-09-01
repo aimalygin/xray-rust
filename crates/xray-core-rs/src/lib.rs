@@ -50,7 +50,9 @@ pub use dns_outbound::{
 pub use outbound::{
     open_tcp_stream_with_resolver_and_dialer, open_vless_tcp_stream,
     open_vless_tcp_stream_with_resolver, open_vless_tcp_stream_with_resolver_and_dialer,
-    open_vless_udp_stream_with_resolver_and_dialer, DnsOutbound, OutboundRouter, TcpOutbound,
+    open_vless_udp_stream_with_resolver_and_dialer, DnsOutbound, OutboundFactory, OutboundGraph,
+    OutboundNode, OutboundNodeId, OutboundNodeKind, OutboundRouter, OutboundSelectionOverlay,
+    OutboundSelectionSnapshot, OutboundSelectorGroup, OutboundSelectorGroupSnapshot, TcpOutbound,
     UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
@@ -216,6 +218,10 @@ pub enum CoreError {
     NoSupportedInbound,
     #[error("no supported outbound found")]
     NoSupportedOutbound,
+    #[error("outbound selector group {0:?} was not found")]
+    OutboundSelectorGroupNotFound(String),
+    #[error("outbound {outbound:?} is not a candidate of selector group {group:?}")]
+    OutboundSelectorCandidateNotFound { group: String, outbound: String },
     #[error("unauthenticated SOCKS/HTTP listener requires explicit LAN exposure permission")]
     UnauthenticatedLanExposure,
     #[error("invalid fake-IP configuration")]
@@ -322,7 +328,7 @@ pub enum CoreError {
 }
 
 pub struct Core {
-    config: CoreConfig,
+    config: Arc<CoreConfig>,
     state: CoreState,
     shutdown: Shutdown,
     tun: Arc<TunEndpoint>,
@@ -332,6 +338,7 @@ pub struct Core {
     dns_rules: DnsRules,
     managed_dns_resolver: bool,
     transport_dialer: Arc<TransportDialer>,
+    outbound_router: Arc<OutboundRouter>,
     tun_runtime_options: TunRuntimeOptions,
     startup_probe: Option<StartupProbeOptions>,
     runtime_logger: RuntimeLogger,
@@ -517,6 +524,10 @@ impl Core {
             return Err(CoreError::InvalidFakeIpConfiguration);
         }
         ensure_effective_dns_tag(&mut config);
+        let config = Arc::new(config);
+        let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
+        let outbound_factory = Arc::new(OutboundFactory::new(outbound_graph));
+        let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
         let tun = Arc::new(TunEndpoint::new_with_queue_depths(
@@ -539,6 +550,7 @@ impl Core {
             dns_rules,
             managed_dns_resolver,
             transport_dialer,
+            outbound_router,
             tun_runtime_options,
             startup_probe: None,
             runtime_logger: RuntimeLogger::disabled(),
@@ -564,6 +576,35 @@ impl Core {
 
     pub fn runtime_logger(&self) -> &RuntimeLogger {
         &self.runtime_logger
+    }
+
+    pub fn outbound_graph(&self) -> &OutboundGraph {
+        self.outbound_router.graph()
+    }
+
+    pub fn outbound_factory(&self) -> &OutboundFactory {
+        self.outbound_router.factory()
+    }
+
+    pub fn outbound_selection(&self) -> &OutboundSelectionOverlay {
+        self.outbound_router.selection()
+    }
+
+    pub fn set_outbound_selector_override(
+        &self,
+        group_tag: &str,
+        outbound_tag: &str,
+    ) -> Result<u64, CoreError> {
+        self.outbound_selection()
+            .set_override(group_tag, outbound_tag)
+    }
+
+    pub fn clear_outbound_selector_override(&self, group_tag: &str) -> Result<u64, CoreError> {
+        self.outbound_selection().clear_override(group_tag)
+    }
+
+    pub fn outbound_selection_snapshot(&self) -> OutboundSelectionSnapshot {
+        self.outbound_selection().snapshot()
     }
 
     fn runtime_dns_resolvers(
@@ -714,8 +755,8 @@ impl Core {
             return Err(CoreError::NoSupportedInbound);
         }
 
-        let config = Arc::new(self.config.clone());
-        let outbound_router = Arc::new(OutboundRouter::new(Arc::clone(&config)));
+        let config = Arc::clone(&self.config);
+        let outbound_router = Arc::clone(&self.outbound_router);
         let has_tun_inbound = !tun_inbounds.is_empty();
         let runtime_dns_resolvers =
             self.runtime_dns_resolvers(&config, &outbound_router, has_tun_inbound);

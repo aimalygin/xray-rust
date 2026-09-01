@@ -8552,7 +8552,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
                     .build()
                     .expect("exact DNS selector matchers compile"),
                 ip_matchers: Default::default(),
-                outbound_tag: "dns-out".to_owned(),
+                target: xray_config::RoutingRuleTarget::Outbound("dns-out".to_owned()),
             }
         })
         .collect();
@@ -10028,7 +10028,7 @@ fn route_probe_config(
                 .build()
                 .expect("route-probe domain matchers compile"),
             ip_matchers: ip_matchers.build(),
-            outbound_tag: selected_tag.clone(),
+            target: xray_config::RoutingRuleTarget::Outbound(selected_tag.clone()),
         });
     }
 

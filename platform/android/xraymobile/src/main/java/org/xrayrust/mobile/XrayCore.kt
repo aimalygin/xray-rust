@@ -9,6 +9,48 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
+data class XrayFfiVersion(
+    val major: Int,
+    val minor: Int,
+)
+
+enum class XrayFfiCapability(val mask: Long) {
+    ConfigWarnings(1L shl 0),
+    GeodataSearch(1L shl 1),
+    SocketProtection(1L shl 2),
+    StartupProbe(1L shl 3),
+    FileLogging(1L shl 4),
+    TunPacketIo(1L shl 5),
+    TunFileDescriptor(1L shl 6),
+    TunBatchPoll(1L shl 7),
+    TunRuntimeProfiles(1L shl 8),
+    DnsBootstrapPolicy(1L shl 9),
+    TunStats(1L shl 10),
+    TunDiagnosticEvents(1L shl 11),
+}
+
+data class XrayFfiInfo(
+    val version: XrayFfiVersion,
+    val capabilityMask: Long,
+) {
+    fun supports(capability: XrayFfiCapability): Boolean =
+        capabilityMask and capability.mask == capability.mask
+}
+
+internal const val EXPECTED_XRAY_FFI_MAJOR_VERSION = 1
+internal const val MINIMUM_XRAY_FFI_MINOR_VERSION = 1
+
+internal fun validateXrayFfiVersion(version: XrayFfiVersion) {
+    check(version.major == EXPECTED_XRAY_FFI_MAJOR_VERSION) {
+        "incompatible xray FFI ABI major: expected " +
+            "$EXPECTED_XRAY_FFI_MAJOR_VERSION, got ${version.major}"
+    }
+    check(version.minor >= MINIMUM_XRAY_FFI_MINOR_VERSION) {
+        "incompatible xray FFI ABI minor: require at least " +
+            "$MINIMUM_XRAY_FFI_MINOR_VERSION, got ${version.minor}"
+    }
+}
+
 class XrayCore private constructor(handle: Long) : Closeable {
     private val lifecycleLock = ReentrantReadWriteLock(true)
     private var nativeHandle: Long = handle
@@ -53,6 +95,28 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 throw error
             }
         }
+
+        @JvmStatic
+        fun ffiInfo(): XrayFfiInfo {
+            val info = XrayFfiInfo(
+                version = XrayFfiVersion(
+                    major = nativeFfiVersionMajor(),
+                    minor = nativeFfiVersionMinor(),
+                ),
+                capabilityMask = nativeFfiCapabilities(),
+            )
+            validateXrayFfiVersion(info.version)
+            return info
+        }
+
+        @JvmStatic
+        private external fun nativeFfiVersionMajor(): Int
+
+        @JvmStatic
+        private external fun nativeFfiVersionMinor(): Int
+
+        @JvmStatic
+        private external fun nativeFfiCapabilities(): Long
 
         @JvmStatic
         private external fun nativeNew(): Long

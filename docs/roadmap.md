@@ -79,8 +79,11 @@ The release history is intentionally immutable:
   relied on a stale local debug binary, and was not published;
 - `v0.4.1-rc.3` fixed the clean-runner contract and was successfully published
   for both the core and mobile repositories;
-- `v0.4.1-rc.4` is the active hardening candidate. The frozen benchmark
-  candidate is `5895b09239ea6d957a3fead814804e361ee6ef6d`.
+- `v0.4.1-rc.4` is the final hardening candidate on the `0.4` development
+  line. The frozen benchmark candidate is
+  `5895b09239ea6d957a3fead814804e361ee6ef6d`. Development proceeds directly to
+  `v0.5.0`; a stable `v0.4.1` promotion is not planned unless a distinct
+  maintenance need is identified.
 
 Both repositories use the same pre-release version whenever the core or its
 adapters change.
@@ -177,6 +180,28 @@ adapters change.
 Goal: add the client features that improve daily mobile reliability more than
 another transport or server protocol would.
 
+The final `v0.5.0` release requires the complete DNS, outbound-selection, and
+mobile-SDK scope below. Release candidates begin only after feature freeze;
+`v0.5.0-rc.N` is a stabilization channel, not the development channel for
+adding unfinished Phase 2 features.
+
+### Carried hardening requirements
+
+- Run extended fuzz campaigns plus sanitizer, Miri, and concurrency-model
+  coverage for the parser, wire, TUN, DNS, and FFI lifecycle boundaries.
+- Add controlled RTT/loss coverage for the supported stream transports and
+  long-lived XHTTP HTTP/2 and HTTP/3 sessions.
+- Expand parser/wire fuzzing to SOCKS/HTTP input, QUIC sniffing, and XHTTP
+  framing.
+- Exercise physical-device energy, thermal, memory-pressure, sleep/wake, and
+  Wi-Fi/cellular transition behavior on the supported Apple and Android
+  integration paths.
+- Audit credential redaction, zeroization, and secret lifetime at config,
+  diagnostic, REALITY, and FFI error boundaries. The independent external
+  audit and long-term `shaped-rustls` upstreaming/replacement decision remain
+  tracked before `1.0` and do not silently become feature-completeness claims
+  for `v0.5.0`.
+
 ### DNS
 
 - Add managed DoH and DoT, followed by DoQ where the existing QUIC stack can be
@@ -189,8 +214,9 @@ another transport or server protocol would.
 
 ### Outbound selection and routing
 
-- Introduce an explicit outbound graph/factory seam before adding protocol
-  breadth.
+- Maintain the explicit outbound graph/factory ownership seam added at the
+  start of `v0.5` before adding protocol breadth: one immutable graph and one
+  shared lazy factory are owned by each core.
 - Add selector groups, URL tests, health state, deterministic failover, and
   bounded load balancing.
 - Add outbound chaining only through validated, cycle-free graph edges.
@@ -199,6 +225,13 @@ another transport or server protocol would.
 - Add a small mutable overlay for group selection, counters, and atomically
   replaced rule/geodata snapshots. Full configuration replacement may continue
   to use a new core handle.
+
+The first selection increment is now implemented on the `v0.5` development
+line: Xray-compatible prefix selector groups, random/round-robin policy,
+fallback tags, and atomic validated overrides share the graph's existing leaf
+handler pools. URL tests, health state, deterministic health failover,
+health-aware load balancing, chaining, and the C ABI projection remain the next
+increments of this Phase 2 item.
 
 ### Mobile SDK and management API
 

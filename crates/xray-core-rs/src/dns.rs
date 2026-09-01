@@ -1026,8 +1026,9 @@ mod tests {
                     ip_matchers: ip_matcher_set(
                         IpCidr::new(server.ip(), if server.is_ipv4() { 32 } else { 128 }).unwrap(),
                     ),
-                    outbound_tag: "dns-out".to_owned(),
+                    target: xray_config::RoutingRuleTarget::Outbound("dns-out".to_owned()),
                 }],
+                balancers: Vec::new(),
                 domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
             },
             dns: DnsConfig {

@@ -6,8 +6,8 @@ use xray_config::{
     DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DomainMatcher, DomainMatcherSet,
     HappyEyeballsSettings, InboundConfig, InboundProtocol, IpCidr, IpMatcherSet, Network,
     OutboundConfig, OutboundProtocol, OutboundSettings, RealitySettings, RealityShortId,
-    RegexMatcher, RoutingConfig, RoutingPortRange, RoutingRule, SocketOptions, StreamSecurity,
-    StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
+    RegexMatcher, RoutingConfig, RoutingPortRange, RoutingRule, RoutingRuleTarget, SocketOptions,
+    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
 };
 use xray_routing::Cidr;
 
@@ -234,7 +234,7 @@ fn routing_network_and_port_selectors_fail_closed_without_target_metadata() {
         port_ranges: vec![RoutingPortRange::single(53)],
         domain_matchers: DomainMatcherSet::default(),
         ip_matchers: Default::default(),
-        outbound_tag: "dns-out".to_owned(),
+        target: RoutingRuleTarget::Outbound("dns-out".to_owned()),
     };
 
     assert!(!rule.matches(None, None, None));
@@ -282,7 +282,7 @@ fn normalized_model_can_represent_inbound_tag_routing_rule() {
             port_ranges: Vec::new(),
             domain_matchers: DomainMatcherSet::default(),
             ip_matchers: Default::default(),
-            outbound_tag: "direct".to_owned(),
+            target: RoutingRuleTarget::Outbound("direct".to_owned()),
         }],
         ..Default::default()
     };
@@ -307,7 +307,7 @@ fn normalized_model_can_represent_domain_routing_rule() {
             ])
             .unwrap(),
             ip_matchers: Default::default(),
-            outbound_tag: "proxy".to_owned(),
+            target: RoutingRuleTarget::Outbound("proxy".to_owned()),
         }],
         ..Default::default()
     };
@@ -336,7 +336,7 @@ fn normalized_model_can_represent_ip_routing_rule() {
                 matchers.insert_private_networks(false);
                 matchers.build()
             },
-            outbound_tag: "direct".to_owned(),
+            target: RoutingRuleTarget::Outbound("direct".to_owned()),
         }],
         ..Default::default()
     };
@@ -363,7 +363,7 @@ fn normalized_model_applies_inverse_ip_matchers_as_a_conjunction() {
                 matchers.insert_cidr(cidr(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)), 24), false);
                 matchers.build()
             },
-            outbound_tag: "direct".to_owned(),
+            target: RoutingRuleTarget::Outbound("direct".to_owned()),
         }],
         ..Default::default()
     };

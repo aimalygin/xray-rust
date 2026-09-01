@@ -11,20 +11,48 @@ use xray_ffi::{
     xray_core_set_geodata_search_dir_exclusive, xray_core_set_socket_protect_callback,
     xray_core_set_startup_probe, xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd,
     xray_core_set_tun_runtime_profile, xray_core_start, xray_core_stop, xray_error_code,
-    xray_error_free, xray_error_message, xray_ffi_version_major, xray_tun_poll_packet,
-    xray_tun_poll_packets, xray_tun_poll_tcp_flow_summary_event,
-    xray_tun_poll_tcp_open_error_event, xray_tun_poll_tcp_remote_write_slow_event,
-    xray_tun_poll_tcp_slow_flow_event, xray_tun_poll_udp_quic_blocked_event,
-    xray_tun_poll_udp_response_gap_event, xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet,
-    xray_tun_stats, XrayDnsBootstrapMode, XrayStatus, XrayTcpFlowSummaryEvent,
-    XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy,
-    XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent,
-    XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
+    xray_error_free, xray_error_message, xray_ffi_capabilities, xray_ffi_version_major,
+    xray_ffi_version_minor, xray_tun_poll_packet, xray_tun_poll_packets,
+    xray_tun_poll_tcp_flow_summary_event, xray_tun_poll_tcp_open_error_event,
+    xray_tun_poll_tcp_remote_write_slow_event, xray_tun_poll_tcp_slow_flow_event,
+    xray_tun_poll_udp_quic_blocked_event, xray_tun_poll_udp_response_gap_event,
+    xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet, xray_tun_stats, XrayDnsBootstrapMode,
+    XrayStatus, XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
+    XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile,
+    XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
+    XRAY_FFI_ABI_MAJOR, XRAY_FFI_ABI_MINOR, XRAY_FFI_CAPABILITIES,
+    XRAY_FFI_CAPABILITY_CONFIG_WARNINGS, XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY,
+    XRAY_FFI_CAPABILITY_FILE_LOGGING, XRAY_FFI_CAPABILITY_GEODATA_SEARCH,
+    XRAY_FFI_CAPABILITY_SOCKET_PROTECTION, XRAY_FFI_CAPABILITY_STARTUP_PROBE,
+    XRAY_FFI_CAPABILITY_TUN_BATCH_POLL, XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS,
+    XRAY_FFI_CAPABILITY_TUN_FD, XRAY_FFI_CAPABILITY_TUN_PACKET_IO,
+    XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES, XRAY_FFI_CAPABILITY_TUN_STATS,
 };
 
 #[test]
-fn ffi_reports_current_abi_major() {
-    assert_eq!(xray_ffi_version_major(), 1);
+fn ffi_reports_current_abi_version() {
+    assert_eq!(xray_ffi_version_major(), XRAY_FFI_ABI_MAJOR);
+    assert_eq!(xray_ffi_version_minor(), XRAY_FFI_ABI_MINOR);
+}
+
+#[test]
+fn ffi_reports_exact_current_capabilities() {
+    let expected = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
+        | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
+        | XRAY_FFI_CAPABILITY_SOCKET_PROTECTION
+        | XRAY_FFI_CAPABILITY_STARTUP_PROBE
+        | XRAY_FFI_CAPABILITY_FILE_LOGGING
+        | XRAY_FFI_CAPABILITY_TUN_PACKET_IO
+        | XRAY_FFI_CAPABILITY_TUN_FD
+        | XRAY_FFI_CAPABILITY_TUN_BATCH_POLL
+        | XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES
+        | XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY
+        | XRAY_FFI_CAPABILITY_TUN_STATS
+        | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS;
+
+    assert_eq!(XRAY_FFI_CAPABILITIES, expected);
+    assert_eq!(xray_ffi_capabilities(), expected);
+    assert_eq!(xray_ffi_capabilities() & (1 << 63), 0);
 }
 
 #[test]

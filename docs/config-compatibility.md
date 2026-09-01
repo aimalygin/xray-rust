@@ -856,13 +856,30 @@ Supported routing configuration:
 - `domainStrategy`: `AsIs` or `IPIfNonMatch`;
 - rule `type`: `field`;
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, and `port`;
-- destination: `outboundTag`.
+- destination: exactly one of `outboundTag` or `balancerTag`;
+- `routing.balancers` with `tag`, prefix-based `selector`, optional
+  `fallbackTag`, and `random` (the default) or `roundRobin` strategy.
 
 `network` accepts Xray-compatible `tcp`/`udp` strings or arrays, including a
 comma-separated string. `port` accepts a number or comma/range string over
 `0..=65535`. Rules are evaluated in declaration order, and every populated
 selector field inside one rule is ANDed; alternatives belong in arrays/ranges
 or separate ordered rules.
+
+Balancer selectors use Xray's prefix semantics and accept either one string or
+an array. Tagged outbound candidates are deduplicated through the same
+first-tag index used by direct routing and sorted lexicographically before a
+strategy sees them. An empty prefix selects every tagged outbound. At most 256
+balancers and 4,096 selector prefixes are accepted per configuration.
+
+`random` selects a candidate independently for each new flow. `roundRobin`
+uses one atomic cursor shared by every router backed by the core's factory. If
+no selector matches, `fallbackTag` is used; without a valid fallback the route
+fails closed. The core API can install or clear a validated per-group override
+atomically. The override affects only new flows, while already opened flows and
+the lazy handler/transport pools remain intact. `leastPing`, `leastLoad`, and
+non-empty strategy `settings` are rejected until the health subsystem can
+honor them.
 
 Domain matchers:
 

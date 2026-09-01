@@ -7,10 +7,12 @@ use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 use xray_config::{
     CoreConfig, DnsFakeIpConfig, InboundConfig, InboundProtocol, IpCidr, Network, OutboundConfig,
-    OutboundSettings, RoutingConfig, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
-    VlessOutboundSettings, VlessUser,
+    OutboundSettings, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, VlessOutboundSettings, VlessUser,
 };
-use xray_core_rs::{Core, CoreError, CoreState, TunRuntimeOptions, TunRuntimeProfile};
+use xray_core_rs::{
+    Core, CoreError, CoreState, OutboundNodeKind, TunRuntimeOptions, TunRuntimeProfile,
+};
 use xray_transport::{SystemDnsResolver, TransportDialer};
 
 fn runtime_config() -> CoreConfig {
@@ -63,6 +65,71 @@ fn tun_runtime_config() -> CoreConfig {
         user_level: None,
     }];
     config
+}
+
+#[test]
+fn core_owns_one_outbound_graph_and_factory_before_start() {
+    let core = Core::new(runtime_config()).unwrap();
+
+    assert_eq!(core.outbound_graph().nodes().len(), 1);
+    assert_eq!(
+        core.outbound_graph().nodes()[0].kind(),
+        OutboundNodeKind::Vless
+    );
+    assert!(std::ptr::eq(
+        core.outbound_graph(),
+        core.outbound_factory().graph()
+    ));
+}
+
+#[tokio::test]
+async fn core_selector_override_is_available_before_and_during_runtime() {
+    let mut config = runtime_config();
+    config.outbounds[0].tag = Some("proxy-a".to_owned());
+    config.outbounds.push(OutboundConfig {
+        tag: Some("proxy-b".to_owned()),
+        stream: StreamSettings {
+            network: Network::Tcp,
+            transport: StreamTransport::Raw,
+            security: StreamSecurity::None,
+            quic_params: None,
+            socket_options: None,
+        },
+        settings: OutboundSettings::Freedom,
+    });
+    config.routing.balancers = vec![RoutingBalancer {
+        tag: "automatic".to_owned(),
+        selectors: vec!["proxy-".to_owned()],
+        strategy: RoutingBalancerStrategy::RoundRobin,
+        fallback_tag: None,
+    }];
+    let mut core = Core::new(config).unwrap();
+
+    assert_eq!(
+        core.outbound_selection_snapshot().groups[0].candidates,
+        vec!["proxy-a", "proxy-b"]
+    );
+    assert_eq!(
+        core.set_outbound_selector_override("automatic", "proxy-b")
+            .unwrap(),
+        1
+    );
+    core.start().await.unwrap();
+    assert_eq!(
+        core.outbound_selection_snapshot().groups[0]
+            .override_tag
+            .as_deref(),
+        Some("proxy-b")
+    );
+    assert_eq!(
+        core.clear_outbound_selector_override("automatic").unwrap(),
+        2
+    );
+    assert_eq!(
+        core.outbound_selection_snapshot().groups[0].override_tag,
+        None
+    );
+    core.stop().await.unwrap();
 }
 
 #[tokio::test]

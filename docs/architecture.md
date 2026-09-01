@@ -41,8 +41,9 @@ flowchart LR
    security-sensitive choices such as `allowInsecure: true` fail closed.
 3. `geosite` and `geoip` references are resolved during parsing from configured
    search directories.
-4. `Core` builds the DNS resolver, outbound router, TUN queues, and listeners
-   from the immutable config.
+4. `Core` builds the DNS resolver, immutable outbound graph and shared outbound
+   factory, plus the TUN queues, from the immutable config. Listeners bind when
+   the core starts.
 
 A core is not hot-reloaded. The FFI intentionally permits one successful config
 load per handle; replacing a config requires a new handle.
@@ -55,6 +56,27 @@ SOCKS5 and HTTP listeners parse a target, optionally sniff an initial payload,
 select a routing rule, then open either a Freedom stream/socket or a VLESS
 stream. The selected VLESS stream may use plain TCP, TLS, or REALITY and may add
 Vision framing.
+
+### Outbound ownership
+
+Each `Core` creates exactly one `OutboundGraph`, `OutboundFactory`, and
+`OutboundRouter` before it starts. The graph owns immutable leaf and
+selector-group topology plus separate first-tag indexes for both namespaces.
+Selector prefixes are expanded once into lexicographically ordered leaf-node
+identities. Graph-scoped identities cannot be compiled by a factory belonging
+to another core. Configuration order remains observable:
+duplicate tags resolve to the first node, an omitted default selects the first
+node, and an explicit missing default remains an error when selected.
+
+The factory owns lazy per-leaf TCP, UDP, DNS, and shared VLESS caches together
+with one small mutable selection overlay. Random and atomic round-robin policy
+run over immutable group membership; a validated atomic override can redirect
+new flows without restarting the core. Because the leaf cache is unchanged,
+switching away and back reuses the same gRPC/XHTTP pool. The router owns session
+matching only; it resolves direct or `balancerTag` results through the graph and
+asks the factory for the compiled leaf handler. Unsupported handlers still fail
+when selected rather than making unrelated routes unusable at core construction
+time.
 
 ### TCP candidate dialing
 

@@ -14,6 +14,7 @@
 namespace {
 
 constexpr uint32_t kExpectedFfiMajorVersion = 1;
+constexpr uint32_t kMinimumFfiMinorVersion = 1;
 
 struct AndroidSocketProtector {
   JavaVM *vm = nullptr;
@@ -60,17 +61,25 @@ void throw_illegal_argument(JNIEnv *env, const char *message) {
 }
 
 bool ensure_supported_ffi_abi(JNIEnv *env) {
-  const uint32_t actual = xray_ffi_version_major();
-  if (actual == kExpectedFfiMajorVersion) {
+  const uint32_t actual_major = xray_ffi_version_major();
+  const uint32_t actual_minor = xray_ffi_version_minor();
+  if (actual_major == kExpectedFfiMajorVersion &&
+      actual_minor >= kMinimumFfiMinorVersion) {
     return true;
   }
 
   jclass exception_class = env->FindClass("java/lang/IllegalStateException");
   if (exception_class != nullptr) {
-    const std::string message =
-        "incompatible xray FFI ABI major: expected " +
-        std::to_string(kExpectedFfiMajorVersion) + ", got " +
-        std::to_string(actual);
+    std::string message;
+    if (actual_major != kExpectedFfiMajorVersion) {
+      message = "incompatible xray FFI ABI major: expected " +
+                std::to_string(kExpectedFfiMajorVersion) + ", got " +
+                std::to_string(actual_major);
+    } else {
+      message = "incompatible xray FFI ABI minor: require at least " +
+                std::to_string(kMinimumFfiMinorVersion) + ", got " +
+                std::to_string(actual_minor);
+    }
     env->ThrowNew(exception_class, message.c_str());
   }
   return false;
@@ -274,6 +283,21 @@ int32_t protect_socket(int32_t fd, void *user_data) {
 }
 
 } // namespace
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeFfiVersionMajor(JNIEnv *, jclass) {
+  return static_cast<jint>(xray_ffi_version_major());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeFfiVersionMinor(JNIEnv *, jclass) {
+  return static_cast<jint>(xray_ffi_version_minor());
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeFfiCapabilities(JNIEnv *, jclass) {
+  return static_cast<jlong>(xray_ffi_capabilities());
+}
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeNew(JNIEnv *env, jclass) {
