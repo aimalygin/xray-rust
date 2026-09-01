@@ -273,6 +273,14 @@ destination cache. `System` uses that dependency only as the no-server
 destination fallback and the non-recursive upstream/carrier bootstrap;
 `StaticOnly` ignores it and remains fail-closed outside pinned hosts. The same
 dependency is preserved when `Core::start` rebuilds the routed runtime resolver.
+Deterministic fault injection now exercises post-handshake DoT failure, DoH
+HTTP failure, invalid DoQ framing, ordered encrypted-server fail-forward,
+bootstrap exhaustion without destination-name leakage, failed bounded stale
+refresh, and cache-owner cancellation. Direct TCP, DoT, and DoH bootstrap
+candidates remain eligible after a connected peer fails its protocol exchange;
+detached stale refreshes are cancelled when their owning cache is dropped.
+The remaining `v0.5.0` DNS release evidence is part of the physical Apple and
+Android transition/soak gate rather than another protocol implementation slice.
 
 ### Mobile SDK and management API
 

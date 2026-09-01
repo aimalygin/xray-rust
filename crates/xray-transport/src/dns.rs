@@ -9,7 +9,7 @@ use bytes::Bytes;
 use http::{header, Method, Request};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 use tokio::time;
 use xray_routing::{DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcherSet};
 
@@ -114,11 +114,12 @@ impl DnsLookup {
         self
     }
 
-    fn with_remaining_ttl(&self, ttl: Duration) -> Self {
+    fn with_cache_expiry(&self, expires_at: Instant) -> Self {
+        let observed_at = Instant::now();
         Self {
             socket_addrs: Arc::clone(&self.socket_addrs),
-            ttl: Some(ttl),
-            observed_at: Instant::now(),
+            ttl: Some(expires_at.saturating_duration_since(observed_at)),
+            observed_at,
         }
     }
 
@@ -207,6 +208,7 @@ pub struct CachingDnsResolver {
     negative_ttl: Duration,
     stale_ttl: Option<Duration>,
     state: Arc<Mutex<DnsCacheState>>,
+    refresh_shutdown: watch::Sender<()>,
 }
 
 #[derive(Default)]
@@ -437,6 +439,7 @@ impl CachingDnsResolver {
             negative_ttl: DNS_NEGATIVE_TTL,
             stale_ttl: None,
             state: Arc::new(Mutex::new(DnsCacheState::default())),
+            refresh_shutdown: watch::channel(()).0,
         }
     }
 
@@ -448,6 +451,7 @@ impl CachingDnsResolver {
             negative_ttl: DNS_NEGATIVE_TTL,
             stale_ttl: None,
             state: Arc::new(Mutex::new(DnsCacheState::default())),
+            refresh_shutdown: watch::channel(()).0,
         }
     }
 
@@ -463,6 +467,7 @@ impl CachingDnsResolver {
             negative_ttl: DNS_NEGATIVE_TTL,
             stale_ttl: (!stale_ttl.is_zero()).then_some(stale_ttl),
             state: Arc::new(Mutex::new(DnsCacheState::default())),
+            refresh_shutdown: watch::channel(()).0,
         }
     }
 
@@ -480,6 +485,7 @@ impl CachingDnsResolver {
         let cap_authoritative_ttl = self.cap_authoritative_ttl;
         let negative_ttl = self.negative_ttl;
         let stale_ttl = self.stale_ttl;
+        let mut refresh_shutdown = self.refresh_shutdown.subscribe();
         tokio::spawn(async move {
             let mut leader = InFlightDnsLeader {
                 state,
@@ -489,9 +495,18 @@ impl CachingDnsResolver {
                 stale_ttl,
                 active: true,
             };
-            let resolved =
-                resolve_dns_lookup(inner, &domain, port, strategy, ttl, cap_authoritative_ttl)
-                    .await;
+            let resolved = tokio::select! {
+                biased;
+                _ = refresh_shutdown.changed() => return,
+                resolved = resolve_dns_lookup(
+                    inner,
+                    &domain,
+                    port,
+                    strategy,
+                    ttl,
+                    cap_authoritative_ttl,
+                ) => resolved,
+            };
             leader.finish(InFlightDnsOutcome::from_result(&resolved));
         });
     }
@@ -559,14 +574,10 @@ impl DnsResolver for CachingDnsResolver {
                 let cached = state.resolved.get_mut(&key).and_then(|entry| {
                     if entry.expires_at > now {
                         entry.last_used = access_sequence;
-                        Some((
-                            entry.outcome.clone(),
-                            entry.expires_at.duration_since(now),
-                            false,
-                        ))
+                        Some((entry.outcome.clone(), entry.expires_at, false))
                     } else if entry.stale_until > now {
                         entry.last_used = access_sequence;
-                        Some((entry.outcome.clone(), Duration::ZERO, true))
+                        Some((entry.outcome.clone(), entry.expires_at, true))
                     } else {
                         None
                     }
@@ -575,7 +586,7 @@ impl DnsResolver for CachingDnsResolver {
                     state.resolved.remove(&key);
                 }
 
-                if let Some((outcome, remaining_ttl, stale)) = cached {
+                if let Some((outcome, expires_at, stale)) = cached {
                     let refresh = if stale && !state.in_flight.contains_key(&key) {
                         let lookup = Arc::new(InFlightDnsLookup::new());
                         state.in_flight.insert(key.clone(), Arc::clone(&lookup));
@@ -583,7 +594,7 @@ impl DnsResolver for CachingDnsResolver {
                     } else {
                         None
                     };
-                    (Some((outcome, remaining_ttl)), refresh, None, None)
+                    (Some((outcome, expires_at)), refresh, None, None)
                 } else {
                     match state.in_flight.get(&key) {
                         Some(lookup) => {
@@ -603,10 +614,10 @@ impl DnsResolver for CachingDnsResolver {
             if let Some(refresh) = refresh {
                 self.spawn_refresh(domain.to_owned(), port, strategy, key.clone(), refresh);
             }
-            if let Some((outcome, remaining_ttl)) = cached {
+            if let Some((outcome, expires_at)) = cached {
                 let outcome = match outcome {
                     InFlightDnsOutcome::Resolved(lookup) => {
-                        InFlightDnsOutcome::Resolved(lookup.with_remaining_ttl(remaining_ttl))
+                        InFlightDnsOutcome::Resolved(lookup.with_cache_expiry(expires_at))
                     }
                     outcome => outcome,
                 };
@@ -900,14 +911,15 @@ impl DnsQueryTransport for DirectDnsQueryTransport {
                 let connector = self.tls_connector.as_deref().map_err(|message| {
                     io::Error::other(format!("DNS TLS connector unavailable: {message}"))
                 })?;
-                let stream =
-                    open_direct_tcp_candidates(&server_addrs, self.socket_protector.as_deref())
-                        .await?;
-                let stream = connector
-                    .connect_stream(stream, &dns_https_tls_client_config(server))
-                    .await
-                    .map_err(io::Error::other)?;
-                exchange_dns_https_h2(stream, server, https_path, query).await
+                exchange_direct_https_candidates(
+                    server,
+                    &server_addrs,
+                    https_path,
+                    query,
+                    self.socket_protector.as_deref(),
+                    connector,
+                )
+                .await
             }
             DnsQueryTransportKind::Quic => {
                 if metadata.dispatch != DnsQueryDispatch::Local {
@@ -2163,8 +2175,29 @@ async fn exchange_direct_tcp_candidates(
     query: &[u8],
     socket_protector: Option<&dyn SocketProtector>,
 ) -> io::Result<Vec<u8>> {
-    let mut stream = open_direct_tcp_candidates(server_addrs, socket_protector).await?;
-    exchange_direct_tcp_message(&mut stream, query).await
+    let mut remaining = server_addrs.to_vec();
+    let mut last_error = None;
+    while !remaining.is_empty() {
+        let (mut stream, peer_addr) =
+            match open_direct_tcp_candidates_with_peer(&remaining, socket_protector).await {
+                Ok(connected) => connected,
+                Err(error) => {
+                    last_error = Some(error);
+                    break;
+                }
+            };
+        remaining.retain(|candidate| canonicalize_socket_addr(*candidate) != peer_addr);
+        match exchange_direct_tcp_message(&mut stream, query).await {
+            Ok(response) => return Ok(response),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "DNS-over-TCP server has no usable address",
+        )
+    }))
 }
 
 async fn exchange_direct_tls_candidates(
@@ -2174,12 +2207,78 @@ async fn exchange_direct_tls_candidates(
     socket_protector: Option<&dyn SocketProtector>,
     tls_connector: &TlsConnector,
 ) -> io::Result<Vec<u8>> {
-    let stream = open_direct_tcp_candidates(server_addrs, socket_protector).await?;
-    let mut stream = tls_connector
-        .connect_stream(stream, &dns_tls_client_config(server))
-        .await
-        .map_err(io::Error::other)?;
-    exchange_direct_tcp_message(&mut stream, query).await
+    let tls = dns_tls_client_config(server);
+    let mut remaining = server_addrs.to_vec();
+    let mut last_error = None;
+    while !remaining.is_empty() {
+        let (stream, peer_addr) =
+            match open_direct_tcp_candidates_with_peer(&remaining, socket_protector).await {
+                Ok(connected) => connected,
+                Err(error) => {
+                    last_error = Some(error);
+                    break;
+                }
+            };
+        remaining.retain(|candidate| canonicalize_socket_addr(*candidate) != peer_addr);
+        let mut stream = match tls_connector.connect_stream(stream, &tls).await {
+            Ok(stream) => stream,
+            Err(error) => {
+                last_error = Some(io::Error::other(error));
+                continue;
+            }
+        };
+        match exchange_direct_tcp_message(&mut stream, query).await {
+            Ok(response) => return Ok(response),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "DNS-over-TLS server has no usable address",
+        )
+    }))
+}
+
+async fn exchange_direct_https_candidates(
+    server: &NameServer,
+    server_addrs: &[SocketAddr],
+    https_path: &str,
+    query: &[u8],
+    socket_protector: Option<&dyn SocketProtector>,
+    tls_connector: &TlsConnector,
+) -> io::Result<Vec<u8>> {
+    let tls = dns_https_tls_client_config(server);
+    let mut remaining = server_addrs.to_vec();
+    let mut last_error = None;
+    while !remaining.is_empty() {
+        let (stream, peer_addr) =
+            match open_direct_tcp_candidates_with_peer(&remaining, socket_protector).await {
+                Ok(connected) => connected,
+                Err(error) => {
+                    last_error = Some(error);
+                    break;
+                }
+            };
+        remaining.retain(|candidate| canonicalize_socket_addr(*candidate) != peer_addr);
+        let stream = match tls_connector.connect_stream(stream, &tls).await {
+            Ok(stream) => stream,
+            Err(error) => {
+                last_error = Some(io::Error::other(error));
+                continue;
+            }
+        };
+        match exchange_dns_https_h2(stream, server, https_path, query).await {
+            Ok(response) => return Ok(response),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "DNS-over-HTTPS server has no usable address",
+        )
+    }))
 }
 
 fn dns_tls_client_config(server: &NameServer) -> TlsClientConfig {
@@ -2203,10 +2302,10 @@ fn dns_https_tls_client_config(server: &NameServer) -> TlsClientConfig {
     config
 }
 
-async fn open_direct_tcp_candidates(
+async fn open_direct_tcp_candidates_with_peer(
     server_addrs: &[SocketAddr],
     socket_protector: Option<&dyn SocketProtector>,
-) -> io::Result<BoxedTransportStream> {
+) -> io::Result<(BoxedTransportStream, SocketAddr)> {
     let prioritize_ipv6 = server_addrs
         .first()
         .is_some_and(|address| canonicalize_socket_addr(*address).is_ipv6());
@@ -2218,7 +2317,8 @@ async fn open_direct_tcp_candidates(
     let stream = connect_tcp_happy_eyeballs(server_addrs, socket_protector, &happy_eyeballs)
         .await
         .map_err(io::Error::other)?;
-    Ok(Box::new(stream))
+    let peer_addr = stream.peer_addr().map(canonicalize_socket_addr)?;
+    Ok((Box::new(stream), peer_addr))
 }
 
 async fn exchange_direct_tcp_message<S>(stream: &mut S, query: &[u8]) -> io::Result<Vec<u8>>
@@ -2703,8 +2803,9 @@ mod tests {
     };
 
     use super::{
-        build_dns_query_with_id, exchange_dns_https_h2, exchange_dns_quic_candidates,
-        parse_dns_response, query_udp_dns_server, select_name_server_indices, CachingDnsResolver,
+        build_dns_query_with_id, exchange_direct_https_candidates, exchange_direct_tls_candidates,
+        exchange_dns_https_h2, exchange_dns_quic_candidates, parse_dns_response,
+        query_udp_dns_server, select_name_server_indices, CachingDnsResolver,
         CompiledNameServerPolicies, ConfiguredDnsAddresses, ConfiguredDnsAnswer,
         ConfiguredDnsResolver, DnsHostTarget, DnsLookup, DnsQueryDispatch, DnsQueryMetadata,
         DnsQueryStrategy, DnsQueryTransport, DnsQueryTransportKind, DnsRecordType, DnsResolver,
@@ -2876,6 +2977,99 @@ mod tests {
         );
     }
 
+    fn test_tls_pair(
+        server_name: &str,
+        alpn: &[&[u8]],
+    ) -> (Arc<rustls::ServerConfig>, TlsConnector) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec![server_name.to_owned()])
+                .expect("generate test DNS certificate");
+        let certificate = cert.der().clone();
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let mut server_tls = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate.clone()], key)
+            .unwrap();
+        server_tls.alpn_protocols = alpn.iter().map(|protocol| protocol.to_vec()).collect();
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(certificate).unwrap();
+        let client_tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        (
+            Arc::new(server_tls),
+            TlsConnector::with_pinned_client_config(Arc::new(client_tls)),
+        )
+    }
+
+    fn test_doq_pair(server_name: &str) -> (quinn::ServerConfig, TlsConnector) {
+        let CertifiedKey { cert, signing_key } =
+            generate_simple_self_signed(vec![server_name.to_owned()])
+                .expect("generate DNS-over-QUIC test certificate");
+        let certificate = cert.der().clone();
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+        let provider = Arc::new(rustls::crypto::ring::default_provider());
+        let mut server_tls = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate.clone()], key)
+            .unwrap();
+        server_tls.alpn_protocols = vec![b"doq".to_vec()];
+        let server_crypto = QuicServerConfig::try_from(server_tls).unwrap();
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(certificate).unwrap();
+        let client_tls = rustls::ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        (
+            quinn::ServerConfig::with_crypto(Arc::new(server_crypto)),
+            TlsConnector::with_pinned_client_config(Arc::new(client_tls)),
+        )
+    }
+
+    async fn serve_one_doh_response(
+        listener: TcpListener,
+        tls: Arc<rustls::ServerConfig>,
+        status: u16,
+        dns_response: Vec<u8>,
+    ) {
+        let (stream, _) = listener.accept().await.unwrap();
+        let stream = tokio_rustls::TlsAcceptor::from(tls)
+            .accept(stream)
+            .await
+            .unwrap();
+        let mut connection = h2::server::handshake(stream).await.unwrap();
+        let (request, mut respond) = connection.accept().await.unwrap().unwrap();
+        let _connection_driver =
+            tokio::spawn(async move { while connection.accept().await.is_some() {} });
+        let mut body = request.into_body();
+        while let Some(chunk) = body.data().await {
+            let chunk = chunk.unwrap();
+            body.flow_control().release_capacity(chunk.len()).unwrap();
+        }
+        let mut response = Response::builder().status(status);
+        if status == 200 {
+            response = response.header(header::CONTENT_TYPE, "application/dns-message");
+        }
+        let response = response.body(()).unwrap();
+        let mut send = respond
+            .send_response(response, dns_response.is_empty())
+            .unwrap();
+        if !dns_response.is_empty() {
+            send.send_data(Bytes::from(dns_response), true).unwrap();
+        }
+    }
+
     #[tokio::test]
     async fn dns_over_https_h2_posts_wire_message_and_reads_bounded_response() {
         let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD048)
@@ -2949,30 +3143,116 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dns_over_tls_retries_a_bootstrap_candidate_after_protocol_failure() {
+        let server_name = "resolver.example";
+        let query = build_dns_query_with_id("dot-failover.example", DnsRecordType::A, 0xD04A)
+            .expect("test query should encode");
+        let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 46));
+        let (server_tls, connector) = test_tls_pair(server_name, &[]);
+        let broken_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let broken_addr = broken_listener.local_addr().unwrap();
+        let healthy_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let healthy_addr = healthy_listener.local_addr().unwrap();
+
+        let broken_tls = Arc::clone(&server_tls);
+        let broken = tokio::spawn(async move {
+            let (stream, _) = broken_listener.accept().await.unwrap();
+            let mut stream = tokio_rustls::TlsAcceptor::from(broken_tls)
+                .accept(stream)
+                .await
+                .unwrap();
+            let query_len = usize::from(stream.read_u16().await.unwrap());
+            let mut received = vec![0; query_len];
+            stream.read_exact(&mut received).await.unwrap();
+        });
+        let expected_response = dns_response.clone();
+        let healthy = tokio::spawn(async move {
+            let (stream, _) = healthy_listener.accept().await.unwrap();
+            let mut stream = tokio_rustls::TlsAcceptor::from(server_tls)
+                .accept(stream)
+                .await
+                .unwrap();
+            let query_len = usize::from(stream.read_u16().await.unwrap());
+            let mut received = vec![0; query_len];
+            stream.read_exact(&mut received).await.unwrap();
+            stream
+                .write_u16(u16::try_from(expected_response.len()).unwrap())
+                .await
+                .unwrap();
+            stream.write_all(&expected_response).await.unwrap();
+        });
+
+        let actual = exchange_direct_tls_candidates(
+            &NameServer::Domain {
+                domain: server_name.to_owned(),
+                port: 853,
+            },
+            &[broken_addr, healthy_addr],
+            &query,
+            None,
+            &connector,
+        )
+        .await
+        .expect("DNS-over-TLS should advance to the healthy bootstrap candidate");
+
+        assert_eq!(actual, dns_response);
+        broken.await.unwrap();
+        healthy.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dns_over_https_retries_a_bootstrap_candidate_after_http_failure() {
+        let server_name = "resolver.example";
+        let query = build_dns_query_with_id("doh-failover.example", DnsRecordType::A, 0xD04B)
+            .expect("test query should encode");
+        let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 47));
+        let (server_tls, connector) = test_tls_pair(server_name, &[b"h2"]);
+        let broken_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let broken_addr = broken_listener.local_addr().unwrap();
+        let healthy_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let healthy_addr = healthy_listener.local_addr().unwrap();
+        let broken = tokio::spawn(serve_one_doh_response(
+            broken_listener,
+            Arc::clone(&server_tls),
+            503,
+            Vec::new(),
+        ));
+        let healthy = tokio::spawn(serve_one_doh_response(
+            healthy_listener,
+            server_tls,
+            200,
+            dns_response.clone(),
+        ));
+
+        let actual = exchange_direct_https_candidates(
+            &NameServer::Domain {
+                domain: server_name.to_owned(),
+                port: 443,
+            },
+            &[broken_addr, healthy_addr],
+            "/dns-query",
+            &query,
+            None,
+            &connector,
+        )
+        .await
+        .expect("DNS-over-HTTPS should advance to the healthy bootstrap candidate");
+
+        assert_eq!(actual, dns_response);
+        broken.await.unwrap();
+        healthy.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn dns_over_quic_uses_doq_alpn_and_one_length_prefixed_stream() {
         let server_name = "resolver.example";
         let query = build_dns_query_with_id("example.com", DnsRecordType::A, 0xD049)
             .expect("test query should encode");
         let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 45));
-        let CertifiedKey { cert, signing_key } =
-            generate_simple_self_signed(vec![server_name.to_owned()])
-                .expect("generate DNS-over-QUIC test certificate");
-        let certificate = cert.der().clone();
-        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let mut server_tls = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .unwrap()
-            .with_no_client_auth()
-            .with_single_cert(vec![certificate.clone()], key)
-            .unwrap();
-        server_tls.alpn_protocols = vec![b"doq".to_vec()];
-        let server_crypto = QuicServerConfig::try_from(server_tls).unwrap();
-        let server_endpoint = quinn::Endpoint::server(
-            quinn::ServerConfig::with_crypto(Arc::new(server_crypto)),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-        )
-        .unwrap();
+        let (server_config, connector) = test_doq_pair(server_name);
+        let server_endpoint =
+            quinn::Endpoint::server(server_config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                .unwrap();
         let server_addr = server_endpoint.local_addr().unwrap();
         let expected_query = query.clone();
         let expected_response = dns_response.clone();
@@ -2999,14 +3279,6 @@ mod tests {
             connection.closed().await;
         });
 
-        let mut roots = rustls::RootCertStore::empty();
-        roots.add(certificate).unwrap();
-        let client_tls = rustls::ClientConfig::builder_with_provider(provider)
-            .with_protocol_versions(&[&rustls::version::TLS13])
-            .unwrap()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        let connector = TlsConnector::with_pinned_client_config(Arc::new(client_tls));
         let actual = exchange_dns_quic_candidates(
             &NameServer::Domain {
                 domain: server_name.to_owned(),
@@ -3022,6 +3294,179 @@ mod tests {
 
         assert_eq!(actual, dns_response);
         server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dns_over_quic_retries_a_bootstrap_candidate_after_invalid_framing() {
+        let server_name = "resolver.example";
+        let query = build_dns_query_with_id("doq-failover.example", DnsRecordType::A, 0xD04C)
+            .expect("test query should encode");
+        let dns_response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 48));
+        let (server_config, connector) = test_doq_pair(server_name);
+        let broken_endpoint = quinn::Endpoint::server(
+            server_config.clone(),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        )
+        .unwrap();
+        let broken_addr = broken_endpoint.local_addr().unwrap();
+        let healthy_endpoint =
+            quinn::Endpoint::server(server_config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+                .unwrap();
+        let healthy_addr = healthy_endpoint.local_addr().unwrap();
+
+        let broken = tokio::spawn(async move {
+            let incoming = broken_endpoint.accept().await.unwrap();
+            let connection = incoming.await.unwrap();
+            let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+            let query_len = usize::from(recv.read_u16().await.unwrap());
+            let mut received = vec![0; query_len];
+            recv.read_exact(&mut received).await.unwrap();
+            send.write_u16(0).await.unwrap();
+            send.finish().unwrap();
+            connection.closed().await;
+        });
+        let expected_response = dns_response.clone();
+        let healthy = tokio::spawn(async move {
+            let incoming = healthy_endpoint.accept().await.unwrap();
+            let connection = incoming.await.unwrap();
+            let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+            let query_len = usize::from(recv.read_u16().await.unwrap());
+            let mut received = vec![0; query_len];
+            recv.read_exact(&mut received).await.unwrap();
+            send.write_u16(u16::try_from(expected_response.len()).unwrap())
+                .await
+                .unwrap();
+            send.write_all(&expected_response).await.unwrap();
+            send.finish().unwrap();
+            connection.closed().await;
+        });
+
+        let actual = exchange_dns_quic_candidates(
+            &NameServer::Domain {
+                domain: server_name.to_owned(),
+                port: 853,
+            },
+            &[broken_addr, healthy_addr],
+            &query,
+            None,
+            &connector,
+        )
+        .await
+        .expect("DNS-over-QUIC should advance to the healthy bootstrap candidate");
+
+        assert_eq!(actual, dns_response);
+        broken.await.unwrap();
+        healthy.await.unwrap();
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct EncryptedDnsFaultCall {
+        server: NameServer,
+        transport: DnsQueryTransportKind,
+        dispatch: DnsQueryDispatch,
+        inbound_tag: Option<String>,
+        https_path: Option<String>,
+    }
+
+    #[derive(Default)]
+    struct EncryptedDnsFaultTransport {
+        calls: Mutex<Vec<EncryptedDnsFaultCall>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsQueryTransport for EncryptedDnsFaultTransport {
+        async fn exchange(
+            &self,
+            server: &NameServer,
+            transport: DnsQueryTransportKind,
+            metadata: DnsQueryMetadata<'_>,
+            query: &[u8],
+        ) -> io::Result<Vec<u8>> {
+            self.calls.lock().unwrap().push(EncryptedDnsFaultCall {
+                server: server.clone(),
+                transport,
+                dispatch: metadata.dispatch,
+                inbound_tag: metadata.inbound_tag.map(str::to_owned),
+                https_path: metadata.https_path.map(str::to_owned),
+            });
+            match transport {
+                DnsQueryTransportKind::Tls => Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "injected DNS-over-TLS timeout",
+                )),
+                DnsQueryTransportKind::Https => Ok(vec![0x00, 0x01, 0x02]),
+                DnsQueryTransportKind::Quic => {
+                    Ok(build_test_a_response(query, Ipv4Addr::new(192, 0, 2, 49)))
+                }
+                DnsQueryTransportKind::Udp | DnsQueryTransportKind::Tcp => {
+                    panic!("encrypted DNS fault matrix must not downgrade to plaintext")
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_encrypted_dns_fault_matrix_fails_forward_without_system_leak() {
+        let dot = NameServer::Socket(SocketAddr::from(([192, 0, 2, 1], 853)));
+        let doh = NameServer::Socket(SocketAddr::from(([192, 0, 2, 2], 443)));
+        let doq = NameServer::Socket(SocketAddr::from(([192, 0, 2, 3], 853)));
+        let mut dot_policy = NameServerPolicy::new(dot.clone());
+        dot_policy.tag = Some("dns-dot".to_owned());
+        dot_policy.transport = NameServerTransport::TlsRouted;
+        dot_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut doh_policy = NameServerPolicy::new(doh.clone());
+        doh_policy.tag = Some("dns-doh".to_owned());
+        doh_policy.transport = NameServerTransport::HttpsRouted;
+        doh_policy.https_path = Some("/dns-query?fault=1".to_owned());
+        doh_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut doq_policy = NameServerPolicy::new(doq.clone());
+        doq_policy.tag = Some("dns-doq".to_owned());
+        doq_policy.transport = NameServerTransport::QuicLocal;
+        doq_policy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let fallback = Arc::new(RecordingFallbackResolver {
+            domains: Mutex::new(Vec::new()),
+            result: SocketAddr::from(([198, 51, 100, 99], 0)),
+        });
+        let transport = Arc::new(EncryptedDnsFaultTransport::default());
+        let resolver =
+            ConfiguredDnsResolver::new(DomainHostIndex::default(), Vec::new(), fallback.clone())
+                .with_name_server_policies(vec![dot_policy, doh_policy, doq_policy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4)
+                .with_query_transport(transport.clone());
+
+        let resolved = resolver
+            .resolve("encrypted-fault.example", 443)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 49], 443)));
+        assert!(fallback.domains.lock().unwrap().is_empty());
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            [
+                EncryptedDnsFaultCall {
+                    server: dot,
+                    transport: DnsQueryTransportKind::Tls,
+                    dispatch: DnsQueryDispatch::Routed,
+                    inbound_tag: Some("dns-dot".to_owned()),
+                    https_path: None,
+                },
+                EncryptedDnsFaultCall {
+                    server: doh,
+                    transport: DnsQueryTransportKind::Https,
+                    dispatch: DnsQueryDispatch::Routed,
+                    inbound_tag: Some("dns-doh".to_owned()),
+                    https_path: Some("/dns-query?fault=1".to_owned()),
+                },
+                EncryptedDnsFaultCall {
+                    server: doq,
+                    transport: DnsQueryTransportKind::Quic,
+                    dispatch: DnsQueryDispatch::Local,
+                    inbound_tag: Some("dns-doq".to_owned()),
+                    https_path: None,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -4551,6 +4996,137 @@ mod tests {
         assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
     }
 
+    struct FailingRefreshResolver {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for FailingRefreshResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .first_socket_addr(domain, port)
+        }
+
+        async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            if self.calls.fetch_add(1, Ordering::Relaxed) == 0 {
+                return Ok(DnsLookup::single(
+                    SocketAddr::from(([192, 0, 2, 72], port)),
+                    Some(Duration::from_millis(20)),
+                ));
+            }
+            Err(TransportError::Dns {
+                domain: domain.to_owned(),
+                port,
+                source: io::Error::new(
+                    io::ErrorKind::ConnectionRefused,
+                    "injected stale refresh failure",
+                ),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn caching_dns_refresh_failure_keeps_stale_only_until_its_deadline() {
+        let inner = Arc::new(FailingRefreshResolver {
+            calls: AtomicUsize::new(0),
+        });
+        let resolver =
+            CachingDnsResolver::with_stale_ttl(inner.clone(), Duration::from_millis(100));
+        let stale = SocketAddr::from(([192, 0, 2, 72], 443));
+
+        assert_eq!(
+            resolver
+                .resolve("refresh-failure.example", 443)
+                .await
+                .unwrap(),
+            stale
+        );
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(
+            resolver
+                .resolve("refresh-failure.example", 443)
+                .await
+                .unwrap(),
+            stale
+        );
+        while inner.calls.load(Ordering::Relaxed) < 2 {
+            tokio::task::yield_now().await;
+        }
+        tokio::task::yield_now().await;
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let error = resolver
+            .resolve("refresh-failure.example", 443)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TransportError::Dns { source, .. }
+            if source.kind() == io::ErrorKind::ConnectionRefused));
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 3);
+    }
+
+    struct RefreshLifecycleResolver {
+        calls: AtomicUsize,
+        refresh_started: Notify,
+        refresh_dropped: Arc<AtomicBool>,
+    }
+
+    struct RefreshDropGuard(Arc<AtomicBool>);
+
+    impl Drop for RefreshDropGuard {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for RefreshLifecycleResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .first_socket_addr(domain, port)
+        }
+
+        async fn resolve_all(&self, _domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            if self.calls.fetch_add(1, Ordering::Relaxed) == 0 {
+                return Ok(DnsLookup::single(
+                    SocketAddr::from(([192, 0, 2, 73], port)),
+                    Some(Duration::from_millis(10)),
+                ));
+            }
+            let _guard = RefreshDropGuard(Arc::clone(&self.refresh_dropped));
+            self.refresh_started.notify_one();
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    async fn caching_dns_owner_drop_cancels_pending_stale_refresh() {
+        let refresh_dropped = Arc::new(AtomicBool::new(false));
+        let inner = Arc::new(RefreshLifecycleResolver {
+            calls: AtomicUsize::new(0),
+            refresh_started: Notify::new(),
+            refresh_dropped: Arc::clone(&refresh_dropped),
+        });
+        let resolver = CachingDnsResolver::with_stale_ttl(inner.clone(), Duration::from_secs(1));
+
+        resolver.resolve("refresh-drop.example", 443).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        resolver.resolve("refresh-drop.example", 443).await.unwrap();
+        inner.refresh_started.notified().await;
+        drop(resolver);
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !refresh_dropped.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("dropping the cache owner should cancel its stale refresh");
+        assert_eq!(inner.calls.load(Ordering::Relaxed), 2);
+    }
+
     struct CancelOnceResolver {
         calls: AtomicUsize,
         first_started: Notify,
@@ -5192,6 +5768,24 @@ mod tests {
         candidates: Vec<SocketAddr>,
     }
 
+    struct FailingBootstrapResolver {
+        domains: Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsResolver for FailingBootstrapResolver {
+        async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
+            self.resolve_all(domain, port)
+                .await?
+                .first_socket_addr(domain, port)
+        }
+
+        async fn resolve_all(&self, domain: &str, port: u16) -> Result<DnsLookup, TransportError> {
+            self.domains.lock().unwrap().push(domain.to_owned());
+            Err(TransportError::NoResolvedAddress(domain.to_owned(), port))
+        }
+    }
+
     #[async_trait::async_trait]
     impl DnsResolver for MultiCandidateBootstrapResolver {
         async fn resolve(&self, domain: &str, port: u16) -> Result<SocketAddr, TransportError> {
@@ -5210,10 +5804,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn direct_tcp_dns_falls_forward_across_bootstrap_candidates() {
+    async fn direct_tcp_dns_falls_forward_after_bootstrap_candidate_protocol_failure() {
+        let broken_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let broken_addr = broken_listener.local_addr().unwrap();
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let working = listener.local_addr().unwrap();
-        let refused = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 2), working.port()));
+        let broken_task = tokio::spawn(async move {
+            let (mut stream, _) = broken_listener.accept().await.unwrap();
+            let query_len = usize::from(stream.read_u16().await.unwrap());
+            let mut query = vec![0_u8; query_len];
+            stream.read_exact(&mut query).await.unwrap();
+        });
         let server_task = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let query_len = usize::from(stream.read_u16().await.unwrap());
@@ -5225,7 +5826,7 @@ mod tests {
         });
 
         let bootstrap = Arc::new(MultiCandidateBootstrapResolver {
-            candidates: vec![refused, working],
+            candidates: vec![broken_addr, working],
         });
         let mut policy = NameServerPolicy::new(NameServer::Domain {
             domain: "bootstrap.multi.test".to_owned(),
@@ -5242,6 +5843,47 @@ mod tests {
         let resolved = resolver.resolve("answer.multi.test", 443).await.unwrap();
 
         assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 77], 443)));
+        broken_task.await.unwrap();
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn configured_dns_bootstrap_failure_advances_without_resolving_original_name() {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let udp_addr = udp.local_addr().unwrap();
+        let server_task = tokio::spawn(async move {
+            let mut query = vec![0; 512];
+            let (query_len, client) = udp.recv_from(&mut query).await.unwrap();
+            query.truncate(query_len);
+            let response = build_test_a_response(&query, Ipv4Addr::new(192, 0, 2, 78));
+            udp.send_to(&response, client).await.unwrap();
+        });
+        let bootstrap = Arc::new(FailingBootstrapResolver {
+            domains: Mutex::new(Vec::new()),
+        });
+        let mut unavailable = NameServerPolicy::new(NameServer::Domain {
+            domain: "missing-bootstrap.example".to_owned(),
+            port: 853,
+        });
+        unavailable.transport = NameServerTransport::TlsRouted;
+        unavailable.query_strategy = DnsQueryStrategy::UseIpv4;
+        let mut healthy = NameServerPolicy::new(NameServer::Socket(udp_addr));
+        healthy.query_strategy = DnsQueryStrategy::UseIpv4;
+        let resolver =
+            ConfiguredDnsResolver::new(DomainHostIndex::default(), Vec::new(), bootstrap.clone())
+                .with_name_server_policies(vec![unavailable, healthy])
+                .with_query_strategy(DnsQueryStrategy::UseIpv4);
+
+        let resolved = resolver
+            .resolve("bootstrap-fault.example", 443)
+            .await
+            .unwrap();
+
+        assert_eq!(resolved, SocketAddr::from(([192, 0, 2, 78], 443)));
+        assert_eq!(
+            *bootstrap.domains.lock().unwrap(),
+            ["missing-bootstrap.example".to_owned()]
+        );
         server_task.await.unwrap();
     }
 
