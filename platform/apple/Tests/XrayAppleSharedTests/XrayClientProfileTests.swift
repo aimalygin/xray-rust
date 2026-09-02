@@ -48,6 +48,7 @@ final class XrayClientProfileTests: XCTestCase {
             tcp443FirstByteDurationMsTotal: 1_000,
             tcp443FirstByteDurationMsMax: 500,
             residentMemoryBytes: 12_345_678,
+            physicalFootprintBytes: 11_234_567,
             threadCount: 17,
             runtimeIdentifier: "runtime-1",
             udpRemoteOpenEvents: 4,
@@ -72,6 +73,7 @@ final class XrayClientProfileTests: XCTestCase {
         let stats = try JSONDecoder().decode(XrayClientRuntimeStats.self, from: data)
 
         XCTAssertEqual(stats.residentMemoryBytes, 0)
+        XCTAssertEqual(stats.physicalFootprintBytes, 0)
         XCTAssertEqual(stats.threadCount, 0)
         XCTAssertEqual(stats.runtimeIdentifier, "")
     }

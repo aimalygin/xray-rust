@@ -10,6 +10,15 @@ final class XrayClientUITests: XCTestCase {
     static let UDPHostKey = "XRAY_DEVICE_CAMPAIGN_UDP_HOST"
     static let UDPPortKey = "XRAY_DEVICE_CAMPAIGN_UDP_PORT"
     static let debugLoggingKey = "XRAY_DEVICE_CAMPAIGN_DEBUG_LOGGING"
+    static let memoryStressEnabledKey = "XRAY_DEVICE_MEMORY_STRESS_ENABLED"
+    static let memoryStressHostKey = "XRAY_DEVICE_MEMORY_STRESS_HOST"
+    static let memoryStressPortKey = "XRAY_DEVICE_MEMORY_STRESS_PORT"
+    static let memoryStressTokenKey = "XRAY_DEVICE_MEMORY_STRESS_TOKEN"
+    static let memoryStressStageSecondsKey = "XRAY_DEVICE_MEMORY_STRESS_STAGE_SECONDS"
+    static let memoryStressRecoverySecondsKey =
+        "XRAY_DEVICE_MEMORY_STRESS_RECOVERY_SECONDS"
+    static let memoryStressMaxPhysicalFootprintBytesKey =
+        "XRAY_DEVICE_MEMORY_STRESS_MAX_PHYSICAL_FOOTPRINT_BYTES"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -141,6 +150,242 @@ final class XrayClientUITests: XCTestCase {
             0,
             "provider did not accept any active connection close request"
         )
+    }
+
+    @MainActor
+    @available(iOS 17.0, *)
+    func testPhysicalDeviceMemoryStress() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment[Self.memoryStressEnabledKey] == "1" else {
+            throw XCTSkip("physical-device memory stress is opt-in")
+        }
+        let configuration = try MemoryStressConfiguration(environment: environment)
+        executionTimeAllowance = TimeInterval(configuration.durationSeconds + 300)
+
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.debugLoggingKey] =
+            configuration.debugLoggingEnabled ? "1" : "0"
+        app.launch()
+        try ensureConnected(app)
+
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        var samples: [CampaignSample] = []
+        var runtimeGenerations: [String: UInt64] = [:]
+        var nextRuntimeGeneration: UInt64 = 1
+        var heldConnections: [NWConnection] = []
+        var physicalFootprintSamples: [UInt64] = []
+        var closedConnections: UInt64 = 0
+        var safetyLimitReached = false
+        var safetyLimitStage = "none"
+        var highestTCPFlowsWithinLimit = 0
+        var highestUDPFlowsWithinLimit = 0
+
+        do {
+            let baselineResult = try await sampleMemoryStage(
+                app,
+                label: "baseline",
+                seconds: configuration.stageSeconds,
+                minimumActiveConnections: 0,
+                safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
+                startedAt: startedAt,
+                samples: &samples,
+                physicalFootprintSamples: &physicalFootprintSamples,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            let baselineSamples = samples
+            let baselinePhysicalFootprintSamples = physicalFootprintSamples
+            if baselineResult.safetyLimitReached {
+                safetyLimitReached = true
+                safetyLimitStage = "baseline"
+            }
+
+            for target in safetyLimitReached ? [] : [32, 64, 128, 192, 240] {
+                let added = try await Self.openTCPHoldConnections(
+                    count: target - heldConnections.count,
+                    host: configuration.loadHost,
+                    port: configuration.loadPort,
+                    token: configuration.loadToken
+                )
+                heldConnections.append(contentsOf: added)
+                let stageResult = try await sampleMemoryStage(
+                    app,
+                    label: "tcp-\(target)",
+                    seconds: configuration.stageSeconds,
+                    minimumActiveConnections: UInt64(target),
+                    safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
+                    startedAt: startedAt,
+                    samples: &samples,
+                    physicalFootprintSamples: &physicalFootprintSamples,
+                    runtimeGenerations: &runtimeGenerations,
+                    nextRuntimeGeneration: &nextRuntimeGeneration
+                )
+                if stageResult.safetyLimitReached {
+                    safetyLimitReached = true
+                    safetyLimitStage = "tcp-\(target)"
+                    break
+                }
+                highestTCPFlowsWithinLimit = target
+            }
+
+            var drainResult = try await drainConnections(
+                app,
+                startedAt: startedAt,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            closedConnections += drainResult.closedConnections
+            try validateMemorySample(drainResult.sample)
+            samples.append(drainResult.sample)
+            emit(drainResult.sample)
+            heldConnections.forEach { $0.cancel() }
+            heldConnections.removeAll()
+            try await sleep(seconds: 2)
+
+            for target in safetyLimitReached ? [] : [64, 128, 256, 384, 480] {
+                let added = try await Self.openHeldUDPConnections(
+                    count: target - heldConnections.count,
+                    host: configuration.UDPHost,
+                    port: configuration.UDPPort
+                )
+                heldConnections.append(contentsOf: added)
+                try await Self.refreshHeldUDPConnections(heldConnections)
+                let stageResult = try await sampleMemoryStage(
+                    app,
+                    label: "udp-\(target)",
+                    seconds: configuration.stageSeconds,
+                    minimumActiveConnections: UInt64(target),
+                    safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
+                    startedAt: startedAt,
+                    samples: &samples,
+                    physicalFootprintSamples: &physicalFootprintSamples,
+                    runtimeGenerations: &runtimeGenerations,
+                    nextRuntimeGeneration: &nextRuntimeGeneration
+                )
+                if stageResult.safetyLimitReached {
+                    safetyLimitReached = true
+                    safetyLimitStage = "udp-\(target)"
+                    break
+                }
+                highestUDPFlowsWithinLimit = target
+            }
+
+            drainResult = try await drainConnections(
+                app,
+                startedAt: startedAt,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            closedConnections += drainResult.closedConnections
+            try validateMemorySample(drainResult.sample)
+            samples.append(drainResult.sample)
+            emit(drainResult.sample)
+            heldConnections.forEach { $0.cancel() }
+            heldConnections.removeAll()
+
+            let recoveryStart = samples.count
+            let recoveryPhysicalFootprintStart = physicalFootprintSamples.count
+            _ = try await sampleMemoryStage(
+                app,
+                label: "recovery",
+                seconds: configuration.recoverySeconds,
+                minimumActiveConnections: 0,
+                safetyPhysicalFootprintLimitBytes: nil,
+                startedAt: startedAt,
+                samples: &samples,
+                physicalFootprintSamples: &physicalFootprintSamples,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            let recoverySamples = Array(samples[recoveryStart...])
+            let baselineRSS = Self.median(
+                baselineSamples.map(\.residentMemoryBytes)
+            )
+            let recoveredRSS = Self.median(
+                Array(recoverySamples.suffix(5)).map(\.residentMemoryBytes)
+            )
+            let baselinePhysicalFootprint = Self.median(
+                baselinePhysicalFootprintSamples
+            )
+            let recoveryPhysicalFootprintSamples = Array(
+                physicalFootprintSamples[recoveryPhysicalFootprintStart...]
+            )
+            let recoveredPhysicalFootprint = Self.median(
+                Array(recoveryPhysicalFootprintSamples.suffix(5))
+            )
+            let baselineThreads = Self.median(
+                baselineSamples.map(\.threadCount)
+            )
+            let recoveredThreads = Self.median(
+                Array(recoverySamples.suffix(5)).map(\.threadCount)
+            )
+            let footprintAllowance = max(
+                8 * 1024 * 1024,
+                baselinePhysicalFootprint / 4
+            )
+            guard recoveredPhysicalFootprint
+                <= baselinePhysicalFootprint + footprintAllowance
+            else {
+                throw CampaignError.memoryStressPhysicalFootprintDidNotRecover(
+                    baseline: baselinePhysicalFootprint,
+                    recovered: recoveredPhysicalFootprint
+                )
+            }
+            guard recoveredThreads <= baselineThreads + 4 else {
+                throw CampaignError.memoryStressThreadLeak(
+                    baseline: baselineThreads,
+                    recovered: recoveredThreads
+                )
+            }
+
+            drainResult = try await drainConnections(
+                app,
+                startedAt: startedAt,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            closedConnections += drainResult.closedConnections
+            try validateMemorySample(drainResult.sample)
+            samples.append(drainResult.sample)
+            emit(drainResult.sample)
+            try disconnect(app)
+            let terminalElapsed = max(
+                UInt64(ProcessInfo.processInfo.systemUptime - startedAt),
+                drainResult.sample.elapsedSeconds + 1
+            )
+            let terminalSample = drainResult.sample.afterDisconnect(
+                elapsedSeconds: terminalElapsed
+            )
+            samples.append(terminalSample)
+            emit(terminalSample)
+            addCampaignAttachment(samples)
+
+            let peakRSS = samples.map(\.residentMemoryBytes).max() ?? 0
+            let peakPhysicalFootprint = physicalFootprintSamples.max() ?? 0
+            print(
+                "XRAY_DEVICE_MEMORY_RESULT baselineRSS=\(baselineRSS) "
+                    + "peakRSS=\(peakRSS) recoveredRSS=\(recoveredRSS) "
+                    + "baselinePhysicalFootprint=\(baselinePhysicalFootprint) "
+                    + "peakPhysicalFootprint=\(peakPhysicalFootprint) "
+                    + "recoveredPhysicalFootprint=\(recoveredPhysicalFootprint) "
+                    + "safetyLimitPhysicalFootprint="
+                    + "\(configuration.maxPhysicalFootprintBytes) "
+                    + "safetyLimitReached=\(safetyLimitReached) "
+                    + "stopStage=\(safetyLimitStage) "
+                    + "highestTCPFlows=\(highestTCPFlowsWithinLimit) "
+                    + "highestUDPFlows=\(highestUDPFlowsWithinLimit) "
+                    + "closedConnections=\(closedConnections)"
+            )
+            XCTAssertGreaterThan(
+                closedConnections,
+                0,
+                "provider did not accept memory-stress connection closures"
+            )
+        } catch {
+            heldConnections.forEach { $0.cancel() }
+            try? disconnect(app)
+            throw error
+        }
     }
 
     @MainActor
@@ -368,6 +613,319 @@ final class XrayClientUITests: XCTestCase {
     }
 
     @MainActor
+    private func sampleMemoryStage(
+        _ app: XCUIApplication,
+        label: String,
+        seconds: Int,
+        minimumActiveConnections: UInt64,
+        safetyPhysicalFootprintLimitBytes: UInt64?,
+        startedAt: TimeInterval,
+        samples: inout [CampaignSample],
+        physicalFootprintSamples: inout [UInt64],
+        runtimeGenerations: inout [String: UInt64],
+        nextRuntimeGeneration: inout UInt64
+    ) async throws -> MemoryStageResult {
+        let deadline = ProcessInfo.processInfo.systemUptime + TimeInterval(seconds)
+        var lastSample: CampaignSample?
+        var safetyLimitReached = false
+        repeat {
+            try await refresh(app)
+            let wallElapsed = UInt64(ProcessInfo.processInfo.systemUptime - startedAt)
+            let elapsed = max(wallElapsed, (samples.last?.elapsedSeconds ?? 0) + 1)
+            let sample = try readSample(
+                app,
+                elapsedSeconds: Int(elapsed),
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            try validateMemorySample(sample)
+            let physicalFootprintBytes = try unsignedTelemetry(
+                "physicalFootprintBytes",
+                from: try telemetryValue(app)
+            )
+            guard physicalFootprintBytes > 0 else {
+                throw CampaignError.missingTelemetry("physicalFootprintBytes")
+            }
+            samples.append(sample)
+            physicalFootprintSamples.append(physicalFootprintBytes)
+            emit(sample)
+            lastSample = sample
+            print(
+                "XRAY_DEVICE_MEMORY_STAGE label=\(label) "
+                    + "activeConnections=\(sample.activeConnections) "
+                    + "residentMemoryBytes=\(sample.residentMemoryBytes) "
+                    + "physicalFootprintBytes=\(physicalFootprintBytes)"
+            )
+            if let safetyPhysicalFootprintLimitBytes,
+               physicalFootprintBytes > safetyPhysicalFootprintLimitBytes
+            {
+                safetyLimitReached = true
+                break
+            }
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            if remaining > 0 {
+                try await Task.sleep(
+                    nanoseconds: UInt64(min(5, remaining) * 1_000_000_000)
+                )
+            }
+        } while ProcessInfo.processInfo.systemUptime < deadline
+
+        guard let lastSample,
+              lastSample.activeConnections >= minimumActiveConnections
+        else {
+            throw CampaignError.memoryStressInsufficientFlows(
+                expected: minimumActiveConnections,
+                observed: lastSample?.activeConnections ?? 0
+            )
+        }
+        return MemoryStageResult(
+            safetyLimitReached: safetyLimitReached
+        )
+    }
+
+    private func validateMemorySample(_ sample: CampaignSample) throws {
+        guard sample.runtimeGeneration == 1 else {
+            throw CampaignError.memoryStressRuntimeRestarted(sample.runtimeGeneration)
+        }
+    }
+
+    private static func median(_ values: [UInt64]) -> UInt64 {
+        precondition(!values.isEmpty)
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return sorted[middle - 1] + (sorted[middle] - sorted[middle - 1]) / 2
+        }
+        return sorted[middle]
+    }
+
+    @available(iOS 17.0, *)
+    private static func openTCPHoldConnections(
+        count: Int,
+        host: NWEndpoint.Host,
+        port: NWEndpoint.Port,
+        token: String
+    ) async throws -> [NWConnection] {
+        try await openConnections(count: count, batchSize: 16) {
+            try await openTCPHoldConnection(host: host, port: port, token: token)
+        }
+    }
+
+    @available(iOS 17.0, *)
+    private static func openHeldUDPConnections(
+        count: Int,
+        host: NWEndpoint.Host,
+        port: NWEndpoint.Port
+    ) async throws -> [NWConnection] {
+        try await openConnections(count: count, batchSize: 32) {
+            try await openHeldUDPConnection(host: host, port: port)
+        }
+    }
+
+    @available(iOS 17.0, *)
+    private static func openConnections(
+        count: Int,
+        batchSize: Int,
+        operation: @escaping @Sendable () async throws -> NWConnection
+    ) async throws -> [NWConnection] {
+        var connections: [NWConnection] = []
+        while connections.count < count {
+            let currentBatch = min(batchSize, count - connections.count)
+            var opened: [NWConnection] = []
+            do {
+                try await withThrowingTaskGroup(of: NWConnection.self) { group in
+                    for _ in 0 ..< currentBatch {
+                        group.addTask {
+                            try await operation()
+                        }
+                    }
+                    for try await connection in group {
+                        opened.append(connection)
+                    }
+                }
+            } catch {
+                opened.forEach { $0.cancel() }
+                connections.forEach { $0.cancel() }
+                throw error
+            }
+            connections.append(contentsOf: opened)
+        }
+        return connections
+    }
+
+    private static func openTCPHoldConnection(
+        host: NWEndpoint.Host,
+        port: NWEndpoint.Port,
+        token: String
+    ) async throws -> NWConnection {
+        let connection = NWConnection(host: host, port: port, using: .tcp)
+        let request = Data("XRAY-MEMORY-HOLD/1 \(token)\n".utf8)
+        let expected = Data("XRAY-MEMORY-HOLD/1 READY\n".utf8)
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let completion = UDPProbeCompletion(continuation: continuation)
+                    completion.scheduleTimeout(
+                        on: memoryStressNetworkQueue,
+                        seconds: 15,
+                        error: CampaignError.memoryStressOperationTimedOut
+                    )
+                    connection.stateUpdateHandler = { state in
+                        switch state {
+                        case .ready:
+                            connection.stateUpdateHandler = nil
+                            connection.send(
+                                content: request,
+                                completion: .contentProcessed { error in
+                                    if let error {
+                                        completion.finish(.failure(error))
+                                        return
+                                    }
+                                    connection.receive(
+                                        minimumIncompleteLength: expected.count,
+                                        maximumLength: expected.count
+                                    ) { data, _, _, receiveError in
+                                        if let receiveError {
+                                            completion.finish(.failure(receiveError))
+                                        } else if data == expected {
+                                            completion.finish(.success(()))
+                                        } else {
+                                            completion.finish(
+                                                .failure(
+                                                    CampaignError
+                                                        .memoryStressHandshakeFailed
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        case let .failed(error):
+                            completion.finish(.failure(error))
+                        case .cancelled:
+                            completion.finish(.failure(CancellationError()))
+                        default:
+                            break
+                        }
+                    }
+                    connection.start(queue: memoryStressNetworkQueue)
+                }
+            } onCancel: {
+                connection.cancel()
+            }
+            return connection
+        } catch {
+            connection.cancel()
+            throw error
+        }
+    }
+
+    private static func openHeldUDPConnection(
+        host: NWEndpoint.Host,
+        port: NWEndpoint.Port
+    ) async throws -> NWConnection {
+        let connection = NWConnection(host: host, port: port, using: .udp)
+        let query = makeDNSQuery()
+        do {
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let completion = UDPProbeCompletion(continuation: continuation)
+                    completion.scheduleTimeout(
+                        on: memoryStressNetworkQueue,
+                        seconds: 10,
+                        error: CampaignError.memoryStressOperationTimedOut
+                    )
+                    connection.stateUpdateHandler = { state in
+                        switch state {
+                        case .ready:
+                            connection.stateUpdateHandler = nil
+                            sendHeldUDPQuery(
+                                query,
+                                connection: connection,
+                                completion: completion
+                            )
+                        case let .failed(error):
+                            completion.finish(.failure(error))
+                        case .cancelled:
+                            completion.finish(.failure(CancellationError()))
+                        default:
+                            break
+                        }
+                    }
+                    connection.start(queue: memoryStressNetworkQueue)
+                }
+            } onCancel: {
+                connection.cancel()
+            }
+            return connection
+        } catch {
+            connection.cancel()
+            throw error
+        }
+    }
+
+    @available(iOS 17.0, *)
+    private static func refreshHeldUDPConnections(
+        _ connections: [NWConnection]
+    ) async throws {
+        for start in stride(from: 0, to: connections.count, by: 32) {
+            let end = min(start + 32, connections.count)
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for connection in connections[start ..< end] {
+                    group.addTask {
+                        let query = makeDNSQuery()
+                        try await withCheckedThrowingContinuation { continuation in
+                            let completion = UDPProbeCompletion(
+                                continuation: continuation
+                            )
+                            completion.scheduleTimeout(
+                                on: memoryStressNetworkQueue,
+                                seconds: 10,
+                                error: CampaignError.memoryStressOperationTimedOut
+                            )
+                            sendHeldUDPQuery(
+                                query,
+                                connection: connection,
+                                completion: completion
+                            )
+                        }
+                    }
+                }
+                try await group.waitForAll()
+            }
+        }
+    }
+
+    private static func sendHeldUDPQuery(
+        _ query: Data,
+        connection: NWConnection,
+        completion: UDPProbeCompletion
+    ) {
+        connection.send(
+            content: query,
+            completion: .contentProcessed { error in
+                if let error {
+                    completion.finish(.failure(error))
+                    return
+                }
+                connection.receiveMessage { response, _, _, receiveError in
+                    if let receiveError {
+                        completion.finish(.failure(receiveError))
+                    } else if let response,
+                              isValidDNSResponse(response, for: query)
+                    {
+                        completion.finish(.success(()))
+                    } else {
+                        completion.finish(
+                            .failure(CampaignError.UDPProbeInvalidResponse)
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    @MainActor
     private func pumpTraffic(configuration: CampaignConfiguration) async -> TrafficProbeSummary {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -583,6 +1141,11 @@ final class XrayClientUITests: XCTestCase {
         0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x04, 0xcb, 0x00, 0x71, 0x01,
     ])
+    private static let memoryStressNetworkQueue = DispatchQueue(
+        label: "org.xrayrust.device-memory-stress",
+        qos: .utility,
+        attributes: .concurrent
+    )
 
 }
 
@@ -632,6 +1195,89 @@ private struct CampaignConfiguration {
     }
 }
 
+private struct MemoryStressConfiguration {
+    let durationSeconds: Int
+    let UDPHost: NWEndpoint.Host
+    let UDPPort: NWEndpoint.Port
+    let loadHost: NWEndpoint.Host
+    let loadPort: NWEndpoint.Port
+    let loadToken: String
+    let stageSeconds: Int
+    let recoverySeconds: Int
+    let maxPhysicalFootprintBytes: UInt64
+    let debugLoggingEnabled: Bool
+
+    init(environment: [String: String]) throws {
+        guard let duration = Int(environment[XrayClientUITests.durationKey] ?? ""),
+              (140 ... 3_600).contains(duration)
+        else {
+            throw CampaignError.invalidConfiguration(XrayClientUITests.durationKey)
+        }
+        guard let rawUDPHost = environment[XrayClientUITests.UDPHostKey],
+              !rawUDPHost.isEmpty,
+              let rawUDPPort = environment[XrayClientUITests.UDPPortKey],
+              let UDPPort = NWEndpoint.Port(rawUDPPort)
+        else {
+            throw CampaignError.invalidConfiguration(XrayClientUITests.UDPHostKey)
+        }
+        guard let rawLoadHost = environment[XrayClientUITests.memoryStressHostKey],
+              !rawLoadHost.isEmpty,
+              let rawLoadPort = environment[XrayClientUITests.memoryStressPortKey],
+              let loadPort = NWEndpoint.Port(rawLoadPort)
+        else {
+            throw CampaignError.invalidConfiguration(
+                XrayClientUITests.memoryStressHostKey
+            )
+        }
+        guard let token = environment[XrayClientUITests.memoryStressTokenKey],
+              token.utf8.count == 64,
+              token.utf8.allSatisfy({
+                  (48 ... 57).contains($0) || (97 ... 102).contains($0)
+              })
+        else {
+            throw CampaignError.invalidConfiguration(
+                XrayClientUITests.memoryStressTokenKey
+            )
+        }
+        guard let stageSeconds = Int(
+            environment[XrayClientUITests.memoryStressStageSecondsKey] ?? ""
+        ), (10 ... 120).contains(stageSeconds) else {
+            throw CampaignError.invalidConfiguration(
+                XrayClientUITests.memoryStressStageSecondsKey
+            )
+        }
+        guard let recoverySeconds = Int(
+            environment[XrayClientUITests.memoryStressRecoverySecondsKey] ?? ""
+        ), (30 ... 600).contains(recoverySeconds) else {
+            throw CampaignError.invalidConfiguration(
+                XrayClientUITests.memoryStressRecoverySecondsKey
+            )
+        }
+        guard let maxPhysicalFootprintBytes = UInt64(
+            environment[
+                XrayClientUITests.memoryStressMaxPhysicalFootprintBytesKey
+            ] ?? ""
+        ), (24 * 1024 * 1024 ... 128 * 1024 * 1024).contains(
+            maxPhysicalFootprintBytes
+        ) else {
+            throw CampaignError.invalidConfiguration(
+                XrayClientUITests.memoryStressMaxPhysicalFootprintBytesKey
+            )
+        }
+
+        durationSeconds = duration
+        UDPHost = NWEndpoint.Host(rawUDPHost)
+        self.UDPPort = UDPPort
+        loadHost = NWEndpoint.Host(rawLoadHost)
+        self.loadPort = loadPort
+        loadToken = token
+        self.stageSeconds = stageSeconds
+        self.recoverySeconds = recoverySeconds
+        self.maxPhysicalFootprintBytes = maxPhysicalFootprintBytes
+        debugLoggingEnabled = environment[XrayClientUITests.debugLoggingKey] == "1"
+    }
+}
+
 private struct CampaignSample: Codable {
     let elapsedSeconds: UInt64
     let runtimeGeneration: UInt64
@@ -663,6 +1309,10 @@ private struct DrainResult {
     let closedConnections: UInt64
 }
 
+private struct MemoryStageResult {
+    let safetyLimitReached: Bool
+}
+
 private struct TrafficProbeSummary: Sendable {
     var httpSuccesses = 0
     var udpSuccesses = 0
@@ -677,6 +1327,15 @@ private enum CampaignError: Error {
     case HTTPProbeFailed
     case UDPProbeInvalidResponse
     case UDPProbeTimedOut
+    case memoryStressHandshakeFailed
+    case memoryStressOperationTimedOut
+    case memoryStressInsufficientFlows(expected: UInt64, observed: UInt64)
+    case memoryStressRuntimeRestarted(UInt64)
+    case memoryStressPhysicalFootprintDidNotRecover(
+        baseline: UInt64,
+        recovered: UInt64
+    )
+    case memoryStressThreadLeak(baseline: UInt64, recovered: UInt64)
 }
 
 private final class UDPProbeCompletion: @unchecked Sendable {
@@ -688,9 +1347,13 @@ private final class UDPProbeCompletion: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func scheduleTimeout(on queue: DispatchQueue, seconds: TimeInterval) {
+    func scheduleTimeout(
+        on queue: DispatchQueue,
+        seconds: TimeInterval,
+        error: Error = CampaignError.UDPProbeTimedOut
+    ) {
         let workItem = DispatchWorkItem { [weak self] in
-            self?.finish(.failure(CampaignError.UDPProbeTimedOut))
+            self?.finish(.failure(error))
         }
         lock.withLock {
             timeout = workItem

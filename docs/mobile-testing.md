@@ -390,6 +390,71 @@ After one successful `build-for-testing`, a rehearsal may also pass
 signed `.xctestrun` products. Formal campaigns reject this shortcut and always
 build the exact clean candidate.
 
+### Apple physical memory stress
+
+Before the transition/soak gate, run the supplemental iOS 17+ memory-stress
+rehearsal against an approved external endpoint. Enable the authenticated TCP
+hold service on the same dedicated TCP/UDP port as the DNS oracle:
+
+```sh
+python3 scripts/run-apple-device-probe-server.py \
+  --bind-host 0.0.0.0 \
+  --port 53053 \
+  --tcp-load-token-file <owner-only-token-file> \
+  --max-tcp-clients 320 \
+  --tcp-idle-seconds 900
+```
+
+The token file must be a regular non-symlink file containing exactly 64
+lowercase hexadecimal characters. It must not be accessible by group or
+others. A systemd service should pass it with `LoadCredential`; the server also
+accepts systemd's group-readable credential projection beneath
+`/run/credentials`. Do not put the token in the unit command line, repository,
+campaign directory, or log.
+
+Run the device workload with the same endpoint for TCP holds and UDP oracle
+traffic:
+
+```sh
+python3 scripts/run-apple-device-campaign.py \
+  --device-id <physical-iphone-udid> \
+  --campaign-id <non-secret-memory-run-id> \
+  --campaign-dir target/mobile/device-gate/<campaign-id>/apple-memory \
+  --duration-seconds 240 \
+  --http-url https://<approved-probe>/payload \
+  --udp-host <approved-load-host> \
+  --udp-port 53053 \
+  --rehearsal \
+  --memory-stress \
+  --load-host <approved-load-host> \
+  --load-port 53053 \
+  --load-token-file <local-owner-only-token-file> \
+  --stress-stage-seconds 10 \
+  --stress-recovery-seconds 30 \
+  --stress-max-footprint-mib 48
+```
+
+The test opens real device TCP flows in steps of 32, 64, 128, 192, and 240,
+then real UDP flows in steps of 64, 128, 256, 384, and 480. All traffic passes
+through the active packet tunnel. The physical-footprint value is a protective
+load ceiling, not a claimed universal Network Extension limit. Crossing it stops the ramp,
+closes the provider-side flow snapshot, cancels the device sockets, and still
+runs the recovery window. A runtime restart, fatal TUN telemetry, failure to
+close flows, recovered physical footprint above
+`baseline + max(8 MiB, 25%)`, or recovered thread count above `baseline + 4`
+fails the test. Reaching the protective ceiling alone does not fail if teardown
+and recovery succeed. RSS is retained alongside physical footprint as an
+allocator-retention diagnostic, but iOS memory-pressure enforcement follows
+the physical footprint.
+
+`apple-run.json` records baseline, peak, and recovered RSS and physical
+footprint, whether the ceiling was reached, the stop stage, the highest TCP and
+UDP stages that remained below the ceiling, and the number of provider-accepted
+closes. The complete portable sample series remains in
+`apple-device-samples.json`. This rehearsal characterizes
+the load curve and cleanup behavior; it does not replace the six-hour physical
+transition/soak release evidence.
+
 While a campaign is active, record each physical action immediately after it
 with `scripts/mark-apple-device-transition.py`; markers contain only scenario
 IDs, attempt numbers, phases, and non-secret notes. The runner writes

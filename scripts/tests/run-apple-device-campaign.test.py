@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pathlib
+import plistlib
 import runpy
 import subprocess
 import sys
@@ -25,6 +26,8 @@ def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[2]
     campaign_module = runpy.run_path(str(root / "scripts/run-apple-device-campaign.py"))
     failed_probe = campaign_module["FAILED_PROBE"]
+    parse_memory_result = campaign_module["parse_memory_result"]
+    prepare_xctestrun = campaign_module["prepare_xctestrun"]
     match = failed_probe.fullmatch(
         "XRAY_DEVICE_PROBE kind=udp result=failed error=udp-timeout"
     )
@@ -34,12 +37,92 @@ def main() -> int:
         "XRAY_DEVICE_PROBE kind=udp result=failed error=secret value"
     ) is not None:
         raise AssertionError("campaign runner accepts unsafe failed-probe text")
+    memory_result = parse_memory_result(
+        "XRAY_DEVICE_MEMORY_RESULT baselineRSS=18000000 peakRSS=52000000 "
+        "recoveredRSS=51000000 baselinePhysicalFootprint=17000000 "
+        "peakPhysicalFootprint=52000000 recoveredPhysicalFootprint=19000000 "
+        "safetyLimitPhysicalFootprint=50331648 "
+        "safetyLimitReached=true stopStage=udp-384 highestTCPFlows=240 "
+        "highestUDPFlows=256 closedConnections=624"
+    )
+    if memory_result != {
+        "baselineRSSBytes": 18_000_000,
+        "peakRSSBytes": 52_000_000,
+        "recoveredRSSBytes": 51_000_000,
+        "baselinePhysicalFootprintBytes": 17_000_000,
+        "peakPhysicalFootprintBytes": 52_000_000,
+        "recoveredPhysicalFootprintBytes": 19_000_000,
+        "safetyLimitPhysicalFootprintBytes": 50_331_648,
+        "safetyLimitReached": True,
+        "stopStage": "udp-384",
+        "highestTCPFlowsWithinLimit": 240,
+        "highestUDPFlowsWithinLimit": 256,
+        "closedConnections": 624,
+    }:
+        raise AssertionError(f"unexpected parsed memory result: {memory_result}")
+    try:
+        parse_memory_result(
+            "XRAY_DEVICE_MEMORY_RESULT baselineRSS=18000000 peakRSS=52000000 "
+            "recoveredRSS=51000000 baselinePhysicalFootprint=17000000 "
+            "peakPhysicalFootprint=52000000 recoveredPhysicalFootprint=19000000 "
+            "safetyLimitPhysicalFootprint=50331648 "
+            "safetyLimitReached=false stopStage=none highestTCPFlows=240 "
+            "highestUDPFlows=480 closedConnections=720"
+        )
+    except campaign_module["CampaignError"]:
+        pass
+    else:
+        raise AssertionError("campaign runner accepted an inconsistent safety result")
     help_result = run(["--help"], root)
-    if help_result.returncode != 0 or "--skip-test-build" not in help_result.stdout:
+    if (
+        help_result.returncode != 0
+        or "--skip-test-build" not in help_result.stdout
+        or "--memory-stress" not in help_result.stdout
+    ):
         raise AssertionError("campaign help does not expose --skip-test-build")
 
     with tempfile.TemporaryDirectory(prefix="xray-apple-campaign-contract-") as raw:
         temporary = pathlib.Path(raw)
+        source_xctestrun = temporary / "source.xctestrun"
+        source_xctestrun.write_bytes(
+            plistlib.dumps(
+                {
+                    "TestConfigurations": [
+                        {
+                            "TestTargets": [
+                                {
+                                    "BlueprintName": "XrayClientUITests",
+                                    "EnvironmentVariables": {},
+                                }
+                            ]
+                        }
+                    ]
+                },
+                fmt=plistlib.FMT_BINARY,
+            )
+        )
+        generated_xctestrun = prepare_xctestrun(
+            source_xctestrun,
+            "secure-memory",
+            240,
+            5,
+            "https://127.0.0.1/probe",
+            "127.0.0.1",
+            53053,
+            True,
+            {"XRAY_DEVICE_MEMORY_STRESS_TOKEN": "a" * 64},
+        )
+        if generated_xctestrun.stat().st_mode & 0o777 != 0o600:
+            raise AssertionError("generated xctestrun is not owner-only")
+        with generated_xctestrun.open("rb") as input_file:
+            generated_document = plistlib.load(input_file)
+        generated_environment = generated_document["TestConfigurations"][0][
+            "TestTargets"
+        ][0]["EnvironmentVariables"]
+        if generated_environment.get("XRAY_DEVICE_MEMORY_STRESS_TOKEN") != "a" * 64:
+            raise AssertionError("generated xctestrun omitted the memory token")
+        generated_xctestrun.unlink()
+
         common = [
             "--device-id",
             "contract-device",
@@ -117,6 +200,59 @@ def main() -> int:
             )
         if "Xcode test build failed" in rehearsal.stderr:
             raise AssertionError("rehearsal unexpectedly attempted an Xcode test build")
+
+        missing_load_endpoint = run(
+            [
+                *common,
+                "--campaign-id",
+                "memory-missing-endpoint",
+                "--campaign-dir",
+                str(temporary / "memory-missing-endpoint"),
+                "--duration-seconds",
+                "240",
+                "--rehearsal",
+                "--memory-stress",
+            ],
+            root,
+        )
+        if missing_load_endpoint.returncode == 0 or (
+            "memory stress requires" not in missing_load_endpoint.stderr
+        ):
+            raise AssertionError(
+                "memory stress accepted a missing endpoint/token: "
+                + missing_load_endpoint.stderr
+            )
+
+        token = temporary / "load.token"
+        token.write_text("a" * 64 + "\n", encoding="ascii")
+        token.chmod(0o600)
+        memory_rehearsal = run(
+            [
+                *common,
+                "--campaign-id",
+                "memory-rehearsal",
+                "--campaign-dir",
+                str(temporary / "memory-rehearsal"),
+                "--duration-seconds",
+                "240",
+                "--rehearsal",
+                "--memory-stress",
+                "--load-host",
+                "127.0.0.1",
+                "--load-port",
+                "53053",
+                "--load-token-file",
+                str(token),
+            ],
+            root,
+        )
+        if memory_rehearsal.returncode == 0 or expected not in memory_rehearsal.stderr:
+            raise AssertionError(
+                "memory stress did not reach DerivedData validation: "
+                + memory_rehearsal.stderr
+            )
+        if ("a" * 64) in memory_rehearsal.stdout + memory_rehearsal.stderr:
+            raise AssertionError("memory stress exposed the load token")
 
     print("Apple device campaign build-reuse contract test passed")
     return 0

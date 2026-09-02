@@ -425,11 +425,13 @@ private final class XrayWeakReference<Value: AnyObject>: @unchecked Sendable {
 
 struct XrayPacketTunnelResourceSnapshot: Equatable {
     var residentMemoryBytes: UInt64
+    var physicalFootprintBytes: UInt64
     var threadCount: UInt64
 
     static func current() -> Self {
         Self(
             residentMemoryBytes: currentResidentMemoryBytes(),
+            physicalFootprintBytes: currentPhysicalFootprintBytes(),
             threadCount: currentThreadCount()
         )
     }
@@ -453,6 +455,27 @@ struct XrayPacketTunnelResourceSnapshot: Equatable {
             return 0
         }
         return UInt64(info.resident_size)
+    }
+
+    private static func currentPhysicalFootprintBytes() -> UInt64 {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(TASK_VM_INFO),
+                    $0,
+                    &count
+                )
+            }
+        }
+        guard result == KERN_SUCCESS else {
+            return 0
+        }
+        return UInt64(info.phys_footprint)
     }
 
     private static func currentThreadCount() -> UInt64 {
@@ -858,6 +881,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             activeTCPFlows: stats.activeTCPFlows,
             activeUDPFlows: stats.activeUDPFlows,
             residentMemoryBytes: resourceSnapshot.residentMemoryBytes,
+            physicalFootprintBytes: resourceSnapshot.physicalFootprintBytes,
             threadCount: resourceSnapshot.threadCount,
             runtimeIdentifier: runtime.identifier,
             udpFlowLimit: stats.udpFlowLimit,

@@ -322,6 +322,7 @@ public struct XrayClientRootView: View {
         .accessibilityLabel("Campaign telemetry")
         .accessibilityValue(
             "residentMemoryBytes=\(stats.residentMemoryBytes);" +
+                "physicalFootprintBytes=\(stats.physicalFootprintBytes);" +
                 "threadCount=\(stats.threadCount);" +
                 "runtimeIdentifier=\(stats.runtimeIdentifier);" +
                 "activeTCPFlows=\(stats.activeTCPFlows);" +

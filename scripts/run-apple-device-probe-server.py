@@ -1,22 +1,40 @@
 #!/usr/bin/env python3
-"""Serve the bounded DNS-over-UDP oracle used by Apple device campaigns."""
+"""Serve the Apple UDP oracle and optional authenticated TCP load holds."""
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass, field
+import hmac
 import json
+import pathlib
+import re
+import selectors
 import signal
 import socket
 import sys
+import time
 from types import FrameType
 
 
 MAX_DNS_DATAGRAM_BYTES = 4096
+MAX_LOAD_REQUEST_BYTES = 128
+LOAD_PROTOCOL_PREFIX = b"XRAY-MEMORY-HOLD/1 "
+LOAD_READY = b"XRAY-MEMORY-HOLD/1 READY\n"
+LOAD_TOKEN = re.compile(rb"^[0-9a-f]{64}$")
 TEST_ADDRESS = bytes((203, 0, 113, 1))
 
 
 class ProbeError(Exception):
     pass
+
+
+@dataclass
+class LoadClient:
+    connection: socket.socket
+    deadline: float
+    request: bytearray = field(default_factory=bytearray)
+    authenticated: bool = False
 
 
 def dns_question_end(query: bytes) -> int:
@@ -70,40 +88,176 @@ def emit(event: str, **fields: object) -> None:
     print(json.dumps({"event": event, **fields}, sort_keys=True), flush=True)
 
 
-def serve(bind_host: str, port: int, max_requests: int | None) -> int:
+def load_auth_token(path: pathlib.Path) -> bytes:
+    if path.is_symlink() or not path.is_file():
+        raise ProbeError("TCP load token path must be a regular file")
+    non_owner_permissions = path.stat().st_mode & 0o077
+    systemd_credential = str(path).startswith("/run/credentials/")
+    if non_owner_permissions and not (
+        systemd_credential and non_owner_permissions == 0o040
+    ):
+        raise ProbeError("TCP load token file must not be accessible by group or others")
+    token = path.read_bytes().strip()
+    if not LOAD_TOKEN.fullmatch(token):
+        raise ProbeError("TCP load token must contain exactly 64 lowercase hex characters")
+    return token
+
+
+def close_load_client(
+    selector: selectors.BaseSelector,
+    clients: dict[int, LoadClient],
+    client: LoadClient,
+) -> None:
+    descriptor = client.connection.fileno()
+    try:
+        selector.unregister(client.connection)
+    except (KeyError, ValueError):
+        pass
+    clients.pop(descriptor, None)
+    client.connection.close()
+
+
+def serve(
+    bind_host: str,
+    port: int,
+    max_requests: int | None,
+    load_token: bytes | None,
+    max_tcp_clients: int,
+    tcp_idle_seconds: int,
+) -> int:
     family = socket.AF_INET6 if ":" in bind_host else socket.AF_INET
-    server = socket.socket(family, socket.SOCK_DGRAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((bind_host, port))
-    actual_port = server.getsockname()[1]
+    selector = selectors.DefaultSelector()
+    UDP_server = socket.socket(family, socket.SOCK_DGRAM)
+    UDP_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    UDP_server.setblocking(False)
+    UDP_server.bind((bind_host, port))
+    actual_port = UDP_server.getsockname()[1]
+    selector.register(UDP_server, selectors.EVENT_READ, "udp")
+    TCP_server: socket.socket | None = None
+    if load_token is not None:
+        TCP_server = socket.socket(family, socket.SOCK_STREAM)
+        TCP_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        TCP_server.setblocking(False)
+        TCP_server.bind((bind_host, actual_port))
+        TCP_server.listen(max_tcp_clients)
+        selector.register(TCP_server, selectors.EVENT_READ, "tcp-listener")
     stopped = False
 
     def stop(_signal: int, _frame: FrameType | None) -> None:
         nonlocal stopped
         stopped = True
-        server.close()
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    emit("ready", bindHost=bind_host, port=actual_port)
+    emit(
+        "ready",
+        bindHost=bind_host,
+        port=actual_port,
+        tcpLoadEnabled=load_token is not None,
+    )
 
     handled = 0
+    TCP_accepted = 0
+    TCP_rejected = 0
+    TCP_peak = 0
+    clients: dict[int, LoadClient] = {}
+
+    def reject(client: LoadClient, reason: str) -> None:
+        nonlocal TCP_rejected
+        TCP_rejected += 1
+        emit("tcp-rejected", reason=reason)
+        close_load_client(selector, clients, client)
+
     try:
         while not stopped and (max_requests is None or handled < max_requests):
-            try:
-                query, peer = server.recvfrom(MAX_DNS_DATAGRAM_BYTES)
-                response = build_dns_response(query)
-                server.sendto(response, peer)
-                handled += 1
-                emit("response", request=handled, bytes=len(response))
-            except ProbeError as error:
-                emit("rejected", reason=str(error))
-            except OSError:
-                if not stopped:
-                    raise
+            for key, _ in selector.select(timeout=0.25):
+                if key.data == "udp":
+                    try:
+                        query, peer = UDP_server.recvfrom(MAX_DNS_DATAGRAM_BYTES)
+                        response = build_dns_response(query)
+                        UDP_server.sendto(response, peer)
+                        handled += 1
+                        emit("response", request=handled, bytes=len(response))
+                    except ProbeError as error:
+                        emit("rejected", reason=str(error))
+                    continue
+
+                if key.data == "tcp-listener":
+                    assert TCP_server is not None
+                    while True:
+                        try:
+                            connection, _ = TCP_server.accept()
+                        except BlockingIOError:
+                            break
+                        connection.setblocking(False)
+                        if len(clients) >= max_tcp_clients:
+                            connection.close()
+                            TCP_rejected += 1
+                            emit("tcp-rejected", reason="capacity")
+                            continue
+                        client = LoadClient(
+                            connection=connection,
+                            deadline=time.monotonic() + tcp_idle_seconds,
+                        )
+                        clients[connection.fileno()] = client
+                        selector.register(connection, selectors.EVENT_READ, client)
+                    continue
+
+                client = key.data
+                assert isinstance(client, LoadClient)
+                try:
+                    chunk = client.connection.recv(MAX_LOAD_REQUEST_BYTES + 1)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    close_load_client(selector, clients, client)
+                    continue
+                client.deadline = time.monotonic() + tcp_idle_seconds
+                if client.authenticated:
+                    reject(client, "unexpected-data")
+                    continue
+                client.request.extend(chunk)
+                if len(client.request) > MAX_LOAD_REQUEST_BYTES:
+                    reject(client, "request-too-long")
+                    continue
+                if b"\n" not in client.request:
+                    continue
+                expected = LOAD_PROTOCOL_PREFIX + load_token + b"\n"
+                if not hmac.compare_digest(bytes(client.request), expected):
+                    reject(client, "authentication")
+                    continue
+                sent = client.connection.send(LOAD_READY)
+                if sent != len(LOAD_READY):
+                    reject(client, "short-ready-write")
+                    continue
+                client.authenticated = True
+                TCP_accepted += 1
+                TCP_peak = max(
+                    TCP_peak,
+                    sum(item.authenticated for item in clients.values()),
+                )
+                emit("tcp-accepted", accepted=TCP_accepted)
+
+            now = time.monotonic()
+            for client in list(clients.values()):
+                if client.deadline <= now:
+                    reject(client, "idle-timeout")
     finally:
-        server.close()
-    emit("stopped", requests=handled)
+        for client in list(clients.values()):
+            close_load_client(selector, clients, client)
+        if TCP_server is not None:
+            selector.unregister(TCP_server)
+            TCP_server.close()
+        selector.unregister(UDP_server)
+        UDP_server.close()
+        selector.close()
+    emit(
+        "stopped",
+        requests=handled,
+        tcpAccepted=TCP_accepted,
+        tcpRejected=TCP_rejected,
+        tcpPeak=TCP_peak,
+    )
     return 0
 
 
@@ -112,12 +266,31 @@ def main() -> int:
     parser.add_argument("--bind-host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=53053)
     parser.add_argument("--max-requests", type=int)
+    parser.add_argument("--tcp-load-token-file", type=pathlib.Path)
+    parser.add_argument("--max-tcp-clients", type=int, default=320)
+    parser.add_argument("--tcp-idle-seconds", type=int, default=900)
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         raise ProbeError("--port must be between 0 and 65535")
     if args.max_requests is not None and args.max_requests < 1:
         raise ProbeError("--max-requests must be positive")
-    return serve(args.bind_host, args.port, args.max_requests)
+    if not 1 <= args.max_tcp_clients <= 1024:
+        raise ProbeError("--max-tcp-clients must be between 1 and 1024")
+    if not 30 <= args.tcp_idle_seconds <= 3600:
+        raise ProbeError("--tcp-idle-seconds must be between 30 and 3600")
+    load_token = (
+        load_auth_token(args.tcp_load_token_file)
+        if args.tcp_load_token_file is not None
+        else None
+    )
+    return serve(
+        args.bind_host,
+        args.port,
+        args.max_requests,
+        load_token,
+        args.max_tcp_clients,
+        args.tcp_idle_seconds,
+    )
 
 
 if __name__ == "__main__":

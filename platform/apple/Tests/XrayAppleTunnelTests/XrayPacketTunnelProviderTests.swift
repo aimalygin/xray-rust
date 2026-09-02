@@ -10,6 +10,7 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         let snapshot = XrayPacketTunnelResourceSnapshot.current()
 
         XCTAssertGreaterThan(snapshot.residentMemoryBytes, 0)
+        XCTAssertGreaterThan(snapshot.physicalFootprintBytes, 0)
         XCTAssertGreaterThan(snapshot.threadCount, 0)
     }
 

@@ -13,6 +13,7 @@ import plistlib
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -42,6 +43,20 @@ FAILED_PROBE = re.compile(
     r"^XRAY_DEVICE_PROBE kind=(http|udp) result=failed "
     r"error=([A-Za-z0-9._-]{1,128})$"
 )
+MEMORY_RESULT = re.compile(
+    r"^XRAY_DEVICE_MEMORY_RESULT baselineRSS=([0-9]+) "
+    r"peakRSS=([0-9]+) recoveredRSS=([0-9]+) "
+    r"baselinePhysicalFootprint=([0-9]+) "
+    r"peakPhysicalFootprint=([0-9]+) "
+    r"recoveredPhysicalFootprint=([0-9]+) "
+    r"safetyLimitPhysicalFootprint=([0-9]+) "
+    r"safetyLimitReached=(true|false) "
+    r"stopStage=(none|baseline|tcp-(?:32|64|128|192|240)|"
+    r"udp-(?:64|128|256|384|480)) "
+    r"highestTCPFlows=([0-9]+) highestUDPFlows=([0-9]+) "
+    r"closedConnections=([0-9]+)$"
+)
+LOAD_TOKEN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class CampaignError(Exception):
@@ -149,10 +164,9 @@ def prepare_xctestrun(
     UDP_host: str,
     UDP_port: int,
     debug_logging_enabled: bool,
+    memory_stress: dict[str, str] | None = None,
 ) -> pathlib.Path:
     destination = source.with_name(f"XrayClient_{campaign_id}_iphoneos-arm64.xctestrun")
-    if destination.exists():
-        raise CampaignError(f"generated xctestrun already exists: {destination}")
     with source.open("rb") as input_file:
         document = plistlib.load(input_file)
     configurations = document.get("TestConfigurations", [])
@@ -179,10 +193,32 @@ def prepare_xctestrun(
             ),
         }
     )
+    if memory_stress is not None:
+        environment.update(memory_stress)
     target["DefaultTestExecutionTimeAllowance"] = duration_seconds + 600
     target["UserAttachmentLifetime"] = "keepAlways"
-    with destination.open("wb") as output_file:
-        plistlib.dump(document, output_file, fmt=plistlib.FMT_BINARY)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            destination,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as output_file:
+            descriptor = None
+            plistlib.dump(document, output_file, fmt=plistlib.FMT_BINARY)
+    except FileExistsError as error:
+        raise CampaignError(
+            f"generated xctestrun already exists: {destination}"
+        ) from error
+    except BaseException:
+        if descriptor is not None:
+            os.close(descriptor)
+        destination.unlink(missing_ok=True)
+        raise
     return destination
 
 
@@ -305,6 +341,90 @@ def elapsed_since(started_at: str, observed_at: str) -> int:
     return max(0, int((observed - start).total_seconds()))
 
 
+def read_load_token(path: pathlib.Path) -> str:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise CampaignError(f"cannot read --load-token-file: {error}") from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise CampaignError("--load-token-file must be a regular file, not a symlink")
+    if metadata.st_mode & 0o077:
+        raise CampaignError(
+            "--load-token-file must not be accessible by group or others"
+        )
+    try:
+        token = path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError) as error:
+        raise CampaignError(f"cannot read --load-token-file: {error}") from error
+    if not LOAD_TOKEN.fullmatch(token):
+        raise CampaignError(
+            "--load-token-file must contain exactly 64 lowercase hex characters"
+        )
+    return token
+
+
+def parse_memory_result(line: str) -> dict[str, Any] | None:
+    match = MEMORY_RESULT.fullmatch(line)
+    if match is None:
+        return None
+    (
+        baseline,
+        peak,
+        recovered,
+        baseline_footprint,
+        peak_footprint,
+        recovered_footprint,
+        limit,
+        reached,
+        stop_stage,
+        TCP,
+        UDP,
+        closed,
+    ) = match.groups()
+    result = {
+        "baselineRSSBytes": int(baseline),
+        "peakRSSBytes": int(peak),
+        "recoveredRSSBytes": int(recovered),
+        "baselinePhysicalFootprintBytes": int(baseline_footprint),
+        "peakPhysicalFootprintBytes": int(peak_footprint),
+        "recoveredPhysicalFootprintBytes": int(recovered_footprint),
+        "safetyLimitPhysicalFootprintBytes": int(limit),
+        "safetyLimitReached": reached == "true",
+        "stopStage": stop_stage,
+        "highestTCPFlowsWithinLimit": int(TCP),
+        "highestUDPFlowsWithinLimit": int(UDP),
+        "closedConnections": int(closed),
+    }
+    if (
+        result["baselineRSSBytes"] == 0
+        or result["recoveredRSSBytes"] == 0
+        or result["baselinePhysicalFootprintBytes"] == 0
+        or result["recoveredPhysicalFootprintBytes"] == 0
+        or result["safetyLimitPhysicalFootprintBytes"] == 0
+        or result["peakRSSBytes"] < result["baselineRSSBytes"]
+        or result["peakPhysicalFootprintBytes"]
+        < result["baselinePhysicalFootprintBytes"]
+        or result["closedConnections"] == 0
+        or result["highestTCPFlowsWithinLimit"] not in {0, 32, 64, 128, 192, 240}
+        or result["highestUDPFlowsWithinLimit"] not in {0, 64, 128, 256, 384, 480}
+    ):
+        raise CampaignError("memory-stress result contains invalid metrics")
+    if result["safetyLimitReached"]:
+        if (
+            result["stopStage"] == "none"
+            or result["peakPhysicalFootprintBytes"]
+            <= result["safetyLimitPhysicalFootprintBytes"]
+        ):
+            raise CampaignError("memory-stress safety-stop result is inconsistent")
+    elif (
+        result["stopStage"] != "none"
+        or result["peakPhysicalFootprintBytes"]
+        > result["safetyLimitPhysicalFootprintBytes"]
+    ):
+        raise CampaignError("memory-stress completed result is inconsistent")
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device-id", required=True)
@@ -328,6 +448,22 @@ def main() -> int:
     parser.add_argument("--skip-xcframework-build", action="store_true")
     parser.add_argument("--skip-test-build", action="store_true")
     parser.add_argument("--skip-instruments", action="store_true")
+    parser.add_argument(
+        "--memory-stress",
+        action="store_true",
+        help="run the rehearsal-only physical TCP/UDP memory stress workload",
+    )
+    parser.add_argument("--load-host")
+    parser.add_argument("--load-port", type=int)
+    parser.add_argument("--load-token-file", type=pathlib.Path)
+    parser.add_argument("--stress-stage-seconds", type=int, default=15)
+    parser.add_argument("--stress-recovery-seconds", type=int, default=60)
+    parser.add_argument(
+        "--stress-max-footprint-mib",
+        type=int,
+        default=48,
+        help="protective physical-footprint ceiling that stops the load ramp",
+    )
     args = parser.parse_args()
 
     root = pathlib.Path(__file__).resolve().parent.parent
@@ -364,6 +500,37 @@ def main() -> int:
         raise CampaignError("formal campaigns cannot skip Instruments")
     if not args.rehearsal and args.skip_test_build:
         raise CampaignError("formal campaigns cannot skip the Xcode test build")
+    if args.memory_stress and not args.rehearsal:
+        raise CampaignError("memory stress is a rehearsal-only supplemental gate")
+    load_token: str | None = None
+    if args.memory_stress:
+        if (
+            not args.load_host
+            or len(args.load_host) > 253
+            or not args.load_host.isprintable()
+            or args.load_port is None
+            or not 1 <= args.load_port <= 65535
+            or args.load_token_file is None
+        ):
+            raise CampaignError(
+                "memory stress requires --load-host, --load-port, and --load-token-file"
+            )
+        if not 10 <= args.stress_stage_seconds <= 120:
+            raise CampaignError("--stress-stage-seconds must be between 10 and 120")
+        if not 30 <= args.stress_recovery_seconds <= 600:
+            raise CampaignError("--stress-recovery-seconds must be between 30 and 600")
+        if not 24 <= args.stress_max_footprint_mib <= 128:
+            raise CampaignError(
+                "--stress-max-footprint-mib must be between 24 and 128"
+            )
+        planned_seconds = (
+            11 * args.stress_stage_seconds + args.stress_recovery_seconds
+        )
+        if args.duration_seconds < planned_seconds:
+            raise CampaignError(
+                "--duration-seconds is shorter than the configured memory stress plan"
+            )
+        load_token = read_load_token(args.load_token_file)
     if args.campaign_dir.exists():
         raise CampaignError(f"campaign directory already exists: {args.campaign_dir}")
 
@@ -379,12 +546,25 @@ def main() -> int:
     result_bundle = args.campaign_dir / "apple-device.xcresult"
     trace_path = args.campaign_dir / "resource-profile.trace"
     trace_archive = args.campaign_dir / "resource-profile.trace.zip"
-    secrets = [args.device_id, args.http_url, args.udp_host]
+    secrets = [
+        args.device_id,
+        args.http_url,
+        args.udp_host,
+        args.load_host or "",
+        load_token or "",
+    ]
+    test_name = (
+        "testPhysicalDeviceMemoryStress"
+        if args.memory_stress
+        else "testPhysicalDeviceCampaign"
+    )
 
     generated_xctestrun: pathlib.Path | None = None
     instrument_process: subprocess.Popen[str] | None = None
     instrument_output: IO[str] | None = None
     soak_started_at: str | None = None
+    memory_result: dict[str, Any] | None = None
+    memory_result_count = 0
     try:
         build_started_at = UTC_now()
         atomic_write_json(
@@ -427,7 +607,7 @@ def main() -> int:
                     f"id={args.device_id}",
                     "-derivedDataPath",
                     str(args.derived_data),
-                    "-only-testing:XrayClientUITests/XrayClientUITests/testPhysicalDeviceCampaign",
+                    f"-only-testing:XrayClientUITests/XrayClientUITests/{test_name}",
                 ]
                 if stream_command(build_arguments, root, log, secrets) != 0:
                     raise CampaignError("Xcode test build failed")
@@ -441,6 +621,25 @@ def main() -> int:
                 args.udp_host,
                 args.udp_port,
                 args.rehearsal,
+                (
+                    {
+                        "XRAY_DEVICE_MEMORY_STRESS_ENABLED": "1",
+                        "XRAY_DEVICE_MEMORY_STRESS_HOST": args.load_host or "",
+                        "XRAY_DEVICE_MEMORY_STRESS_PORT": str(args.load_port),
+                        "XRAY_DEVICE_MEMORY_STRESS_TOKEN": load_token or "",
+                        "XRAY_DEVICE_MEMORY_STRESS_STAGE_SECONDS": str(
+                            args.stress_stage_seconds
+                        ),
+                        "XRAY_DEVICE_MEMORY_STRESS_RECOVERY_SECONDS": str(
+                            args.stress_recovery_seconds
+                        ),
+                        "XRAY_DEVICE_MEMORY_STRESS_MAX_PHYSICAL_FOOTPRINT_BYTES": str(
+                            args.stress_max_footprint_mib * 1024 * 1024
+                        ),
+                    }
+                    if args.memory_stress
+                    else None
+                ),
             )
             test_arguments = [
                 "xcodebuild",
@@ -451,7 +650,7 @@ def main() -> int:
                 f"id={args.device_id}",
                 "-resultBundlePath",
                 str(result_bundle),
-                "-only-testing:XrayClientUITests/XrayClientUITests/testPhysicalDeviceCampaign",
+                f"-only-testing:XrayClientUITests/XrayClientUITests/{test_name}",
             ]
             test_process = subprocess.Popen(
                 test_arguments,
@@ -537,11 +736,31 @@ def main() -> int:
                             "errorCode": failed_probe.group(2),
                         },
                     )
+                parsed_memory_result = parse_memory_result(
+                    raw_line.rstrip("\r\n")
+                )
+                if parsed_memory_result is not None:
+                    memory_result_count += 1
+                    memory_result = parsed_memory_result
                 sys.stdout.write(line)
                 sys.stdout.flush()
             test_return_code = test_process.wait()
             if test_return_code != 0:
                 raise CampaignError("physical-device UI campaign failed")
+
+        if args.memory_stress:
+            if memory_result_count != 1 or memory_result is None:
+                raise CampaignError(
+                    "memory stress did not emit exactly one structured result"
+                )
+            if memory_result["safetyLimitPhysicalFootprintBytes"] != (
+                args.stress_max_footprint_mib * 1024 * 1024
+            ):
+                raise CampaignError(
+                    "memory-stress result does not match the configured safety limit"
+                )
+        elif memory_result_count != 0:
+            raise CampaignError("transition soak unexpectedly emitted a memory result")
 
         if instrument_process is not None:
             time.sleep(3)
@@ -605,6 +824,7 @@ def main() -> int:
             "campaignId": args.campaign_id,
             "candidate": {"revision": revision, "dirty": dirty},
             "rehearsal": args.rehearsal,
+            "workload": "memory-stress" if args.memory_stress else "transition-soak",
             "startedAt": soak_started_at,
             "endedAt": ended_at,
             "requestedDurationSeconds": args.duration_seconds,
@@ -630,6 +850,8 @@ def main() -> int:
                 "xcresult": result_bundle.name,
             },
         }
+        if memory_result is not None:
+            metadata["memoryStress"] = memory_result
         (args.campaign_dir / "apple-run.json").write_text(
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",

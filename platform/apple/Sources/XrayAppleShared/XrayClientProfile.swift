@@ -1278,6 +1278,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
     public var activeTCPFlows: UInt64
     public var activeUDPFlows: UInt64
     public var residentMemoryBytes: UInt64
+    public var physicalFootprintBytes: UInt64
     public var threadCount: UInt64
     public var runtimeIdentifier: String
     public var udpFlowLimit: UInt64
@@ -1324,6 +1325,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         case activeTCPFlows
         case activeUDPFlows
         case residentMemoryBytes
+        case physicalFootprintBytes
         case threadCount
         case runtimeIdentifier
         case udpFlowLimit
@@ -1371,6 +1373,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         activeTCPFlows: UInt64 = 0,
         activeUDPFlows: UInt64 = 0,
         residentMemoryBytes: UInt64 = 0,
+        physicalFootprintBytes: UInt64 = 0,
         threadCount: UInt64 = 0,
         runtimeIdentifier: String = "",
         udpFlowLimit: UInt64 = 0,
@@ -1416,6 +1419,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         self.activeTCPFlows = activeTCPFlows
         self.activeUDPFlows = activeUDPFlows
         self.residentMemoryBytes = residentMemoryBytes
+        self.physicalFootprintBytes = physicalFootprintBytes
         self.threadCount = threadCount
         self.runtimeIdentifier = runtimeIdentifier
         self.udpFlowLimit = udpFlowLimit
@@ -1499,6 +1503,10 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         residentMemoryBytes = try container.decodeIfPresent(
             UInt64.self,
             forKey: .residentMemoryBytes
+        ) ?? 0
+        physicalFootprintBytes = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .physicalFootprintBytes
         ) ?? 0
         threadCount = try container.decodeIfPresent(UInt64.self, forKey: .threadCount) ?? 0
         runtimeIdentifier = try container.decodeIfPresent(
