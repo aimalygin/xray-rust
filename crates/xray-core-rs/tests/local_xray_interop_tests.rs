@@ -2469,29 +2469,12 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_se
 
 #[tokio::test]
 #[ignore = "requires XRAY_REMOTE_XHTTP_CONFIG and an owner-controlled remote endpoint"]
-async fn rust_socks_client_reaches_public_http_through_remote_xhttp_profile() {
+async fn rust_socks_client_reaches_target_through_remote_xhttp_profile() {
     const CONFIG_ENV: &str = "XRAY_REMOTE_XHTTP_CONFIG";
-    let config_path = env::var(CONFIG_ENV)
-        .unwrap_or_else(|_| panic!("{CONFIG_ENV} must name an owner-only Xray JSON config"));
-    let metadata = fs::symlink_metadata(&config_path)
-        .unwrap_or_else(|error| panic!("read {CONFIG_ENV} metadata: {error}"));
-    assert!(
-        metadata.file_type().is_file(),
-        "{CONFIG_ENV} must name a regular file"
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        assert_eq!(
-            metadata.permissions().mode() & 0o077,
-            0,
-            "{CONFIG_ENV} must not be accessible by group or others"
-        );
-    }
-
-    let raw = fs::read_to_string(&config_path)
-        .unwrap_or_else(|error| panic!("read {CONFIG_ENV}: {error}"));
+    const PROBE_HOST_ENV: &str = "XRAY_REMOTE_XHTTP_PROBE_HOST";
+    const PROBE_PORT_ENV: &str = "XRAY_REMOTE_XHTTP_PROBE_PORT";
+    const HOLD_TOKEN_ENV: &str = "XRAY_REMOTE_XHTTP_HOLD_TOKEN_FILE";
+    let raw = read_owner_only_text_from_env(CONFIG_ENV);
     let mut config = parse_xray_json(&raw)
         .unwrap_or_else(|error| panic!("parse {CONFIG_ENV}: {error}"))
         .config;
@@ -2513,24 +2496,70 @@ async fn rust_socks_client_reaches_public_http_through_remote_xhttp_profile() {
         .inbound_addr(Some("socks-in"))
         .expect("bound remote XHTTP oracle SOCKS addr");
 
+    let probe_host = env::var(PROBE_HOST_ENV).unwrap_or_else(|_| "www.google.com".to_owned());
+    assert!(
+        !probe_host.is_empty()
+            && probe_host.len() <= 253
+            && probe_host
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() && byte != b'/' && byte != b'@'),
+        "{PROBE_HOST_ENV} must be a printable host without URL syntax"
+    );
+    let probe_port = env::var(PROBE_PORT_ENV).map_or(80, |raw| {
+        raw.parse::<u16>()
+            .unwrap_or_else(|_| panic!("{PROBE_PORT_ENV} must be a nonzero u16"))
+    });
+    assert_ne!(probe_port, 0, "{PROBE_PORT_ENV} must be nonzero");
+    let hold_token = env::var_os(HOLD_TOKEN_ENV).map(|_| {
+        let raw = read_owner_only_text_from_env(HOLD_TOKEN_ENV);
+        let token = raw.strip_suffix('\n').unwrap_or(&raw);
+        assert!(
+            token.len() == 64
+                && token
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+            "{HOLD_TOKEN_ENV} must contain exactly 64 lowercase hexadecimal characters"
+        );
+        token.to_owned()
+    });
+
     let probe = async {
         let mut client = TcpStream::connect(socks_addr)
             .await
             .map_err(|error| format!("connect remote XHTTP oracle SOCKS: {error}"))?;
-        socks5_connect_domain(&mut client, "www.google.com", 80).await?;
-        client
-            .write_all(
-                b"GET /generate_204 HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n",
-            )
-            .await
-            .map_err(|error| format!("write remote XHTTP oracle request: {error}"))?;
-        let mut response = [0_u8; 256];
-        let read = client
-            .read(&mut response)
-            .await
-            .map_err(|error| format!("read remote XHTTP oracle response: {error}"))?;
-        if read == 0 || !response[..read].starts_with(b"HTTP/1.1 ") {
-            return Err("remote XHTTP oracle did not return an HTTP/1.1 response".to_owned());
+        socks5_connect_domain(&mut client, &probe_host, probe_port).await?;
+        if let Some(token) = hold_token {
+            client
+                .write_all(format!("XRAY-MEMORY-HOLD/1 {token}\n").as_bytes())
+                .await
+                .map_err(|error| format!("write remote XHTTP hold request: {error}"))?;
+            const EXPECTED: &[u8] = b"XRAY-MEMORY-HOLD/1 READY\n";
+            let mut response = vec![0_u8; EXPECTED.len()];
+            client
+                .read_exact(&mut response)
+                .await
+                .map_err(|error| format!("read remote XHTTP hold response: {error}"))?;
+            if response != EXPECTED {
+                return Err("remote XHTTP oracle returned an invalid hold response".to_owned());
+            }
+        } else {
+            client
+                .write_all(
+                    format!(
+                        "GET /generate_204 HTTP/1.1\r\nHost: {probe_host}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .map_err(|error| format!("write remote XHTTP HTTP request: {error}"))?;
+            let mut response = [0_u8; 256];
+            let read = client
+                .read(&mut response)
+                .await
+                .map_err(|error| format!("read remote XHTTP HTTP response: {error}"))?;
+            if read == 0 || !response[..read].starts_with(b"HTTP/1.1 ") {
+                return Err("remote XHTTP oracle did not return an HTTP/1.1 response".to_owned());
+            }
         }
         Ok::<(), String>(())
     };
@@ -2539,6 +2568,28 @@ async fn rust_socks_client_reaches_public_http_through_remote_xhttp_profile() {
     probe_result
         .expect("remote XHTTP oracle probe timeout")
         .expect("remote XHTTP oracle probe");
+}
+
+fn read_owner_only_text_from_env(environment_name: &str) -> String {
+    let path = env::var(environment_name)
+        .unwrap_or_else(|_| panic!("{environment_name} must name an owner-only file"));
+    let metadata = fs::symlink_metadata(&path)
+        .unwrap_or_else(|error| panic!("read {environment_name} metadata: {error}"));
+    assert!(
+        metadata.file_type().is_file(),
+        "{environment_name} must name a regular file"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            metadata.permissions().mode() & 0o077,
+            0,
+            "{environment_name} must not be accessible by group or others"
+        );
+    }
+    fs::read_to_string(path).unwrap_or_else(|error| panic!("read {environment_name}: {error}"))
 }
 
 fn selected_xhttp_interop_cases() -> Vec<XhttpInteropCase> {

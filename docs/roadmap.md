@@ -315,7 +315,8 @@ reproducible release gate; it does not count offline devices, simulators, or an
 unexecuted template as passing evidence.
 
 An opt-in owner-controlled remote XHTTP oracle now reuses an owner-only client
-JSON outside the repository and proves the Rust SOCKS-to-XHTTP path before a
+JSON outside the repository and proves either a public HTTP target or an
+authenticated hold endpoint through the Rust SOCKS-to-XHTTP path before a
 device run. A short physical Apple H2/REALITY `stream-one` rehearsal has also
 passed HTTPS carriage, TUN accounting, connection closure, and clean tunnel
 teardown. Its preceding fail-closed run traced a pre-first-byte reset to a
@@ -323,6 +324,19 @@ share link that omitted the server's non-default `xPaddingBytes`; the importer
 correctly preserved `extra` once the link supplied it. This is diagnostic
 rehearsal evidence from a dirty development revision, not the required clean
 six-hour Apple report, and it provides no Android release evidence.
+
+The supplemental physical Apple XHTTP/H2 memory rehearsal now uses two
+identical TCP-240/UDP-480 load-and-recovery cycles in one extension runtime.
+The original cold-baseline check correctly exposed retained memory but was not
+a valid leak oracle: a five-minute idle observation stayed flat at about
+32.2 MiB because the warmed H2 carrier and background flows remained live. In
+the corrected two-cycle run, physical footprint peaked at 42.1 MiB then
+36.7 MiB, and recovered from 31.22 MiB to 31.50 MiB, only about 0.28 MiB of
+cycle-over-cycle growth against an 8 MiB allowance. Both cycles reached all
+TCP and UDP stages below the 48 MiB protective ceiling; the provider accepted
+1,670 closes, stayed at runtime generation one with no fatal TUN telemetry, and
+disconnected cleanly. This is still dirty-revision diagnostic evidence on one
+iPhone 13, not the clean six-hour Apple report or any Android evidence.
 
 A clean, five-run macOS pre-device performance gate now covers the v0.4.0
 shared routing, DNS-selector, process RSS, plain TCP, and inherited-fd TUN

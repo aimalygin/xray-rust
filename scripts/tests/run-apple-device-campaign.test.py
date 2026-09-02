@@ -38,26 +38,37 @@ def main() -> int:
     ) is not None:
         raise AssertionError("campaign runner accepts unsafe failed-probe text")
     memory_result = parse_memory_result(
-        "XRAY_DEVICE_MEMORY_RESULT baselineRSS=18000000 peakRSS=52000000 "
-        "recoveredRSS=51000000 baselinePhysicalFootprint=17000000 "
-        "peakPhysicalFootprint=52000000 recoveredPhysicalFootprint=19000000 "
-        "safetyLimitPhysicalFootprint=50331648 "
-        "safetyLimitReached=true stopStage=udp-384 highestTCPFlows=240 "
-        "highestUDPFlows=256 closedConnections=624"
+        "XRAY_DEVICE_MEMORY_RESULT baselineRSS=18000000 peakRSS=90000000 "
+        "recoveredRSS=80000000 baselinePhysicalFootprint=17000000 "
+        "peakPhysicalFootprint=53000000 recoveredPhysicalFootprint=36000000 "
+        "stressCycles=2 firstCyclePeakPhysicalFootprint=52000000 "
+        "firstCycleRecoveredPhysicalFootprint=35000000 "
+        "secondCyclePeakPhysicalFootprint=53000000 "
+        "secondCycleRecoveredPhysicalFootprint=36000000 "
+        "plateauAllowancePhysicalFootprint=8388608 "
+        "safetyLimitPhysicalFootprint=60000000 "
+        "safetyLimitReached=false stopStage=none highestTCPFlows=240 "
+        "highestUDPFlows=480 closedConnections=1440"
     )
     if memory_result != {
         "baselineRSSBytes": 18_000_000,
-        "peakRSSBytes": 52_000_000,
-        "recoveredRSSBytes": 51_000_000,
+        "peakRSSBytes": 90_000_000,
+        "recoveredRSSBytes": 80_000_000,
         "baselinePhysicalFootprintBytes": 17_000_000,
-        "peakPhysicalFootprintBytes": 52_000_000,
-        "recoveredPhysicalFootprintBytes": 19_000_000,
-        "safetyLimitPhysicalFootprintBytes": 50_331_648,
-        "safetyLimitReached": True,
-        "stopStage": "udp-384",
+        "peakPhysicalFootprintBytes": 53_000_000,
+        "recoveredPhysicalFootprintBytes": 36_000_000,
+        "stressCycles": 2,
+        "firstCyclePeakPhysicalFootprintBytes": 52_000_000,
+        "firstCycleRecoveredPhysicalFootprintBytes": 35_000_000,
+        "secondCyclePeakPhysicalFootprintBytes": 53_000_000,
+        "secondCycleRecoveredPhysicalFootprintBytes": 36_000_000,
+        "plateauAllowancePhysicalFootprintBytes": 8_388_608,
+        "safetyLimitPhysicalFootprintBytes": 60_000_000,
+        "safetyLimitReached": False,
+        "stopStage": "none",
         "highestTCPFlowsWithinLimit": 240,
-        "highestUDPFlowsWithinLimit": 256,
-        "closedConnections": 624,
+        "highestUDPFlowsWithinLimit": 480,
+        "closedConnections": 1440,
     }:
         raise AssertionError(f"unexpected parsed memory result: {memory_result}")
     try:
@@ -65,6 +76,11 @@ def main() -> int:
             "XRAY_DEVICE_MEMORY_RESULT baselineRSS=18000000 peakRSS=52000000 "
             "recoveredRSS=51000000 baselinePhysicalFootprint=17000000 "
             "peakPhysicalFootprint=52000000 recoveredPhysicalFootprint=19000000 "
+            "stressCycles=2 firstCyclePeakPhysicalFootprint=51000000 "
+            "firstCycleRecoveredPhysicalFootprint=19000000 "
+            "secondCyclePeakPhysicalFootprint=52000000 "
+            "secondCycleRecoveredPhysicalFootprint=19000000 "
+            "plateauAllowancePhysicalFootprint=8388608 "
             "safetyLimitPhysicalFootprint=50331648 "
             "safetyLimitReached=false stopStage=none highestTCPFlows=240 "
             "highestUDPFlows=480 closedConnections=720"
@@ -234,7 +250,7 @@ def main() -> int:
                 "--campaign-dir",
                 str(temporary / "memory-rehearsal"),
                 "--duration-seconds",
-                "240",
+                "510",
                 "--rehearsal",
                 "--memory-stress",
                 "--load-host",

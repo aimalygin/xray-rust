@@ -345,7 +345,7 @@ address and port with an ephemeral loopback socket:
 chmod 600 /private/path/xhttp-client.json
 XRAY_REMOTE_XHTTP_CONFIG=/private/path/xhttp-client.json \
   cargo test -p xray-core-rs --test local_xray_interop_tests \
-  rust_socks_client_reaches_public_http_through_remote_xhttp_profile \
+  rust_socks_client_reaches_target_through_remote_xhttp_profile \
   -- --ignored
 ```
 
@@ -356,6 +356,12 @@ server constrained to `xPaddingBytes: 64` is not compatible with a link that
 omits that value and therefore selects the client default `100-1000`; the
 symptom is a successful carrier open followed by a read reset before the first
 target byte.
+
+The default target is `www.google.com:80`. An authenticated owner-controlled
+memory endpoint can instead set `XRAY_REMOTE_XHTTP_PROBE_HOST`,
+`XRAY_REMOTE_XHTTP_PROBE_PORT`, and the owner-only
+`XRAY_REMOTE_XHTTP_HOLD_TOKEN_FILE`; the oracle then requires the repository's
+`XRAY-MEMORY-HOLD/1` handshake rather than a public HTTP response.
 
 Before the first run on a development-signed iPhone, enable Developer Mode and
 `Settings > Developer > Enable UI Automation`, keep the device unlocked, and
@@ -442,7 +448,7 @@ python3 scripts/run-apple-device-campaign.py \
   --device-id <physical-iphone-udid> \
   --campaign-id <non-secret-memory-run-id> \
   --campaign-dir target/mobile/device-gate/<campaign-id>/apple-memory \
-  --duration-seconds 240 \
+  --duration-seconds 360 \
   --http-url https://<approved-probe>/payload \
   --udp-host <approved-load-host> \
   --udp-port 53053 \
@@ -456,21 +462,28 @@ python3 scripts/run-apple-device-campaign.py \
   --stress-max-footprint-mib 48
 ```
 
-The test opens real device TCP flows in steps of 32, 64, 128, 192, and 240,
-then real UDP flows in steps of 64, 128, 256, 384, and 480. All traffic passes
-through the active packet tunnel. The physical-footprint value is a protective
-load ceiling, not a claimed universal Network Extension limit. Crossing it stops the ramp,
-closes the provider-side flow snapshot, cancels the device sockets, and still
-runs the recovery window. A runtime restart, fatal TUN telemetry, failure to
-close flows, recovered physical footprint above
-`baseline + max(8 MiB, 25%)`, or recovered thread count above `baseline + 4`
-fails the test. Reaching the protective ceiling alone does not fail if teardown
-and recovery succeed. RSS is retained alongside physical footprint as an
-allocator-retention diagnostic, but iOS memory-pressure enforcement follows
+The test runs two identical load/recovery cycles in one Network Extension
+runtime. Each cycle opens real device TCP flows in steps of 32, 64, 128, 192,
+and 240, then real UDP flows in steps of 64, 128, 256, 384, and 480. All traffic
+passes through the active packet tunnel. Comparing the second cycle with the
+first distinguishes progressive growth from the stable high-water allocation
+of a warmed XHTTP/H2 carrier; a cold pre-carrier baseline is retained only as a
+diagnostic. The physical-footprint value is a protective load ceiling, not a
+claimed universal Network Extension limit. Crossing it stops the current
+ramp, closes the provider-side flow snapshot, cancels the device sockets, runs
+recovery, and suppresses the second cycle. A runtime restart, fatal TUN
+telemetry, failure to close flows, second-cycle recovered or peak footprint
+above the corresponding first-cycle value plus `max(8 MiB, 25%)`, or recovered
+thread count above the first cycle plus four fails the normal two-cycle test.
+If the ceiling stops the first cycle, the stricter cold-baseline recovery check
+remains in force. Reaching the protective ceiling alone does not fail if
+teardown and recovery succeed. RSS is retained alongside physical footprint as
+an allocator-retention diagnostic, but iOS memory-pressure enforcement follows
 the physical footprint.
 
-`apple-run.json` records baseline, peak, and recovered RSS and physical
-footprint, whether the ceiling was reached, the stop stage, the highest TCP and
+`apple-run.json` records baseline, overall peak, final recovered RSS and
+physical footprint, both per-cycle peak/recovery footprints, the plateau
+allowance, whether the ceiling was reached, the stop stage, the highest TCP and
 UDP stages that remained below the ceiling, and the number of provider-accepted
 closes. The complete portable sample series remains in
 `apple-device-samples.json`. This rehearsal characterizes

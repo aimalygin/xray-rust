@@ -49,6 +49,12 @@ MEMORY_RESULT = re.compile(
     r"baselinePhysicalFootprint=([0-9]+) "
     r"peakPhysicalFootprint=([0-9]+) "
     r"recoveredPhysicalFootprint=([0-9]+) "
+    r"stressCycles=(1|2) "
+    r"firstCyclePeakPhysicalFootprint=([0-9]+) "
+    r"firstCycleRecoveredPhysicalFootprint=([0-9]+) "
+    r"secondCyclePeakPhysicalFootprint=([0-9]+) "
+    r"secondCycleRecoveredPhysicalFootprint=([0-9]+) "
+    r"plateauAllowancePhysicalFootprint=([0-9]+) "
     r"safetyLimitPhysicalFootprint=([0-9]+) "
     r"safetyLimitReached=(true|false) "
     r"stopStage=(none|baseline|tcp-(?:32|64|128|192|240)|"
@@ -374,6 +380,12 @@ def parse_memory_result(line: str) -> dict[str, Any] | None:
         baseline_footprint,
         peak_footprint,
         recovered_footprint,
+        stress_cycles,
+        first_cycle_peak,
+        first_cycle_recovered,
+        second_cycle_peak,
+        second_cycle_recovered,
+        plateau_allowance,
         limit,
         reached,
         stop_stage,
@@ -388,6 +400,12 @@ def parse_memory_result(line: str) -> dict[str, Any] | None:
         "baselinePhysicalFootprintBytes": int(baseline_footprint),
         "peakPhysicalFootprintBytes": int(peak_footprint),
         "recoveredPhysicalFootprintBytes": int(recovered_footprint),
+        "stressCycles": int(stress_cycles),
+        "firstCyclePeakPhysicalFootprintBytes": int(first_cycle_peak),
+        "firstCycleRecoveredPhysicalFootprintBytes": int(first_cycle_recovered),
+        "secondCyclePeakPhysicalFootprintBytes": int(second_cycle_peak),
+        "secondCycleRecoveredPhysicalFootprintBytes": int(second_cycle_recovered),
+        "plateauAllowancePhysicalFootprintBytes": int(plateau_allowance),
         "safetyLimitPhysicalFootprintBytes": int(limit),
         "safetyLimitReached": reached == "true",
         "stopStage": stop_stage,
@@ -400,6 +418,9 @@ def parse_memory_result(line: str) -> dict[str, Any] | None:
         or result["recoveredRSSBytes"] == 0
         or result["baselinePhysicalFootprintBytes"] == 0
         or result["recoveredPhysicalFootprintBytes"] == 0
+        or result["firstCyclePeakPhysicalFootprintBytes"] == 0
+        or result["firstCycleRecoveredPhysicalFootprintBytes"] == 0
+        or result["plateauAllowancePhysicalFootprintBytes"] == 0
         or result["safetyLimitPhysicalFootprintBytes"] == 0
         or result["peakRSSBytes"] < result["baselineRSSBytes"]
         or result["peakPhysicalFootprintBytes"]
@@ -409,6 +430,27 @@ def parse_memory_result(line: str) -> dict[str, Any] | None:
         or result["highestUDPFlowsWithinLimit"] not in {0, 64, 128, 256, 384, 480}
     ):
         raise CampaignError("memory-stress result contains invalid metrics")
+    if result["stressCycles"] == 1:
+        if (
+            result["secondCyclePeakPhysicalFootprintBytes"] != 0
+            or result["secondCycleRecoveredPhysicalFootprintBytes"] != 0
+            or not result["safetyLimitReached"]
+            or result["recoveredPhysicalFootprintBytes"]
+            != result["firstCycleRecoveredPhysicalFootprintBytes"]
+        ):
+            raise CampaignError("single-cycle memory-stress result is inconsistent")
+    elif (
+        result["secondCyclePeakPhysicalFootprintBytes"] == 0
+        or result["secondCycleRecoveredPhysicalFootprintBytes"] == 0
+        or result["recoveredPhysicalFootprintBytes"]
+        != result["secondCycleRecoveredPhysicalFootprintBytes"]
+    ):
+        raise CampaignError("two-cycle memory-stress result is incomplete")
+    if result["peakPhysicalFootprintBytes"] < max(
+        result["firstCyclePeakPhysicalFootprintBytes"],
+        result["secondCyclePeakPhysicalFootprintBytes"],
+    ):
+        raise CampaignError("memory-stress overall peak is inconsistent")
     if result["safetyLimitReached"]:
         if (
             result["stopStage"] == "none"
@@ -524,7 +566,9 @@ def main() -> int:
                 "--stress-max-footprint-mib must be between 24 and 128"
             )
         planned_seconds = (
-            11 * args.stress_stage_seconds + args.stress_recovery_seconds
+            21 * args.stress_stage_seconds
+            + 2 * args.stress_recovery_seconds
+            + 60
         )
         if args.duration_seconds < planned_seconds:
             raise CampaignError(

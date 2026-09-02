@@ -172,13 +172,7 @@ final class XrayClientUITests: XCTestCase {
         var samples: [CampaignSample] = []
         var runtimeGenerations: [String: UInt64] = [:]
         var nextRuntimeGeneration: UInt64 = 1
-        var heldConnections: [NWConnection] = []
         var physicalFootprintSamples: [UInt64] = []
-        var closedConnections: UInt64 = 0
-        var safetyLimitReached = false
-        var safetyLimitStage = "none"
-        var highestTCPFlowsWithinLimit = 0
-        var highestUDPFlowsWithinLimit = 0
 
         do {
             let baselineResult = try await sampleMemoryStage(
@@ -195,156 +189,95 @@ final class XrayClientUITests: XCTestCase {
             )
             let baselineSamples = samples
             let baselinePhysicalFootprintSamples = physicalFootprintSamples
-            if baselineResult.safetyLimitReached {
-                safetyLimitReached = true
-                safetyLimitStage = "baseline"
+            guard !baselineResult.safetyLimitReached else {
+                throw CampaignError.memoryStressBaselineExceedsSafetyLimit(
+                    baselinePhysicalFootprintSamples.max() ?? 0
+                )
             }
 
-            for target in safetyLimitReached ? [] : [32, 64, 128, 192, 240] {
-                let added = try await Self.openTCPHoldConnections(
-                    count: target - heldConnections.count,
-                    host: configuration.loadHost,
-                    port: configuration.loadPort,
-                    token: configuration.loadToken
-                )
-                heldConnections.append(contentsOf: added)
-                let stageResult = try await sampleMemoryStage(
+            var cycleResults: [MemoryLoadCycleResult] = []
+            for cycle in 1 ... 2 {
+                let result = try await runMemoryLoadCycle(
                     app,
-                    label: "tcp-\(target)",
-                    seconds: configuration.stageSeconds,
-                    minimumActiveConnections: UInt64(target),
-                    safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
+                    cycle: cycle,
+                    configuration: configuration,
                     startedAt: startedAt,
                     samples: &samples,
                     physicalFootprintSamples: &physicalFootprintSamples,
                     runtimeGenerations: &runtimeGenerations,
                     nextRuntimeGeneration: &nextRuntimeGeneration
                 )
-                if stageResult.safetyLimitReached {
-                    safetyLimitReached = true
-                    safetyLimitStage = "tcp-\(target)"
+                cycleResults.append(result)
+                if result.safetyLimitReached {
                     break
                 }
-                highestTCPFlowsWithinLimit = target
             }
 
-            var drainResult = try await drainConnections(
-                app,
-                startedAt: startedAt,
-                runtimeGenerations: &runtimeGenerations,
-                nextRuntimeGeneration: &nextRuntimeGeneration
-            )
-            closedConnections += drainResult.closedConnections
-            try validateMemorySample(drainResult.sample)
-            samples.append(drainResult.sample)
-            emit(drainResult.sample)
-            heldConnections.forEach { $0.cancel() }
-            heldConnections.removeAll()
-            try await sleep(seconds: 2)
-
-            for target in safetyLimitReached ? [] : [64, 128, 256, 384, 480] {
-                let added = try await Self.openHeldUDPConnections(
-                    count: target - heldConnections.count,
-                    host: configuration.UDPHost,
-                    port: configuration.UDPPort
-                )
-                heldConnections.append(contentsOf: added)
-                try await Self.refreshHeldUDPConnections(heldConnections)
-                let stageResult = try await sampleMemoryStage(
-                    app,
-                    label: "udp-\(target)",
-                    seconds: configuration.stageSeconds,
-                    minimumActiveConnections: UInt64(target),
-                    safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
-                    startedAt: startedAt,
-                    samples: &samples,
-                    physicalFootprintSamples: &physicalFootprintSamples,
-                    runtimeGenerations: &runtimeGenerations,
-                    nextRuntimeGeneration: &nextRuntimeGeneration
-                )
-                if stageResult.safetyLimitReached {
-                    safetyLimitReached = true
-                    safetyLimitStage = "udp-\(target)"
-                    break
-                }
-                highestUDPFlowsWithinLimit = target
-            }
-
-            drainResult = try await drainConnections(
-                app,
-                startedAt: startedAt,
-                runtimeGenerations: &runtimeGenerations,
-                nextRuntimeGeneration: &nextRuntimeGeneration
-            )
-            closedConnections += drainResult.closedConnections
-            try validateMemorySample(drainResult.sample)
-            samples.append(drainResult.sample)
-            emit(drainResult.sample)
-            heldConnections.forEach { $0.cancel() }
-            heldConnections.removeAll()
-
-            let recoveryStart = samples.count
-            let recoveryPhysicalFootprintStart = physicalFootprintSamples.count
-            _ = try await sampleMemoryStage(
-                app,
-                label: "recovery",
-                seconds: configuration.recoverySeconds,
-                minimumActiveConnections: 0,
-                safetyPhysicalFootprintLimitBytes: nil,
-                startedAt: startedAt,
-                samples: &samples,
-                physicalFootprintSamples: &physicalFootprintSamples,
-                runtimeGenerations: &runtimeGenerations,
-                nextRuntimeGeneration: &nextRuntimeGeneration
-            )
-            let recoverySamples = Array(samples[recoveryStart...])
+            let firstCycle = try XCTUnwrap(cycleResults.first)
+            let lastCycle = try XCTUnwrap(cycleResults.last)
             let baselineRSS = Self.median(
                 baselineSamples.map(\.residentMemoryBytes)
-            )
-            let recoveredRSS = Self.median(
-                Array(recoverySamples.suffix(5)).map(\.residentMemoryBytes)
             )
             let baselinePhysicalFootprint = Self.median(
                 baselinePhysicalFootprintSamples
             )
-            let recoveryPhysicalFootprintSamples = Array(
-                physicalFootprintSamples[recoveryPhysicalFootprintStart...]
-            )
-            let recoveredPhysicalFootprint = Self.median(
-                Array(recoveryPhysicalFootprintSamples.suffix(5))
-            )
             let baselineThreads = Self.median(
                 baselineSamples.map(\.threadCount)
             )
-            let recoveredThreads = Self.median(
-                Array(recoverySamples.suffix(5)).map(\.threadCount)
-            )
-            let footprintAllowance = max(
+            let plateauAllowance = max(
                 8 * 1024 * 1024,
-                baselinePhysicalFootprint / 4
+                firstCycle.recoveredPhysicalFootprintBytes / 4
             )
-            guard recoveredPhysicalFootprint
-                <= baselinePhysicalFootprint + footprintAllowance
-            else {
-                throw CampaignError.memoryStressPhysicalFootprintDidNotRecover(
-                    baseline: baselinePhysicalFootprint,
-                    recovered: recoveredPhysicalFootprint
+            if cycleResults.count == 2 {
+                guard lastCycle.recoveredPhysicalFootprintBytes
+                    <= firstCycle.recoveredPhysicalFootprintBytes + plateauAllowance
+                else {
+                    throw CampaignError.memoryStressPhysicalFootprintDidNotPlateau(
+                        first: firstCycle.recoveredPhysicalFootprintBytes,
+                        second: lastCycle.recoveredPhysicalFootprintBytes
+                    )
+                }
+                guard lastCycle.peakPhysicalFootprintBytes
+                    <= firstCycle.peakPhysicalFootprintBytes + plateauAllowance
+                else {
+                    throw CampaignError.memoryStressPeakPhysicalFootprintDidNotPlateau(
+                        first: firstCycle.peakPhysicalFootprintBytes,
+                        second: lastCycle.peakPhysicalFootprintBytes
+                    )
+                }
+                guard lastCycle.recoveredThreads <= firstCycle.recoveredThreads + 4 else {
+                    throw CampaignError.memoryStressThreadLeak(
+                        baseline: firstCycle.recoveredThreads,
+                        recovered: lastCycle.recoveredThreads
+                    )
+                }
+            } else {
+                let coldRecoveryAllowance = max(
+                    8 * 1024 * 1024,
+                    baselinePhysicalFootprint / 4
                 )
-            }
-            guard recoveredThreads <= baselineThreads + 4 else {
-                throw CampaignError.memoryStressThreadLeak(
-                    baseline: baselineThreads,
-                    recovered: recoveredThreads
-                )
+                guard firstCycle.recoveredPhysicalFootprintBytes
+                    <= baselinePhysicalFootprint + coldRecoveryAllowance
+                else {
+                    throw CampaignError.memoryStressPhysicalFootprintDidNotRecover(
+                        baseline: baselinePhysicalFootprint,
+                        recovered: firstCycle.recoveredPhysicalFootprintBytes
+                    )
+                }
+                guard firstCycle.recoveredThreads <= baselineThreads + 4 else {
+                    throw CampaignError.memoryStressThreadLeak(
+                        baseline: baselineThreads,
+                        recovered: firstCycle.recoveredThreads
+                    )
+                }
             }
 
-            drainResult = try await drainConnections(
+            let drainResult = try await drainConnections(
                 app,
                 startedAt: startedAt,
                 runtimeGenerations: &runtimeGenerations,
                 nextRuntimeGeneration: &nextRuntimeGeneration
             )
-            closedConnections += drainResult.closedConnections
             try validateMemorySample(drainResult.sample)
             samples.append(drainResult.sample)
             emit(drainResult.sample)
@@ -362,12 +295,34 @@ final class XrayClientUITests: XCTestCase {
 
             let peakRSS = samples.map(\.residentMemoryBytes).max() ?? 0
             let peakPhysicalFootprint = physicalFootprintSamples.max() ?? 0
+            let secondCycle = cycleResults.count == 2 ? cycleResults[1] : nil
+            let safetyLimitReached = cycleResults.contains(where: \.safetyLimitReached)
+            let safetyLimitStage = cycleResults
+                .first(where: \.safetyLimitReached)?.safetyLimitStage ?? "none"
+            let highestTCPFlowsWithinLimit = cycleResults
+                .map(\.highestTCPFlowsWithinLimit).max() ?? 0
+            let highestUDPFlowsWithinLimit = cycleResults
+                .map(\.highestUDPFlowsWithinLimit).max() ?? 0
+            let closedConnections = cycleResults
+                .map(\.closedConnections)
+                .reduce(drainResult.closedConnections, +)
             print(
                 "XRAY_DEVICE_MEMORY_RESULT baselineRSS=\(baselineRSS) "
-                    + "peakRSS=\(peakRSS) recoveredRSS=\(recoveredRSS) "
+                    + "peakRSS=\(peakRSS) recoveredRSS=\(lastCycle.recoveredRSSBytes) "
                     + "baselinePhysicalFootprint=\(baselinePhysicalFootprint) "
                     + "peakPhysicalFootprint=\(peakPhysicalFootprint) "
-                    + "recoveredPhysicalFootprint=\(recoveredPhysicalFootprint) "
+                    + "recoveredPhysicalFootprint="
+                    + "\(lastCycle.recoveredPhysicalFootprintBytes) "
+                    + "stressCycles=\(cycleResults.count) "
+                    + "firstCyclePeakPhysicalFootprint="
+                    + "\(firstCycle.peakPhysicalFootprintBytes) "
+                    + "firstCycleRecoveredPhysicalFootprint="
+                    + "\(firstCycle.recoveredPhysicalFootprintBytes) "
+                    + "secondCyclePeakPhysicalFootprint="
+                    + "\(secondCycle?.peakPhysicalFootprintBytes ?? 0) "
+                    + "secondCycleRecoveredPhysicalFootprint="
+                    + "\(secondCycle?.recoveredPhysicalFootprintBytes ?? 0) "
+                    + "plateauAllowancePhysicalFootprint=\(plateauAllowance) "
                     + "safetyLimitPhysicalFootprint="
                     + "\(configuration.maxPhysicalFootprintBytes) "
                     + "safetyLimitReached=\(safetyLimitReached) "
@@ -382,7 +337,6 @@ final class XrayClientUITests: XCTestCase {
                 "provider did not accept memory-stress connection closures"
             )
         } catch {
-            heldConnections.forEach { $0.cancel() }
             try? disconnect(app)
             throw error
         }
@@ -610,6 +564,156 @@ final class XrayClientUITests: XCTestCase {
             throw CampaignError.missingTelemetry(key)
         }
         return value
+    }
+
+    @MainActor
+    @available(iOS 17.0, *)
+    private func runMemoryLoadCycle(
+        _ app: XCUIApplication,
+        cycle: Int,
+        configuration: MemoryStressConfiguration,
+        startedAt: TimeInterval,
+        samples: inout [CampaignSample],
+        physicalFootprintSamples: inout [UInt64],
+        runtimeGenerations: inout [String: UInt64],
+        nextRuntimeGeneration: inout UInt64
+    ) async throws -> MemoryLoadCycleResult {
+        var heldConnections: [NWConnection] = []
+        defer {
+            heldConnections.forEach { $0.cancel() }
+        }
+        let cyclePhysicalFootprintStart = physicalFootprintSamples.count
+        var closedConnections: UInt64 = 0
+        var safetyLimitReached = false
+        var safetyLimitStage = "none"
+        var highestTCPFlowsWithinLimit = 0
+        var highestUDPFlowsWithinLimit = 0
+
+        for target in [32, 64, 128, 192, 240] {
+            let added = try await Self.openTCPHoldConnections(
+                count: target - heldConnections.count,
+                host: configuration.loadHost,
+                port: configuration.loadPort,
+                token: configuration.loadToken
+            )
+            heldConnections.append(contentsOf: added)
+            let stageResult = try await sampleMemoryStage(
+                app,
+                label: "cycle-\(cycle)-tcp-\(target)",
+                seconds: configuration.stageSeconds,
+                minimumActiveConnections: UInt64(target),
+                safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
+                startedAt: startedAt,
+                samples: &samples,
+                physicalFootprintSamples: &physicalFootprintSamples,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            if stageResult.safetyLimitReached {
+                safetyLimitReached = true
+                safetyLimitStage = "tcp-\(target)"
+                break
+            }
+            highestTCPFlowsWithinLimit = target
+        }
+
+        var drainResult = try await drainConnections(
+            app,
+            startedAt: startedAt,
+            runtimeGenerations: &runtimeGenerations,
+            nextRuntimeGeneration: &nextRuntimeGeneration
+        )
+        closedConnections += drainResult.closedConnections
+        try validateMemorySample(drainResult.sample)
+        samples.append(drainResult.sample)
+        emit(drainResult.sample)
+        heldConnections.forEach { $0.cancel() }
+        heldConnections.removeAll()
+        try await sleep(seconds: 2)
+
+        if !safetyLimitReached {
+            for target in [64, 128, 256, 384, 480] {
+                let added = try await Self.openHeldUDPConnections(
+                    count: target - heldConnections.count,
+                    host: configuration.UDPHost,
+                    port: configuration.UDPPort
+                )
+                heldConnections.append(contentsOf: added)
+                try await Self.refreshHeldUDPConnections(heldConnections)
+                let stageResult = try await sampleMemoryStage(
+                    app,
+                    label: "cycle-\(cycle)-udp-\(target)",
+                    seconds: configuration.stageSeconds,
+                    minimumActiveConnections: UInt64(target),
+                    safetyPhysicalFootprintLimitBytes: configuration.maxPhysicalFootprintBytes,
+                    startedAt: startedAt,
+                    samples: &samples,
+                    physicalFootprintSamples: &physicalFootprintSamples,
+                    runtimeGenerations: &runtimeGenerations,
+                    nextRuntimeGeneration: &nextRuntimeGeneration
+                )
+                if stageResult.safetyLimitReached {
+                    safetyLimitReached = true
+                    safetyLimitStage = "udp-\(target)"
+                    break
+                }
+                highestUDPFlowsWithinLimit = target
+            }
+
+            drainResult = try await drainConnections(
+                app,
+                startedAt: startedAt,
+                runtimeGenerations: &runtimeGenerations,
+                nextRuntimeGeneration: &nextRuntimeGeneration
+            )
+            closedConnections += drainResult.closedConnections
+            try validateMemorySample(drainResult.sample)
+            samples.append(drainResult.sample)
+            emit(drainResult.sample)
+            heldConnections.forEach { $0.cancel() }
+            heldConnections.removeAll()
+        }
+
+        let recoveryStart = samples.count
+        let recoveryPhysicalFootprintStart = physicalFootprintSamples.count
+        _ = try await sampleMemoryStage(
+            app,
+            label: "cycle-\(cycle)-recovery",
+            seconds: configuration.recoverySeconds,
+            minimumActiveConnections: 0,
+            safetyPhysicalFootprintLimitBytes: nil,
+            startedAt: startedAt,
+            samples: &samples,
+            physicalFootprintSamples: &physicalFootprintSamples,
+            runtimeGenerations: &runtimeGenerations,
+            nextRuntimeGeneration: &nextRuntimeGeneration
+        )
+        let recoverySamples = Array(samples[recoveryStart...])
+        let recoveryPhysicalFootprintSamples = Array(
+            physicalFootprintSamples[recoveryPhysicalFootprintStart...]
+        )
+        let loadPhysicalFootprintSamples = Array(
+            physicalFootprintSamples[
+                cyclePhysicalFootprintStart ..< recoveryPhysicalFootprintStart
+            ]
+        )
+        return MemoryLoadCycleResult(
+            peakPhysicalFootprintBytes: loadPhysicalFootprintSamples.max() ?? 0,
+            recoveredPhysicalFootprintBytes: Self.median(
+                Array(recoveryPhysicalFootprintSamples.suffix(5))
+            ),
+            recoveredRSSBytes: Self.median(
+                Array(recoverySamples.suffix(5)).map(\.residentMemoryBytes)
+            ),
+            recoveredThreads: Self.median(
+                Array(recoverySamples.suffix(5)).map(\.threadCount)
+            ),
+            safetyLimitReached: safetyLimitReached,
+            safetyLimitStage: safetyLimitStage,
+            highestTCPFlowsWithinLimit: highestTCPFlowsWithinLimit,
+            highestUDPFlowsWithinLimit: highestUDPFlowsWithinLimit,
+            closedConnections: closedConnections
+        )
     }
 
     @MainActor
@@ -1209,7 +1313,7 @@ private struct MemoryStressConfiguration {
 
     init(environment: [String: String]) throws {
         guard let duration = Int(environment[XrayClientUITests.durationKey] ?? ""),
-              (140 ... 3_600).contains(duration)
+              (30 ... 28_800).contains(duration)
         else {
             throw CampaignError.invalidConfiguration(XrayClientUITests.durationKey)
         }
@@ -1252,6 +1356,9 @@ private struct MemoryStressConfiguration {
             throw CampaignError.invalidConfiguration(
                 XrayClientUITests.memoryStressRecoverySecondsKey
             )
+        }
+        guard duration >= 21 * stageSeconds + 2 * recoverySeconds + 60 else {
+            throw CampaignError.invalidConfiguration(XrayClientUITests.durationKey)
         }
         guard let maxPhysicalFootprintBytes = UInt64(
             environment[
@@ -1313,6 +1420,18 @@ private struct MemoryStageResult {
     let safetyLimitReached: Bool
 }
 
+private struct MemoryLoadCycleResult {
+    let peakPhysicalFootprintBytes: UInt64
+    let recoveredPhysicalFootprintBytes: UInt64
+    let recoveredRSSBytes: UInt64
+    let recoveredThreads: UInt64
+    let safetyLimitReached: Bool
+    let safetyLimitStage: String
+    let highestTCPFlowsWithinLimit: Int
+    let highestUDPFlowsWithinLimit: Int
+    let closedConnections: UInt64
+}
+
 private struct TrafficProbeSummary: Sendable {
     var httpSuccesses = 0
     var udpSuccesses = 0
@@ -1331,9 +1450,18 @@ private enum CampaignError: Error {
     case memoryStressOperationTimedOut
     case memoryStressInsufficientFlows(expected: UInt64, observed: UInt64)
     case memoryStressRuntimeRestarted(UInt64)
+    case memoryStressBaselineExceedsSafetyLimit(UInt64)
     case memoryStressPhysicalFootprintDidNotRecover(
         baseline: UInt64,
         recovered: UInt64
+    )
+    case memoryStressPhysicalFootprintDidNotPlateau(
+        first: UInt64,
+        second: UInt64
+    )
+    case memoryStressPeakPhysicalFootprintDidNotPlateau(
+        first: UInt64,
+        second: UInt64
     )
     case memoryStressThreadLeak(baseline: UInt64, recovered: UInt64)
 }
