@@ -91,16 +91,22 @@ final class XrayClientUITests: XCTestCase {
             ProcessInfo.processInfo.systemUptime - startedAt
         ) < configuration.durationSeconds {
             let elapsed = Int(ProcessInfo.processInfo.systemUptime - startedAt)
-            try await refresh(app)
-            samples.append(
-                try readSample(
+            if try await refreshIfAvailable(app),
+               let sample = try readSampleIfAvailable(
                     app,
                     elapsedSeconds: elapsed,
                     runtimeGenerations: &runtimeGenerations,
                     nextRuntimeGeneration: &nextRuntimeGeneration
+               )
+            {
+                samples.append(sample)
+                emit(sample)
+            } else {
+                print(
+                    "XRAY_DEVICE_SAMPLE_SKIPPED elapsedSeconds=\(elapsed) "
+                        + "reason=ui-unavailable"
                 )
-            )
-            emit(samples[samples.count - 1])
+            }
             nextSampleAt += TimeInterval(configuration.sampleIntervalSeconds)
             let remaining = nextSampleAt - ProcessInfo.processInfo.systemUptime
             if remaining > 0 {
@@ -411,6 +417,20 @@ final class XrayClientUITests: XCTestCase {
     }
 
     @MainActor
+    private func refreshIfAvailable(_ app: XCUIApplication) async throws -> Bool {
+        guard app.state == .runningForeground else {
+            return false
+        }
+        let refresh = app.buttons["Refresh"]
+        guard refresh.waitForExistence(timeout: 1), refresh.isHittable else {
+            return false
+        }
+        refresh.tap()
+        try await sleep(seconds: 1)
+        return true
+    }
+
+    @MainActor
     private func drainConnections(
         _ app: XCUIApplication,
         startedAt: TimeInterval,
@@ -487,6 +507,50 @@ final class XrayClientUITests: XCTestCase {
         let inbound = try unsignedValue(app, identifier: "xray.runtime.inboundPackets")
         let outbound = try unsignedValue(app, identifier: "xray.runtime.outboundPackets")
         let telemetry = try telemetryValue(app)
+        return try makeSample(
+            elapsedSeconds: elapsedSeconds,
+            inbound: inbound,
+            outbound: outbound,
+            telemetry: telemetry,
+            runtimeGenerations: &runtimeGenerations,
+            nextRuntimeGeneration: &nextRuntimeGeneration
+        )
+    }
+
+    @MainActor
+    private func readSampleIfAvailable(
+        _ app: XCUIApplication,
+        elapsedSeconds: Int,
+        runtimeGenerations: inout [String: UInt64],
+        nextRuntimeGeneration: inout UInt64
+    ) throws -> CampaignSample? {
+        guard let inbound = try unsignedValueIfAvailable(
+            app,
+            identifier: "xray.runtime.inboundPackets"
+        ), let outbound = try unsignedValueIfAvailable(
+            app,
+            identifier: "xray.runtime.outboundPackets"
+        ), let telemetry = try telemetryValueIfAvailable(app) else {
+            return nil
+        }
+        return try makeSample(
+            elapsedSeconds: elapsedSeconds,
+            inbound: inbound,
+            outbound: outbound,
+            telemetry: telemetry,
+            runtimeGenerations: &runtimeGenerations,
+            nextRuntimeGeneration: &nextRuntimeGeneration
+        )
+    }
+
+    private func makeSample(
+        elapsedSeconds: Int,
+        inbound: UInt64,
+        outbound: UInt64,
+        telemetry: [String: String],
+        runtimeGenerations: inout [String: UInt64],
+        nextRuntimeGeneration: inout UInt64
+    ) throws -> CampaignSample {
         let runtimeIdentifier = try requiredTelemetry("runtimeIdentifier", from: telemetry)
         let activeTCPFlows = try unsignedTelemetry("activeTCPFlows", from: telemetry)
         let activeUDPFlows = try unsignedTelemetry("activeUDPFlows", from: telemetry)
@@ -528,6 +592,21 @@ final class XrayClientUITests: XCTestCase {
     }
 
     @MainActor
+    private func unsignedValueIfAvailable(
+        _ app: XCUIApplication,
+        identifier: String
+    ) throws -> UInt64? {
+        let element = app.descendants(matching: .any)[identifier]
+        guard element.waitForExistence(timeout: 1) else {
+            return nil
+        }
+        guard let rawValue = element.value as? String, let value = UInt64(rawValue) else {
+            throw CampaignError.invalidAccessibilityValue(identifier)
+        }
+        return value
+    }
+
+    @MainActor
     private func telemetryValue(_ app: XCUIApplication) throws -> [String: String] {
         let identifier = "xray.runtime.campaignTelemetry"
         let element = app.descendants(matching: .any)[identifier]
@@ -535,6 +614,25 @@ final class XrayClientUITests: XCTestCase {
         guard let rawValue = element.value as? String else {
             throw CampaignError.invalidAccessibilityValue(identifier)
         }
+        return parseTelemetry(rawValue)
+    }
+
+    @MainActor
+    private func telemetryValueIfAvailable(
+        _ app: XCUIApplication
+    ) throws -> [String: String]? {
+        let identifier = "xray.runtime.campaignTelemetry"
+        let element = app.descendants(matching: .any)[identifier]
+        guard element.waitForExistence(timeout: 1) else {
+            return nil
+        }
+        guard let rawValue = element.value as? String else {
+            throw CampaignError.invalidAccessibilityValue(identifier)
+        }
+        return parseTelemetry(rawValue)
+    }
+
+    private func parseTelemetry(_ rawValue: String) -> [String: String] {
         return Dictionary(
             uniqueKeysWithValues: rawValue.split(separator: ";").compactMap { component in
                 let fields = component.split(separator: "=", maxSplits: 1)

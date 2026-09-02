@@ -373,6 +373,15 @@ device reboot can reset Automation Mode. If XCTest times out while enabling it,
 turn UI Automation off, reboot, enable it again, and confirm with the device
 passcode before retrying.
 
+For a `sleep-wake` transition, lock the device only after recording the
+scenario's `begin` marker, then unlock it before recording `passed`. The
+traffic probes continue while the app UI is inaccessible. The harness records
+`XRAY_DEVICE_SAMPLE_SKIPPED ... reason=ui-unavailable` instead of failing on a
+missing accessibility element, and resumes resource sampling after unlock.
+Formal evidence still has to satisfy the report's sample-coverage and
+maximum-gap limits, so an indefinitely locked device cannot produce a passing
+release report.
+
 A formal run requires a clean worktree and defaults to six hours:
 
 ```sh
