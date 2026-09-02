@@ -9,6 +9,8 @@ release series.
 
 ## Unreleased
 
+## 0.5.0-rc.1 - 2026-09-02
+
 - Added blocking v0.5 host-hardening release gates: eight one-minute ASan fuzz
   campaigns now include SOCKS/HTTP inbound parsing, QUIC Initial sniffing,
   XHTTP framing, and TUN queues; selected library/FFI tests run under ASan and
