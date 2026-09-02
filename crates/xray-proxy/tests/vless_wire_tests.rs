@@ -333,6 +333,24 @@ fn domain_length_256_returns_error() {
     assert_eq!(encoded, Err(WireError::DomainTooLong(256)));
 }
 
+#[test]
+fn request_debug_redacts_the_vless_user_id() {
+    let request = VlessRequest {
+        user_id: test_uuid(),
+        command: VlessCommand::Tcp,
+        target: Target::new(
+            TargetAddr::Domain("example.test".to_owned()),
+            443,
+            Network::Tcp,
+        ),
+        flow: None,
+    };
+
+    let rendered = format!("{request:?}");
+    assert!(rendered.contains("user_id: \"<redacted>\""));
+    assert!(!rendered.contains("00010203-0405-0607-0809-0a0b0c0d0e0f"));
+}
+
 fn test_uuid() -> Uuid {
     Uuid::from_bytes([
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,

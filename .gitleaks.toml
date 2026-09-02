@@ -17,4 +17,5 @@ targetRules = ["jfrog-identity-token"]
 paths = [
   '''^docs/benchmarks/results/2026-08-29-v26\.7\.28/commands\.sh$''',
   '''^docs/benchmarks/results/2026-08-31-v26\.7\.28/commands\.sh$''',
+  '''^docs/benchmarks/results/2026-09-01-v05-pre-device/README\.md$''',
 ]

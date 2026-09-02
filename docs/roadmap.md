@@ -53,11 +53,11 @@ The main release risks are:
 
 - live Xray-core interoperability is optional and does not currently block
   every merge;
-- bounded RC fuzz smoke exists, but no long-running fuzz, sanitizer, Miri, or
-  concurrency-model gate exists;
+- release candidates now block on extended ASan fuzz campaigns, sanitizer and
+  Miri tests, a Loom routing-publication model, and controlled network tests;
 - the supported DNS, TLS, and routing subsets trail current Xray-core behavior;
-- node selection, health checking, failover, chaining, and hot rule updates are
-  not available through the embedding API;
+- physical-device release evidence remains required for the Apple and Android
+  integration paths;
 - the pinned `shaped-rustls` fork expands the security and maintenance surface;
 - the project has not received an independent security audit.
 
@@ -187,18 +187,20 @@ adding unfinished Phase 2 features.
 
 ### Carried hardening requirements
 
-- Run extended fuzz campaigns plus sanitizer, Miri, and concurrency-model
-  coverage for the parser, wire, TUN, DNS, and FFI lifecycle boundaries.
-- Add controlled RTT/loss coverage for the supported stream transports and
-  long-lived XHTTP HTTP/2 and HTTP/3 sessions.
-- Expand parser/wire fuzzing to SOCKS/HTTP input, QUIC sniffing, and XHTTP
-  framing.
+- Keep the implemented extended ASan fuzz campaigns, sanitizer/Miri tests, and
+  Loom concurrency model blocking for parser, wire, TUN, DNS, FFI, and atomic
+  routing-policy publication boundaries.
+- Keep the Linux controlled RTT/loss matrix blocking for every supported
+  stream transport and long-lived XHTTP HTTP/2 and HTTP/3 sessions.
+- Keep the SOCKS/HTTP, QUIC sniffing, XHTTP framing, TUN queue, DNS, VLESS, and
+  FFI fuzz targets in the release campaign.
 - Exercise physical-device energy, thermal, memory-pressure, sleep/wake, and
   Wi-Fi/cellular transition behavior on the supported Apple and Android
   integration paths.
-- Audit credential redaction, zeroization, and secret lifetime at config,
-  diagnostic, REALITY, and FFI error boundaries. The independent external
-  audit and long-term `shaped-rustls` upstreaming/replacement decision remain
+- Maintain the completed focused credential redaction, zeroization, and secret
+  lifetime audit at config, diagnostic, REALITY, and FFI error boundaries.
+  The independent external audit and long-term `shaped-rustls`
+  upstreaming/replacement decision remain
   tracked before `1.0` and do not silently become feature-completeness claims
   for `v0.5.0`.
 

@@ -544,3 +544,32 @@ fn reality_short_id_rejects_more_than_eight_bytes() {
 
     assert_eq!(error.to_string(), "reality short id cannot exceed 8 bytes");
 }
+
+#[test]
+fn credential_debug_output_is_redacted_in_the_config_model() {
+    let uuid = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+    let user = VlessUser {
+        id: uuid.parse().unwrap(),
+        encryption: "none".to_owned(),
+        flow: Some("xtls-rprx-vision".to_owned()),
+        level: 0,
+    };
+    let user_debug = format!("{user:?}");
+    assert!(user_debug.contains("id: \"<redacted>\""));
+    assert!(!user_debug.contains(uuid));
+
+    let short_id = RealityShortId::try_from_slice(&[2, 3, 4, 5]).unwrap();
+    assert_eq!(format!("{short_id:?}"), "<redacted>");
+
+    let reality = RealitySettings {
+        server_name: "example.test".to_owned(),
+        fingerprint: "chrome".to_owned(),
+        public_key: [7; 32],
+        short_id,
+        spider_x: "/".to_owned(),
+        mldsa65_verify: None,
+    };
+    let reality_debug = format!("{reality:?}");
+    assert!(reality_debug.contains("short_id: <redacted>"));
+    assert!(!reality_debug.contains("[2, 3, 4, 5]"));
+}

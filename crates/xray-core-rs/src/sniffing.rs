@@ -8,6 +8,7 @@ use hkdf::Hkdf;
 use sha2::Sha256;
 use xray_config::{InboundSniffingConfig, SniffingDestination};
 use xray_routing::{Target, TargetAddr};
+use zeroize::Zeroize;
 
 const QUIC_V1: u32 = 1;
 const QUIC_V1_INITIAL_SALT: [u8; 20] = [
@@ -226,6 +227,13 @@ fn sniff_quic_initial_sni(packet: &[u8]) -> Option<String> {
     sniff_tls_client_hello_handshake_sni(&crypto_stream)
 }
 
+/// Exercises the QUIC Initial decoder without exposing it in normal builds.
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub fn sniff_quic_initial_sni_for_fuzzing(packet: &[u8]) -> Option<String> {
+    sniff_quic_initial_sni(packet)
+}
+
 struct QuicInitialHeader<'a> {
     version: u32,
     dcid: &'a [u8],
@@ -238,6 +246,14 @@ struct QuicInitialKeys {
     key: [u8; QUIC_INITIAL_KEY_LEN],
     iv: [u8; QUIC_INITIAL_IV_LEN],
     hp: [u8; QUIC_INITIAL_HP_LEN],
+}
+
+impl Drop for QuicInitialKeys {
+    fn drop(&mut self) {
+        self.key.zeroize();
+        self.iv.zeroize();
+        self.hp.zeroize();
+    }
 }
 
 struct QuicUnprotectedHeader {
@@ -306,27 +322,31 @@ fn quic_initial_keys(version: u32, dcid: &[u8]) -> Option<QuicInitialKeys> {
     )
     .ok()?;
 
-    let hk = Hkdf::<Sha256>::from_prk(&client_initial_secret).ok()?;
-    let mut key = [0; QUIC_INITIAL_KEY_LEN];
-    hk.expand(
-        &tls13_hkdf_label(QUIC_INITIAL_KEY_LEN as u16, b"quic key"),
-        &mut key,
-    )
-    .ok()?;
-    let mut iv = [0; QUIC_INITIAL_IV_LEN];
-    hk.expand(
-        &tls13_hkdf_label(QUIC_INITIAL_IV_LEN as u16, b"quic iv"),
-        &mut iv,
-    )
-    .ok()?;
-    let mut hp = [0; QUIC_INITIAL_HP_LEN];
-    hk.expand(
-        &tls13_hkdf_label(QUIC_INITIAL_HP_LEN as u16, b"quic hp"),
-        &mut hp,
-    )
-    .ok()?;
+    let keys = (|| {
+        let hk = Hkdf::<Sha256>::from_prk(&client_initial_secret).ok()?;
+        let mut key = [0; QUIC_INITIAL_KEY_LEN];
+        hk.expand(
+            &tls13_hkdf_label(QUIC_INITIAL_KEY_LEN as u16, b"quic key"),
+            &mut key,
+        )
+        .ok()?;
+        let mut iv = [0; QUIC_INITIAL_IV_LEN];
+        hk.expand(
+            &tls13_hkdf_label(QUIC_INITIAL_IV_LEN as u16, b"quic iv"),
+            &mut iv,
+        )
+        .ok()?;
+        let mut hp = [0; QUIC_INITIAL_HP_LEN];
+        hk.expand(
+            &tls13_hkdf_label(QUIC_INITIAL_HP_LEN as u16, b"quic hp"),
+            &mut hp,
+        )
+        .ok()?;
 
-    Some(QuicInitialKeys { key, iv, hp })
+        Some(QuicInitialKeys { key, iv, hp })
+    })();
+    client_initial_secret.zeroize();
+    keys
 }
 
 fn unprotect_quic_initial_header(

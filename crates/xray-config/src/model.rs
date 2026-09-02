@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use std::fmt;
+
 use uuid::Uuid;
 use xray_routing::{
     domain_matcher::domain_matches_suffix, Cidr, DomainMatcherSetBuilder, DomainMatcherSetError,
@@ -13,6 +15,7 @@ pub use xray_routing::{
     DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcher, DomainMatcherSet, DomainNameMode,
     IpMatcherSet, RegexMatcher,
 };
+use zeroize::Zeroize;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigModelError {
@@ -666,12 +669,24 @@ pub struct VlessOutboundSettings {
     pub users: Vec<VlessUser>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct VlessUser {
     pub id: Uuid,
     pub encryption: String,
     pub flow: Option<String>,
     pub level: u32,
+}
+
+impl fmt::Debug for VlessUser {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VlessUser")
+            .field("id", &"<redacted>")
+            .field("encryption", &self.encryption)
+            .field("flow", &self.flow)
+            .field("level", &self.level)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -1079,10 +1094,23 @@ pub struct RealitySettings {
     pub mldsa65_verify: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RealityShortId {
     bytes: [u8; 8],
     len: u8,
+}
+
+impl fmt::Debug for RealityShortId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+impl Drop for RealityShortId {
+    fn drop(&mut self) {
+        self.bytes.zeroize();
+        self.len.zeroize();
+    }
 }
 
 impl RealityShortId {

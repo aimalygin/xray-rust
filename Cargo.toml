@@ -40,6 +40,7 @@ hmac = "0.12"
 http = "1"
 idna = "1"
 libc = "0.2"
+loom = "0.7"
 ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc"] }
 polyval = { version = "0.6", features = ["zeroize"] }
 prost = "0.14"

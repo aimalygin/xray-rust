@@ -21,3 +21,4 @@ xray-core-rs = { path = "../xray-core-rs" }
 xray-routing = { path = "../xray-routing" }
 xray-tun = { path = "../xray-tun" }
 xray-transport = { path = "../xray-transport" }
+zeroize.workspace = true

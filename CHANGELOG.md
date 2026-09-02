@@ -9,6 +9,19 @@ release series.
 
 ## Unreleased
 
+- Added blocking v0.5 host-hardening release gates: eight one-minute ASan fuzz
+  campaigns now include SOCKS/HTTP inbound parsing, QUIC Initial sniffing,
+  XHTTP framing, and TUN queues; selected library/FFI tests run under ASan and
+  Miri; and Loom exhaustively models atomic routing-policy publication.
+- Added a pinned-Xray Linux `tc netem` RC gate covering full-duplex WebSocket,
+  HTTPUpgrade, gRPC, and XHTTP H1/H2/H3 plus two-minute held-open H2/H3
+  `stream-one` sessions under controlled delay, jitter, and packet loss.
+- Completed the focused v0.5 credential-boundary review. Config and wire debug
+  output now redact VLESS UUIDs and REALITY short IDs, FFI error allocations
+  are cleared before release, and QUIC Initial derived secrets and keys have
+  bounded zeroizing lifetimes. The documented residual lifetime of credentials
+  required by active VLESS/JSON state is not presented as an independent
+  security audit.
 - Added capability-gated routing-policy hot replacement in C ABI 1.4 and the
   Swift/Kotlin adapters. Hosts can compile a scoped `routing` JSON document,
   including `geosite`/`geoip` matchers from the handle's configured geodata

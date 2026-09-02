@@ -2783,6 +2783,35 @@ fn ffi_reports_invalid_config_error() {
 }
 
 #[test]
+fn ffi_config_errors_do_not_echo_vless_credentials() {
+    const SECRET_UUID: &str = "de305d54-75b4-431b-adb2-eb6b9e546014";
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(format!(
+        r#"{{
+          "inbounds": [{{"protocol":"socks","listen":"127.0.0.1","port":1080}}],
+          "outbounds": [{{
+            "protocol":"vless",
+            "settings":{{"vnext":[{{"address":"example.test","port":443,"users":[{{"id":"{SECRET_UUID}","encryption":"none"}}]}}]}},
+            "streamSettings":{{"network":"unsupported"}}
+          }}]
+        }}"#
+    ))
+    .unwrap();
+
+    let status = unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) };
+
+    assert_eq!(status, XrayStatus::ConfigError);
+    let rendered = error_message(err);
+    assert!(!rendered.contains(SECRET_UUID));
+
+    unsafe {
+        xray_error_free(err);
+        xray_core_free(core);
+    }
+}
+
+#[test]
 fn ffi_replaces_reused_error_pointer() {
     let mut err = std::ptr::null_mut();
     let core = unsafe { xray_core_new(&mut err) };

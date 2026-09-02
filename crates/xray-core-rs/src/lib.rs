@@ -40,6 +40,10 @@ mod startup_probe;
 mod tun;
 mod tun_fd;
 
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub use sniffing::sniff_quic_initial_sni_for_fuzzing;
+
 const TUN_MTU: usize = 1500;
 const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
 const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;

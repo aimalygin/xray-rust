@@ -172,6 +172,7 @@ jobs:
           bash scripts/tests/check-public-fixtures.test.sh
           bash scripts/tests/check-benchmark-publication.test.sh
           bash scripts/tests/check-v05-performance.test.sh
+          bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
@@ -356,11 +357,39 @@ jobs:
         if: failure()
         run: echo "::warning title=Xray-core main compatibility smoke failed::revision=${{ steps.xray.outputs.revision }} run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
+  host-hardening:
+    if: needs.release-metadata.outputs.is_rc == 'true'
+    needs: release-metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchains
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal
+          rustup default 1.96.0
+          rustup toolchain install nightly-2026-05-22 \
+            --profile minimal \
+            --component miri,rust-src
+
+      - name: Exhaustively model routing-policy publication
+        run: bash scripts/run-v05-host-hardening.sh model
+
+      - name: Run Miri on pure parser and routing models
+        run: bash scripts/run-v05-host-hardening.sh miri
+
+      - name: Run AddressSanitizer library and FFI tests
+        run: bash scripts/run-v05-host-hardening.sh asan
+
   fuzz-smoke:
     if: needs.release-metadata.outputs.is_rc == 'true'
     needs: release-metadata
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - name: Check out release candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -368,19 +397,66 @@ jobs:
           persist-credentials: false
 
       - name: Install pinned fuzz toolchain
-        run: rustup toolchain install nightly-2026-05-22 --profile minimal
+        run: rustup toolchain install nightly-2026-05-22 --profile minimal --component rust-src
 
       - name: Install pinned cargo-fuzz
         run: cargo +nightly-2026-05-22 install cargo-fuzz --version 0.13.2 --locked
 
-      - name: Run bounded parser and wire fuzz campaigns
-        run: |
-          cargo +nightly-2026-05-22 fuzz run config_json -- -runs=512 -max_len=65536 -timeout=10
-          cargo +nightly-2026-05-22 fuzz run dns_wire -- -runs=512 -max_len=65536 -timeout=10
-          cargo +nightly-2026-05-22 fuzz run vless_wire -- -runs=512 -max_len=65536 -timeout=10
+      - name: Run extended ASan parser, wire, TUN, DNS, and FFI campaigns
+        env:
+          XRAY_V05_FUZZ_SECONDS: "60"
+        run: bash scripts/run-v05-host-hardening.sh fuzz
 
-      - name: Run bounded FFI lifecycle fuzz campaign
-        run: cargo +nightly-2026-05-22 fuzz run ffi_lifecycle -- -runs=64 -max_len=16384 -timeout=15
+  controlled-network:
+    if: needs.release-metadata.outputs.is_rc == 'true'
+    needs: release-metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned Xray-core oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: XTLS/Xray-core
+          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          path: Xray-core
+          persist-credentials: false
+
+      - name: Install pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.5"
+          cache-dependency-path: Xray-core/go.sum
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.96.0 --profile minimal
+
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+
+      - name: Ensure tc netem is available
+        run: |
+          if ! command -v tc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes iproute2
+          fi
+
+      - name: Run controlled RTT/loss stream matrix
+        env:
+          XRAY_CORE_CHECKOUT: ${{ github.workspace }}/Xray-core
+        run: bash scripts/run-v05-controlled-network.sh "$RUNNER_TEMP/v05-controlled-network"
+
+      - name: Upload controlled-network evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v05-controlled-network-${{ github.ref_name }}
+          path: ${{ runner.temp }}/v05-controlled-network
+          if-no-files-found: error
+          retention-days: 14
 
   apple:
     runs-on: macos-15
@@ -566,7 +642,9 @@ jobs:
       - rust
       - go-oracles
       - rc-interop
+      - host-hardening
       - fuzz-smoke
+      - controlled-network
       - apple
       - android
       - supply-chain

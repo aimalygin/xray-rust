@@ -1,0 +1,2 @@
+CONNECT example.test:443 HTTP/1.1
+Host: example.test:443

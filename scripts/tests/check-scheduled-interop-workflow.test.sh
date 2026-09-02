@@ -225,7 +225,9 @@ expected_job_headers="$(cat <<'EXPECTED'
   rc-interop:
   scheduled-pinned-interop:
   xray-core-main-smoke:
+  host-hardening:
   fuzz-smoke:
+  controlled-network:
   apple:
   android:
   supply-chain:
@@ -371,6 +373,7 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-public-fixtures.test.sh
           bash scripts/tests/check-benchmark-publication.test.sh
           bash scripts/tests/check-v05-performance.test.sh
+          bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
@@ -402,7 +405,9 @@ expected_publish_needs="$(cat <<'EXPECTED'
       - rust
       - go-oracles
       - rc-interop
+      - host-hardening
       - fuzz-smoke
+      - controlled-network
       - apple
       - android
       - supply-chain

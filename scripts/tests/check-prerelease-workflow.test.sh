@@ -55,6 +55,10 @@ require_text '- rc-interop' \
   "prerelease publication is not blocked on the RC interoperability job"
 require_text '- fuzz-smoke' \
   "prerelease publication is not blocked on the fuzz-smoke job"
+require_text '- host-hardening' \
+  "prerelease publication is not blocked on the host-hardening job"
+require_text '- controlled-network' \
+  "prerelease publication is not blocked on controlled-network evidence"
 require_text 'verify_remote_tag() {' \
   "prerelease mutation does not define an exact remote-tag verifier"
 
@@ -132,8 +136,8 @@ grep -Fq 'bash scripts/tests/check-rc-interop.test.sh' "$WORKFLOW" || \
   die "clean-target RC interoperability regression test is not part of CI"
 grep -Fq 'cargo +nightly-2026-05-22 install cargo-fuzz --version 0.13.2 --locked' "$WORKFLOW" || \
   die "RC fuzz gate does not pin cargo-fuzz"
-grep -Fq 'cargo +nightly-2026-05-22 fuzz run ffi_lifecycle' "$WORKFLOW" || \
-  die "RC fuzz gate omits the FFI lifecycle target"
+grep -Fq 'bash scripts/run-v05-host-hardening.sh fuzz' "$WORKFLOW" || \
+  die "RC fuzz gate does not run the extended hardening campaign"
 grep -Fq 'cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked' "$WORKFLOW" || \
   die "ordinary workspace tests can execute unbounded libFuzzer targets"
 

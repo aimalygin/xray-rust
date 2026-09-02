@@ -1,3 +1,5 @@
+use std::fmt;
+
 use prost::Message;
 use thiserror::Error;
 use uuid::Uuid;
@@ -18,12 +20,24 @@ pub enum VlessCommand {
     Reverse = 0x04,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct VlessRequest {
     pub user_id: Uuid,
     pub command: VlessCommand,
     pub target: Target,
     pub flow: Option<String>,
+}
+
+impl fmt::Debug for VlessRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VlessRequest")
+            .field("user_id", &"<redacted>")
+            .field("command", &self.command)
+            .field("target", &self.target)
+            .field("flow", &self.flow)
+            .finish()
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

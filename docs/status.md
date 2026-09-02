@@ -92,8 +92,9 @@ and require credentials supplied through local environment variables.
 The fresh [RC4 benchmark publication](benchmarks/results/2026-08-31-v26.7.28/README.md)
 adds 139 five-run release series against the exact pinned Xray-core and stable
 sing-box v1.13.20, with fail-closed provenance validation and explicit
-comparator omissions. This is process-level loopback evidence, not controlled
-RTT/loss or mobile energy evidence.
+comparator omissions. A separate v0.5 RC gate now runs every supported stream
+transport plus two-minute XHTTP H2/H3 sessions under Linux `tc netem` delay,
+jitter, and loss. Mobile energy evidence remains a physical-device gate.
 
 REALITY ClientHello shaping currently depends on a full, immutable Git revision
 of the maintainer's public `shaped-rustls` fork rather than the crates.io
@@ -136,9 +137,10 @@ interoperability for those cases. RC4 publishes five-run H3 upload, download,
 full-duplex, and packet-pressure evidence at one and 32 flows. The 32-flow
 upload/full-duplex RSS values are explicitly reported as an optimization
 target, and the pinned Xray-core pressure/32 reset/timeout boundary is recorded
-as an omission rather than replaced by a reduced-load result. Controlled
-RTT/loss and mobile-device measurements remain open, so this is not a broad
-performance-parity claim.
+as an omission rather than replaced by a reduced-load result. The RC
+controlled-network gate covers loopback impairment; wide-area paths and
+mobile-device measurements remain outside that host result, so this is not a
+broad performance-parity claim.
 
 ### Known gRPC opening-wire divergences from grpc-go
 

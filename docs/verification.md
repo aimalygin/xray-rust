@@ -94,27 +94,54 @@ local reference binary, live credentials, or external network access. The
 fixture safety check rejects routable endpoints and unreviewed
 credential-shaped values without printing their contents.
 
-Release-candidate tags also add the `fuzz-smoke` blocking job after the
-ordinary jobs pass. It runs bounded libFuzzer campaigns and, like
-`rc-interop`, does not run for an ordinary branch or pull request.
+Release-candidate tags also add blocking `host-hardening`, `fuzz-smoke`, and
+`controlled-network` jobs after the ordinary jobs pass. They run Loom, Miri,
+AddressSanitizer, extended libFuzzer campaigns, and the Linux `tc netem`
+transport matrix. Like `rc-interop`, they do not run for an ordinary branch or
+pull request.
 
 ## Release-candidate fuzz gate
 
-Four `cargo-fuzz` targets cover the configuration parser, DNS wire parser and
-response builder, Vision plus UDP/XUDP framing, and the public FFI
-create/load/free lifecycle. The corpus and targets live under `fuzz/`. To
-reproduce a bounded configuration-parser campaign:
+Eight `cargo-fuzz` targets cover the configuration parser, DNS wire parser and
+response builder, Vision plus UDP/XUDP framing, SOCKS/HTTP inbound parsing,
+QUIC Initial sniffing, XHTTP HTTP/1.1 response framing, the bounded TUN queue,
+and the public FFI lifecycle. The corpus and targets live under `fuzz/`. The
+release command runs each target for 60 seconds with AddressSanitizer and keeps
+all generated corpus/artifact files outside the worktree:
 
 ```sh
 cargo install cargo-fuzz --version 0.13.2 --locked
-cargo +nightly-2026-05-22 fuzz run config_json -- \
-  -runs=512 -max_len=65536 -timeout=10
+XRAY_V05_FUZZ_SECONDS=60 bash scripts/run-v05-host-hardening.sh fuzz
 ```
 
-Use the same command with `dns_wire`, `vless_wire`, or `ffi_lifecycle`. The CI
-run counts are smoke gates, not a claim of exhaustive fuzzing; longer local or
-scheduled campaigns should retain a crashing input, minimize it, and add a
-deterministic regression before closing the finding.
+The one-minute-per-target CI duration is a blocking release campaign, not a
+claim of exhaustive fuzzing. Longer local or scheduled campaigns should retain
+a crashing input, minimize it, and add a deterministic regression before
+closing the finding.
+
+The other host hardening modes are independently reproducible:
+
+```sh
+bash scripts/run-v05-host-hardening.sh model
+bash scripts/run-v05-host-hardening.sh miri
+bash scripts/run-v05-host-hardening.sh asan
+```
+
+`miri` and `asan` require `nightly-2026-05-22` with the `miri` and `rust-src`
+components. The concurrency test uses Loom to exhaustively explore the same
+serialized-writer plus immutable-`Arc` publication protocol as routing-policy
+hot replacement.
+
+On Linux, the controlled network gate applies 40 ms delay with 10 ms jitter and
+1% packet loss to loopback. It runs full-duplex traffic through WebSocket,
+HTTPUpgrade, gRPC, and XHTTP H1/H2/H3, then holds H2 and H3 `stream-one`
+sessions open for two minutes under the same impairment. It refuses to replace
+a non-default loopback qdisc and removes its own netem qdisc on every exit:
+
+```sh
+XRAY_CORE_CHECKOUT=/absolute/path/to/pinned/Xray-core \
+  bash scripts/run-v05-controlled-network.sh
+```
 
 The supply-chain CI job additionally runs:
 
@@ -144,6 +171,8 @@ every commit except the two pre-release ones grandfathered by commit id in
 `scripts/tests/check-json-fixture-safety.py` (see the disclosure section of
 `SECURITY.md`). It also fails if a grandfathered commit stops matching, since
 that means the allowlist no longer describes the history it was derived from.
+The focused configuration, diagnostic, REALITY, and FFI review is recorded in
+the [v0.5 credential-boundary audit](v05-credential-boundary-audit.md).
 
 ## Focused runtime checks
 

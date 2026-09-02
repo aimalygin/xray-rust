@@ -22,6 +22,7 @@ use xray_core_rs::{
 use xray_routing::{Network, TargetAddr};
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
+use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
 pub const XRAY_FFI_ABI_MINOR: u32 = 4;
@@ -3395,7 +3396,8 @@ unsafe fn free_error(error: *mut XrayError) {
     let error = unsafe { Box::from_raw(error) };
     if !error.message.is_null() {
         unsafe {
-            drop(CString::from_raw(error.message));
+            let mut message = CString::from_raw(error.message).into_bytes_with_nul();
+            message.zeroize();
         }
     }
 }

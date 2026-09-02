@@ -9,12 +9,15 @@ license.workspace = true
 cargo-fuzz = true
 
 [dependencies]
+bytes = "1"
 libfuzzer-sys = "0.4"
 tokio = { version = "1.52.3", features = ["io-util", "rt"] }
 xray-config = { path = "../crates/xray-config" }
-xray-core-rs = { path = "../crates/xray-core-rs" }
+xray-core-rs = { path = "../crates/xray-core-rs", features = ["fuzzing"] }
 xray-ffi = { path = "../crates/xray-ffi" }
 xray-proxy = { path = "../crates/xray-proxy" }
+xray-transport = { path = "../crates/xray-transport" }
+xray-tun = { path = "../crates/xray-tun" }
 
 [[bin]]
 name = "config_json"
@@ -40,6 +43,34 @@ bench = false
 [[bin]]
 name = "ffi_lifecycle"
 path = "fuzz_targets/ffi_lifecycle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "inbound_wire"
+path = "fuzz_targets/inbound_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "quic_sniff"
+path = "fuzz_targets/quic_sniff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xhttp_framing"
+path = "fuzz_targets/xhttp_framing.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tun_queue"
+path = "fuzz_targets/tun_queue.rs"
 test = false
 doc = false
 bench = false
