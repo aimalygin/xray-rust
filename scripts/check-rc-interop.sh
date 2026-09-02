@@ -49,11 +49,17 @@ export XRAY_REALITY_INTEROP_BURST_FINGERPRINTS="chrome"
 export XRAY_REALITY_INTEROP_BURST_FLOWS="8"
 export XRAY_XHTTP_INTEROP_CASES="h1-none-packet-up,h1-tls-stream-up,h2-tls-stream-one,h2-reality-packet-up,h3-tls-stream-up"
 
-env -u XRAY_CORE_EXPECTED_REVISION \
+env \
+  -u XRAY_CORE_EXPECTED_REVISION \
+  -u XRAY_REMOTE_XHTTP_CONFIG \
+  -u XRAY_REMOTE_XHTTP_PROBE_HOST \
+  -u XRAY_REMOTE_XHTTP_PROBE_PORT \
+  -u XRAY_REMOTE_XHTTP_HOLD_TOKEN_FILE \
   cargo test --locked -p xray-core-rs \
   --test local_xray_interop_tests \
   -- \
   --ignored \
+  --skip rust_socks_client_reaches_target_through_remote_xhttp_profile \
   --nocapture \
   --test-threads=1
 

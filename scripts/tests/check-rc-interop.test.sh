@@ -68,7 +68,7 @@ printf 'invoke|%s\n' "$*" >>"$FAKE_CARGO_LOG"
 case "${1:-}" in
   test)
     if [[ "$*" == *"--test local_xray_interop_tests"* ]]; then
-      [[ "$*" == *"-- --ignored --nocapture --test-threads=1"* ]] || {
+      [[ "$*" == *"-- --ignored --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --nocapture --test-threads=1"* ]] || {
         echo 'RC interop Cargo invocation did not run the ignored suite serially' >&2
         exit 91
       }
@@ -76,6 +76,16 @@ case "${1:-}" in
         echo 'RC ignored interop inherited XRAY_CORE_EXPECTED_REVISION' >&2
         exit 92
       }
+      for variable in \
+        XRAY_REMOTE_XHTTP_CONFIG \
+        XRAY_REMOTE_XHTTP_PROBE_HOST \
+        XRAY_REMOTE_XHTTP_PROBE_PORT \
+        XRAY_REMOTE_XHTTP_HOLD_TOKEN_FILE; do
+        [[ -z "${!variable+x}" ]] || {
+          printf 'RC ignored interop inherited %s\n' "$variable" >&2
+          exit 92
+        }
+      done
       printf '%s\n' ignored-interop >>"$FAKE_CARGO_LOG"
     fi
     exit 0
@@ -147,6 +157,10 @@ PATH="$FAKE_BIN:$PATH" \
   FAKE_CARGO_LOG="$FAKE_CARGO_LOG" \
   FAKE_GIT_REVISION="$EXPECTED_XRAY_CORE_REVISION" \
   XRAY_CORE_EXPECTED_REVISION="$HOSTILE_XRAY_CORE_EXPECTED_REVISION" \
+  XRAY_REMOTE_XHTTP_CONFIG="$TEST_ROOT/hostile-remote.json" \
+  XRAY_REMOTE_XHTTP_PROBE_HOST="hostile.example" \
+  XRAY_REMOTE_XHTTP_PROBE_PORT="443" \
+  XRAY_REMOTE_XHTTP_HOLD_TOKEN_FILE="$TEST_ROOT/hostile-token" \
   bash "$SCRIPT_UNDER_TEST" >/dev/null
 
 [[ "$(grep -c '^run$' "$FAKE_CARGO_LOG")" -eq 2 ]] || {
