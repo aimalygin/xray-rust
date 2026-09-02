@@ -13,12 +13,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
-    CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings, InboundConfig,
-    InboundProtocol, Network, OutboundConfig, OutboundProxySettings, OutboundSettings,
-    RealitySettings, RealityShortId, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig,
-    RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
-    TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode, XhttpSettings,
-    XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    parse_xray_json, CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings,
+    InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundProxySettings,
+    OutboundSettings, RealitySettings, RealityShortId, RoutingBalancer, RoutingBalancerStrategy,
+    RoutingConfig, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport,
+    TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
 use xray_transport::{
@@ -2465,6 +2465,80 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_xhttp_se
     })
     .await
     .expect("the selected XHTTP matrix completes");
+}
+
+#[tokio::test]
+#[ignore = "requires XRAY_REMOTE_XHTTP_CONFIG and an owner-controlled remote endpoint"]
+async fn rust_socks_client_reaches_public_http_through_remote_xhttp_profile() {
+    const CONFIG_ENV: &str = "XRAY_REMOTE_XHTTP_CONFIG";
+    let config_path = env::var(CONFIG_ENV)
+        .unwrap_or_else(|_| panic!("{CONFIG_ENV} must name an owner-only Xray JSON config"));
+    let metadata = fs::symlink_metadata(&config_path)
+        .unwrap_or_else(|error| panic!("read {CONFIG_ENV} metadata: {error}"));
+    assert!(
+        metadata.file_type().is_file(),
+        "{CONFIG_ENV} must name a regular file"
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            metadata.permissions().mode() & 0o077,
+            0,
+            "{CONFIG_ENV} must not be accessible by group or others"
+        );
+    }
+
+    let raw = fs::read_to_string(&config_path)
+        .unwrap_or_else(|error| panic!("read {CONFIG_ENV}: {error}"));
+    let mut config = parse_xray_json(&raw)
+        .unwrap_or_else(|error| panic!("parse {CONFIG_ENV}: {error}"))
+        .config;
+    let inbound = config
+        .inbounds
+        .iter_mut()
+        .find(|inbound| inbound.tag.as_deref() == Some("socks-in"))
+        .unwrap_or_else(|| panic!("{CONFIG_ENV} must contain a socks-in inbound"));
+    assert_eq!(inbound.protocol, InboundProtocol::Socks);
+    inbound.listen = Ipv4Addr::LOCALHOST.to_string();
+    inbound.port = 0;
+
+    let mut core = Core::new(config).expect("create remote XHTTP oracle core");
+    timeout(Duration::from_secs(15), core.start())
+        .await
+        .expect("start remote XHTTP oracle core timeout")
+        .expect("start remote XHTTP oracle core");
+    let socks_addr = core
+        .inbound_addr(Some("socks-in"))
+        .expect("bound remote XHTTP oracle SOCKS addr");
+
+    let probe = async {
+        let mut client = TcpStream::connect(socks_addr)
+            .await
+            .map_err(|error| format!("connect remote XHTTP oracle SOCKS: {error}"))?;
+        socks5_connect_domain(&mut client, "www.google.com", 80).await?;
+        client
+            .write_all(
+                b"GET /generate_204 HTTP/1.1\r\nHost: www.google.com\r\nConnection: close\r\n\r\n",
+            )
+            .await
+            .map_err(|error| format!("write remote XHTTP oracle request: {error}"))?;
+        let mut response = [0_u8; 256];
+        let read = client
+            .read(&mut response)
+            .await
+            .map_err(|error| format!("read remote XHTTP oracle response: {error}"))?;
+        if read == 0 || !response[..read].starts_with(b"HTTP/1.1 ") {
+            return Err("remote XHTTP oracle did not return an HTTP/1.1 response".to_owned());
+        }
+        Ok::<(), String>(())
+    };
+    let probe_result = timeout(Duration::from_secs(30), probe).await;
+    core.stop().await.expect("stop remote XHTTP oracle core");
+    probe_result
+        .expect("remote XHTTP oracle probe timeout")
+        .expect("remote XHTTP oracle probe");
 }
 
 fn selected_xhttp_interop_cases() -> Vec<XhttpInteropCase> {

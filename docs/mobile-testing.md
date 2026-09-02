@@ -335,6 +335,28 @@ flow immediately after the snapshot was closed. Assertions run only after the
 client has issued Disconnect and observed the `Disconnected` status. The final
 zero-connection sample is a terminal teardown record emitted after that
 status, with the last observed counters and resource values retained.
+
+For an XHTTP device profile, prove the same owner-controlled client JSON on the
+Mac before involving XCTest. Keep the file outside the repository, make it
+owner-only, and include a `socks-in` inbound; the oracle replaces its listen
+address and port with an ephemeral loopback socket:
+
+```sh
+chmod 600 /private/path/xhttp-client.json
+XRAY_REMOTE_XHTTP_CONFIG=/private/path/xhttp-client.json \
+  cargo test -p xray-core-rs --test local_xray_interop_tests \
+  rust_socks_client_reaches_public_http_through_remote_xhttp_profile \
+  -- --ignored
+```
+
+This separates remote endpoint, credential, REALITY, and XHTTP wire failures
+from Network Extension lifecycle failures. VLESS share links must also carry
+every non-default server-side XHTTP setting through `extra`. In particular, a
+server constrained to `xPaddingBytes: 64` is not compatible with a link that
+omits that value and therefore selects the client default `100-1000`; the
+symptom is a successful carrier open followed by a read reset before the first
+target byte.
+
 Before the first run on a development-signed iPhone, enable Developer Mode and
 `Settings > Developer > Enable UI Automation`, keep the device unlocked, and
 verify that Safari can reach `https://ppq.apple.com`. Launch the reference app

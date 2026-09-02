@@ -360,6 +360,16 @@ is inert because Xray does not invoke `Build` recursively. The removed legacy
 ignored, matching current Xray; it is not reinterpreted as the server-only
 `scMaxBufferedPosts` setting.
 
+An XHTTP share link must carry server-specific settings through `extra`.
+In particular, `xPaddingBytes` contributes to the peer's request-size budget:
+omitting it selects the client default `100-1000`, which is not compatible
+with an inbound constrained to an exact smaller value such as `64`. The peer
+can close the logical stream before returning target bytes even though
+REALITY and HTTP/2 both opened successfully. Importers therefore preserve
+`extra` exactly; they cannot infer a non-default inbound padding range from
+the address, path, or security fields. Producers of VLESS URLs are responsible
+for including the effective non-default value.
+
 The xmux scheduler is implemented rather than merely parsed. Its random ranges
 bound logical concurrency, client-slot count, connection reuse, HTTP request
 count, and reusable lifetime. Enabling positive `maxConnections` together with

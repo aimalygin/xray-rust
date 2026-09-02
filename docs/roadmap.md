@@ -314,6 +314,16 @@ profiler/log/timeline artifacts. This makes the remaining hardware campaign a
 reproducible release gate; it does not count offline devices, simulators, or an
 unexecuted template as passing evidence.
 
+An opt-in owner-controlled remote XHTTP oracle now reuses an owner-only client
+JSON outside the repository and proves the Rust SOCKS-to-XHTTP path before a
+device run. A short physical Apple H2/REALITY `stream-one` rehearsal has also
+passed HTTPS carriage, TUN accounting, connection closure, and clean tunnel
+teardown. Its preceding fail-closed run traced a pre-first-byte reset to a
+share link that omitted the server's non-default `xPaddingBytes`; the importer
+correctly preserved `extra` once the link supplied it. This is diagnostic
+rehearsal evidence from a dirty development revision, not the required clean
+six-hour Apple report, and it provides no Android release evidence.
+
 A clean, five-run macOS pre-device performance gate now covers the v0.4.0
 shared routing, DNS-selector, process RSS, plain TCP, and inherited-fd TUN
 anchors plus the new Phase 2 selector/chaining, cache, inventory/accounting,
