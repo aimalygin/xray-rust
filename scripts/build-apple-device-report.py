@@ -24,7 +24,7 @@ SCENARIO_FIELDS = {
     "phase",
     "scenarioId",
 }
-PROBE_FIELDS = {
+PASSED_PROBE_FIELDS = {
     "at",
     "elapsedSeconds",
     "event",
@@ -32,6 +32,15 @@ PROBE_FIELDS = {
     "result",
     "sequence",
 }
+FAILED_PROBE_FIELDS = {
+    "at",
+    "elapsedSeconds",
+    "errorCode",
+    "event",
+    "kind",
+    "result",
+}
+PROBE_ERROR_CODE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 PATH_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -111,15 +120,19 @@ def sha256_file(path: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
-def load_policy(root: pathlib.Path) -> tuple[int, dict[str, int], set[str]]:
+def load_policy(
+    root: pathlib.Path,
+) -> tuple[int, dict[str, int], set[str], set[str]]:
     policy = runpy.run_path(str(root / "scripts/check-mobile-device-evidence.py"))
     minimum_duration = policy.get("MIN_SOAK_SECONDS")
     required_scenarios = policy.get("REQUIRED_SCENARIOS")
     probe_oracle_scenarios = policy.get("APPLE_PROBE_ORACLE_SCENARIOS")
+    outage_oracle_scenarios = policy.get("APPLE_DUAL_PROBE_OUTAGE_SCENARIOS")
     if (
         not isinstance(minimum_duration, int)
         or not isinstance(required_scenarios, dict)
         or not isinstance(probe_oracle_scenarios, set)
+        or not isinstance(outage_oracle_scenarios, set)
     ):
         raise ReportError("mobile evidence policy could not be loaded")
     if any(
@@ -132,7 +145,14 @@ def load_policy(root: pathlib.Path) -> tuple[int, dict[str, int], set[str]]:
         raise ReportError("mobile evidence scenario policy is invalid")
     if not probe_oracle_scenarios.issubset(required_scenarios):
         raise ReportError("Apple probe-oracle scenario policy is invalid")
-    return minimum_duration, required_scenarios, probe_oracle_scenarios
+    if not outage_oracle_scenarios.issubset(probe_oracle_scenarios):
+        raise ReportError("Apple outage-oracle scenario policy is invalid")
+    return (
+        minimum_duration,
+        required_scenarios,
+        probe_oracle_scenarios,
+        outage_oracle_scenarios,
+    )
 
 
 def load_timeline(path: pathlib.Path) -> list[dict[str, Any]]:
@@ -164,6 +184,7 @@ def build_scenarios(
     events: list[dict[str, Any]],
     required: dict[str, int],
     probe_oracle_scenarios: set[str],
+    outage_oracle_scenarios: set[str],
     started_at: str,
     ended_at: str,
     duration: int,
@@ -175,7 +196,8 @@ def build_scenarios(
     passed: dict[str, int] = {scenario_id: 0 for scenario_id in required}
     failed: dict[str, int] = {scenario_id: 0 for scenario_id in required}
     attempt_begin_indices: dict[tuple[str, int], int] = {}
-    latest_probe_indices: dict[str, int] = {}
+    latest_passed_probe_indices: dict[str, int] = {}
+    latest_failed_probe_indices: dict[str, int] = {}
     probe_sequences: dict[str, int] = {}
     previous_elapsed = -1
     previous_at: dt.datetime | None = None
@@ -210,16 +232,33 @@ def build_scenarios(
             event_at = parse_UTC(event["at"], f"timeline[{index}].at")
             campaign_ends += 1
             campaign_has_ended = True
-        elif event_name == "probe" and set(event) == PROBE_FIELDS:
+        elif event_name == "probe" and frozenset(event) in {
+            frozenset(PASSED_PROBE_FIELDS),
+            frozenset(FAILED_PROBE_FIELDS),
+        }:
             if not campaign_is_running or campaign_has_ended:
                 raise ReportError("probe event is outside the running campaign")
             kind = event.get("kind")
-            if kind not in {"http", "udp"} or event.get("result") != "passed":
+            result = event.get("result")
+            if kind not in {"http", "udp"} or result not in {"passed", "failed"}:
                 raise ReportError("timeline has an invalid probe result")
-            sequence = require_int(event.get("sequence"), "probe sequence", 1)
-            if sequence <= probe_sequences.get(kind, 0):
-                raise ReportError(f"timeline {kind} probe sequence is not increasing")
-            probe_sequences[kind] = sequence
+            if result == "passed":
+                if set(event) != PASSED_PROBE_FIELDS:
+                    raise ReportError("passing probe has an invalid field set")
+                sequence = require_int(event.get("sequence"), "probe sequence", 1)
+                if sequence <= probe_sequences.get(kind, 0):
+                    raise ReportError(f"timeline {kind} probe sequence is not increasing")
+                probe_sequences[kind] = sequence
+                latest_passed_probe_indices[kind] = index
+            else:
+                if set(event) != FAILED_PROBE_FIELDS:
+                    raise ReportError("failed probe has an invalid field set")
+                error_code = event.get("errorCode")
+                if not isinstance(error_code, str) or not PROBE_ERROR_CODE.fullmatch(
+                    error_code
+                ):
+                    raise ReportError("failed probe has an invalid errorCode")
+                latest_failed_probe_indices[kind] = index
             elapsed = require_int(event.get("elapsedSeconds"), "probe elapsedSeconds")
             if elapsed < previous_elapsed or elapsed > duration:
                 raise ReportError("probe events are outside monotonic campaign time")
@@ -230,7 +269,6 @@ def build_scenarios(
             )
             if abs((event_at - expected_at).total_seconds()) > 2:
                 raise ReportError("probe timestamp does not match elapsedSeconds")
-            latest_probe_indices[kind] = index
         elif event_name == "scenario" and set(event) == SCENARIO_FIELDS:
             if not campaign_is_running or campaign_has_ended:
                 raise ReportError("scenario marker is outside the running campaign")
@@ -269,12 +307,35 @@ def build_scenarios(
                         missing = sorted(
                             kind
                             for kind in ("http", "udp")
-                            if latest_probe_indices.get(kind, -1) <= begin_index
+                            if latest_passed_probe_indices.get(kind, -1) <= begin_index
                         )
                         if missing:
                             raise ReportError(
                                 f"scenario {scenario_id} attempt {attempt} has no "
                                 f"post-begin {'/'.join(missing)} probe"
+                            )
+                    if scenario_id in outage_oracle_scenarios:
+                        missing_outage = sorted(
+                            kind
+                            for kind in ("http", "udp")
+                            if latest_failed_probe_indices.get(kind, -1)
+                            <= begin_index
+                        )
+                        if missing_outage:
+                            raise ReportError(
+                                f"scenario {scenario_id} attempt {attempt} has no "
+                                f"post-begin {'/'.join(missing_outage)} failed probe"
+                            )
+                        missing_recovery = sorted(
+                            kind
+                            for kind in ("http", "udp")
+                            if latest_passed_probe_indices.get(kind, -1)
+                            <= latest_failed_probe_indices.get(kind, -1)
+                        )
+                        if missing_recovery:
+                            raise ReportError(
+                                f"scenario {scenario_id} attempt {attempt} has no "
+                                f"post-failure {'/'.join(missing_recovery)} recovery probe"
                             )
                     passed[scenario_id] += 1
                 else:
@@ -337,7 +398,12 @@ def build_report(
     if candidate.get("dirty") is not False:
         raise ReportError("Apple release evidence must come from a clean candidate")
 
-    minimum_duration, required_scenarios, probe_oracle_scenarios = load_policy(root)
+    (
+        minimum_duration,
+        required_scenarios,
+        probe_oracle_scenarios,
+        outage_oracle_scenarios,
+    ) = load_policy(root)
     duration = require_int(metadata.get("observedDurationSeconds"), "duration", 1)
     if duration < minimum_duration:
         raise ReportError(f"Apple run is shorter than {minimum_duration} seconds")
@@ -358,6 +424,7 @@ def build_report(
         load_timeline(campaign_dir / "transition-timeline.jsonl"),
         required_scenarios,
         probe_oracle_scenarios,
+        outage_oracle_scenarios,
         started_at,
         ended_at,
         duration,

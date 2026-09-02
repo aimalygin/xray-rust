@@ -550,7 +550,7 @@ final class XrayClientUITests: XCTestCase {
         case CampaignError.UDPProbeTimedOut:
             return "udp-timeout"
         default:
-            return String(describing: type(of: error))
+            return "other"
         }
     }
 

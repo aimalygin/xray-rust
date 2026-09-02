@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pathlib
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,17 @@ def run(arguments: list[str], root: pathlib.Path) -> subprocess.CompletedProcess
 
 def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[2]
+    campaign_module = runpy.run_path(str(root / "scripts/run-apple-device-campaign.py"))
+    failed_probe = campaign_module["FAILED_PROBE"]
+    match = failed_probe.fullmatch(
+        "XRAY_DEVICE_PROBE kind=udp result=failed error=udp-timeout"
+    )
+    if match is None or match.groups() != ("udp", "udp-timeout"):
+        raise AssertionError("campaign runner does not recognize bounded failed probes")
+    if failed_probe.fullmatch(
+        "XRAY_DEVICE_PROBE kind=udp result=failed error=secret value"
+    ) is not None:
+        raise AssertionError("campaign runner accepts unsafe failed-probe text")
     help_result = run(["--help"], root)
     if help_result.returncode != 0 or "--skip-test-build" not in help_result.stdout:
         raise AssertionError("campaign help does not expose --skip-test-build")

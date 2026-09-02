@@ -97,6 +97,7 @@ REQUIRED_SCENARIOS = {
     "platform-lifecycle": 1,
 }
 APPLE_PROBE_ORACLE_SCENARIOS = set(REQUIRED_SCENARIOS) - {"credential-redaction"}
+APPLE_DUAL_PROBE_OUTAGE_SCENARIOS = {"airplane-mode"}
 REQUIRED_ARTIFACT_KINDS = {
     "resource-profile",
     "sanitized-log",

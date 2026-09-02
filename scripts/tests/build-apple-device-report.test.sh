@@ -71,11 +71,47 @@ for scenario_id, minimum in required.items():
             }
         )
         elapsed += 1
+        if scenario_id == "airplane-mode":
+            if mutation == "missing-outage-recovery":
+                for kind in ("http", "udp"):
+                    probe_sequences[kind] += 1
+                    events.append(
+                        {
+                            "event": "probe",
+                            "at": timestamp(elapsed),
+                            "elapsedSeconds": elapsed,
+                            "kind": kind,
+                            "result": "passed",
+                            "sequence": probe_sequences[kind],
+                        }
+                    )
+                    elapsed += 1
+            for kind in ("http", "udp"):
+                if mutation == "missing-outage-oracle" and kind == "udp":
+                    continue
+                events.append(
+                    {
+                        "event": "probe",
+                        "at": timestamp(elapsed),
+                        "elapsedSeconds": elapsed,
+                        "errorCode": (
+                            "unsafe error text"
+                            if mutation == "invalid-outage-error"
+                            else "offline"
+                        ),
+                        "kind": kind,
+                        "result": "failed",
+                    }
+                )
+                elapsed += 1
         for kind in ("http", "udp"):
             if (
-                mutation == "missing-probe-oracle"
+                mutation in {"missing-probe-oracle", "missing-outage-recovery"}
                 and scenario_id == "airplane-mode"
-                and kind == "udp"
+                and (
+                    mutation == "missing-outage-recovery"
+                    or kind == "udp"
+                )
             ):
                 continue
             probe_sequences[kind] += 1
@@ -202,6 +238,9 @@ expect_failure() {
 expect_failure missing-scenario "scenario airplane-mode has 0 passing attempt"
 expect_failure failed-only "scenario airplane-mode has 0 passing attempt"
 expect_failure missing-probe-oracle "has no post-begin udp probe"
+expect_failure missing-outage-oracle "has no post-begin udp failed probe"
+expect_failure missing-outage-recovery "has no post-failure http/udp recovery probe"
+expect_failure invalid-outage-error "failed probe has an invalid errorCode"
 expect_failure rehearsal "only a formal schema-v1 Apple run"
 
 echo "Apple device report builder tests passed"

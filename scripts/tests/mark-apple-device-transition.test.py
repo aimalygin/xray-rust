@@ -141,6 +141,56 @@ def main() -> int:
                 "sequence": 1,
             },
         )
+        no_outage = run(
+            marker,
+            campaign,
+            "airplane-mode",
+            "--attempt",
+            "1",
+            "--phase",
+            "passed",
+            "--notes",
+            "recovery without an observed outage",
+        )
+        expect_failure(no_outage, "post-begin http/udp failed probe evidence")
+
+        for kind in ("http", "udp"):
+            append_event(
+                timeline,
+                {
+                    "event": "probe",
+                    "at": timestamp(now),
+                    "elapsedSeconds": elapsed,
+                    "errorCode": "offline",
+                    "kind": kind,
+                    "result": "failed",
+                },
+            )
+        no_recovery = run(
+            marker,
+            campaign,
+            "airplane-mode",
+            "--attempt",
+            "1",
+            "--phase",
+            "passed",
+            "--notes",
+            "outage without recovery",
+        )
+        expect_failure(no_recovery, "post-failure http/udp recovery probe evidence")
+
+        for kind in ("http", "udp"):
+            append_event(
+                timeline,
+                {
+                    "event": "probe",
+                    "at": timestamp(now),
+                    "elapsedSeconds": elapsed,
+                    "kind": kind,
+                    "result": "passed",
+                    "sequence": 2,
+                },
+            )
         passed = run(
             marker,
             campaign,

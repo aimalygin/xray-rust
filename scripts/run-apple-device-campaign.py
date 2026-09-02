@@ -38,6 +38,10 @@ CAMPAIGN_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 PASSED_PROBE = re.compile(
     r"^XRAY_DEVICE_PROBE kind=(http|udp) result=passed sequence=([1-9][0-9]*)$"
 )
+FAILED_PROBE = re.compile(
+    r"^XRAY_DEVICE_PROBE kind=(http|udp) result=failed "
+    r"error=([A-Za-z0-9._-]{1,128})$"
+)
 
 
 class CampaignError(Exception):
@@ -515,6 +519,22 @@ def main() -> int:
                             "kind": probe.group(1),
                             "result": "passed",
                             "sequence": int(probe.group(2)),
+                        },
+                    )
+                failed_probe = FAILED_PROBE.fullmatch(raw_line.rstrip("\r\n"))
+                if soak_started_at is not None and failed_probe is not None:
+                    observed_at = UTC_now()
+                    append_json_line(
+                        timeline_path,
+                        {
+                            "event": "probe",
+                            "at": observed_at,
+                            "elapsedSeconds": elapsed_since(
+                                soak_started_at, observed_at
+                            ),
+                            "kind": failed_probe.group(1),
+                            "result": "failed",
+                            "errorCode": failed_probe.group(2),
                         },
                     )
                 sys.stdout.write(line)

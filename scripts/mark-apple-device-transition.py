@@ -15,13 +15,19 @@ import runpy
 SCENARIO_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 
 
-def load_policy(root: pathlib.Path) -> tuple[set[str], set[str]]:
+def load_policy(root: pathlib.Path) -> tuple[set[str], set[str], set[str]]:
     policy = runpy.run_path(str(root / "scripts/check-mobile-device-evidence.py"))
     required = policy.get("REQUIRED_SCENARIOS")
     probe_oracles = policy.get("APPLE_PROBE_ORACLE_SCENARIOS")
-    if not isinstance(required, dict) or not isinstance(probe_oracles, set):
+    outage_oracles = policy.get("APPLE_DUAL_PROBE_OUTAGE_SCENARIOS")
+    if (
+        not isinstance(required, dict)
+        or not isinstance(probe_oracles, set)
+        or not isinstance(outage_oracles, set)
+        or not outage_oracles.issubset(probe_oracles)
+    ):
         raise ValueError("mobile evidence scenario policy is invalid")
-    return set(required), probe_oracles
+    return set(required), probe_oracles, outage_oracles
 
 
 def load_timeline(path: pathlib.Path) -> list[dict[str, object]]:
@@ -40,17 +46,21 @@ def load_timeline(path: pathlib.Path) -> list[dict[str, object]]:
 
 def attempt_state(
     events: list[dict[str, object]], scenario_id: str, attempt: int
-) -> tuple[str | None, int, dict[str, int]]:
+) -> tuple[str | None, int, dict[str, int], dict[str, int]]:
     state: str | None = None
     begin_index = -1
-    latest_probe_indices: dict[str, int] = {}
+    latest_passed_probe_indices: dict[str, int] = {}
+    latest_failed_probe_indices: dict[str, int] = {}
     for index, event in enumerate(events):
         if (
             event.get("event") == "probe"
-            and event.get("result") == "passed"
             and event.get("kind") in {"http", "udp"}
         ):
-            latest_probe_indices[str(event["kind"])] = index
+            kind = str(event["kind"])
+            if event.get("result") == "passed":
+                latest_passed_probe_indices[kind] = index
+            elif event.get("result") == "failed":
+                latest_failed_probe_indices[kind] = index
         if (
             event.get("event") != "scenario"
             or event.get("scenarioId") != scenario_id
@@ -67,7 +77,12 @@ def attempt_state(
             state = str(phase)
         else:
             raise ValueError(f"timeline has an invalid state for attempt {attempt}")
-    return state, begin_index, latest_probe_indices
+    return (
+        state,
+        begin_index,
+        latest_passed_probe_indices,
+        latest_failed_probe_indices,
+    )
 
 
 def main() -> int:
@@ -83,7 +98,11 @@ def main() -> int:
         parser.error("scenario_id has invalid characters")
     root = pathlib.Path(__file__).resolve().parent.parent
     try:
-        required_scenarios, probe_oracle_scenarios = load_policy(root)
+        (
+            required_scenarios,
+            probe_oracle_scenarios,
+            outage_oracle_scenarios,
+        ) = load_policy(root)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     if args.scenario_id not in required_scenarios:
@@ -105,9 +124,12 @@ def main() -> int:
         parser.error("transition timeline is unavailable")
     try:
         events = load_timeline(timeline_path)
-        current_state, begin_index, latest_probe_indices = attempt_state(
-            events, args.scenario_id, args.attempt
-        )
+        (
+            current_state,
+            begin_index,
+            latest_passed_probe_indices,
+            latest_failed_probe_indices,
+        ) = attempt_state(events, args.scenario_id, args.attempt)
     except (OSError, UnicodeDecodeError, ValueError) as error:
         parser.error(str(error))
     if args.phase == "begin":
@@ -119,7 +141,7 @@ def main() -> int:
         missing = sorted(
             kind
             for kind in ("http", "udp")
-            if latest_probe_indices.get(kind, -1) <= begin_index
+            if latest_passed_probe_indices.get(kind, -1) <= begin_index
         )
         if missing:
             parser.error(
@@ -127,6 +149,30 @@ def main() -> int:
                 + "/".join(missing)
                 + " probe evidence"
             )
+        if args.scenario_id in outage_oracle_scenarios:
+            missing_outage = sorted(
+                kind
+                for kind in ("http", "udp")
+                if latest_failed_probe_indices.get(kind, -1) <= begin_index
+            )
+            if missing_outage:
+                parser.error(
+                    "passing this scenario requires post-begin "
+                    + "/".join(missing_outage)
+                    + " failed probe evidence"
+                )
+            missing_recovery = sorted(
+                kind
+                for kind in ("http", "udp")
+                if latest_passed_probe_indices.get(kind, -1)
+                <= latest_failed_probe_indices.get(kind, -1)
+            )
+            if missing_recovery:
+                parser.error(
+                    "passing this scenario requires post-failure "
+                    + "/".join(missing_recovery)
+                    + " recovery probe evidence"
+                )
     state = json.loads(state_path.read_text(encoding="utf-8"))
     if state.get("phase") != "running" or "startedAt" not in state:
         parser.error("campaign is building; wait for the first device sample")

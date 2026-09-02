@@ -405,6 +405,10 @@ rejected while the signed app is still building or launching.
 
 Every successful HTTPS and DNS/UDP round trip after that first sample is also
 written as a structured event in the checksum-verified transition timeline.
+Failed probes are retained with a bounded non-secret error code. The
+`airplane-mode` oracle is stricter than a recovery-only marker: every credited
+attempt must contain post-`begin` HTTPS and UDP failures followed by fresh
+successes for both probes before `passed` is accepted.
 Except for the log-only `credential-redaction` review, a `passed` marker is
 rejected until both probes have succeeded after that attempt's `begin` marker.
 This proves post-action traffic recovery; it does not by itself prove that the
