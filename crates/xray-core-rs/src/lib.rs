@@ -60,8 +60,8 @@ pub use outbound::{
     OutboundHealthFailure, OutboundHealthSnapshot, OutboundHealthState,
     OutboundHealthStatusSnapshot, OutboundNode, OutboundNodeId, OutboundNodeKind,
     OutboundProxyGraphError, OutboundRouter, OutboundSelectionOverlay, OutboundSelectionSnapshot,
-    OutboundSelectorGroup, OutboundSelectorGroupSnapshot, TcpOutbound, UdpOutbound,
-    VlessTcpOutbound, VlessUdpFraming,
+    OutboundSelectorGroup, OutboundSelectorGroupSnapshot, RoutingPolicySnapshot, TcpOutbound,
+    UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
 pub use startup_probe::{StartupProbeError, StartupProbeOptions};
@@ -230,6 +230,14 @@ pub enum CoreError {
     OutboundSelectorGroupNotFound(String),
     #[error("outbound {outbound:?} is not a candidate of selector group {group:?}")]
     OutboundSelectorCandidateNotFound { group: String, outbound: String },
+    #[error("routing policy references unknown outbound {0:?}")]
+    RoutingPolicyOutboundNotFound(String),
+    #[error("routing policy references unknown balancer {0:?}")]
+    RoutingPolicyBalancerNotFound(String),
+    #[error("routing policy cannot change balancer topology; create a new core handle")]
+    RoutingPolicyBalancerTopologyChanged,
+    #[error("routing policy revision is exhausted")]
+    RoutingPolicyRevisionExhausted,
     #[error(transparent)]
     OutboundProxyGraph(#[from] OutboundProxyGraphError),
     #[error("outbound chaining does not support {0}")]
@@ -664,6 +672,19 @@ impl Core {
 
     pub fn outbound_health_snapshot(&self) -> OutboundHealthSnapshot {
         self.outbound_selection().health_snapshot()
+    }
+
+    /// Atomically replaces the routing rules and compiled geodata matchers for
+    /// new flows. Existing flows and the immutable outbound graph are retained.
+    pub fn replace_routing_policy(
+        &self,
+        routing: xray_config::RoutingConfig,
+    ) -> Result<u64, CoreError> {
+        self.outbound_router.replace_routing_policy(routing)
+    }
+
+    pub fn routing_policy_snapshot(&self) -> RoutingPolicySnapshot {
+        self.outbound_router.routing_policy_snapshot()
     }
 
     pub fn connection_snapshot(&self) -> ConnectionSnapshot {

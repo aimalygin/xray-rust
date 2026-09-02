@@ -925,6 +925,15 @@ that member is currently unhealthy. It affects only new flows, while already
 opened flows and lazy handler/transport pools remain intact. Non-empty strategy
 `settings` remain unsupported outside `leastLoad`.
 
+ABI 1.4 can reparse and atomically publish a scoped top-level `routing` object
+for new flows. Ordered rules, `domainStrategy`, and their compiled
+`geosite`/`geoip` matchers change together as one revision; a selection that
+awaits an `IPIfNonMatch` lookup retains its original revision. Direct targets
+must name loaded outbounds. Balancer targets may be reused only with the exact
+loaded balancer definitions because group membership, strategies, fallback
+edges, and handler pools remain part of the immutable graph. Other top-level
+config fields and full topology replacement require a new core handle.
+
 ## Observatory and outbound health
 
 The top-level `observatory` object accepts Xray's `subjectSelector`, `probeURL`,

@@ -31,6 +31,7 @@ enum class XrayFfiCapability(val mask: Long) {
     OutboundSelection(1L shl 12),
     OutboundHealth(1L shl 13),
     ConnectionManagement(1L shl 14),
+    RoutingPolicyUpdate(1L shl 15),
 }
 
 data class XrayFfiInfo(
@@ -40,6 +41,25 @@ data class XrayFfiInfo(
     fun supports(capability: XrayFfiCapability): Boolean =
         capabilityMask and capability.mask == capability.mask
 }
+
+enum class XrayRoutingDomainStrategy(val wireValue: String) {
+    AsIs("asIs"),
+    IpIfNonMatch("ipIfNonMatch"),
+    ;
+
+    companion object {
+        internal fun fromWireValue(value: String): XrayRoutingDomainStrategy =
+            entries.firstOrNull { it.wireValue == value }
+                ?: throw IllegalArgumentException("unknown routing domain strategy: $value")
+    }
+}
+
+data class XrayRoutingPolicySnapshot(
+    val schemaVersion: Int,
+    val revision: Long,
+    val ruleCount: Int,
+    val domainStrategy: XrayRoutingDomainStrategy,
+)
 
 data class XrayOutboundSelectionSnapshot(
     val schemaVersion: Int,
@@ -339,6 +359,22 @@ internal fun NativeTunDiagnosticEvent.toUdpQuicBlockedEvent(): XrayUdpQuicBlocke
     return XrayUdpQuicBlockedEvent(target = target, bytes = values[0])
 }
 
+internal fun parseRoutingPolicySnapshot(json: String): XrayRoutingPolicySnapshot {
+    val root = JSONObject(json)
+    val schemaVersion = root.getInt("schemaVersion")
+    require(schemaVersion == 1) {
+        "unsupported routing policy snapshot schema: $schemaVersion"
+    }
+    return XrayRoutingPolicySnapshot(
+        schemaVersion = schemaVersion,
+        revision = root.getLong("revision"),
+        ruleCount = root.getInt("ruleCount"),
+        domainStrategy = XrayRoutingDomainStrategy.fromWireValue(
+            root.getString("domainStrategy"),
+        ),
+    )
+}
+
 internal fun parseOutboundSelectionSnapshot(json: String): XrayOutboundSelectionSnapshot {
     val root = JSONObject(json)
     val schemaVersion = root.getInt("schemaVersion")
@@ -554,6 +590,20 @@ class XrayCore private constructor(handle: Long) : Closeable {
         requireCapability(XrayFfiCapability.OutboundSelection)
         require(groupTag.isNotEmpty()) { "selector group tag must not be empty" }
         withDataPathHandle { nativeClearOutboundSelectorOverride(it, groupTag) }
+    }
+
+    /** Replaces routing rules and compiled geodata matchers for new flows. */
+    fun replaceRoutingPolicy(configJson: String) {
+        requireCapability(XrayFfiCapability.RoutingPolicyUpdate)
+        require(configJson.isNotEmpty()) { "routing policy JSON must not be empty" }
+        withDataPathHandle { nativeReplaceRoutingPolicyJson(it, configJson) }
+    }
+
+    fun routingPolicySnapshot(): XrayRoutingPolicySnapshot {
+        requireCapability(XrayFfiCapability.RoutingPolicyUpdate)
+        return parseRoutingPolicySnapshot(
+            withDataPathHandle { nativeRoutingPolicySnapshotJson(it) },
+        )
     }
 
     fun outboundSelectionSnapshot(): XrayOutboundSelectionSnapshot {
@@ -812,6 +862,8 @@ class XrayCore private constructor(handle: Long) : Closeable {
         outboundTag: String,
     )
     private external fun nativeClearOutboundSelectorOverride(handle: Long, groupTag: String)
+    private external fun nativeReplaceRoutingPolicyJson(handle: Long, configJson: String)
+    private external fun nativeRoutingPolicySnapshotJson(handle: Long): String
     private external fun nativeOutboundSelectionSnapshotJson(handle: Long): String
     private external fun nativeOutboundHealthSnapshotJson(handle: Long): String
     private external fun nativeConnectionSnapshotJson(handle: Long): String

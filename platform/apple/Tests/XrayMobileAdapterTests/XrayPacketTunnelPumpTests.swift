@@ -183,6 +183,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testFFIVersionValidationAcceptsCurrentAndNewerMinorABI() {
         XCTAssertNoThrow(try XrayCore.validateFFIVersion(major: 1, minor: 1))
         XCTAssertNoThrow(try XrayCore.validateFFIVersion(major: 1, minor: 2))
+        XCTAssertNoThrow(try XrayCore.validateFFIVersion(major: 1, minor: 4))
     }
 
     func testFFIVersionValidationRejectsIncompatibleMajorABI() {
@@ -208,7 +209,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testFFIInfoReportsCurrentCapabilities() {
         let info = XrayCore.ffiInfo
 
-        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 3))
+        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 4))
         XCTAssertTrue(info.supports(.configWarnings))
         XCTAssertTrue(info.supports(.geodataSearch))
         XCTAssertTrue(info.supports(.socketProtection))
@@ -224,7 +225,22 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertTrue(info.supports(.outboundSelection))
         XCTAssertTrue(info.supports(.outboundHealth))
         XCTAssertTrue(info.supports(.connectionManagement))
+        XCTAssertTrue(info.supports(.routingPolicyUpdate))
         XCTAssertFalse(info.supports(XrayFFICapabilities(rawValue: 1 << 63)))
+    }
+
+    func testRoutingPolicySnapshotDecodesVersionedWireContract() throws {
+        let json = #"{"schemaVersion":1,"revision":4,"ruleCount":12,"domainStrategy":"ipIfNonMatch"}"#
+
+        let snapshot = try JSONDecoder().decode(
+            XrayRoutingPolicySnapshot.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertEqual(snapshot.schemaVersion, 1)
+        XCTAssertEqual(snapshot.revision, 4)
+        XCTAssertEqual(snapshot.ruleCount, 12)
+        XCTAssertEqual(snapshot.domainStrategy, .ipIfNonMatch)
     }
 
     func testOutboundSelectionSnapshotDecodesVersionedWireContract() throws {
@@ -286,11 +302,18 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     }
 
     func testOutboundSnapshotsRejectUnknownSchemaVersions() {
+        let routing = #"{"schemaVersion":2,"revision":0,"ruleCount":0,"domainStrategy":"asIs"}"#
         let selection = #"{"schemaVersion":2,"revision":0,"groups":[]}"#
         let health = #"{"schemaVersion":2,"revision":0,"outbounds":[]}"#
         let connections = #"{"schemaVersion":2,"revision":0,"connections":[]}"#
         let accounting = #"{"schemaVersion":2,"revision":0,"outbounds":[]}"#
 
+        XCTAssertThrowsError(
+            try JSONDecoder().decode(
+                XrayRoutingPolicySnapshot.self,
+                from: Data(routing.utf8)
+            )
+        )
         XCTAssertThrowsError(
             try JSONDecoder().decode(
                 XrayOutboundSelectionSnapshot.self,

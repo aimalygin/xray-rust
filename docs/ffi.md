@@ -8,11 +8,12 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.3`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.4`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
-connection-management methods require the ABI 1.3 capability bit before
-calling optional symbols.
+connection-management methods require the ABI 1.3 capability bit, and routing
+policy replacement requires the ABI 1.4 capability bit, before calling optional
+symbols.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -149,6 +150,40 @@ errors, or credentials. Consumers must reject an unsupported `schemaVersion`
 rather than guessing its meaning. The checked-in Swift and Kotlin models do
 this decoding and expose equivalent public operations.
 
+## Routing-policy replacement
+
+ABI 1.4 adds `XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE`. When present,
+`xray_core_replace_routing_policy_json` accepts an Xray JSON document whose
+only top-level member is an object named `routing`. The parser uses the same
+default, fallback, or exclusive geodata search policy configured on the handle,
+so `geosite:`, `geoip:`, `ext-domain:`, and `ext-ip:` references are compiled
+before publication.
+
+The update may run before or after `xray_core_start` and affects new flows only.
+It may replace ordered rules and `domainStrategy`; the outbound graph, handler
+pools, listeners, DNS settings, and existing flows remain unchanged. A
+`balancerTag` update must include the loaded balancer definitions so the parser
+can resolve the tag, and those definitions must exactly match the immutable
+topology. Unknown outbound/balancer tags, changed topology, malformed geodata,
+or an out-of-scope top-level member return `XRAY_STATUS_CONFIG_ERROR` without
+advancing the active revision.
+
+`xray_core_routing_policy_snapshot_json` uses the standard two-pass UTF-8
+contract. Schema version 1 is redacted and exposes no matcher contents:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 3,
+  "ruleCount": 24,
+  "domainStrategy": "ipIfNonMatch"
+}
+```
+
+`domainStrategy` is `asIs` or `ipIfNonMatch`. The checked-in Swift and Kotlin
+adapters expose typed replacement and snapshot APIs and reject unknown snapshot
+schema versions.
+
 ## Connection management
 
 ABI 1.3 adds `XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT`. When present, hosts
@@ -223,10 +258,11 @@ Serialize all configuration and lifecycle calls for a handle:
 - every pre-load `xray_core_set_*` call;
 - `xray_core_free`.
 
-The selector override/clear and connection-close calls are the exception: they
-use the shared runtime gate and may overlap packet/statistics calls, snapshot
-reads, and each other. All four snapshot calls have the same shared-call
-behavior. None of these shared calls may overlap load/start/stop/free.
+Routing-policy replacement, selector override/clear, and connection close are
+the exceptions: they use the shared runtime gate and may overlap
+packet/statistics calls, snapshot reads, and each other. All five snapshot
+calls have the same shared-call behavior. None of these shared calls may
+overlap load/start/stop/free.
 
 The header explicitly permits `xray_tun_poll_packets` to run concurrently with
 `xray_tun_push_packet`, `xray_tun_poll_packet`, and `xray_tun_stats` on the same

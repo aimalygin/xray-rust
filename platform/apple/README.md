@@ -67,8 +67,9 @@ profile you control without committing it to the repository.
 
 ## Swift Package products
 
-- `XrayMobileAdapter`: `XrayCore`, packet batching/pump, stats/events, startup
-  probe, and optional Darwin-utun fd discovery.
+- `XrayMobileAdapter`: `XrayCore`, atomic routing-policy replacement and
+  snapshots, packet batching/pump, stats/events, startup probe, and optional
+  Darwin-utun fd discovery.
 - `XrayAppleShared`: profile/config models, secure config storage, sanitized
   logging, and app-to-extension message keys.
 - `XrayAppleClient`: SwiftUI profile editor and `NETunnelProviderManager`

@@ -45,8 +45,11 @@ flowchart LR
    factory, plus the TUN queues, from the immutable config. Listeners bind when
    the core starts.
 
-A core is not hot-reloaded. The FFI intentionally permits one successful config
-load per handle; replacing a config requires a new handle.
+A core's full configuration is not hot-reloaded. The FFI intentionally permits
+one successful full config load per handle; changing listeners, outbounds, DNS,
+policy, or balancer topology requires a new handle. ABI 1.4 can atomically
+replace only the ordered routing rules, domain strategy, and their already
+compiled geodata matchers for new flows.
 
 ## Data paths
 
@@ -78,6 +81,13 @@ only; it resolves direct or `balancerTag` results through the graph and asks the
 factory for the compiled leaf handler. Unsupported handlers still fail when
 selected rather than making unrelated routes unusable at core construction
 time.
+
+The router publishes routing-policy revisions as immutable snapshots behind a
+short reader lock. Each selection retains one snapshot through any
+`IPIfNonMatch` DNS await, so a flow cannot combine rule or geodata generations.
+Replacement validates every target against the immutable graph, compiles the
+DNS-route prefilter before publication, and swaps the complete snapshot in one
+write; a rejected update leaves the prior revision active.
 
 A lifecycle-owned observatory task reuses the startup probe's bounded HTTP(S)
 dial path, but selects each configured leaf directly by tag. Health writes and

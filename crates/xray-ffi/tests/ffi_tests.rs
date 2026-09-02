@@ -10,6 +10,7 @@ use xray_ffi::{
     xray_core_config_warnings, xray_core_connection_snapshot_json, xray_core_free,
     xray_core_load_config_json, xray_core_new, xray_core_outbound_accounting_snapshot_json,
     xray_core_outbound_health_snapshot_json, xray_core_outbound_selection_snapshot_json,
+    xray_core_replace_routing_policy_json, xray_core_routing_policy_snapshot_json,
     xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging, xray_core_set_geodata_search_dir,
     xray_core_set_geodata_search_dir_exclusive, xray_core_set_outbound_selector_override,
     xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
@@ -28,10 +29,11 @@ use xray_ffi::{
     XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT, XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY,
     XRAY_FFI_CAPABILITY_FILE_LOGGING, XRAY_FFI_CAPABILITY_GEODATA_SEARCH,
     XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH, XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION,
-    XRAY_FFI_CAPABILITY_SOCKET_PROTECTION, XRAY_FFI_CAPABILITY_STARTUP_PROBE,
-    XRAY_FFI_CAPABILITY_TUN_BATCH_POLL, XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS,
-    XRAY_FFI_CAPABILITY_TUN_FD, XRAY_FFI_CAPABILITY_TUN_PACKET_IO,
-    XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES, XRAY_FFI_CAPABILITY_TUN_STATS,
+    XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE, XRAY_FFI_CAPABILITY_SOCKET_PROTECTION,
+    XRAY_FFI_CAPABILITY_STARTUP_PROBE, XRAY_FFI_CAPABILITY_TUN_BATCH_POLL,
+    XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS, XRAY_FFI_CAPABILITY_TUN_FD,
+    XRAY_FFI_CAPABILITY_TUN_PACKET_IO, XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES,
+    XRAY_FFI_CAPABILITY_TUN_STATS,
 };
 
 #[test]
@@ -56,7 +58,8 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS
         | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
         | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH
-        | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT;
+        | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT
+        | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -165,6 +168,47 @@ fn ffi_exclusive_geodata_dir_does_not_fall_back_to_executable_dir() {
     }
     std::fs::remove_file(fallback_path).expect("fallback geosite fixture should be removed");
     std::fs::remove_dir_all(explicit_dir).expect("explicit geodata fixture should be removed");
+}
+
+#[test]
+fn ffi_hot_routing_policy_compiles_geodata_from_the_configured_generation() {
+    let geodata_dir = unique_temp_dir("xray-ffi-hot-geodata");
+    std::fs::write(geodata_dir.join("geosite.dat"), minimal_geosite_data())
+        .expect("hot geosite fixture should be written");
+    let geodata_dir_c = CString::new(geodata_dir.to_string_lossy().as_bytes()).unwrap();
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert_eq!(
+        unsafe {
+            xray_core_set_geodata_search_dir_exclusive(core, geodata_dir_c.as_ptr(), &mut err)
+        },
+        XrayStatus::Ok
+    );
+    let initial = CString::new(
+        r#"{"outbounds":[{"tag":"direct","protocol":"freedom"}],"routing":{"rules":[]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, initial.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+
+    let replacement = CString::new(
+        r#"{"routing":{"rules":[{"type":"field","domain":["geosite:test"],"outboundTag":"direct"}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        unsafe { xray_core_replace_routing_policy_json(core, replacement.as_ptr(), &mut err) },
+        XrayStatus::Ok,
+        "hot geodata load error: {}",
+        error_message(err)
+    );
+    let snapshot = read_snapshot_json(core, xray_core_routing_policy_snapshot_json, &mut err);
+    assert_eq!(snapshot["revision"], 1);
+    assert_eq!(snapshot["ruleCount"], 1);
+
+    unsafe { xray_core_free(core) };
+    std::fs::remove_dir_all(geodata_dir).expect("hot geodata fixture should be removed");
 }
 
 #[test]
@@ -299,6 +343,54 @@ fn ffi_exposes_atomic_selector_override_and_versioned_snapshot() {
     assert_eq!(cleared["revision"], 2);
     assert!(cleared["groups"][0]["overrideTag"].is_null());
 
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_atomically_replaces_routing_policy_and_preserves_failed_revision() {
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    let raw = CString::new(config_with_outbound_selector()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+
+    let initial = read_snapshot_json(core, xray_core_routing_policy_snapshot_json, &mut err);
+    assert_eq!(initial["revision"], 0);
+    assert_eq!(initial["ruleCount"], 1);
+    assert_eq!(initial["domainStrategy"], "asIs");
+    assert_eq!(
+        unsafe { xray_core_start(core, &mut err) },
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(err)
+    );
+
+    let replacement =
+        CString::new(r#"{"routing":{"domainStrategy":"IPIfNonMatch","rules":[]}}"#).unwrap();
+    assert_eq!(
+        unsafe { xray_core_replace_routing_policy_json(core, replacement.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    let replaced = read_snapshot_json(core, xray_core_routing_policy_snapshot_json, &mut err);
+    assert_eq!(replaced["revision"], 1);
+    assert_eq!(replaced["ruleCount"], 0);
+    assert_eq!(replaced["domainStrategy"], "ipIfNonMatch");
+
+    let invalid = CString::new(
+        r#"{"routing":{"rules":[{"type":"field","network":"tcp","outboundTag":"missing"}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        unsafe { xray_core_replace_routing_policy_json(core, invalid.as_ptr(), &mut err) },
+        XrayStatus::ConfigError
+    );
+    assert_error(&mut err, XrayStatus::ConfigError, "unknown outbound");
+    let retained = read_snapshot_json(core, xray_core_routing_policy_snapshot_json, &mut err);
+    assert_eq!(retained["revision"], 1);
+
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
     unsafe { xray_core_free(core) };
 }
 

@@ -59,6 +59,7 @@ class XrayTunBackendTest {
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 1))
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 2))
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 3))
+        validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 4))
     }
 
     @Test
@@ -94,6 +95,19 @@ class XrayTunBackendTest {
         assertEquals(1L shl 12, XrayFfiCapability.OutboundSelection.mask)
         assertEquals(1L shl 13, XrayFfiCapability.OutboundHealth.mask)
         assertEquals(1L shl 14, XrayFfiCapability.ConnectionManagement.mask)
+        assertEquals(1L shl 15, XrayFfiCapability.RoutingPolicyUpdate.mask)
+    }
+
+    @Test
+    fun routingPolicySnapshotParsesVersionedWireContract() {
+        val snapshot = parseRoutingPolicySnapshot(
+            """{"schemaVersion":1,"revision":4,"ruleCount":12,"domainStrategy":"ipIfNonMatch"}""",
+        )
+
+        assertEquals(1, snapshot.schemaVersion)
+        assertEquals(4L, snapshot.revision)
+        assertEquals(12, snapshot.ruleCount)
+        assertEquals(XrayRoutingDomainStrategy.IpIfNonMatch, snapshot.domainStrategy)
     }
 
     @Test
@@ -254,6 +268,11 @@ class XrayTunBackendTest {
 
     @Test
     fun outboundSnapshotParsersRejectUnknownSchemaVersions() {
+        assertThrows(IllegalArgumentException::class.java) {
+            parseRoutingPolicySnapshot(
+                """{"schemaVersion":2,"revision":0,"ruleCount":0,"domainStrategy":"asIs"}""",
+            )
+        }
         assertThrows(IllegalArgumentException::class.java) {
             parseOutboundSelectionSnapshot(
                 """{"schemaVersion":2,"revision":0,"groups":[]}""",

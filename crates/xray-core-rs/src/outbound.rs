@@ -5,7 +5,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -14,9 +14,9 @@ use rand::Rng;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_config::{
     CoreConfig, DnsOutboundSettings, Network, OutboundConfig, OutboundSettings, QuicParamsSettings,
-    RoutingBalancerStrategy, RoutingDomainStrategy, RoutingLeastLoadSettings, RoutingRule,
-    RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, VlessUser,
-    XhttpSettings,
+    RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy, RoutingLeastLoadSettings,
+    RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport, TargetAddr,
+    VlessUser, XhttpSettings,
 };
 use xray_proxy::vless::{
     encode_request_header, VisionStream, VisionStreamIo, VlessCommand, VlessRequest,
@@ -1966,6 +1966,20 @@ struct DnsRoutePrefilter {
     tagged_inbounds: HashSet<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoutingPolicySnapshot {
+    pub revision: u64,
+    pub rule_count: usize,
+    pub domain_strategy: RoutingDomainStrategy,
+}
+
+#[derive(Debug)]
+struct RoutingPolicyState {
+    revision: u64,
+    routing: RoutingConfig,
+    dns_route_prefilter: DnsRoutePrefilter,
+}
+
 impl DnsRoutePrefilter {
     fn new<'a>(rules: impl Iterator<Item = &'a RoutingRule>) -> Self {
         let mut network_ports = DnsRouteNetworkIndexBuilder::default();
@@ -2003,7 +2017,8 @@ impl DnsRoutePrefilter {
 #[derive(Debug)]
 pub struct OutboundRouter {
     factory: Arc<OutboundFactory>,
-    dns_route_prefilter: DnsRoutePrefilter,
+    routing_policy: RwLock<Arc<RoutingPolicyState>>,
+    routing_update_lock: Mutex<()>,
     default_is_dns: bool,
     default_requires_selection: bool,
 }
@@ -2016,28 +2031,12 @@ impl OutboundRouter {
 
     pub fn from_factory(factory: Arc<OutboundFactory>) -> Self {
         let graph = factory.graph();
-        let dns_route_prefilter =
-            DnsRoutePrefilter::new(graph.config().routing.rules.iter().filter(|rule| {
-                match &rule.target {
-                    RoutingRuleTarget::Outbound(tag) => graph
-                        .node_for_tag(tag)
-                        .and_then(|id| graph.node(id))
-                        .is_some_and(|node| node.kind() == OutboundNodeKind::Dns),
-                    RoutingRuleTarget::Balancer(tag) => {
-                        graph.selector_group_for_tag(tag).is_some_and(|group| {
-                            group.members().iter().any(|member| {
-                                graph
-                                    .node(*member)
-                                    .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
-                            }) || group
-                                .fallback_tag()
-                                .and_then(|tag| graph.node_for_tag(tag))
-                                .and_then(|node| graph.node(node))
-                                .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
-                        })
-                    }
-                }
-            }));
+        let routing = graph.config().routing.clone();
+        let routing_policy = RoutingPolicyState {
+            revision: 0,
+            dns_route_prefilter: Self::dns_route_prefilter(graph, &routing),
+            routing,
+        };
         let default_is_dns = graph
             .default_node()
             .and_then(|id| graph.node(id))
@@ -2045,7 +2044,8 @@ impl OutboundRouter {
         let default_requires_selection = graph.has_unresolved_default_tag();
         Self {
             factory,
-            dns_route_prefilter,
+            routing_policy: RwLock::new(Arc::new(routing_policy)),
+            routing_update_lock: Mutex::new(()),
             default_is_dns,
             default_requires_selection,
         }
@@ -2069,6 +2069,94 @@ impl OutboundRouter {
 
     pub fn selection_handle(&self) -> Arc<OutboundSelectionOverlay> {
         self.factory.selection_handle()
+    }
+
+    pub fn replace_routing_policy(&self, routing: RoutingConfig) -> Result<u64, CoreError> {
+        self.validate_routing_policy(&routing)?;
+        let dns_route_prefilter = Self::dns_route_prefilter(self.graph(), &routing);
+        let _update = self
+            .routing_update_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let revision = self
+            .routing_policy_state()
+            .revision
+            .checked_add(1)
+            .ok_or(CoreError::RoutingPolicyRevisionExhausted)?;
+        let next = Arc::new(RoutingPolicyState {
+            revision,
+            routing,
+            dns_route_prefilter,
+        });
+        *self
+            .routing_policy
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = next;
+        Ok(revision)
+    }
+
+    pub fn routing_policy_snapshot(&self) -> RoutingPolicySnapshot {
+        let policy = self.routing_policy_state();
+        RoutingPolicySnapshot {
+            revision: policy.revision,
+            rule_count: policy.routing.rules.len(),
+            domain_strategy: policy.routing.domain_strategy,
+        }
+    }
+
+    fn routing_policy_state(&self) -> Arc<RoutingPolicyState> {
+        Arc::clone(
+            &self
+                .routing_policy
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+    }
+
+    fn validate_routing_policy(&self, routing: &RoutingConfig) -> Result<(), CoreError> {
+        if !routing.balancers.is_empty()
+            && routing.balancers != self.graph().config().routing.balancers
+        {
+            return Err(CoreError::RoutingPolicyBalancerTopologyChanged);
+        }
+        for rule in &routing.rules {
+            match &rule.target {
+                RoutingRuleTarget::Outbound(tag) if self.graph().node_for_tag(tag).is_none() => {
+                    return Err(CoreError::RoutingPolicyOutboundNotFound(tag.clone()));
+                }
+                RoutingRuleTarget::Balancer(tag)
+                    if self.graph().selector_group_for_tag(tag).is_none() =>
+                {
+                    return Err(CoreError::RoutingPolicyBalancerNotFound(tag.clone()));
+                }
+                RoutingRuleTarget::Outbound(_) | RoutingRuleTarget::Balancer(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn dns_route_prefilter(graph: &OutboundGraph, routing: &RoutingConfig) -> DnsRoutePrefilter {
+        DnsRoutePrefilter::new(routing.rules.iter().filter(|rule| {
+            match &rule.target {
+                RoutingRuleTarget::Outbound(tag) => graph
+                    .node_for_tag(tag)
+                    .and_then(|id| graph.node(id))
+                    .is_some_and(|node| node.kind() == OutboundNodeKind::Dns),
+                RoutingRuleTarget::Balancer(tag) => {
+                    graph.selector_group_for_tag(tag).is_some_and(|group| {
+                        group.members().iter().any(|member| {
+                            graph
+                                .node(*member)
+                                .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+                        }) || group
+                            .fallback_tag()
+                            .and_then(|tag| graph.node_for_tag(tag))
+                            .and_then(|node| graph.node(node))
+                            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
+                    })
+                }
+            }
+        }))
     }
 
     fn config(&self) -> &CoreConfig {
@@ -2228,10 +2316,12 @@ impl OutboundRouter {
         inbound_tag: Option<&str>,
         target: &Target,
     ) -> Result<Option<DnsOutbound>, CoreError> {
-        if !self.may_select_dns_outbound(inbound_tag, target) {
+        let policy = self.routing_policy_state();
+        if !self.may_select_dns_outbound_in_policy(&policy, inbound_tag, target) {
             return Ok(None);
         }
-        let node = self.select_configured_node(
+        let node = self.select_configured_node_in_policy(
+            &policy,
             inbound_tag,
             target_domain(target),
             target_ip(target),
@@ -2254,11 +2344,17 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<Option<DnsOutbound>, CoreError> {
-        if !self.may_select_dns_outbound(inbound_tag, target) {
+        let policy = self.routing_policy_state();
+        if !self.may_select_dns_outbound_in_policy(&policy, inbound_tag, target) {
             return Ok(None);
         }
         let node = self
-            .select_configured_node_with_resolver(inbound_tag, target, dns_resolver)
+            .select_configured_node_with_resolver_in_policy(
+                &policy,
+                inbound_tag,
+                target,
+                dns_resolver,
+            )
             .await?;
         if !self
             .graph()
@@ -2270,12 +2366,25 @@ impl OutboundRouter {
         self.factory.cached_dns_outbound(node).map(Some)
     }
 
+    #[cfg(test)]
     fn may_select_dns_outbound(&self, inbound_tag: Option<&str>, target: &Target) -> bool {
+        let policy = self.routing_policy_state();
+        self.may_select_dns_outbound_in_policy(&policy, inbound_tag, target)
+    }
+
+    fn may_select_dns_outbound_in_policy(
+        &self,
+        policy: &RoutingPolicyState,
+        inbound_tag: Option<&str>,
+        target: &Target,
+    ) -> bool {
         self.default_is_dns
             || self.default_requires_selection
-            || self
-                .dns_route_prefilter
-                .may_match(inbound_tag, target_network(target), target.port)
+            || policy.dns_route_prefilter.may_match(
+                inbound_tag,
+                target_network(target),
+                target.port,
+            )
     }
 
     /// Checks the effective tags assigned to managed DNS clients. Runtime DNS
@@ -2341,8 +2450,28 @@ impl OutboundRouter {
         target_network: Option<Network>,
         target_port: Option<u16>,
     ) -> Result<OutboundNodeId, CoreError> {
+        let policy = self.routing_policy_state();
+        self.select_configured_node_in_policy(
+            &policy,
+            inbound_tag,
+            target_domain,
+            target_ip,
+            target_network,
+            target_port,
+        )
+    }
+
+    fn select_configured_node_in_policy(
+        &self,
+        policy: &RoutingPolicyState,
+        inbound_tag: Option<&str>,
+        target_domain: Option<&str>,
+        target_ip: Option<&IpAddr>,
+        target_network: Option<Network>,
+        target_port: Option<u16>,
+    ) -> Result<OutboundNodeId, CoreError> {
         let routed_target = select_routed_target(
-            self.config(),
+            &policy.routing,
             inbound_tag,
             target_domain,
             target_ip,
@@ -2362,8 +2491,9 @@ impl OutboundRouter {
         target: &Target,
         resolved_ip: Option<&IpAddr>,
     ) -> Result<OutboundNodeId, CoreError> {
+        let policy = self.routing_policy_state();
         if let Some(routed_target) = select_routed_target(
-            self.config(),
+            &policy.routing,
             inbound_tag,
             target_domain(target),
             target_ip(target),
@@ -2373,10 +2503,10 @@ impl OutboundRouter {
             return self.node_for_target(routed_target);
         }
 
-        if self.config().routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+        if policy.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
             if let Some(resolved_ip) = resolved_ip {
                 if let Some(routed_target) = select_routed_target(
-                    self.config(),
+                    &policy.routing,
                     inbound_tag,
                     target_domain(target),
                     Some(resolved_ip),
@@ -2397,8 +2527,27 @@ impl OutboundRouter {
         target: &Target,
         dns_resolver: &dyn DnsResolver,
     ) -> Result<OutboundNodeId, CoreError> {
+        // Retain one immutable policy snapshot across any DNS await so a flow
+        // never observes rules from two revisions.
+        let policy = self.routing_policy_state();
+        self.select_configured_node_with_resolver_in_policy(
+            &policy,
+            inbound_tag,
+            target,
+            dns_resolver,
+        )
+        .await
+    }
+
+    async fn select_configured_node_with_resolver_in_policy(
+        &self,
+        policy: &RoutingPolicyState,
+        inbound_tag: Option<&str>,
+        target: &Target,
+        dns_resolver: &dyn DnsResolver,
+    ) -> Result<OutboundNodeId, CoreError> {
         if let Some(routed_target) = select_routed_target(
-            self.config(),
+            &policy.routing,
             inbound_tag,
             target_domain(target),
             target_ip(target),
@@ -2408,11 +2557,11 @@ impl OutboundRouter {
             return self.node_for_target(routed_target);
         }
 
-        if self.config().routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
+        if policy.routing.domain_strategy == RoutingDomainStrategy::IpIfNonMatch {
             if let Some(domain) = target_domain(target) {
                 if let Ok(resolved) = dns_resolver.resolve_all(domain, target.port).await {
                     if let Some(routed_target) = select_routed_target_with_resolved_ips(
-                        self.config(),
+                        &policy.routing,
                         inbound_tag,
                         Some(domain),
                         resolved.socket_addrs(),
@@ -3299,15 +3448,14 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
 }
 
 fn select_routed_target<'a>(
-    config: &'a CoreConfig,
+    routing: &'a RoutingConfig,
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_ip: Option<&IpAddr>,
     target_network: Option<Network>,
     target_port: Option<u16>,
 ) -> Option<&'a RoutingRuleTarget> {
-    config
-        .routing
+    routing
         .rules
         .iter()
         .find(|rule| {
@@ -3323,15 +3471,14 @@ fn select_routed_target<'a>(
 }
 
 fn select_routed_target_with_resolved_ips<'a>(
-    config: &'a CoreConfig,
+    routing: &'a RoutingConfig,
     inbound_tag: Option<&str>,
     target_domain: Option<&str>,
     target_addrs: &[SocketAddr],
     target_network: Option<Network>,
     target_port: Option<u16>,
 ) -> Option<&'a RoutingRuleTarget> {
-    config
-        .routing
+    routing
         .rules
         .iter()
         .find(|rule| {
@@ -3884,6 +4031,7 @@ mod tests {
     use async_trait::async_trait;
     use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use tokio::sync::Notify;
     use uuid::Uuid;
     use xray_config::{
         compile_domain_matchers, DnsConfig, DnsServerConfig, DomainMatcher, DomainMatcherSet,
@@ -4101,6 +4249,31 @@ mod tests {
                 return Err(TransportError::NoResolvedAddress(domain.to_owned(), port));
             }
             Ok(DnsLookup::new(addrs, None))
+        }
+    }
+
+    struct PausedDnsResolver {
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+        result: SocketAddr,
+    }
+
+    #[async_trait]
+    impl DnsResolver for PausedDnsResolver {
+        async fn resolve(&self, _domain: &str, _port: u16) -> Result<SocketAddr, TransportError> {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(self.result)
+        }
+
+        async fn resolve_all(
+            &self,
+            _domain: &str,
+            _port: u16,
+        ) -> Result<DnsLookup, TransportError> {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Ok(DnsLookup::new(vec![self.result], None))
         }
     }
 
@@ -4659,7 +4832,8 @@ mod tests {
             })
             .collect();
         let router = OutboundRouter::new(Arc::new(config));
-        let udp_ranges = &router.dns_route_prefilter.network_ports.udp;
+        let policy = router.routing_policy_state();
+        let udp_ranges = &policy.dns_route_prefilter.network_ports.udp;
 
         assert_eq!(
             udp_ranges.as_ref(),
@@ -4699,17 +4873,18 @@ mod tests {
         }];
 
         let router = OutboundRouter::new(Arc::new(config));
+        let policy = router.routing_policy_state();
 
-        assert!(!router.dns_route_prefilter.wildcard_inbound);
+        assert!(!policy.dns_route_prefilter.wildcard_inbound);
         assert_eq!(
-            router.dns_route_prefilter.tagged_inbounds.len(),
+            policy.dns_route_prefilter.tagged_inbounds.len(),
             SELECTOR_COUNT
         );
         assert_eq!(
-            router.dns_route_prefilter.network_ports.udp.len(),
+            policy.dns_route_prefilter.network_ports.udp.len(),
             SELECTOR_COUNT
         );
-        assert!(router.dns_route_prefilter.network_ports.tcp.is_empty());
+        assert!(policy.dns_route_prefilter.network_ports.tcp.is_empty());
     }
 
     #[test]
@@ -5500,6 +5675,164 @@ mod tests {
             target: RoutingRuleTarget::Balancer("automatic".to_owned()),
         }];
         config
+    }
+
+    #[test]
+    fn routing_policy_replacement_switches_new_flows_and_advances_revision() {
+        let router = OutboundRouter::new(Arc::new(direct_selection_config()));
+        let target = domain_tcp_target("example.test");
+
+        let initial = router.routing_policy_snapshot();
+        assert_eq!(initial.revision, 0);
+        assert_eq!(initial.rule_count, 1);
+        assert_eq!(
+            router
+                .select_tcp_outbound_for_session_with_tag(None, &target, true)
+                .unwrap()
+                .tag
+                .as_deref(),
+            Some("direct")
+        );
+
+        assert_eq!(
+            router
+                .replace_routing_policy(RoutingConfig::default())
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            router
+                .select_tcp_outbound_for_session_with_tag(None, &target, true)
+                .unwrap()
+                .tag
+                .as_deref(),
+            Some("proxy")
+        );
+        assert_eq!(router.routing_policy_snapshot().rule_count, 0);
+    }
+
+    #[test]
+    fn rejected_routing_policy_leaves_the_previous_snapshot_active() {
+        let router = OutboundRouter::new(Arc::new(direct_selection_config()));
+        let before = router.routing_policy_snapshot();
+        let invalid = RoutingConfig {
+            rules: vec![network_port_rule(
+                "missing",
+                Network::Tcp,
+                RoutingPortRange::single(443),
+            )],
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            router.replace_routing_policy(invalid),
+            Err(CoreError::RoutingPolicyOutboundNotFound(tag)) if tag == "missing"
+        ));
+        assert_eq!(router.routing_policy_snapshot(), before);
+    }
+
+    #[test]
+    fn routing_policy_cannot_mutate_the_immutable_balancer_topology() {
+        let config = selector_group_config(RoutingBalancerStrategy::RoundRobin);
+        let router = OutboundRouter::new(Arc::new(config.clone()));
+        let mut replacement = config.routing;
+        replacement.balancers[0].selectors = vec!["direct".to_owned()];
+
+        assert!(matches!(
+            router.replace_routing_policy(replacement),
+            Err(CoreError::RoutingPolicyBalancerTopologyChanged)
+        ));
+        assert_eq!(router.routing_policy_snapshot().revision, 0);
+    }
+
+    #[test]
+    fn routing_policy_replacement_rebuilds_the_dns_prefilter() {
+        let mut config = direct_selection_config();
+        config.routing.rules.clear();
+        config.outbounds.push(dns_selection_outbound(
+            "dns-out",
+            DnsOutboundSettings::default(),
+        ));
+        let router = OutboundRouter::new(Arc::new(config));
+        let target = Target::new(
+            RoutingTargetAddr::Domain("dns.example".to_owned()),
+            53,
+            RoutingNetwork::Udp,
+        );
+        assert!(router
+            .select_dns_outbound_for_session(None, &target)
+            .unwrap()
+            .is_none());
+
+        router
+            .replace_routing_policy(RoutingConfig {
+                rules: vec![network_port_rule(
+                    "dns-out",
+                    Network::Udp,
+                    RoutingPortRange::single(53),
+                )],
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert!(router
+            .select_dns_outbound_for_session(None, &target)
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn in_flight_dns_selection_retains_one_routing_policy_revision() {
+        let mut config = direct_selection_config();
+        config.routing = RoutingConfig {
+            rules: vec![ip_rule("direct", Ipv4Addr::new(192, 0, 2, 1))],
+            domain_strategy: RoutingDomainStrategy::IpIfNonMatch,
+            ..Default::default()
+        };
+        let router = Arc::new(OutboundRouter::new(Arc::new(config)));
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let resolver = Arc::new(PausedDnsResolver {
+            entered: Arc::clone(&entered),
+            release: Arc::clone(&release),
+            result: SocketAddr::from((Ipv4Addr::new(192, 0, 2, 1), 443)),
+        });
+        let selection = {
+            let router = Arc::clone(&router);
+            let resolver = Arc::clone(&resolver);
+            tokio::spawn(async move {
+                router
+                    .select_tcp_outbound_for_session_with_tag_and_resolver(
+                        None,
+                        &domain_tcp_target("example.test"),
+                        true,
+                        resolver.as_ref(),
+                    )
+                    .await
+            })
+        };
+
+        entered.notified().await;
+        assert_eq!(
+            router
+                .replace_routing_policy(RoutingConfig::default())
+                .unwrap(),
+            1
+        );
+        release.notify_one();
+        let selected = selection.await.unwrap().unwrap();
+        assert_eq!(selected.tag.as_deref(), Some("direct"));
+
+        let subsequent = router
+            .select_tcp_outbound_for_session_with_tag_and_resolver(
+                None,
+                &domain_tcp_target("example.test"),
+                true,
+                resolver.as_ref(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(subsequent.tag.as_deref(), Some("proxy"));
     }
 
     #[test]

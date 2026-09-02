@@ -4,12 +4,14 @@ use std::ffi::CString;
 
 use libfuzzer_sys::fuzz_target;
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_start, xray_core_stop,
-    xray_error_free, XrayCoreHandle, XrayError,
+    xray_core_free, xray_core_load_config_json, xray_core_new,
+    xray_core_replace_routing_policy_json, xray_core_routing_policy_snapshot_json, xray_core_start,
+    xray_core_stop, xray_error_free, XrayCoreHandle, XrayError,
 };
 
 const SAFE_CONFIG: &str =
     r#"{"inbounds":[],"outbounds":[{"tag":"direct","protocol":"freedom","settings":{}}]}"#;
+const SAFE_ROUTING_POLICY: &str = r#"{"routing":{"domainStrategy":"AsIs","rules":[{"type":"field","network":"tcp,udp","outboundTag":"direct"}]}}"#;
 
 fn clear_error(error: &mut *mut XrayError) {
     unsafe {
@@ -22,18 +24,33 @@ fn run_operation(
     operation: u8,
     handle: *mut XrayCoreHandle,
     json: &CString,
+    routing_policy: &CString,
     error: &mut *mut XrayError,
 ) {
     unsafe {
-        match operation % 3 {
+        match operation % 5 {
             0 => {
                 let _ = xray_core_load_config_json(handle, json.as_ptr(), error);
             }
             1 => {
                 let _ = xray_core_start(handle, error);
             }
-            _ => {
+            2 => {
                 let _ = xray_core_stop(handle, error);
+            }
+            3 => {
+                let _ =
+                    xray_core_replace_routing_policy_json(handle, routing_policy.as_ptr(), error);
+            }
+            _ => {
+                let mut written = 0;
+                let _ = xray_core_routing_policy_snapshot_json(
+                    handle,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut written,
+                    error,
+                );
             }
         }
     }
@@ -59,6 +76,11 @@ fuzz_target!(|data: &[u8]| {
         }
         clear_error(&mut error);
         unsafe {
+            let _ =
+                xray_core_replace_routing_policy_json(arbitrary_handle, json.as_ptr(), &mut error);
+        }
+        clear_error(&mut error);
+        unsafe {
             xray_core_free(arbitrary_handle);
         }
     }
@@ -71,24 +93,38 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
     let safe_json = CString::new(SAFE_CONFIG).expect("safe config has no NUL bytes");
+    let safe_routing_policy =
+        CString::new(SAFE_ROUTING_POLICY).expect("safe routing policy has no NUL bytes");
 
     // Always cover the core lifecycle and its error transitions, even during a
     // short smoke campaign: reload while running must fail, then stop must
     // clear that error.
-    for operation in [0, 1, 0, 2] {
-        run_operation(operation, handle, &safe_json, &mut error);
+    for operation in [0, 3, 4, 1, 0, 3, 4, 2] {
+        run_operation(
+            operation,
+            handle,
+            &safe_json,
+            &safe_routing_policy,
+            &mut error,
+        );
     }
 
     // Add a bounded, input-directed sequence that exercises repeated starts,
     // stops, reloads, and recovery from each operation's error state.
     for &operation in data.iter().take(8) {
-        run_operation(operation, handle, &safe_json, &mut error);
+        run_operation(
+            operation,
+            handle,
+            &safe_json,
+            &safe_routing_policy,
+            &mut error,
+        );
     }
 
     // Best-effort final stop covers cleanup after any input-directed suffix;
     // freeing the handle remains safe whether stop succeeds or reports an
     // unloaded/already-stopped state.
-    run_operation(2, handle, &safe_json, &mut error);
+    run_operation(2, handle, &safe_json, &safe_routing_policy, &mut error);
 
     unsafe {
         xray_core_free(handle);

@@ -536,6 +536,42 @@ Java_org_xrayrust_mobile_XrayCore_nativeClearOutboundSelectorOverride(
   check_status(env, status, error);
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeReplaceRoutingPolicyJson(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring config_json) {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  std::string utf8_config;
+  if (!jstring_to_utf8(env, config_json, &utf8_config)) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_replace_routing_policy_json(
+      native->core,
+      utf8_config.c_str(),
+      &error);
+  check_status(env, status, error);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeRoutingPolicySnapshotJson(
+    JNIEnv *env,
+    jobject,
+    jlong handle) {
+  return snapshot_json(
+      env,
+      core_from_handle(handle),
+      xray_core_routing_policy_snapshot_json,
+      "xray returned an invalid routing policy snapshot length");
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeOutboundSelectionSnapshotJson(
     JNIEnv *env,

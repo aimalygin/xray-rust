@@ -9,6 +9,14 @@ release series.
 
 ## Unreleased
 
+- Added capability-gated routing-policy hot replacement in C ABI 1.4 and the
+  Swift/Kotlin adapters. Hosts can compile a scoped `routing` JSON document,
+  including `geosite`/`geoip` matchers from the handle's configured geodata
+  generation, and atomically publish it for new flows while existing flows,
+  outbound topology, and shared transport pools remain untouched. Invalid
+  outbound/balancer references or topology changes retain the previous
+  revision; a redacted schema-versioned snapshot reports the active revision,
+  rule count, and domain strategy.
 - Added a clean five-run v0.5 pre-device performance gate. A new
   `phase2-probe` measures production selector/chaining, atomic switching,
   health/selection snapshots, DNS caching, live connection inventory,

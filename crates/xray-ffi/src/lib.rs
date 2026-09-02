@@ -24,7 +24,7 @@ use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
 use xray_tun::TunTcpSlowFlowKind;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 3;
+pub const XRAY_FFI_ABI_MINOR: u32 = 4;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -41,6 +41,7 @@ pub const XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS: u64 = 1 << 11;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION: u64 = 1 << 12;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH: u64 = 1 << 13;
 pub const XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT: u64 = 1 << 14;
+pub const XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE: u64 = 1 << 15;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -56,7 +57,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS
     | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
     | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH
-    | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT;
+    | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT
+    | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -807,10 +809,11 @@ unsafe fn xray_core_set_file_logging_inner(
     XrayStatus::Ok
 }
 
-/// Loads an Xray JSON config into a new core handle.
+/// Loads a full Xray JSON config into a new core handle.
 ///
-/// A handle accepts exactly one successful config load. Create a new handle
-/// to replace a configuration.
+/// A handle accepts exactly one successful full-config load. Create a new
+/// handle to replace the full configuration; use
+/// [`xray_core_replace_routing_policy_json`] for the scoped live update.
 ///
 /// # Safety
 ///
@@ -1162,6 +1165,108 @@ unsafe fn xray_core_clear_outbound_selector_override_inner(
     }
 }
 
+/// Atomically replaces routing rules and compiled geodata matchers for new flows.
+///
+/// `json` must be an Xray JSON object whose only top-level member is
+/// `routing`. Balancer topology is immutable and, when supplied to resolve
+/// `balancerTag` rules, must exactly match the loaded configuration. Existing
+/// flows and outbound handlers are retained.
+///
+/// # Safety
+///
+/// `handle` must either be null or a live core handle. `json` must point to a
+/// NUL-terminated UTF-8 string. This function may run concurrently with data
+/// path and snapshot calls, but not lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_replace_routing_policy_json(
+    handle: *mut XrayCoreHandle,
+    json: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_replace_routing_policy_json_inner(handle, json, error)
+        })
+    }
+}
+
+unsafe fn xray_core_replace_routing_policy_json_inner(
+    handle: *mut XrayCoreHandle,
+    json: *const c_char,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        clear_error(error);
+    }
+    let handle = match unsafe { shared_handle(handle, error) } {
+        Ok(handle) => handle,
+        Err(status) => return status,
+    };
+    let raw = match unsafe { required_utf8_argument(json, "routing policy JSON", error) } {
+        Ok(raw) => raw,
+        Err(status) => return status,
+    };
+    let core = match unsafe { loaded_core(handle, error) } {
+        Ok(core) => core,
+        Err(status) => return status,
+    };
+    let document: serde_json::Value = match serde_json::from_str(raw) {
+        Ok(document) => document,
+        Err(source) => unsafe {
+            set_error(
+                error,
+                XrayStatus::ConfigError,
+                format!("routing policy JSON is invalid: {source}"),
+            );
+            return XrayStatus::ConfigError;
+        },
+    };
+    let valid_scope = document.as_object().is_some_and(|object| {
+        object.len() == 1
+            && object
+                .get("routing")
+                .is_some_and(serde_json::Value::is_object)
+    });
+    if !valid_scope {
+        unsafe {
+            set_error(
+                error,
+                XrayStatus::ConfigError,
+                "routing policy JSON must contain exactly one top-level routing object",
+            );
+        }
+        return XrayStatus::ConfigError;
+    }
+
+    let parsed = match &handle.geodata_search {
+        GeodataSearch::Defaults => parse_xray_json(raw),
+        GeodataSearch::WithDefaults(dir) => {
+            parse_xray_json_with_geodata_dirs(raw, slice::from_ref(dir))
+        }
+        GeodataSearch::Exclusive(dir) => {
+            parse_xray_json_with_exclusive_geodata_dirs(raw, slice::from_ref(dir))
+        }
+    };
+    let parsed = match parsed {
+        Ok(parsed) => parsed,
+        Err(source) => unsafe {
+            set_error(
+                error,
+                XrayStatus::ConfigError,
+                diagnostics_message(source.diagnostics),
+            );
+            return XrayStatus::ConfigError;
+        },
+    };
+    match core.replace_routing_policy(parsed.config.routing) {
+        Ok(_) => XrayStatus::Ok,
+        Err(source) => unsafe {
+            set_error(error, XrayStatus::ConfigError, source.to_string());
+            XrayStatus::ConfigError
+        },
+    }
+}
+
 /// Copies the version-1 selector snapshot JSON document.
 ///
 /// `written` receives the UTF-8 byte length excluding the trailing NUL. Pass
@@ -1189,6 +1294,37 @@ pub unsafe extern "C" fn xray_core_outbound_selection_snapshot_json(
                 buffer_len,
                 written,
                 SnapshotKind::Selection,
+                error,
+            )
+        })
+    }
+}
+
+/// Copies the version-1 active routing-policy snapshot JSON document.
+///
+/// Buffer and concurrency semantics match
+/// `xray_core_outbound_selection_snapshot_json`.
+///
+/// # Safety
+///
+/// The pointer and concurrency requirements are the same as
+/// `xray_core_outbound_selection_snapshot_json`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_routing_policy_snapshot_json(
+    handle: *const XrayCoreHandle,
+    buffer: *mut c_char,
+    buffer_len: usize,
+    written: *mut usize,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            xray_core_snapshot_json_inner(
+                handle,
+                buffer,
+                buffer_len,
+                written,
+                SnapshotKind::RoutingPolicy,
                 error,
             )
         })
@@ -1345,6 +1481,7 @@ unsafe fn xray_core_close_connection_inner(
 
 #[derive(Debug, Clone, Copy)]
 enum SnapshotKind {
+    RoutingPolicy,
     Selection,
     Health,
     Connections,
@@ -1354,6 +1491,7 @@ enum SnapshotKind {
 impl SnapshotKind {
     fn output_name(self) -> &'static str {
         match self {
+            Self::RoutingPolicy => "routing policy snapshot",
             Self::Selection | Self::Health => "outbound snapshot",
             Self::Connections => "connection snapshot",
             Self::Accounting => "outbound accounting snapshot",
@@ -1384,6 +1522,7 @@ unsafe fn xray_core_snapshot_json_inner(
         Err(status) => return status,
     };
     let json = match kind {
+        SnapshotKind::RoutingPolicy => routing_policy_snapshot_json(core),
         SnapshotKind::Selection => outbound_selection_snapshot_json(core),
         SnapshotKind::Health => outbound_health_snapshot_json(core),
         SnapshotKind::Connections => connection_snapshot_json(core),
@@ -3612,6 +3751,21 @@ fn outbound_selection_snapshot_json(core: &Core) -> String {
     .to_string()
 }
 
+fn routing_policy_snapshot_json(core: &Core) -> String {
+    let snapshot = core.routing_policy_snapshot();
+    let domain_strategy = match snapshot.domain_strategy {
+        xray_config::RoutingDomainStrategy::AsIs => "asIs",
+        xray_config::RoutingDomainStrategy::IpIfNonMatch => "ipIfNonMatch",
+    };
+    serde_json::json!({
+        "schemaVersion": 1,
+        "revision": snapshot.revision,
+        "ruleCount": snapshot.rule_count,
+        "domainStrategy": domain_strategy,
+    })
+    .to_string()
+}
+
 fn outbound_health_snapshot_json(core: &Core) -> String {
     let snapshot = core.outbound_health_snapshot();
     let outbounds = snapshot
@@ -3771,17 +3925,127 @@ fn runtime_worker_threads_for_available_parallelism(available: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
+    use std::ffi::{CStr, CString};
     use std::ptr;
 
     use libc::c_char;
 
     use super::{
         ffi_panic_message, ffi_status, free_error,
-        runtime_worker_threads_for_available_parallelism, xray_core_free, xray_core_new,
-        xray_core_set_dns_bootstrap_mode, DnsBootstrapMode, OutStrArgs, OutStrBuf,
-        XrayDnsBootstrapMode, XrayError, XrayStatus,
+        runtime_worker_threads_for_available_parallelism, xray_core_free,
+        xray_core_load_config_json, xray_core_new, xray_core_replace_routing_policy_json,
+        xray_core_routing_policy_snapshot_json, xray_core_set_dns_bootstrap_mode, DnsBootstrapMode,
+        OutStrArgs, OutStrBuf, XrayCoreHandle, XrayDnsBootstrapMode, XrayError, XrayStatus,
     };
+
+    unsafe fn loaded_routing_test_core() -> *mut XrayCoreHandle {
+        let mut error = ptr::null_mut();
+        let handle = unsafe { xray_core_new(&mut error) };
+        assert!(!handle.is_null());
+        assert!(error.is_null());
+        let config = CString::new(
+            r#"{
+                "outbounds": [
+                    {"protocol": "freedom", "tag": "direct"},
+                    {"protocol": "freedom", "tag": "alternate"}
+                ],
+                "routing": {
+                    "rules": [
+                        {"type": "field", "network": "tcp", "outboundTag": "direct"}
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+        let status = unsafe { xray_core_load_config_json(handle, config.as_ptr(), &mut error) };
+        assert_eq!(status, XrayStatus::Ok);
+        assert!(error.is_null());
+        handle
+    }
+
+    unsafe fn routing_policy_snapshot(handle: *const XrayCoreHandle) -> serde_json::Value {
+        let mut error = ptr::null_mut();
+        let mut written = 0usize;
+        let status = unsafe {
+            xray_core_routing_policy_snapshot_json(
+                handle,
+                ptr::null_mut(),
+                0,
+                &mut written,
+                &mut error,
+            )
+        };
+        assert_eq!(status, XrayStatus::Ok);
+        assert!(error.is_null());
+        let mut buffer = vec![0 as c_char; written + 1];
+        let status = unsafe {
+            xray_core_routing_policy_snapshot_json(
+                handle,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &mut written,
+                &mut error,
+            )
+        };
+        assert_eq!(status, XrayStatus::Ok);
+        assert!(error.is_null());
+        serde_json::from_str(unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn ffi_replaces_only_the_routing_policy_and_reports_its_revision() {
+        let handle = unsafe { loaded_routing_test_core() };
+        assert_eq!(
+            unsafe { routing_policy_snapshot(handle) },
+            serde_json::json!({
+                "schemaVersion": 1,
+                "revision": 0,
+                "ruleCount": 1,
+                "domainStrategy": "asIs",
+            })
+        );
+
+        let replacement =
+            CString::new(r#"{"routing":{"domainStrategy":"IPIfNonMatch","rules":[]}}"#).unwrap();
+        let mut error = ptr::null_mut();
+        let status = unsafe {
+            xray_core_replace_routing_policy_json(handle, replacement.as_ptr(), &mut error)
+        };
+        assert_eq!(status, XrayStatus::Ok);
+        assert!(error.is_null());
+        assert_eq!(
+            unsafe { routing_policy_snapshot(handle) },
+            serde_json::json!({
+                "schemaVersion": 1,
+                "revision": 1,
+                "ruleCount": 0,
+                "domainStrategy": "ipIfNonMatch",
+            })
+        );
+
+        unsafe { xray_core_free(handle) };
+    }
+
+    #[test]
+    fn ffi_rejects_out_of_scope_or_unresolvable_policy_without_swapping() {
+        let handle = unsafe { loaded_routing_test_core() };
+        for invalid in [
+            r#"{"routing":{"rules":[]},"dns":{}}"#,
+            r#"{"routing":{"rules":[{"type":"field","network":"tcp","outboundTag":"missing"}]}}"#,
+        ] {
+            let invalid = CString::new(invalid).unwrap();
+            let mut error = ptr::null_mut();
+            let status = unsafe {
+                xray_core_replace_routing_policy_json(handle, invalid.as_ptr(), &mut error)
+            };
+            assert_eq!(status, XrayStatus::ConfigError);
+            assert!(!error.is_null());
+            unsafe { free_error(error) };
+        }
+        assert_eq!(unsafe { routing_policy_snapshot(handle) }["revision"], 0);
+
+        unsafe { xray_core_free(handle) };
+    }
 
     #[test]
     fn runtime_worker_threads_use_available_parallelism_with_mobile_bounds() {

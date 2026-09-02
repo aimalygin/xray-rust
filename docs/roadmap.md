@@ -223,12 +223,13 @@ adding unfinished Phase 2 features.
 - Add outbound chaining only through validated, cycle-free graph edges.
 - Expose atomic group selection and health snapshots through the C ABI without
   requiring full core teardown.
-- Add a small mutable overlay for group selection, counters, and atomically
-  replaced rule/geodata snapshots. Full configuration replacement may continue
-  to use a new core handle.
+- Maintain the small mutable overlay for group selection, counters, and
+  atomically replaced rule/geodata snapshots. Full configuration replacement
+  continues to use a new core handle.
 
-The first seven selection increments are now implemented on the `v0.5`
-development line. Xray-compatible prefix selector groups, random/round-robin/
+The planned selector, health, chaining, connection-management, and hot-policy
+increments are now implemented on the `v0.5` development line. Xray-compatible
+prefix selector groups, random/round-robin/
 `leastPing`, bounded rolling-window `leastLoad`, fallback tags, atomic validated
 overrides, bounded lifecycle-owned URL tests, typed health snapshots, and
 deterministic health failover share the graph's existing leaf handler pools.
@@ -241,7 +242,12 @@ bypassing socket protection. UDP/protocol-layer, REALITY, and XHTTP HTTP/3
 chaining remain fail-closed subsets. Connection inventory now also covers TUN
 TCP/UDP transport sessions with addressable cancellation and byte accounting.
 ABI 1.3 projects its versioned inventory, accounting, and close operations
-through equivalent Swift and Kotlin APIs. SOCKS UDP now registers one managed
+through equivalent Swift and Kotlin APIs. ABI 1.4 adds scoped routing-policy
+replacement: rules, `domainStrategy`, and freshly compiled geodata matchers are
+published as one immutable revision for new flows, while the outbound/balancer
+graph and existing flows stay intact. Unknown targets and topology changes are
+rejected without advancing the revision, and Swift/Kotlin expose the same
+replacement plus a redacted versioned snapshot. SOCKS UDP now registers one managed
 connection per admitted `(client, target)` flow across Freedom, VLESS/XUDP, and
 DNS outbound paths. The existing seven typed TUN diagnostic queues have
 equivalent Swift and Kotlin/JNI polling surfaces under the original diagnostic
@@ -285,8 +291,9 @@ Android transition/soak gate rather than another protocol implementation slice.
 ### Mobile SDK and management API
 
 - Keep the implemented ABI minor-version/capability discovery, ABI 1.2
-  selector/health projection, and ABI 1.3 connection-management projection
-  backward-compatible while extending the FFI.
+  selector/health projection, ABI 1.3 connection-management projection, and
+  ABI 1.4 routing-policy replacement backward-compatible while extending the
+  FFI.
 - Expose typed connection inventory, connection close, per-outbound accounting,
   health, and structured diagnostic events. Do not add an in-core HTTP server.
 - Keep Android VLESS share-link import, statistics, and event coverage at
@@ -300,7 +307,8 @@ are implemented. A core-owned registry now supplies typed connection
 inventory, addressable cancellation, and cumulative per-outbound accounting
 for routed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP flows. ABI 1.3 and
 equivalent Swift/Kotlin models expose inventory, cumulative per-outbound
-accounting, and close.
+accounting, and close. ABI 1.4 and equivalent Swift/Kotlin APIs expose scoped
+atomic routing/geodata replacement plus a redacted revision snapshot.
 The seven essential TUN diagnostic queues now have equivalent typed Swift and
 Kotlin polling APIs. Android also exposes the same fail-closed raw-REALITY and
 XHTTP none/TLS/REALITY share-link import subset as Apple, including bounded

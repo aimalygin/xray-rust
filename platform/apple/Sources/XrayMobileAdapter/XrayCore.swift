@@ -140,6 +140,9 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let connectionManagement = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT.rawValue)
     )
+    public static let routingPolicyUpdate = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE.rawValue)
+    )
 }
 
 public struct XrayFFIInfo: Equatable, Sendable {
@@ -153,6 +156,43 @@ public struct XrayFFIInfo: Equatable, Sendable {
 
     public func supports(_ capability: XrayFFICapabilities) -> Bool {
         capabilities.contains(capability)
+    }
+}
+
+public enum XrayRoutingDomainStrategy: String, Codable, Equatable, Sendable {
+    case asIs
+    case ipIfNonMatch
+}
+
+public struct XrayRoutingPolicySnapshot: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let revision: UInt64
+    public let ruleCount: Int
+    public let domainStrategy: XrayRoutingDomainStrategy
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case revision
+        case ruleCount
+        case domainStrategy
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        guard schemaVersion == 1 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .schemaVersion,
+                in: container,
+                debugDescription: "unsupported routing policy snapshot schema: \(schemaVersion)"
+            )
+        }
+        revision = try container.decode(UInt64.self, forKey: .revision)
+        ruleCount = try container.decode(Int.self, forKey: .ruleCount)
+        domainStrategy = try container.decode(
+            XrayRoutingDomainStrategy.self,
+            forKey: .domainStrategy
+        )
     }
 }
 
@@ -1049,6 +1089,29 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
+    /// Replaces routing rules and compiled geodata matchers for new flows.
+    /// The JSON document must contain exactly one top-level `routing` object.
+    public func replaceRoutingPolicy(configJSON: String) throws {
+        try requireCapability(.routingPolicyUpdate)
+        try withSharedHandle { handle in
+            var error: OpaquePointer?
+            try configJSON.withCString { pointer in
+                try check(
+                    xray_core_replace_routing_policy_json(handle, pointer, &error),
+                    error: error
+                )
+            }
+        }
+    }
+
+    public func routingPolicySnapshot() throws -> XrayRoutingPolicySnapshot {
+        try requireCapability(.routingPolicyUpdate)
+        return try withSharedHandle { handle in
+            let data = try snapshotJSON(handle: handle, kind: .routingPolicy)
+            return try JSONDecoder().decode(XrayRoutingPolicySnapshot.self, from: data)
+        }
+    }
+
     public func outboundSelectionSnapshot() throws -> XrayOutboundSelectionSnapshot {
         try requireCapability(.outboundSelection)
         return try withSharedHandle { handle in
@@ -1622,6 +1685,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     private enum SnapshotKind {
+        case routingPolicy
         case selection
         case health
         case connections
@@ -1633,6 +1697,14 @@ public final class XrayCore: @unchecked Sendable {
         var error: OpaquePointer?
         let queryStatus: XrayStatus
         switch kind {
+        case .routingPolicy:
+            queryStatus = xray_core_routing_policy_snapshot_json(
+                handle,
+                nil,
+                0,
+                &requiredLength,
+                &error
+            )
         case .selection:
             queryStatus = xray_core_outbound_selection_snapshot_json(
                 handle,
@@ -1672,6 +1744,14 @@ public final class XrayCore: @unchecked Sendable {
         var written = 0
         let status = buffer.withUnsafeMutableBufferPointer { pointer in
             switch kind {
+            case .routingPolicy:
+                return xray_core_routing_policy_snapshot_json(
+                    handle,
+                    pointer.baseAddress,
+                    pointer.count,
+                    &written,
+                    &error
+                )
             case .selection:
                 return xray_core_outbound_selection_snapshot_json(
                     handle,
