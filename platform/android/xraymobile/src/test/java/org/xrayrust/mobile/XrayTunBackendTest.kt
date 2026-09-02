@@ -29,6 +29,26 @@ class XrayTunBackendTest {
     }
 
     @Test
+    fun stateMachineExposesOnlyThePublishedRunningSession() {
+        val lifecycle = XrayTunnelStateMachine<String>()
+        assertNull(lifecycle.runningSession())
+
+        val token = lifecycle.beginStart()
+        assertNotNull(token)
+        assertNull(lifecycle.runningSession())
+        assertTrue(lifecycle.publish(checkNotNull(token), "session"))
+        assertEquals("session", lifecycle.runningSession())
+
+        assertEquals(
+            XrayTunnelStopAction.StopSession("session"),
+            lifecycle.requestStop(),
+        )
+        assertNull(lifecycle.runningSession())
+        lifecycle.completeStop()
+        assertNull(lifecycle.runningSession())
+    }
+
+    @Test
     fun dnsBootstrapModesMatchTheCAbiDiscriminants() {
         assertEquals(0, XrayDnsBootstrapMode.System.ffiValue)
         assertEquals(1, XrayDnsBootstrapMode.StaticOnly.ffiValue)

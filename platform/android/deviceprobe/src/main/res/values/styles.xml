@@ -1,0 +1,13 @@
+<resources>
+    <string name="device_probe_status">State: %1$s\nHTTP passed / failed: %2$d / %3$d\nUDP passed / failed: %4$d / %5$d</string>
+    <string name="integer_value">%1$d</string>
+
+    <style name="Theme.XrayDeviceProbe" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#2458A6</item>
+        <item name="android:navigationBarColor">#F5F7FA</item>
+        <item name="android:statusBarColor">#F5F7FA</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

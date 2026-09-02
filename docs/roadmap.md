@@ -304,15 +304,31 @@ accounting, and close.
 The seven essential TUN diagnostic queues now have equivalent typed Swift and
 Kotlin polling APIs. Android also exposes the same fail-closed raw-REALITY and
 XHTTP none/TLS/REALITY share-link import subset as Apple, including bounded
-XHTTP `extra` decoding and mobile TUN config generation. The repository still
-does not ship an Android host app, so production profile persistence/UI and
-device soak remain host/release work. A fail-closed physical-device evidence
+XHTTP `extra` decoding and mobile TUN config generation. The repository now
+ships separate-UID, test-only Android host and traffic-probe applications with
+Keystore-backed no-backup profile persistence, foreground-service lifecycle
+controls, strict HTTP/UDP reachability, aggregate bounded load, and host-driven
+connection closure. They are release-gate tools, not production profile UI or
+distribution policy. A fail-closed physical-device evidence
 validator now pins the clean candidate revision, requires separate Apple and
 Android six-hour reports, verifies the complete transition scenario matrix,
 checks bounded steady-state memory/thread growth, and authenticates sanitized
 profiler/log/timeline artifacts. This makes the remaining hardware campaign a
 reproducible release gate; it does not count offline devices, simulators, or an
 unexecuted template as passing evidence.
+
+A short physical Android 15 XHTTP/H2 REALITY rehearsal now covers strict HTTP
+and UDP traffic, airplane-mode recovery, background foreground-service
+operation, repeated connect cycles, process termination and encrypted-profile
+recovery, critical memory pressure, service-level cancellation before runtime
+publication, connection inventory closure, and controlled remote packet loss.
+Two identical TCP-240/UDP-480 stress cycles completed without probe failures;
+489 connection closes were accepted after each, the inventory returned to the
+ordinary-probe baseline, and settled recovery RSS grew by about 1.4 MiB in
+`dumpsys` (about 1.9 MiB in the internal sampler) with a stable 19 threads. This
+is dirty-revision diagnostic evidence, not the clean six-hour Android report.
+Wi-Fi/cellular, sleep/wake, IPv6/Happy-Eyeballs, captive-network, DNS64/NAT64,
+XHTTP/H3, release signing, and the rest of the formal matrix remain open.
 
 An opt-in owner-controlled remote XHTTP oracle now reuses an owner-only client
 JSON outside the repository and proves either a public HTTP target or an

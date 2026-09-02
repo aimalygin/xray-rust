@@ -316,6 +316,43 @@ above four. These automatic checks complement review of the attached profiler
 trace; they do not waive platform memory, energy, thermal, signing, or store
 requirements.
 
+### Android physical rehearsal tools
+
+The checked-in `devicehost` and `deviceprobe` debug applications provide a
+repeatable Android rehearsal surface. The host owns the VPN and keeps its
+converted profile encrypted with Android Keystore; the separate-UID probe owns
+the traffic. This separation is required because the reference `VpnService`
+excludes its own package to prevent transport recursion. See
+[Android integration](../platform/android/README.md) for build and automation
+commands.
+
+The probe's bounded stress action uses the already configured HTTP and UDP
+endpoints, so it needs no additional public port. Run two identical cycles and
+close the host's connection snapshot after each. Compare the settled recovery
+after cycle one with the settled recovery after cycle two; a cold-to-warm RSS
+increase alone is not a leak oracle because carrier pools and the allocator may
+retain their first-cycle capacity. Retain `dumpsys meminfo` and Perfetto data in
+the formal campaign rather than relying only on the host's `/proc/self/statm`
+samples.
+
+A 2026-09-02 dirty-revision rehearsal on a physical Android 15/API 35 device
+used VLESS XHTTP HTTP/2 over REALITY and the strict UDP oracle. Airplane-mode
+loss and recovery, foreground-service background operation, repeated
+disconnect/reconnect, encrypted-profile recovery after process termination,
+critical trim-memory notification, service-level start cancellation, and a
+30-second owner-controlled TCP/UDP packet-loss interval all completed without
+fatal TUN errors. Both packet-loss probes recovered in the same runtime.
+
+Two memory cycles each completed 240/240 HTTP and 480/480 UDP attempts. The host
+accepted 489 connection-close requests after each cycle and returned inventory
+to the ordinary probe baseline. Settled `dumpsys` RSS moved from about 182.1 MiB
+after cycle one to 183.4 MiB after cycle two; the internal sampler moved from
+about 188.2 MiB to 190.1 MiB. Both deltas remain below the 8-MiB allowance and
+the thread count remained 19. This is diagnostic evidence only: the tested
+worktree was dirty, the run was shorter than six hours, and Wi-Fi/cellular,
+sleep/wake, IPv6/Happy-Eyeballs, captive-network, DNS64/NAT64, XHTTP HTTP/3,
+release signing, and the remaining formal matrix were not credited.
+
 The Apple reference app includes an opt-in physical-device runner that keeps
 all probe endpoints in the generated test-only `.xctestrun`, drives HTTPS and
 DNS-over-UDP traffic from the device, samples provider

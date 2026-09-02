@@ -16,6 +16,10 @@ set_target_properties(
     xray_ffi
     PROPERTIES
     IMPORTED_LOCATION "${XRAY_FFI_ANDROID_DIR}/jniLibs/${ANDROID_ABI}/libxray_ffi.so"
+    # Rust cdylibs do not currently carry an ELF SONAME. Without this hint,
+    # CMake records the build-machine absolute path in libxray_mobile_jni.so's
+    # DT_NEEDED entry, which Android's namespace loader cannot resolve.
+    IMPORTED_NO_SONAME TRUE
 )
 
 add_library(xray_mobile_jni SHARED xray_mobile_jni.cpp)

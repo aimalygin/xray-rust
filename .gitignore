@@ -20,6 +20,8 @@ platform/android/.gradle/
 platform/android/build/
 platform/android/xraymobile/.cxx/
 platform/android/xraymobile/build/
+platform/android/devicehost/build/
+platform/android/deviceprobe/build/
 platform/android/local.properties
 DerivedData/
 *.a

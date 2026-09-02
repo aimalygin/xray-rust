@@ -96,6 +96,7 @@ test_android_adapter_verifies_packaged_native_alignment() {
     "libxray_ffi.so" \
     "libxray_mobile_jni.so" \
     "0x4000" \
+    "absolute DT_NEEDED" \
     "cmp -s"; do
     if ! grep -Fq "$required_text" "$adapter_script"; then
       echo "Android adapter verification missing: $required_text" >&2
@@ -112,6 +113,12 @@ test_android_adapter_verifies_packaged_native_alignment() {
   fi
   if ! grep -Fq 'keepDebugSymbols += "**/libxray_ffi.so"' "$module_build"; then
     echo "Android packaging can rewrite the selected FFI library before provenance verification" >&2
+    return 1
+  fi
+
+  local jni_cmake="$REPOSITORY_ROOT/platform/android/xraymobile/src/main/cpp/CMakeLists.txt"
+  if ! grep -Fq 'IMPORTED_NO_SONAME TRUE' "$jni_cmake"; then
+    echo "Android JNI link may retain an absolute FFI DT_NEEDED path" >&2
     return 1
   fi
 

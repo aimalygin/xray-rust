@@ -63,7 +63,7 @@ Notable unsupported areas include:
 | iOS 15+ | Swift Package, SwiftUI sample host, Packet Tunnel provider | Static XCFramework device and universal simulator slices |
 | tvOS 17+ | Swift Package, SwiftUI sample host, Packet Tunnel provider | Static XCFramework device and universal simulator slices |
 | macOS 13+ | Swift Package, app/menu-bar sample, Packet Tunnel provider | Universal `arm64 + x86_64` static XCFramework slice |
-| Android API 24+ | Kotlin wrapper, JNI bridge, `VpnService` adapter | Four-ABI AAR with 16 KiB-aligned native libraries |
+| Android API 24+ | Kotlin wrapper, JNI bridge, `VpnService` adapter, and test-only physical-device host/probe apps | Four-ABI AAR with 16 KiB-aligned native libraries |
 
 These are reference integrations. Production applications must provide their
 own signing, entitlements or manifest policy, secure profile UX, VPN consent,

@@ -16,6 +16,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 enum class XrayTunBackend {
     FileDescriptor,
@@ -132,6 +133,13 @@ internal class XrayTunnelStateMachine<Session> {
     fun isRunningSession(session: Session): Boolean = synchronized(lock) {
         val current = state
         current is State.Running && current.session === session
+    }
+
+    fun runningSession(): Session? = synchronized(lock) {
+        when (val current = state) {
+            is State.Running -> current.session
+            else -> null
+        }
     }
 
     fun completeStop() {
@@ -251,6 +259,15 @@ internal fun joinXrayPumpThreadUninterruptibly(thread: Thread?) {
 internal fun isRecoverablePacketPushFailure(error: Throwable): Boolean =
     error is XrayCoreException
 
+/** A point-in-time, credential-free view of the reference VPN service runtime. */
+data class XrayVpnRuntimeSnapshot(
+    val running: Boolean,
+    val runtimeGeneration: Long,
+    val tunStats: XrayTunStats?,
+    val activeConnections: Int,
+    val fatalTunErrors: Long,
+)
+
 open class XrayVpnService : VpnService() {
     private val lifecycle = XrayTunnelStateMachine<TunnelSession>()
     private val startThreadSequence = AtomicInteger()
@@ -275,6 +292,8 @@ open class XrayVpnService : VpnService() {
         executor = startExecutor,
     )
     private val dnsBootstrapResolver = BoundedAndroidDnsBootstrapResolver()
+    private val runtimeGeneration = AtomicLong()
+    private val fatalTunErrors = AtomicLong()
 
     open fun startXrayTunnel(
         configJson: String,
@@ -375,6 +394,7 @@ open class XrayVpnService : VpnService() {
                 backend = tunBackend,
                 tunnel = tunnel,
                 core = xrayCore,
+                runtimeGeneration = runtimeGeneration.incrementAndGet(),
             )
             if (tunBackend == XrayTunBackend.PacketPump) {
                 session.inboundThread = Thread(
@@ -454,6 +474,43 @@ open class XrayVpnService : VpnService() {
     /** Called on the asynchronous start worker when startup fails without cancellation. */
     protected open fun onXrayTunnelStartFailed(error: Throwable) = Unit
 
+    /** Called after an already-published tunnel stops because its packet pump failed. */
+    protected open fun onXrayTunnelFatalError(error: Throwable) = Unit
+
+    /**
+     * Returns a read-only snapshot suitable for host telemetry and physical-device reports.
+     * A concurrent stop may make the native counters temporarily unavailable; callers should
+     * sample again rather than treating a null [XrayVpnRuntimeSnapshot.tunStats] as a reset.
+     */
+    protected fun xrayVpnRuntimeSnapshot(): XrayVpnRuntimeSnapshot {
+        val session = lifecycle.runningSession()
+        val stats = session?.let { runCatching { it.core.stats() }.getOrNull() }
+        val activeConnections = session?.let {
+            runCatching { it.core.connectionSnapshot().connections.size }.getOrDefault(0)
+        } ?: 0
+        return XrayVpnRuntimeSnapshot(
+            running = session != null && stats != null,
+            runtimeGeneration = session?.runtimeGeneration ?: runtimeGeneration.get(),
+            tunStats = stats,
+            activeConnections = activeConnections,
+            fatalTunErrors = fatalTunErrors.get(),
+        )
+    }
+
+    /**
+     * Requests cancellation of every connection visible in one atomic inventory snapshot.
+     * Connections that finish concurrently are ignored; the return value counts close requests
+     * accepted by the running core. New traffic may create connections immediately afterwards.
+     */
+    protected fun closeAllXrayVpnConnections(): Int {
+        val session = lifecycle.runningSession() ?: return 0
+        val connections = runCatching { session.core.connectionSnapshot().connections }
+            .getOrDefault(emptyList())
+        return connections.count { connection ->
+            runCatching { session.core.closeConnection(connection.id) }.isSuccess
+        }
+    }
+
     fun protectSocket(fd: Int): Boolean = protect(fd)
 
     override fun onDestroy() {
@@ -530,9 +587,9 @@ open class XrayVpnService : VpnService() {
                     }
                 }
             }
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             if (session.active.get()) {
-                handlePacketPumpFailure(session)
+                handlePacketPumpFailure(session, error)
             }
         }
     }
@@ -570,16 +627,20 @@ open class XrayVpnService : VpnService() {
                     offset += length
                 }
             }
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
             if (session.active.get()) {
-                handlePacketPumpFailure(session)
+                handlePacketPumpFailure(session, error)
             }
         }
     }
 
-    private fun handlePacketPumpFailure(session: TunnelSession) {
-        runCatching {
+    private fun handlePacketPumpFailure(session: TunnelSession, error: Throwable) {
+        val stopped = runCatching {
             teardownFailedXraySession(lifecycle, session) { it.shutdown() }
+        }.getOrDefault(false)
+        if (stopped) {
+            fatalTunErrors.incrementAndGet()
+            runCatching { onXrayTunnelFatalError(error) }
         }
     }
 
@@ -587,6 +648,7 @@ open class XrayVpnService : VpnService() {
         val backend: XrayTunBackend,
         val tunnel: ParcelFileDescriptor,
         val core: XrayCore,
+        val runtimeGeneration: Long,
     ) {
         val active = AtomicBoolean(true)
         var inboundThread: Thread? = null

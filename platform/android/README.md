@@ -1,8 +1,9 @@
 # Android integration
 
 This Gradle project builds an Android library around the Rust C ABI. It provides
-a Kotlin wrapper, JNI bridge, and reference `VpnService`; it does not contain a
-runnable Android application target.
+a Kotlin wrapper, JNI bridge, and reference `VpnService`. Two test-only
+application targets, `devicehost` and `deviceprobe`, support physical-device
+release-gate rehearsals; neither is a production VPN application.
 
 For development inside this source tree, build the AAR locally as described
 below. Prebuilt, versioned AAR and Maven release bundles are published from
@@ -202,6 +203,51 @@ The library manifest declares the non-exported service with
 application must review the merged manifest and add any target-version-specific
 foreground service declarations required by its distribution policy.
 
+## Physical-device gate applications
+
+Build the two debug applications with:
+
+```sh
+platform/android/gradlew -p platform/android \
+  :devicehost:assembleDebug :deviceprobe:assembleDebug
+```
+
+`devicehost` is a minimal `VpnService` owner. It imports the supported VLESS
+share-link subset, immediately converts it to core JSON, encrypts that JSON with
+an Android Keystore AES-GCM key, and stores the ciphertext under the app's
+no-backup directory. Backup and device-to-device transfer are disabled. The
+profile input and clipboard are cleared after import, and structured
+`XrayDeviceGate` logs contain only lifecycle state, runtime generation, resource
+counts, TUN counters, and sanitized error classes. The app can connect,
+disconnect, cancel an asynchronous start from the same service command, close
+one inventory snapshot through the public connection-management API, and reset
+campaign counters while stopped.
+
+`deviceprobe` has a separate UID, so its traffic traverses `devicehost`'s TUN
+instead of being excluded with the VPN owner. Its ordinary loop drives an HTTP
+request plus a strict DNS-shaped UDP round trip. Each datagram has a fresh
+transaction ID and nonce; success requires an owner-controlled response that
+repeats the question and returns the zero-TTL documentation address. The
+bounded stress action defaults to 240 HTTP attempts, 480 UDP attempts, and 32
+workers. Attempts and concurrency are validated against hard upper bounds, a
+second stress request is rejected while one is active, and logs expose only
+aggregate counts and elapsed time.
+
+Both activities accept test-automation commands through the string extra
+`command`. Host commands are `connect`, `disconnect`, `rapid-stop`,
+`close-connections`, `reset`, and `import-pending`; probe commands are `start`,
+`stop`, `reset`, and `stress`. Stress overrides use the integer extras
+`stress-cycle`, `stress-http-attempts`, `stress-udp-attempts`, and
+`stress-concurrency`. Keep raw links and endpoints out of shell history and
+logs. For unattended import, place the link in the host app's private
+`noBackupFilesDir/profile-import.pending`; `import-pending` encrypts it and
+overwrites then deletes the plaintext file.
+
+These applications produce diagnostic rehearsal telemetry. They do not create
+the checksum-authenticated six-hour report required by the release-evidence
+validator, replace Perfetto, or waive the full scenario matrix in
+[mobile testing](../../docs/mobile-testing.md).
+
 ## Geodata
 
 Geodata databases are not bundled. The current Kotlin wrapper does not expose a
@@ -230,8 +276,8 @@ matrix and on-device checklist.
 
 ## Current limits
 
-- There is no checked-in host app, VPN consent UI, or production notification
-  implementation.
+- The checked-in host and probe apps are debug release-gate tools, not reusable
+  production UI, profile management, or distribution policy.
 - The AAR is built locally and is not signed or published.
 - The adapter is a reference integration, not a production VPN product.
 - Device behavior and performance must be verified with the consuming

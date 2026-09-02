@@ -90,6 +90,32 @@ verify_elf_alignment() {
   fi
 }
 
+verify_elf_dependencies() {
+  local readelf="$1"
+  local library="$2"
+  local needed
+  local has_xray_ffi=0
+
+  while IFS= read -r needed; do
+    if [[ "$needed" == */* ]]; then
+      echo "Android library contains an absolute DT_NEEDED dependency: $library ($needed)" >&2
+      return 1
+    fi
+    if [[ "$needed" == "libxray_ffi.so" ]]; then
+      has_xray_ffi=1
+    fi
+  done < <(
+    "$readelf" -d "$library" |
+      sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p'
+  )
+
+  if [[ "$(basename "$library")" == *"libxray_mobile_jni.so" ]] &&
+    (( has_xray_ffi == 0 )); then
+    echo "Android JNI library does not depend on portable libxray_ffi.so: $library" >&2
+    return 1
+  fi
+}
+
 verify_aar_native_libraries() (
   local aar="$1"
   local ndk_path="$2"
@@ -111,6 +137,9 @@ verify_aar_native_libraries() (
       verify_elf_alignment \
         "$toolchain_dir/bin/llvm-readelf" \
         "$unpack_dir/$abi-$library"
+      verify_elf_dependencies \
+        "$toolchain_dir/bin/llvm-readelf" \
+        "$unpack_dir/$abi-$library"
       if [[ "$library" == "libxray_ffi.so" ]] &&
         ! cmp -s "$ffi_dir/jniLibs/$abi/$library" "$unpack_dir/$abi-$library"; then
         echo "packaged Android FFI library does not match the selected artifact: $abi/$library" >&2
@@ -125,6 +154,7 @@ main() {
   require_command awk
   require_command cmp
   require_command mktemp
+  require_command sed
   require_command unzip
 
   local sdk_path

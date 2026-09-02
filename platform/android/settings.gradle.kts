@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "XrayRustAndroid"
 include(":xraymobile")
+include(":devicehost")
+include(":deviceprobe")
