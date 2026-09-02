@@ -20,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONObject
 import org.xrayrust.mobile.XrayVlessUrlImportException
 import org.xrayrust.mobile.XrayVlessUrlImporter
 import java.io.File
@@ -189,6 +190,38 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun importPendingPrivateConfig() {
+        val pending = File(noBackupFilesDir, PENDING_CONFIG_FILE)
+        if (!pending.isFile || pending.length() !in 1..MAX_PENDING_PROFILE_BYTES) {
+            DeviceGateStatus.write(this, state = "failed", detail = "pending-config-invalid")
+            eraseAndDelete(pending)
+            return
+        }
+        val rawBytes = pending.readBytes()
+        try {
+            val configJson = rawBytes.toString(Charsets.UTF_8)
+            val config = JSONObject(configJson)
+            require(config.getJSONArray("inbounds").length() > 0) {
+                "profile config has no inbounds"
+            }
+            require(config.getJSONArray("outbounds").length() > 0) {
+                "profile config has no outbounds"
+            }
+            EncryptedProfileStore(this).write(configJson)
+            DeviceGateStatus.write(this, state = "stopped", detail = "config-profile-ready")
+        } catch (error: Throwable) {
+            DeviceGateStatus.write(
+                this,
+                state = "failed",
+                detail = "pending-config-${error.javaClass.simpleName}",
+            )
+        } finally {
+            rawBytes.fill(0)
+            eraseAndDelete(pending)
+            renderStatus()
+        }
+    }
+
     private fun importRawProfile(rawUrl: String) {
         val profile = XrayVlessUrlImporter.profile(rawUrl)
         EncryptedProfileStore(this).write(profile.configJson)
@@ -274,6 +307,7 @@ class MainActivity : Activity() {
             )
             COMMAND_RAPID_STOP -> rapidConnectThenStop()
             COMMAND_IMPORT_PENDING -> importPendingPrivateProfile()
+            COMMAND_IMPORT_PENDING_CONFIG -> importPendingPrivateConfig()
         }
         intent?.removeExtra(EXTRA_COMMAND)
     }
@@ -336,7 +370,9 @@ class MainActivity : Activity() {
         const val COMMAND_CLOSE_CONNECTIONS = "close-connections"
         const val COMMAND_RAPID_STOP = "rapid-stop"
         const val COMMAND_IMPORT_PENDING = "import-pending"
+        const val COMMAND_IMPORT_PENDING_CONFIG = "import-pending-config"
         const val PENDING_PROFILE_FILE = "profile-import.pending"
+        const val PENDING_CONFIG_FILE = "profile-config-import.pending"
         private const val MAX_PENDING_PROFILE_BYTES = 256 * 1024L
         private const val VPN_CONSENT_REQUEST = 5041
         private const val STATUS_REFRESH_MILLISECONDS = 1_000L

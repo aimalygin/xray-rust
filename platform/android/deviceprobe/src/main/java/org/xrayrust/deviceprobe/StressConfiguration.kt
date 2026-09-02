@@ -10,12 +10,13 @@ internal data class StressConfiguration(
 ) {
     init {
         require(cycle in 1..MAX_CYCLE) { "stress cycle is outside the supported range" }
-        require(httpAttempts in 1..MAX_ATTEMPTS) {
+        require(httpAttempts in 0..MAX_ATTEMPTS) {
             "HTTP stress attempts are outside the supported range"
         }
-        require(udpAttempts in 1..MAX_ATTEMPTS) {
+        require(udpAttempts in 0..MAX_ATTEMPTS) {
             "UDP stress attempts are outside the supported range"
         }
+        require(httpAttempts + udpAttempts > 0) { "stress cycle has no attempts" }
         require(concurrency in 1..MAX_CONCURRENCY) {
             "stress concurrency is outside the supported range"
         }

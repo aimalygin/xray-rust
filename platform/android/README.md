@@ -229,19 +229,30 @@ request plus a strict DNS-shaped UDP round trip. Each datagram has a fresh
 transaction ID and nonce; success requires an owner-controlled response that
 repeats the question and returns the zero-TTL documentation address. The
 bounded stress action defaults to 240 HTTP attempts, 480 UDP attempts, and 32
-workers. Attempts and concurrency are validated against hard upper bounds, a
-second stress request is rejected while one is active, and logs expose only
-aggregate counts and elapsed time.
+workers. Either protocol count may be zero for a transport-specific rehearsal,
+but a cycle must contain at least one attempt. Attempts and concurrency are
+validated against hard upper bounds, a second stress request is rejected while
+one is active, and logs expose only aggregate counts and elapsed time.
 
 Both activities accept test-automation commands through the string extra
 `command`. Host commands are `connect`, `disconnect`, `rapid-stop`,
-`close-connections`, `reset`, and `import-pending`; probe commands are `start`,
-`stop`, `reset`, and `stress`. Stress overrides use the integer extras
+`close-connections`, `reset`, `import-pending`, and `import-pending-config`;
+probe commands are `start`, `stop`, `reset`, and `stress`. Stress overrides use
+the integer extras
 `stress-cycle`, `stress-http-attempts`, `stress-udp-attempts`, and
 `stress-concurrency`. Keep raw links and endpoints out of shell history and
 logs. For unattended import, place the link in the host app's private
 `noBackupFilesDir/profile-import.pending`; `import-pending` encrypts it and
 overwrites then deletes the plaintext file.
+
+The test-only `import-pending-config` command reads canonical core JSON from
+`noBackupFilesDir/profile-config-import.pending`, requires non-empty inbound and
+outbound arrays, encrypts it with the same Keystore key, then overwrites and
+deletes the plaintext. This path exists for owner-controlled device profiles
+whose security cannot be represented by the supported share-link subset, such
+as a short-lived H3 endpoint authenticated with `pinnedPeerCertSha256`. It is
+not a general application import API. Canonical parsing remains fail-closed;
+do not use `allowInsecure` for a device rehearsal.
 
 These applications produce diagnostic rehearsal telemetry. They do not create
 the checksum-authenticated six-hour report required by the release-evidence

@@ -94,6 +94,14 @@ release series.
   Kotlin API emits the same mobile TUN topology, rejects duplicate or
   unsupported security-critical fields, bounds XHTTP `extra` to 64 KiB and one
   compatibility decode, and keeps unsupported secret values out of errors.
+- Extended the test-only Android physical-device harness with owner-controlled
+  canonical JSON import through an overwrite-and-delete private pending file
+  and per-protocol bounded stress counts. A physical Android 15 rehearsal
+  passed a pinned-certificate VLESS XHTTP `stream-one` endpoint over exact H3,
+  including a Mac preflight oracle, 660/660 device HTTP attempts, stable
+  repeated-cycle recovery memory, and disconnect/reconnect recovery. The
+  short dirty-revision run remains diagnostic and does not replace the clean
+  six-hour Android release report.
 
 ## 0.4.1-rc.4 - 2026-08-31
 

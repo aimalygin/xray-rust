@@ -350,8 +350,25 @@ after cycle one to 183.4 MiB after cycle two; the internal sampler moved from
 about 188.2 MiB to 190.1 MiB. Both deltas remain below the 8-MiB allowance and
 the thread count remained 19. This is diagnostic evidence only: the tested
 worktree was dirty, the run was shorter than six hours, and Wi-Fi/cellular,
-sleep/wake, IPv6/Happy-Eyeballs, captive-network, DNS64/NAT64, XHTTP HTTP/3,
-release signing, and the remaining formal matrix were not credited.
+sleep/wake, IPv6/Happy-Eyeballs, captive-network, DNS64/NAT64, long-lived XHTTP
+HTTP/3, release signing, and the remaining formal matrix were not credited.
+
+A supplemental dirty-revision rehearsal on the same Android device used an
+owner-controlled Xray-core v26.7.28 UDP listener on the already approved port
+for VLESS XHTTP `stream-one` over exact TLS ALPN `h3`. The short-lived
+self-signed leaf was authenticated by its complete-DER SHA-256 pin; neither
+the server nor the canonical client JSON used `allowInsecure`. The owner-only
+SOCKS client JSON first passed the remote XHTTP Mac oracle, after which the
+device completed 660/660 bounded HTTP attempts with no probe, fatal-TUN, or
+unrecovered-transition errors. Two comparable 240-request recovery cycles
+settled at about 164.2 MiB and 165.2 MiB RSS, a delta of about 1.0 MiB with 19
+threads. A disconnect/reconnect advanced the runtime generation and a final
+60/60 burst passed; active connections returned from 63 during the burst to
+four without a forced teardown. The temporary H3 service, certificate, key,
+and profiles were removed, and the restored H2/UDP environment passed one
+HTTP and one strict UDP round trip. This remains a short dirty-worktree
+diagnostic: it does not satisfy the six-hour, packet-loss, network-transition,
+or long-lived H3 release scenarios.
 
 The Apple reference app includes an opt-in physical-device runner that keeps
 all probe endpoints in the generated test-only `.xctestrun`, drives HTTPS and

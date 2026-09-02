@@ -328,7 +328,21 @@ ordinary-probe baseline, and settled recovery RSS grew by about 1.4 MiB in
 `dumpsys` (about 1.9 MiB in the internal sampler) with a stable 19 threads. This
 is dirty-revision diagnostic evidence, not the clean six-hour Android report.
 Wi-Fi/cellular, sleep/wake, IPv6/Happy-Eyeballs, captive-network, DNS64/NAT64,
-XHTTP/H3, release signing, and the rest of the formal matrix remain open.
+long-lived XHTTP/H3, release signing, and the rest of the formal matrix remain
+open.
+
+A supplemental physical Android XHTTP/H3 rehearsal now closes the short-form
+device transport check. An owner-controlled Xray-core v26.7.28 server listened
+only on the already approved UDP port, used `stream-one` with exact TLS ALPN
+`h3`, and authenticated a short-lived self-signed leaf through
+`pinnedPeerCertSha256` rather than `allowInsecure`. The owner-only Mac oracle
+passed before device import. Android then completed 660/660 bounded HTTP
+attempts, including a disconnect/reconnect generation change, with zero probe,
+fatal-TUN, or unrecovered-transition failures. Comparable 240-request settled
+RSS samples differed by about 1.0 MiB with 19 threads. The endpoint and secret
+material were removed and the prior H2 plus strict UDP environment passed its
+rollback check. This is still dirty-revision diagnostic evidence; long-lived
+H3 under controlled loss and the clean six-hour report remain required.
 
 An opt-in owner-controlled remote XHTTP oracle now reuses an owner-only client
 JSON outside the repository and proves either a public HTTP target or an
