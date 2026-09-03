@@ -9,9 +9,12 @@ client runtime; its supported compatibility surface is documented below.
 
 This project is unofficial and is not affiliated with XTLS or Xray-core.
 
+Current stable release: [`v0.5.0`](https://github.com/aimalygin/xray-rust/releases/tag/v0.5.0).
+
 ## Benchmarks
 
-The current synthetic localhost publication compares RC4 candidate `5895b09`
+The latest published synthetic localhost evidence compares the `v0.4.1-rc.4`
+benchmark candidate `5895b09`
 with Xray-core `v26.7.28`
 (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) and stable sing-box `v1.13.20`
 (`56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`). Values are medians across five
@@ -156,7 +159,7 @@ Add the Apple SDK with Swift Package Manager:
 dependencies: [
     .package(
         url: "https://github.com/aimalygin/xray-rust-mobile.git",
-        exact: "0.4.0"
+        exact: "0.5.0"
     ),
 ]
 ```
@@ -164,7 +167,7 @@ dependencies: [
 The package provides the low-level `XrayMobileAdapter`, shared profile and
 storage APIs in `XrayAppleShared`, and the ready-to-subclass
 `XrayAppleTunnel` packet-tunnel provider. Android applications can consume
-`io.github.aimalygin:xray-rust-mobile:0.4.0` from Maven Central without GitHub
+`io.github.aimalygin:xray-rust-mobile:0.5.0` from Maven Central without GitHub
 credentials, or download the standalone AAR from the matching release. See the
 [`xray-rust-mobile` integration guide](https://github.com/aimalygin/xray-rust-mobile#readme)
 for setup details.

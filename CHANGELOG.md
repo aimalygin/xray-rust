@@ -3,11 +3,29 @@
 All notable changes will be documented in this file.
 
 In this changelog, the stable channel means a non-prerelease tag eligible for
-registry publication; `v0.4.0` is such a release. All versions below 1.0 remain
-pre-1.0 in API and security maturity and do not imply a long-term supported
-release series.
+registry publication; `v0.5.0` is the current stable release. All versions
+below 1.0 remain pre-1.0 in API and security maturity and do not imply a
+long-term supported release series.
 
 ## Unreleased
+
+## 0.5.0 - 2026-09-03
+
+- Promoted `v0.5.0-rc.1` to the stable channel after the complete automated
+  release matrix passed, including pinned Xray-core interoperability,
+  ASan/Miri/Loom hardening, bounded fuzzing, controlled-loss transport tests,
+  exact-revision performance budgets, Apple builds, and the four-ABI Android
+  AAR.
+- Accepted the completed physical Apple H2/REALITY and memory rehearsals plus
+  the Android H2/H3/REALITY, transition, recovery, memory, and cancellation
+  rehearsals as the device evidence for this release. The previously planned
+  clean six-hour Apple and Android campaigns were not run and are not claimed
+  by this release.
+- Ships the RC1 implementation unchanged apart from stable version and
+  documentation metadata: managed encrypted DNS and caching, health-aware
+  selectors, validated TCP chaining, connection management, structured TUN
+  diagnostics, and atomic routing-policy replacement remain the supported
+  `v0.5` scope.
 
 ## 0.5.0-rc.1 - 2026-09-02
 
