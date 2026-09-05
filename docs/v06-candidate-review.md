@@ -46,6 +46,11 @@ budgets are documented in [release evidence](v06-release-evidence.md). It does
 not produce device results. The calibrated v0.5 regression gate also remains
 required.
 
+The frozen sources include the intended `0.6.0-rc.1` package version, lockfile,
+dated changelog and regenerated configuration contract. This prepares the
+candidate without publishing a tag; a later version-only commit would break
+the exact-commit evidence binding and require all campaigns to be repeated.
+
 This document is source-review context, not evidence that a future commit has
 passed. Bind the automated run, raw benchmarks and subsequent physical-device
 campaign to the frozen full commit and tree. A fix invalidates that candidate's

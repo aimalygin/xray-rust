@@ -11,8 +11,8 @@ been independently security audited. “Supported” below means implemented in
 this repository and covered by tests; it does not imply complete behavioral
 parity with every Xray-core release.
 
-Current stable packages are `v0.5.0`. The working development line is
-`0.6.0-dev.0`; its first addition is `IPOnDemand` routing with a pinned Go
+Current stable packages are `v0.5.0`. The unpublished source candidate is
+`0.6.0-rc.1`; its first addition is `IPOnDemand` routing with a pinned Go
 oracle and updated Swift/Kotlin snapshot decoders. A bounded VLESS 1-RTT/0-RTT
 encryption subset with mixed relay chains and configurable padding is also
 implemented. Independently addressed XHTTP downloadSettings are implemented

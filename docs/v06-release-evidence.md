@@ -7,7 +7,11 @@ are implemented by `scripts/check-v06-release-evidence.py`.
 ## Required evidence
 
 Before connecting physical devices, freeze the sources on
-`codex/v06-candidate` and push that branch. CI runs the ordinary Rust, pinned
+`codex/v06-candidate` with the intended RC package version, dated changelog and
+regenerated configuration contract already committed, then push that branch.
+Changing release metadata after collecting evidence would invalidate the
+commit/tree binding. Create the annotated RC tag only after all required
+evidence passes, without changing that commit. CI runs the ordinary Rust, pinned
 Go oracle, dependency, Apple, and four-ABI Android checks, plus the complete
 RC interoperability, Loom/Miri/ASan, fuzz, and controlled-network jobs on the
 same commit. Record the successful run URL, commit, and tree. A manual CI
