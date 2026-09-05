@@ -50,7 +50,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             port: 443,
             users: vec![VlessUser {
                 id: "00010203-0405-0607-0809-0a0b0c0d0e0f".parse().unwrap(),
-                encryption: "none".to_owned(),
+                encryption: Default::default(),
                 flow: Some("xtls-rprx-vision".to_owned()),
                 level: 0,
             }],
@@ -109,7 +109,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 port: 443,
                 users: vec![VlessUser {
                     id: "00010203-0405-0607-0809-0a0b0c0d0e0f".parse().unwrap(),
-                    encryption: "none".to_owned(),
+                    encryption: Default::default(),
                     flow: Some("xtls-rprx-vision".to_owned()),
                     level: 0,
                 }],
@@ -550,7 +550,7 @@ fn credential_debug_output_is_redacted_in_the_config_model() {
     let uuid = "00010203-0405-0607-0809-0a0b0c0d0e0f";
     let user = VlessUser {
         id: uuid.parse().unwrap(),
-        encryption: "none".to_owned(),
+        encryption: Default::default(),
         flow: Some("xtls-rprx-vision".to_owned()),
         level: 0,
     };

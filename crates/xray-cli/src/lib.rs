@@ -1,3 +1,7 @@
+mod config;
+
+pub use config::ConfigCommand;
+
 use std::{
     env, fs,
     future::Future,
@@ -12,11 +16,12 @@ use xray_core_rs::{
     TunRuntimeOptions, TunRuntimeProfile,
 };
 
-const USAGE: &str = "usage: xray-rust run -config <config.json>";
+const USAGE: &str = "usage: xray-rust run -config <config.json>\n       xray-rust config <check|contract|example> (see config --help)";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliArgs {
     Run { config_path: PathBuf },
+    Config { command: ConfigCommand },
 }
 
 #[derive(Debug, Error)]
@@ -30,6 +35,10 @@ pub enum CliError {
     },
     #[error("config parse failed: {0}")]
     ConfigParse(String),
+    #[error("configuration check failed")]
+    ConfigCheckFailed { code: u8 },
+    #[error("failed to write output: {source}")]
+    Output { source: std::io::Error },
     #[error("core error: {0}")]
     Core(#[from] CoreError),
     #[error("TUN fd error: {source}")]
@@ -42,6 +51,10 @@ where
     S: Into<String>,
 {
     let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+
+    if args.get(1).is_some_and(|command| command == "config") {
+        return config::parse_args(&args[2..]).map(|command| CliArgs::Config { command });
+    }
 
     match args.as_slice() {
         [_program, command, flag, config_path]
@@ -370,6 +383,7 @@ where
     F: Future<Output = ()>,
 {
     match parse_cli_args(args)? {
+        CliArgs::Config { command } => config::run(command),
         CliArgs::Run { config_path } => {
             let (config, diagnostics) = load_config_with_diagnostics(&config_path)?;
             if !diagnostics.is_empty() {

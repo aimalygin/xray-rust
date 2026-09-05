@@ -1,9 +1,10 @@
 # Development roadmap
 
-Status: living document, last reviewed 2026-08-31.
+Status: living document, last reviewed 2026-09-04.
 
-This roadmap describes the intended product direction after `v0.4.0`. It is
-not a promise that every item will ship in the named release. Security,
+`v0.5.0` is the current stable release. Phases 1 and 2 below are retained as
+release history; Phase 3 is the active plan for `v0.6`. This roadmap is not a
+promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
 The current compatibility baseline is Xray-core `v26.7.28` at full commit
@@ -56,8 +57,9 @@ The main release risks are:
 - release candidates now block on extended ASan fuzz campaigns, sanitizer and
   Miri tests, a Loom routing-publication model, and controlled network tests;
 - the supported DNS, TLS, and routing subsets trail current Xray-core behavior;
-- physical-device release evidence remains required for the Apple and Android
-  integration paths;
+- physical-device evidence is based on bounded, named Apple and Android
+  scenarios rather than a fixed-duration clean soak; each release must state
+  the devices, duration, transitions, and resource limits it actually covered;
 - the pinned `shaped-rustls` fork expands the security and maintenance surface;
 - the project has not received an independent security audit.
 
@@ -177,13 +179,13 @@ adapters change.
 
 ## Phase 2: `v0.5` reliable multi-node mobile client
 
-Goal: add the client features that improve daily mobile reliability more than
-another transport or server protocol would.
+Status: released as stable `v0.5.0` on 2026-09-03.
 
-The final `v0.5.0` release requires the complete DNS, outbound-selection, and
-mobile-SDK scope below. Release candidates begin only after feature freeze;
-`v0.5.0-rc.N` is a stabilization channel, not the development channel for
-adding unfinished Phase 2 features.
+The release added the DNS, outbound-selection, and mobile-SDK scope below.
+The complete automated release matrix passed. The release accepted the
+completed bounded physical-device rehearsals instead of the proposed clean
+six-hour Apple and Android campaigns. The fixed-duration campaign was dropped
+as a release requirement and is not retroactively claimed.
 
 ### Carried hardening requirements
 
@@ -287,8 +289,10 @@ bootstrap exhaustion without destination-name leakage, failed bounded stale
 refresh, and cache-owner cancellation. Direct TCP, DoT, and DoH bootstrap
 candidates remain eligible after a connected peer fails its protocol exchange;
 detached stale refreshes are cancelled when their owning cache is dropped.
-The remaining `v0.5.0` DNS release evidence is part of the physical Apple and
-Android transition/soak gate rather than another protocol implementation slice.
+The planned final `v0.5.0` DNS evidence belonged to the physical Apple and
+Android transition/soak gate rather than another protocol implementation
+slice. The clean six-hour campaigns were not completed before the release and
+will not be run as a retrospective or `v0.6` release gate.
 
 ### Mobile SDK and management API
 
@@ -319,13 +323,12 @@ ships separate-UID, test-only Android host and traffic-probe applications with
 Keystore-backed no-backup profile persistence, foreground-service lifecycle
 controls, strict HTTP/UDP reachability, aggregate bounded load, and host-driven
 connection closure. They are release-gate tools, not production profile UI or
-distribution policy. A fail-closed physical-device evidence
-validator now pins the clean candidate revision, requires separate Apple and
-Android six-hour reports, verifies the complete transition scenario matrix,
-checks bounded steady-state memory/thread growth, and authenticates sanitized
-profiler/log/timeline artifacts. This makes the remaining hardware campaign a
-reproducible release gate; it does not count offline devices, simulators, or an
-unexecuted template as passing evidence.
+distribution policy. The repository also contains a fail-closed validator for
+the former six-hour campaign. It pins a clean candidate revision, verifies the
+transition scenario matrix and bounded memory/thread growth, and authenticates
+sanitized profiler/log/timeline artifacts. That harness remains available for
+optional long-run diagnostics, but its fixed-duration campaign is not a
+`v0.6` release gate.
 
 A short physical Android 15 XHTTP/H2 REALITY rehearsal now covers strict HTTP
 and UDP traffic, airplane-mode recovery, background foreground-service
@@ -336,10 +339,11 @@ Two identical TCP-240/UDP-480 stress cycles completed without probe failures;
 489 connection closes were accepted after each, the inventory returned to the
 ordinary-probe baseline, and settled recovery RSS grew by about 1.4 MiB in
 `dumpsys` (about 1.9 MiB in the internal sampler) with a stable 19 threads. This
-is dirty-revision diagnostic evidence, not the clean six-hour Android report.
+is dirty-revision diagnostic evidence, not a clean long-run Android report.
 Wi-Fi/cellular, sleep/wake, IPv6/Happy-Eyeballs, captive-network, DNS64/NAT64,
-long-lived XHTTP/H3, release signing, and the rest of the formal matrix remain
-open.
+long-lived XHTTP/H3, release signing, and the rest of the formal matrix were
+not completed for `v0.5.0`; `v0.6` selects targeted device scenarios according
+to its changed high-risk surfaces instead of carrying the full matrix forward.
 
 A supplemental physical Android XHTTP/H3 rehearsal now closes the short-form
 device transport check. An owner-controlled Xray-core v26.7.28 server listened
@@ -352,7 +356,8 @@ fatal-TUN, or unrecovered-transition failures. Comparable 240-request settled
 RSS samples differed by about 1.0 MiB with 19 threads. The endpoint and secret
 material were removed and the prior H2 plus strict UDP environment passed its
 rollback check. This is still dirty-revision diagnostic evidence; long-lived
-H3 under controlled loss and the clean six-hour report remain required.
+H3 under controlled loss and the clean six-hour report were not completed for
+`v0.5.0` and are not fixed-duration gates for `v0.6`.
 
 An opt-in owner-controlled remote XHTTP oracle now reuses an owner-only client
 JSON outside the repository and proves either a public HTTP target or an
@@ -362,8 +367,8 @@ passed HTTPS carriage, TUN accounting, connection closure, and clean tunnel
 teardown. Its preceding fail-closed run traced a pre-first-byte reset to a
 share link that omitted the server's non-default `xPaddingBytes`; the importer
 correctly preserved `extra` once the link supplied it. This is diagnostic
-rehearsal evidence from a dirty development revision, not the required clean
-six-hour Apple report, and it provides no Android release evidence.
+rehearsal evidence from a dirty development revision, not a clean long-run
+Apple report, and it provides no Android release evidence.
 
 The supplemental physical Apple XHTTP/H2 memory rehearsal now uses two
 identical TCP-240/UDP-480 load-and-recovery cycles in one extension runtime.
@@ -376,7 +381,7 @@ cycle-over-cycle growth against an 8 MiB allowance. Both cycles reached all
 TCP and UDP stages below the 48 MiB protective ceiling; the provider accepted
 1,670 closes, stayed at runtime generation one with no fatal TUN telemetry, and
 disconnected cleanly. This is still dirty-revision diagnostic evidence on one
-iPhone 13, not the clean six-hour Apple report or any Android evidence.
+iPhone 13, not a clean long-run Apple report or any Android evidence.
 
 A clean, five-run macOS pre-device performance gate now covers the v0.4.0
 shared routing, DNS-selector, process RSS, plain TCP, and inherited-fd TUN
@@ -388,62 +393,221 @@ paths. Remaining outbound-graph cost and per-flow management memory have
 explicit ceilings; only clean same-revision evidence passes. This host gate is
 required before, and does not substitute for, the Apple/Android hardware gate.
 
-### Exit criteria
+### Release outcome
 
-- A host can switch between healthy nodes atomically without restarting the
-  tunnel or losing unrelated flows.
-- Encrypted DNS, failover, cache, and bootstrap behavior pass fault-injection
-  tests and remain within explicit memory and concurrency budgets.
-- Apple and Android expose the same versioned core capabilities, selection
-  state, health state, and essential diagnostics.
-- An extended device soak shows no unexplained memory growth, task leak, stuck
-  TUN pump, or unrecoverable network-transition failure.
+- Atomic healthy-node switching, encrypted DNS, failover, caching, bootstrap,
+  and the versioned Apple/Android management surfaces shipped in `v0.5.0` with
+  their automated fault, resource, and interoperability gates passing.
+- Short Apple and Android rehearsals covered the accepted release boundary and
+  are documented in [mobile testing](mobile-testing.md).
+- The proposed clean extended device soak was not executed for `v0.5.0` and is
+  not carried forward as a `v0.6` gate. Later releases use bounded physical
+  scenarios targeted at the subsystems and lifecycle risks they change.
 
 ## Phase 3: `v0.6` modern VLESS and richer client policy
 
-Goal: follow the modern Xray client surface after the verification and mobile
-reliability foundation is in place.
+Status: implementation started as `0.6.0-dev.0`. Completed increments add
+`IPOnDemand`, bounded VLESS 1-RTT/0-RTT, relay chains, configurable padding,
+mobile import, fuzzing, and pinned interop.
+This is not a feature freeze or release candidate. See the
+[initial review and implementation plan](v06-implementation-plan.md) for the
+baseline decision, delivery order, exact routing contract, and evidence.
 
-- Implement current client-side VLESS post-quantum encryption only with an
-  upstream oracle, deterministic negative tests, fuzz coverage, and a focused
-  security review. Do not design an independent wire variant.
-- Add `IPOnDemand` and selected low-cost routing inputs that are useful on
-  mobile. Platform identity and network-state values must come from an
-  explicit host capability provider.
-- Complete the supported XHTTP session and download behavior before pursuing
-  rarely deployed transport extensions.
-- Evaluate adaptive HTTP/3 windows, multiple active requests per connection,
-  QUIC v2, and UDP hopping with controlled RTT/loss and device resource tests.
-  Only ship behavior that improves measured workloads without violating mobile
-  budgets.
-- Add IPv6 Fake IP if application and DNS64/NAT64 tests demonstrate a coherent
-  end-to-end mapping and restore model.
-- Provide JSON Schema or equivalent tooling for the supported Xray JSON subset.
-- Split the largest parser, TUN, DNS, outbound, and FFI modules along existing
-  ownership boundaries before they acquire additional major features.
+Goal: add the modern VLESS encryption and client-policy capabilities with the
+same fail-closed configuration, pinned interoperability, and bounded mobile
+resource contracts established by `v0.5`.
+
+`v0.6` is a compatibility and policy release, not a protocol-expansion
+release. Trojan, Shadowsocks, VMess, WireGuard, Hysteria, server features, and
+an in-core control plane remain outside this phase.
+
+### Milestone A: freeze the compatibility contract
+
+Initial decision: retain the audited exact `v26.7.28` baseline. The new routing
+and encryption oracles use that checkout. The focused
+[VLESS encryption design](vless-encryption-design.md) records the implemented subset
+and remaining crypto work. The [XHTTP download design](xhttp-download-design.md) defines its bounded
+independent transport and lifecycle contract.
+
+- Audit the stable Xray-core release selected when `v0.6` development begins
+  against the current pinned `v26.7.28` baseline. Either pin the new exact
+  commit and regenerate fixtures/oracles or record an explicit decision to
+  retain `v26.7.28`; never use moving `main` as the release contract.
+- Write and approve focused designs for VLESS non-`none` encryption and the
+  supported XHTTP `downloadSettings` lifecycle before implementation. Record
+  exact configuration names, wire behavior, secrets, downgrade boundaries,
+  allocation limits, and reference-oracle provenance.
+- Preserve the `v0.5.0` benchmark and ABI results as named baselines. New
+  measurements must come from a clean, exact revision and must not replace a
+  missing comparator with an inferred result.
+
+### Milestone B: VLESS post-quantum encryption
+
+Implemented: bounded `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}`
+with one-to-eight mixed X25519/ML-KEM-768 NFS relay keys, bounded configurable
+padding, all implemented stream carriers with optional Vision, both AEADs,
+TCP/UDP/XUDP integration, redacted
+typed configuration, and bounded record/session state. The 0-RTT ticket is
+memory-only, publishes after authenticated padding, invalidates on failed or
+cancelled resumption, and never triggers automatic early-data replay. See the
+[design and evidence boundary](vless-encryption-design.md). Equivalent mobile
+share-link projection and shared Rust/Swift/Kotlin validation are implemented,
+together with dedicated record/handshake fuzz targets and 540 full-Xray
+application flows across 204 profiles, including local REALITY. The exact Go oracle now proves
+real cold/resumed paths, mixed chains, custom padding, expiry, cancellation,
+and cold recovery. Review also added pre-dial ML-KEM coefficient validation.
+The focused independent review and IR-01–IR-13 remediation are complete;
+[final-candidate evidence](v06-release-evidence.md) remains open. Milestone B
+is not release-complete.
+
+- Implement only the client-side VLESS post-quantum encryption modes present in
+  the pinned Xray-core contract. Do not invent a Rust-specific wire variant,
+  alias, or fallback to `encryption: "none"`.
+- Cover positive interoperability plus wrong-key, downgrade, replay,
+  corruption, truncation, cancellation, and bounded-resource cases with a Go
+  oracle, deterministic fixtures, fuzzing, and a focused security review.
+- Keep keys and derived secrets out of configuration warnings, debug output,
+  FFI errors, snapshots, and mobile logs; zeroize bounded derived material when
+  ownership ends.
+- Add equivalent Swift and Kotlin share-link/config projection only for the
+  combinations the Rust runtime actually supports. Unsupported combinations
+  continue to fail at configuration time with a JSON path or typed import
+  error.
+
+### Milestone C: routing and host policy
+
+First increment implemented: canonical `IPOnDemand`, ordered lazy resolution,
+a 256-address fail-closed work cap, managed cache/cancellation and policy
+revision tests, a pinned Go oracle, and equivalent Swift/Kotlin snapshot
+decoding. Targeted physical-device evidence and any new host capability
+provider remain outstanding.
+
+- Preserve Xray-compatible `IPOnDemand`: delay resolution until an IP rule
+  needs it, evaluate every bounded returned address, preserve ordered rule
+  matching, and keep the original destination for the selected outbound. Match
+  the pinned predicate order: inbound/network/port before IP, domain after IP.
+- Use the existing managed resolver/cache and recursion protections. DNS
+  failure, cancellation, stale data, policy hot replacement, and concurrent
+  flow behavior require deterministic tests.
+- Select only low-cost routing inputs with demonstrated mobile demand.
+  Process, user, interface, and network-state facts must enter through an
+  explicit versioned host capability provider; unavailable facts must not be
+  guessed from global process state.
+- Preserve atomic routing-policy publication: new flows see one complete
+  revision, existing flows retain their decision, and invalid updates do not
+  advance the revision.
+
+### Milestone D: XHTTP completeness before transport breadth
+
+Implemented in the development tree: one independently addressed XHTTP download
+stack for packet-up/stream-up, with independent security/HTTP version, resolver
+and protected dialing, XMUX pooling, shared-session failure/cancellation and
+upload rollover. Config parsing and carrier compilation live in dedicated
+modules. The supported subset and pinned verification command are described in
+[the download design](xhttp-download-design.md). Exact-candidate device and
+performance evidence remain open. Adaptive H3 windows and multiple active H3
+requests stay deferred until the stated measurements justify them.
+
+- Implement a documented, bounded client subset of populated
+  `downloadSettings` with an independently validated transport configuration
+  and lifecycle. Reject recursive, cyclic, security-weakening, or unbounded
+  combinations before opening a socket.
+- Complete session creation, server-first download, cancellation, rollover,
+  pooling, accounting, and teardown tests across every supported XHTTP mode and
+  HTTP version. Maintain the pinned live Xray-core matrix for each claimed
+  combination.
+- Measure adaptive HTTP/3 receive windows and more than one active request per
+  connection under loopback impairment, wide-area tests, and physical-device
+  memory/energy budgets. Ship either only when it improves the named workloads
+  without exceeding the budgets.
+- QUIC v2, non-empty UDP hopping, additional congestion-control profiles, and
+  other phase-one H3 exclusions are conditional experiments, not `v0.6`
+  release requirements. Unshipped values remain fail closed.
+
+### Milestone E: configuration tooling and maintainability
+
+Implemented for the current increment (2026-09-05): the generated
+[executable configuration contract](config-contract.json) and
+[CLI/Rust tooling](config-tooling.md) share the parser's object-field registry
+and exact acceptance rules. CI checks canonical/rejected fixtures, unknown-field
+mutations at every registered grammar node, VLESS/XHTTP oracle inputs and CLI
+reports/resource lookup. DNS and stream/security parsing are now separate modules
+alongside routing, VLESS and XHTTP. The C ABI is unchanged. The ongoing pre-feature
+refactor obligation for other large runtime modules remains in force.
+
+- Publish machine-readable JSON Schema, or equivalent generated tooling, for
+  the exact supported Xray JSON subset. Parser acceptance/rejection fixtures
+  must check that the tooling neither advertises unsupported behavior nor
+  rejects a supported canonical configuration.
+- Split the largest parser, TUN, DNS, outbound, and FFI modules along their
+  existing ownership boundaries. Refactors must be behavior-preserving and
+  land before the affected subsystem receives another major feature. Routing
+  parsing and rule evaluation are the first extracted modules; other splits
+  follow the feature that needs them instead of blocking unrelated work.
+- Keep the C ABI backward compatible through minor-version and capability
+  discovery. Any unavoidable major transition requires a migration document
+  and parallel Swift/Kotlin updates before an RC.
+
+### Conditional IPv6 Fake IP increment
+
+IPv6 Fake IP may enter `v0.6` only after an approved mapping/lease/restore
+design and end-to-end Apple and Android coverage for IPv6-only, dual-stack,
+DNS64/NAT64, network transition, restart, and pool exhaustion. Otherwise it
+stays deferred without blocking the release; IPv4 Fake IP behavior must not
+regress.
+
+### Release gates
+
+- Run bounded physical Apple and Android scenarios for the high-risk behavior
+  changed by `v0.6`: VLESS encryption, resolver-driven `IPOnDemand`, XHTTP
+  download/session lifecycle, cancellation, and host adapter projection. There
+  is no fixed six-hour minimum. Each report identifies the exact candidate,
+  device and OS, scenario duration, transitions, traffic result, and explicit
+  resource limits; simulator results cannot replace claimed device evidence.
+  The candidate-bound archive format and submission procedure are documented
+  in `docs/v06-release-evidence.md`; the RC publication workflow revalidates
+  that archive against the exact tagged commit and tree.
+- Keep the pinned interop, ASan/Miri/Loom, fuzz, controlled RTT/loss,
+  supply-chain, Apple build, four-ABI Android, and clean performance gates
+  blocking. Extend them for every new parser, wire, crypto, routing, and XHTTP
+  boundary introduced in this phase.
+- Publish an RC only after feature freeze. RC builds are for stabilization and
+  evidence collection, not unfinished feature development.
 
 ### Exit criteria
 
-- New VLESS encryption interoperates with the pinned Xray-core release across
-  positive, downgrade, replay, corruption, cancellation, and resource tests.
-- New routing and XHTTP options have explicit configuration, wire, and device
-  verification boundaries.
-- The stable C ABI remains backward compatible or follows a documented major
-  version transition.
+- The selected Xray-core baseline, full commit, audit delta, regenerated
+  fixtures, and blocking supported-surface interop results are published.
+- VLESS non-`none` encryption interoperates with that baseline and passes the
+  negative, fuzz, secret-lifetime, cancellation, and resource gates above.
+- `IPOnDemand` and each added host-policy input have exact configuration,
+  resolution, hot-reload, and mobile lifecycle evidence.
+- The claimed XHTTP `downloadSettings` and session surface has explicit config,
+  wire, pool, cancellation, teardown, and device boundaries; every other value
+  still fails closed.
+- Configuration tooling matches the supported parser surface, and the touched
+  large modules no longer accumulate the new feature behind unrelated
+  ownership boundaries.
+- Targeted physical-device evidence passes for the changed high-risk surfaces,
+  and the stable C ABI remains backward compatible or follows a documented
+  major transition.
 
 ## Deferred security work before `1.0`
 
-The first `v0.4.1` release candidate does not block on the following broader
-reviews. They remain tracked hardening work and must be scheduled before a
-stable `1.0` claim:
+`v0.5.0` completed the focused credential redaction, zeroization, and secret
+lifetime review for its supported config, diagnostic, REALITY, QUIC, and FFI
+boundaries. Those tests remain blocking. The following broader work is still
+required before a stable `1.0` claim:
 
-- audit configuration and diagnostic formatting for credential redaction,
-  zeroization, and secret lifetime, including REALITY and FFI log/error
-  boundaries;
-- define a maintenance and upstream-sync policy for `shaped-rustls` and review
-  its exact delta from the pinned rustls release;
-- complete an independent security review of the supported wire, TUN, and FFI
-  surfaces after fuzz coverage and release behavior have stabilized.
+- complete an independent security review of the supported crypto, wire, TUN,
+  and FFI surfaces after fuzz coverage and release behavior have stabilized,
+  including the VLESS encryption added in `v0.6`.
+
+A replacement, upstreaming effort, or new long-term maintenance strategy for
+`shaped-rustls` is not scheduled for `v0.6`. Continue to use the exact immutable
+revision and existing dependency/security gates. Reconsider that decision only
+during `1.0` planning or earlier if a concrete security finding, upstream
+incompatibility, or maintenance failure invalidates the current pin.
 
 ## Protocol expansion after `v0.6`
 

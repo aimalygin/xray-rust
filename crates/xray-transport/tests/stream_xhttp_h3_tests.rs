@@ -1945,3 +1945,97 @@ fn unsupported_quic_parity_modes_fail_closed() {
         Err(H3Error::UnsupportedDebugLogging)
     ));
 }
+
+#[tokio::test]
+async fn split_download_h3_drop_cancels_both_carriers_and_releases_both_pools() {
+    use xray_transport::stream::xhttp_transport_test_only::XhttpModeDial;
+    let (up_tls, up_addr, up_server) = server_with_options(None).await;
+    let (down_tls, down_addr, down_server) = server_with_options(None).await;
+    let up_count = Arc::new(AtomicUsize::new(0));
+    let down_count = Arc::new(AtomicUsize::new(0));
+    let up = xhttp_h3_transport(XhttpModeSelection::StreamUp, unlimited_xmux(), 4);
+    let down = xhttp_h3_transport(XhttpModeSelection::Auto, unlimited_xmux(), 4);
+    let up_dial = h3_network_dial(up_tls, up_addr, up_count.clone());
+    let down_dial = h3_network_dial(down_tls, down_addr, down_count.clone());
+    let mut stream = up
+        .open_split_stream_with_dials(
+            XhttpModeDial::Http3(up_dial.clone()),
+            &down,
+            XhttpModeDial::Http3(down_dial.clone()),
+        )
+        .await
+        .unwrap();
+    let (down_request, mut down_exchange) = down_server.accept().await;
+    let (up_request, mut up_exchange) = up_server.accept().await;
+    assert_eq!(down_request.uri().path(), up_request.uri().path());
+    down_exchange
+        .send_response(response(StatusCode::OK))
+        .await
+        .unwrap();
+    down_exchange
+        .send_data(Bytes::from_static(b"ready"))
+        .await
+        .unwrap();
+    let mut ready = [0; 5];
+    timeout(DEADLINE, stream.read_exact(&mut ready))
+        .await
+        .unwrap()
+        .unwrap();
+    drop(stream);
+    assert_eq!(up.xmux_open_usages().await, vec![0]);
+    assert_eq!(down.xmux_open_usages().await, vec![0]);
+    let cancelled_up = timeout(DEADLINE, up_exchange.recv_data()).await.unwrap();
+    assert!(
+        cancelled_up.is_err(),
+        "upload must be reset, not replayed or left running"
+    );
+    let cancelled_down = timeout(DEADLINE, async {
+        loop {
+            if let Err(error) = down_exchange.send_data(Bytes::from_static(b"x")).await {
+                break error;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        matches!(cancelled_down, h3::error::StreamError::RemoteTerminate { code, .. } if code==Code::H3_REQUEST_CANCELLED)
+    );
+    let down_handler = tokio::spawn({
+        let server = down_server.clone();
+        async move { serve_clean_exchange(&server).await }
+    });
+    let up_handler = tokio::spawn({
+        let server = up_server.clone();
+        async move { serve_clean_exchange(&server).await }
+    });
+    let mut second = up
+        .open_split_stream_with_dials(
+            XhttpModeDial::Http3(up_dial),
+            &down,
+            XhttpModeDial::Http3(down_dial),
+        )
+        .await
+        .unwrap();
+    second.write_all(b"ping").await.unwrap();
+    second.shutdown().await.unwrap();
+    let mut body = Vec::new();
+    timeout(DEADLINE, second.read_to_end(&mut body))
+        .await
+        .unwrap()
+        .unwrap();
+    down_handler.await.unwrap();
+    up_handler.await.unwrap();
+    drop(second);
+    assert_eq!(
+        up_count.load(Ordering::Acquire),
+        1,
+        "upload connection remains reusable after cancelling only its request"
+    );
+    assert_eq!(
+        down_count.load(Ordering::Acquire),
+        1,
+        "download connection remains reusable after cancelling only its request"
+    );
+}

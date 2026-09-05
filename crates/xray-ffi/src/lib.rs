@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use libc::{c_char, c_int, c_void};
-use std::any::Any;
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::io;
@@ -3634,13 +3633,8 @@ unsafe fn ffi_status(
     }
 }
 
-fn ffi_panic_message(payload: &(dyn Any + Send)) -> String {
-    let detail = payload
-        .downcast_ref::<&str>()
-        .copied()
-        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("non-string panic payload");
-    format!("panic caught at FFI boundary: {detail}")
+fn ffi_panic_message(_payload: &(dyn std::any::Any + Send)) -> String {
+    "panic caught at FFI boundary".to_owned()
 }
 
 unsafe fn required_utf8_argument<'a>(
@@ -3758,6 +3752,7 @@ fn routing_policy_snapshot_json(core: &Core) -> String {
     let domain_strategy = match snapshot.domain_strategy {
         xray_config::RoutingDomainStrategy::AsIs => "asIs",
         xray_config::RoutingDomainStrategy::IpIfNonMatch => "ipIfNonMatch",
+        xray_config::RoutingDomainStrategy::IpOnDemand => "ipOnDemand",
     };
     serde_json::json!({
         "schemaVersion": 1,
@@ -4007,23 +4002,37 @@ mod tests {
             })
         );
 
-        let replacement =
-            CString::new(r#"{"routing":{"domainStrategy":"IPIfNonMatch","rules":[]}}"#).unwrap();
-        let mut error = ptr::null_mut();
-        let status = unsafe {
-            xray_core_replace_routing_policy_json(handle, replacement.as_ptr(), &mut error)
-        };
-        assert_eq!(status, XrayStatus::Ok);
-        assert!(error.is_null());
-        assert_eq!(
-            unsafe { routing_policy_snapshot(handle) },
-            serde_json::json!({
-                "schemaVersion": 1,
-                "revision": 1,
-                "ruleCount": 0,
-                "domainStrategy": "ipIfNonMatch",
-            })
-        );
+        for (index, (config_value, wire_value)) in [
+            ("IPIfNonMatch", "ipIfNonMatch"),
+            ("IPOnDemand", "ipOnDemand"),
+            ("AsIs", "asIs"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let replacement = CString::new(
+                serde_json::json!({
+                    "routing": {"domainStrategy": config_value, "rules": []}
+                })
+                .to_string(),
+            )
+            .unwrap();
+            let mut error = ptr::null_mut();
+            let status = unsafe {
+                xray_core_replace_routing_policy_json(handle, replacement.as_ptr(), &mut error)
+            };
+            assert_eq!(status, XrayStatus::Ok);
+            assert!(error.is_null());
+            assert_eq!(
+                unsafe { routing_policy_snapshot(handle) },
+                serde_json::json!({
+                    "schemaVersion": 1,
+                    "revision": index + 1,
+                    "ruleCount": 0,
+                    "domainStrategy": wire_value,
+                })
+            );
+        }
 
         unsafe { xray_core_free(handle) };
     }
@@ -4033,6 +4042,7 @@ mod tests {
         let handle = unsafe { loaded_routing_test_core() };
         for invalid in [
             r#"{"routing":{"rules":[]},"dns":{}}"#,
+            r#"{"routing":{"domainStrategy":"IPAlways","rules":[]}}"#,
             r#"{"routing":{"rules":[{"type":"field","network":"tcp","outboundTag":"missing"}]}}"#,
         ] {
             let invalid = CString::new(invalid).unwrap();
@@ -4230,17 +4240,16 @@ mod tests {
     }
 
     #[test]
-    fn ffi_panic_message_preserves_string_payload() {
-        let payload = "reality state invariant";
+    fn ffi_panic_message_redacts_string_payload() {
+        let payload = "secret-token-in-panic";
 
-        assert_eq!(
-            ffi_panic_message(&payload),
-            "panic caught at FFI boundary: reality state invariant"
-        );
+        let message = ffi_panic_message(&payload);
+        assert_eq!(message, "panic caught at FFI boundary");
+        assert!(!message.contains(payload));
     }
 
     #[test]
-    fn ffi_status_catches_panic_and_returns_payload() {
+    fn ffi_status_catches_panic_and_redacts_payload() {
         let mut error: *mut XrayError = ptr::null_mut();
 
         let status = unsafe { ffi_status(&mut error, || panic!("injected FFI panic")) };
@@ -4250,7 +4259,8 @@ mod tests {
         let message = unsafe { CStr::from_ptr((*error).message) }
             .to_str()
             .unwrap();
-        assert_eq!(message, "panic caught at FFI boundary: injected FFI panic");
+        assert_eq!(message, "panic caught at FFI boundary");
+        assert!(!message.contains("injected FFI panic"));
         unsafe {
             free_error(error);
         }

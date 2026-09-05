@@ -81,6 +81,16 @@ Apple importer: `tcp`/`raw` with REALITY, and `xhttp`/`splithttp` with no
 security, TLS, or REALITY. The generated profile uses the TUN inbound, VLESS
 `proxy`, private-address Freedom split, and bounded IPv4 fake-IP defaults.
 
+Development `0.6` also imports bounded
+`mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` with one-to-eight
+canonical X25519/ML-KEM-768 relay keys and optional bounded padding over
+`tcp`/`raw` and `xhttp`/`splithttp`, with none, TLS, or REALITY security and
+optional Vision/Vision-UDP443. WS/HTTPUpgrade/gRPC profiles use JSON. Encrypted
+links reject irrelevant raw transport fields and insecure TLS. Key encodings,
+padding limits, and low-order/modulus checks match shared Rust fixtures; error
+messages redact rejected encryption values. This does not change the published
+`v0.5.0` distribution.
+
 Security- and transport-critical query values are unique and validated.
 Unsupported transports, security fields, modes, and flow values fail closed.
 XHTTP `extra` must be a JSON object no larger than 64 KiB after either the

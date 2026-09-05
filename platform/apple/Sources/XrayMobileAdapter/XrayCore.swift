@@ -162,6 +162,7 @@ public struct XrayFFIInfo: Equatable, Sendable {
 public enum XrayRoutingDomainStrategy: String, Codable, Equatable, Sendable {
     case asIs
     case ipIfNonMatch
+    case ipOnDemand
 }
 
 public struct XrayRoutingPolicySnapshot: Codable, Equatable, Sendable {

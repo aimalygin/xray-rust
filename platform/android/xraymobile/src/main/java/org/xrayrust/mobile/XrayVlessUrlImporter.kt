@@ -42,7 +42,8 @@ data class XrayImportedProfile(
 /**
  * Imports the same fail-closed VLESS share-link subset as the Apple adapter.
  *
- * Supported transports are raw/TCP with REALITY and XHTTP/SplitHTTP with
+ * Supported transports are raw/TCP with REALITY (or none/TLS for encrypted
+ * 1-RTT links) and XHTTP/SplitHTTP with
  * none, TLS, or REALITY security. The result is a self-contained TUN profile;
  * persistence, UI, and Android VPN consent remain host responsibilities.
  */
@@ -142,37 +143,71 @@ object XrayVlessUrlImporter {
         query.rejectDuplicates(criticalQueryNames)
         val network = query.optional("type", "tcp")
         val encryption = query.optional("encryption", "none")
-        requireValue(encryption, "encryption", listOf("none"))
+        if (!XrayVlessEncryption.isSupported(encryption)) {
+            throw unsupportedValue("encryption", "<redacted>", XrayVlessEncryption.expected)
+        }
         val security = query.optional("security", "none")
         val flow = query.optional("flow", "")
 
         val transport = when {
+            encryption != "none" && network in networkAliases -> {
+                requireValue(network, "type", networkAliases.toList())
+                requireValue(flow, "flow", listOf("", VISION_FLOW, VISION_UDP_443_FLOW))
+                rejectUnsupportedSecurityValues(query)
+                for (name in listOf("host", "path", "mode", "extra")) {
+                    if (query.value(name) != null) throw importError(XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
+                        "VLESS URL contains unsupported `$name`.", parameter = name)
+                }
+                val rawSecurity = when (security) {
+                    "none" -> {
+                        rejectRealityOnlyValues(query)
+                        for (name in listOf("sni", "fp", "alpn", "allowInsecure")) {
+                            if (query.value(name) != null) throw importError(XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
+                                "VLESS URL contains unsupported `$name`.", parameter = name)
+                        }
+                        StreamSecurity.None
+                    }
+                    "tls" -> {
+                        rejectRealityOnlyValues(query)
+                        val tls = tlsParameters(query, host)
+                        if (tls.allowInsecure == true) throw unsupportedValue("allowInsecure", "true", "false")
+                        StreamSecurity.Tls(tls)
+                    }
+                    "reality" -> {
+                        validateRealityCompatibilityValues(query)
+                        StreamSecurity.Reality(xhttpRealityParameters(query, host))
+                    }
+                    else -> throw unsupportedValue("security", security, "none or tls or reality")
+                }
+                Transport.Raw(rawSecurity, flow.ifEmpty { null })
+            }
             network in networkAliases -> {
                 requireValue(security, "security", listOf("reality"))
                 if (flow.isNotEmpty()) {
                     requireValue(flow, "flow", listOf(VISION_FLOW, VISION_UDP_443_FLOW))
                 }
-                Transport.RawReality(rawRealityParameters(query, flow.ifEmpty { null }))
+                Transport.Raw(StreamSecurity.Reality(rawRealityParameters(query, flow.ifEmpty { null })), flow.ifEmpty { null })
             }
 
             network in xhttpNetworkAliases -> {
-                if (flow.isNotEmpty()) {
-                    throw unsupportedValue("flow", flow, "empty")
-                }
+                if (encryption == "none" && flow.isNotEmpty()) throw unsupportedValue("flow", flow, "empty")
+                requireValue(flow, "flow", listOf("", VISION_FLOW, VISION_UDP_443_FLOW))
                 val mode = query.optional("mode", "auto").ifEmpty { "auto" }
                 requireValue(mode, "mode", listOf("auto", "packet-up", "stream-up", "stream-one"))
                 val extra = query.value("extra")?.let(::decodeXhttpExtra)
                 rejectUnsupportedSecurityValues(query)
                 val xhttpSecurity = when (security) {
-                    "none" -> XhttpSecurity.None
+                    "none" -> StreamSecurity.None
                     "tls" -> {
                         rejectRealityOnlyValues(query)
-                        XhttpSecurity.Tls(tlsParameters(query, host))
+                        val tls = tlsParameters(query, host)
+                        if (encryption != "none" && tls.allowInsecure == true) throw unsupportedValue("allowInsecure", "true", "false")
+                        StreamSecurity.Tls(tls)
                     }
 
                     "reality" -> {
                         validateRealityCompatibilityValues(query)
-                        XhttpSecurity.Reality(xhttpRealityParameters(query, host))
+                        StreamSecurity.Reality(xhttpRealityParameters(query, host))
                     }
 
                     else -> throw unsupportedValue("security", security, "none or tls or reality")
@@ -185,6 +220,7 @@ object XrayVlessUrlImporter {
                         extra = extra,
                         security = xhttpSecurity,
                     ),
+                    flow = flow.ifEmpty { null },
                 )
             }
 
@@ -347,7 +383,8 @@ object XrayVlessUrlImporter {
 
     private fun requireValue(value: String, name: String, expected: List<String>) {
         if (value !in expected) {
-            throw unsupportedValue(name, value, expected.joinToString(" or "))
+            val diagnosticValue = if (name == "encryption") "<redacted>" else value
+            throw unsupportedValue(name, diagnosticValue, expected.joinToString(" or "))
         }
     }
 
@@ -422,15 +459,15 @@ object XrayVlessUrlImporter {
                 .put("id", userId)
                 .put("encryption", encryption)
             val streamSettings = when (val selected = transport) {
-                is Transport.RawReality -> {
-                    selected.reality.flow?.let { user.put("flow", it) }
-                    JSONObject()
-                        .put("network", "tcp")
-                        .put("security", "reality")
-                        .put("realitySettings", selected.reality.toJson())
+                is Transport.Raw -> {
+                    selected.flow?.let { user.put("flow", it) }
+                    selected.security.toJson().put("network", "tcp")
                 }
 
-                is Transport.Xhttp -> selected.parameters.toStreamSettingsJson()
+                is Transport.Xhttp -> {
+                    selected.flow?.let { user.put("flow", it) }
+                    selected.parameters.toStreamSettingsJson()
+                }
             }
             val inbound = JSONObject()
                 .put("tag", "tun-in")
@@ -499,9 +536,9 @@ object XrayVlessUrlImporter {
     }
 
     private sealed class Transport {
-        data class RawReality(val reality: RealityParameters) : Transport()
+        data class Raw(val security: StreamSecurity, val flow: String?) : Transport()
 
-        data class Xhttp(val parameters: XhttpParameters) : Transport()
+        data class Xhttp(val parameters: XhttpParameters, val flow: String?) : Transport()
     }
 
     private data class RealityParameters(
@@ -537,12 +574,18 @@ object XrayVlessUrlImporter {
             }
     }
 
-    private sealed class XhttpSecurity {
-        object None : XhttpSecurity()
+    private sealed class StreamSecurity {
+        object None : StreamSecurity()
 
-        data class Tls(val parameters: TlsParameters) : XhttpSecurity()
+        data class Tls(val parameters: TlsParameters) : StreamSecurity()
 
-        data class Reality(val parameters: RealityParameters) : XhttpSecurity()
+        data class Reality(val parameters: RealityParameters) : StreamSecurity()
+
+        fun toJson(): JSONObject = when (this) {
+            None -> JSONObject().put("security", "none")
+            is Tls -> JSONObject().put("security", "tls").put("tlsSettings", parameters.toJson())
+            is Reality -> JSONObject().put("security", "reality").put("realitySettings", parameters.toJson())
+        }
     }
 
     private data class XhttpParameters(
@@ -550,7 +593,7 @@ object XrayVlessUrlImporter {
         val path: String,
         val mode: String,
         val extra: JSONObject?,
-        val security: XhttpSecurity,
+        val security: StreamSecurity,
     ) {
         fun toStreamSettingsJson(): JSONObject {
             val xhttpSettings = JSONObject()
@@ -562,16 +605,8 @@ object XrayVlessUrlImporter {
                 .put("network", "xhttp")
                 .put("xhttpSettings", xhttpSettings)
                 .also { json ->
-                    when (val selected = security) {
-                        XhttpSecurity.None -> json.put("security", "none")
-                        is XhttpSecurity.Tls -> json
-                            .put("security", "tls")
-                            .put("tlsSettings", selected.parameters.toJson())
-
-                        is XhttpSecurity.Reality -> json
-                            .put("security", "reality")
-                            .put("realitySettings", selected.parameters.toJson())
-                    }
+                    val settings = security.toJson()
+                    for (key in settings.keys()) json.put(key, settings.get(key))
                 }
         }
     }

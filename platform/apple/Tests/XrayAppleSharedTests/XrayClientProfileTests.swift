@@ -2,6 +2,18 @@ import XCTest
 @testable import XrayAppleShared
 
 final class XrayClientProfileTests: XCTestCase {
+    func testRejectedEncryptionDoesNotExposeKeyMaterial() {
+        let key = "synthetic-key-material-for-redaction"
+        let url = "vless://11111111-1111-4111-8111-111111111111@example.test:443"
+            + "?encryption=mlkem768x25519plus.native.1rtt.\(key)"
+        XCTAssertThrowsError(try XrayVlessURLImporter.profile(from: url)) { error in
+            XCTAssertEqual(error as? XrayVlessURLImportError,
+                .unsupportedQueryValue(name: "encryption", value: "<redacted>", expected: XrayVlessEncryption.expected))
+            XCTAssertFalse(String(describing: error).contains(key))
+            XCTAssertFalse(error.localizedDescription.contains(key))
+        }
+    }
+
     private static let sampleVlessURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.10:32134?type=tcp&encryption=none&security=reality&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=example.com&sid=0123456789ab&spx=%2F&pqv=ignored-for-now&flow=xtls-rprx-vision#example-reality"
     private static let sampleXHTTPRealityURL = "vless://11111111-1111-4111-8111-111111111111@203.0.113.30:443?type=xhttp&encryption=none&security=reality&host=edge.example&path=%2Fxhttp&mode=packet-up&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&fp=chrome&sni=reality.example&sid=0123456789ab&spx=%2F#example-xhttp-reality"
 

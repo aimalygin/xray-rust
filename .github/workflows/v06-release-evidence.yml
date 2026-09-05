@@ -1,0 +1,54 @@
+name: v0.6 release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_url:
+        description: HTTPS URL of the bounded physical-device and performance evidence ZIP
+        required: true
+        type: string
+      evidence_sha256:
+        description: Lowercase SHA-256 of the evidence ZIP
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v06-release-evidence-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact evidence candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download and validate exact-candidate evidence
+        env:
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+        run: |
+          [[ "$EVIDENCE_URL" == https://* ]]
+          [[ "$EVIDENCE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          archive="$RUNNER_TEMP/v06-release-evidence.zip"
+          curl --fail --location --silent --show-error \
+            --proto '=https' --tlsv1.2 --retry 3 \
+            --max-filesize 268435456 \
+            --output "$archive" "$EVIDENCE_URL"
+          echo "$EVIDENCE_SHA256  $archive" | sha256sum --check -
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          python3 scripts/check-v06-release-evidence.py "$archive" "$GITHUB_SHA" "$tree"
+
+      - name: Preserve validated release evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v06-release-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/v06-release-evidence.zip
+          if-no-files-found: error
+          retention-days: 90

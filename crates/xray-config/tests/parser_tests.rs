@@ -1082,8 +1082,19 @@ fn parses_ip_if_non_match_routing_domain_strategy() {
 }
 
 #[test]
-fn rejects_unknown_routing_domain_strategy_with_path() {
+fn parses_ip_on_demand_routing_domain_strategy() {
     let raw = raw_with_routing(r#""domainStrategy": "IPOnDemand""#);
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+    assert_eq!(
+        parsed.config.routing.domain_strategy,
+        RoutingDomainStrategy::IpOnDemand
+    );
+}
+
+#[test]
+fn rejects_unknown_routing_domain_strategy_with_path() {
+    let raw = raw_with_routing(r#""domainStrategy": "IPAlways""#);
 
     assert_parse_error_path(&raw, "$.routing.domainStrategy");
 }
@@ -3853,8 +3864,97 @@ fn accepts_missing_none_and_explicit_none_vless_user_encryption() {
         let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
             panic!("expected vless outbound");
         };
-        assert_eq!(vless.users[0].encryption, "none");
+        assert!(vless.users[0].encryption.is_none());
     }
+}
+
+#[test]
+fn accepts_bounded_vless_sessions_chains_and_padding_without_exposing_keys() {
+    for mode in ["native", "xorpub", "random"] {
+        let key = valid_public_key();
+        for encryption in [
+            format!("mlkem768x25519plus.{mode}.1rtt.{key}"),
+            format!("mlkem768x25519plus.{mode}.0rtt.{key}.{key}"),
+            format!("mlkem768x25519plus.{mode}.1rtt.100-35-64.100-0-1.50-128-512.{key}"),
+        ] {
+            let users = format!(
+                r#""users": [{{"id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "encryption": "{encryption}"}}]"#
+            );
+            let raw = vless_raw(&users, "", 443, key, "02030405");
+            let parsed = parse_xray_json(&raw).unwrap();
+            let OutboundSettings::Vless(vless) = &parsed.config.outbounds[0].settings else {
+                panic!("VLESS")
+            };
+            assert!(vless.users[0].encryption.client().is_some());
+            assert!(!format!("{:?}", vless.users[0]).contains(key));
+        }
+    }
+}
+
+#[test]
+fn rejects_vless_encryption_type_and_unsupported_shape_with_redacted_path() {
+    let key = valid_public_key();
+    for value in [
+        serde_json::json!(null),
+        serde_json::json!(23),
+        serde_json::json!({}),
+        serde_json::json!(format!("mlkem768x25519plus.native.1rtt.99-35-35.{key}")),
+        serde_json::json!(format!("mlkem768x25519plus.native.1rtt.100-0-35.{key}")),
+        serde_json::json!(format!(
+            "mlkem768x25519plus.native.1rtt.100-35-35.100-0-1001.{key}"
+        )),
+        serde_json::json!(format!(
+            "mlkem768x25519plus.native.1rtt.{key}.{key}.{key}.{key}.{key}.{key}.{key}.{key}.{key}"
+        )),
+        serde_json::json!(format!("unknown-secret-bearing-format.{key}")),
+    ] {
+        let users = format!(
+            r#""users": [{{"id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "encryption": {value}}}]"#
+        );
+        let raw = vless_raw(&users, "", 443, valid_public_key(), "02030405");
+        assert_parse_error_path(&raw, "$.outbounds[0].settings.vnext[0].users[0].encryption");
+        let error = parse_xray_json(&raw).unwrap_err();
+        assert!(!format!("{error:?} {error}").contains(key));
+    }
+}
+
+#[test]
+fn encryption_accepts_vision_on_supported_carriers() {
+    for network in ["tcp", "raw", "ws", "httpupgrade", "grpc", "xhttp"] {
+        for flow in ["", "xtls-rprx-vision", "xtls-rprx-vision-udp443"] {
+            for mode in ["native", "xorpub", "random"] {
+                let raw = serde_json::json!({"outbounds": [{"protocol": "vless",
+                    "settings": {"vnext": [{"address": "example.com", "port": 443,
+                        "users": [{"id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                            "encryption": format!("mlkem768x25519plus.{mode}.1rtt.{}", valid_public_key()), "flow": flow}]}]},
+                    "streamSettings": {"network": network, "security": "none"}}]});
+                parse_xray_json(&raw.to_string())
+                    .unwrap_or_else(|error| panic!("{network}/{flow}/{mode}: {error}"));
+            }
+        }
+    }
+}
+
+#[test]
+fn plaintext_guard_uses_first_selected_vless_user() {
+    let users = format!(
+        r#""users": [{{"id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "encryption": "none"}}, {{"id": "00010203-0405-0607-0809-0a0b0c0d0e0f", "encryption": "mlkem768x25519plus.native.1rtt.{}"}}]"#,
+        valid_public_key()
+    );
+    let raw = vless_raw(&users, "", 443, valid_public_key(), "02030405");
+    let mut config: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    config["outbounds"][0]["streamSettings"] =
+        serde_json::json!({"network": "tcp", "security": "none"});
+    config["outbounds"][0]["settings"]["vnext"][0]["address"] = serde_json::json!("example.com");
+    assert_parse_error_path(
+        &config.to_string(),
+        "$.outbounds[0].settings.vnext[0].address",
+    );
+    config["outbounds"][0]["settings"]["vnext"][0]["users"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    assert!(parse_xray_json(&config.to_string()).is_ok());
 }
 
 #[test]
@@ -5076,13 +5176,13 @@ fn xhttp_ranges_accept_signed_single_empty_and_reversed_forms() {
 }
 
 #[test]
-fn xhttp_rejects_host_header_and_effective_download_settings() {
+fn xhttp_rejects_host_header_and_incomplete_download_settings() {
     for (fragment, path) in [
         (r#""headers": {"hOsT": "bad.example"}"#, "headers"),
-        (r#""downloadSettings": {}"#, "downloadSettings"),
+        (r#""downloadSettings": {}"#, "downloadSettings.address"),
         (
             r#""extra": {"downloadSettings": {}}"#,
-            "extra.downloadSettings",
+            "extra.downloadSettings.address",
         ),
     ] {
         assert_parse_error_path(
@@ -6794,4 +6894,34 @@ fn reality_stays_valid_on_the_raw_transport() {
         parsed.config.outbounds[0].stream.security,
         StreamSecurity::Reality(_)
     ));
+}
+
+#[test]
+fn shared_mobile_encryption_fixtures_match_rust_validation() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/vless-encryption/imports.json"
+    ))
+    .unwrap();
+    for case in fixture["keys"].as_array().unwrap() {
+        let result = case["encryption"]
+            .as_str()
+            .unwrap()
+            .parse::<xray_config::VlessEncryption>();
+        assert_eq!(
+            result.is_ok(),
+            case["accepted"].as_bool().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+    for case in fixture["profiles"].as_array().unwrap() {
+        let raw = serde_json::json!({"outbounds": [case["outbound"].clone()]});
+        let result = xray_config::parse_xray_json(&raw.to_string());
+        assert_eq!(
+            result.is_ok(),
+            case["rustAccepted"].as_bool().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
 }

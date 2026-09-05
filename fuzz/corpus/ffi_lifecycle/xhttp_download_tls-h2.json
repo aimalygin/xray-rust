@@ -1,0 +1,51 @@
+{
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "127.0.0.1",
+            "port": 443,
+            "users": [
+              {
+                "id": "00010203-0405-0607-0809-0a0b0c0d0e0f",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "serverName": "download.test",
+              "alpn": [
+                "h2"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "serverName": "upload.test",
+          "alpn": [
+            "h2"
+          ]
+        }
+      }
+    }
+  ]
+}

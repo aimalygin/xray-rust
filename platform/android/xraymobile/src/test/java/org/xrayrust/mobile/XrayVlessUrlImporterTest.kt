@@ -12,6 +12,19 @@ import java.nio.charset.StandardCharsets
 
 class XrayVlessUrlImporterTest {
     @Test
+    fun rejectedEncryptionDoesNotExposeKeyMaterial() {
+        val key = "synthetic-key-material-for-redaction"
+        val url = "vless://11111111-1111-4111-8111-111111111111@example.test:443" +
+            "?encryption=mlkem768x25519plus.native.1rtt.$key"
+        val error = assertThrows(XrayVlessUrlImportException::class.java) {
+            XrayVlessUrlImporter.profile(url)
+        }
+        assertEquals("encryption", error.parameter)
+        assertEquals("<redacted>", error.rejectedValue)
+        assertFalse(error.toString().contains(key))
+    }
+
+    @Test
     fun buildsMobileRawRealityProfile() {
         val profile = XrayVlessUrlImporter.profile(sampleRealityUrl)
 

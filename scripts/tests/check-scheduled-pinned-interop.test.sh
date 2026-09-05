@@ -151,7 +151,7 @@ case "${1:-}" in
   test)
     assert_args "scheduled interop test" \
       test --locked -p xray-core-rs --test local_xray_interop_tests \
-      -- --ignored --nocapture --test-threads=1
+      -- --ignored --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1
 
     [[ -z "${GOFLAGS+x}" ]] || die 'scheduled interop test inherited GOFLAGS'
     [[ -z "${GOEXPERIMENT+x}" ]] || die 'scheduled interop test inherited GOEXPERIMENT'
@@ -302,7 +302,7 @@ assert_prefix_count() {
 }
 
 assert_line_count 1 \
-  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
+  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
 assert_line_count 1 \
   'build|command=build --locked --release -p xray-cli --bin xray-rust'
 

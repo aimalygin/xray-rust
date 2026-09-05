@@ -9,6 +9,53 @@ long-term supported release series.
 
 ## Unreleased
 
+- Added the generated supported-configuration contract, exact parser-backed
+  `config check` with JSON reports/stdin/resource directories, and canonical
+  `config example` exports. Parser and tooling share recognized field sets;
+  CI guards fixture parity, contract freshness and CLI behavior.
+- Extracted DNS and stream/security parsing along existing ownership boundaries
+  without changing config acceptance or the C ABI.
+
+- Added bounded XHTTP `downloadSettings` for packet-up/stream-up: independently
+  addressed and protected HTTP/1.1, HTTP/2, HTTP/3 or REALITY download carriers,
+  separate pools, shared session identity and cancellation. Recursive stacks,
+  security downgrades, stream-one and chaining combinations fail closed.
+- Extracted XHTTP config normalization and core carrier compilation, added a
+  pinned configuration/application oracle and download lifecycle regressions.
+
+- Started `0.6.0-dev.0` development against the retained, exact Xray-core
+  `v26.7.28` contract. Published `v0.5.0` core/mobile artifacts remain pinned.
+- Added canonical routing `IPOnDemand` with ordered lazy DNS, all-address
+  matching, a fail-closed 256-candidate work limit, shared managed cache and
+  cancellation, and one atomic policy revision per selection. A common
+  23-case Go/Rust oracle checks compatibility with the pinned reference.
+- Added `ipOnDemand` to schema-1 routing snapshots and both Swift/Kotlin
+  decoders without changing C ABI symbols or layouts. Extracted routing
+  parsing and evaluation from the larger config/outbound modules.
+- Added bounded VLESS `mlkem768x25519plus` 1-RTT/0-RTT,
+  `native`/`xorpub`/`random`, one-to-eight mixed X25519/ML-KEM-768 relay keys,
+  configurable padding, raw/WS/HTTPUpgrade/gRPC/XHTTP carriers, and optional
+  Vision. Vision Direct retains outer security/carriers and random header
+  masking. TCP, UDP, and XUDP use the shared encryption boundary.
+- Replaced the Rust `VlessUser.encryption` string with typed
+  `VlessEncryption`, extracted VLESS parsing, and redacted crypto config/wire
+  diagnostics. The public plaintext-server guard follows the first selected
+  user. Added pinned Go primitive/live interop checks, cancellation/replay/
+  corruption coverage, and a narrowly patched BLAKE3 byte-context API. Swift
+  and Kotlin import errors redact key-bearing encryption values.
+- Added equivalent Swift/Kotlin bounded share-link import with common Rust
+  validation/projection fixtures. Reject malformed ML-KEM coefficients before
+  dialing. Added dedicated handshake/record fuzz drivers and full pinned Xray
+  none/TLS/REALITY interoperability with a local cover origin.
+- Added a memory-only 0-RTT ticket cache that publishes after authenticated
+  padding, invalidates on failed/cancelled resumption, and never automatically
+  retries early data. The exact Go oracle distinguishes real resumed handshakes
+  and covers mixed relay chains, configured padding, expiry, and cold recovery.
+- Expanded encrypted full-Xray interop to 540 application flows across 204
+  profiles, including inner TLS/Vision Direct, both gRPC encodings, XHTTP H1/H2/H3,
+  mixed keys, session reuse, UDP and UDP/443. Swift/Kotlin encrypted raw/XHTTP
+  share links preserve both Vision flows, with shared projection fixtures.
+
 ## 0.5.0 - 2026-09-03
 
 - Promoted `v0.5.0-rc.1` to the stable channel after the complete automated

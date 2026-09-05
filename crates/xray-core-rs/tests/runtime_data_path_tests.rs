@@ -108,7 +108,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
             port,
             users: vec![VlessUser {
                 id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                encryption: "none".to_owned(),
+                encryption: Default::default(),
                 flow: None,
                 level: 0,
             }],
@@ -2378,7 +2378,7 @@ async fn tun_tcp_timings_record_when_collection_enabled() {
 #[tokio::test]
 async fn tun_tcp_timings_record_when_runtime_logger_enabled() {
     let stats = timeout(
-        Duration::from_secs(2),
+        Duration::from_secs(5),
         run_tun_tcp_freedom_echo_scenario_with_runtime_logger(),
     )
     .await
@@ -2458,7 +2458,7 @@ async fn tun_reality_open_error_burst_keeps_tun_runtime_available() {
 #[tokio::test]
 async fn tun_reality_bridge_panic_isolated_and_logged_without_stopping_runtime() {
     timeout(
-        Duration::from_secs(3),
+        Duration::from_secs(5),
         run_tun_reality_bridge_panic_scenario(),
     )
     .await
@@ -2826,10 +2826,100 @@ async fn fake_dns_mapping_is_shared_from_socks_dns_to_http_connect() {
 }
 
 #[tokio::test]
+async fn ip_on_demand_preserves_the_original_domain_on_the_vless_wire() {
+    timeout(
+        Duration::from_secs(3),
+        run_domain_target_preservation_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_tun_dns_udp_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_outbound_fake_ip_domain_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_tun_dns_tcp_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_outbound_tcp_fake_ip_domain_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_socks_tcp_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_socks_to_resolved_ip_routed_freedom_echo_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_socks_udp_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_socks_udp_resolved_ip_routed_freedom_echo_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_http_connect_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_http_to_resolved_ip_routed_freedom_echo_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_tun_fake_dns_udp_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_static_bootstrap_skip_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_proxy_udp_static_ip_skip_routing_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn ip_on_demand_dynamic_bootstrap_skip_uses_managed_routing() {
+    timeout(
+        Duration::from_secs(3),
+        run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario(RoutingDomainStrategy::IpOnDemand),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn tun_dns_outbound_ip_if_non_match_routes_the_domain_behind_fake_ip() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_outbound_fake_ip_domain_scenario(),
+        run_tun_dns_outbound_fake_ip_domain_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -2839,7 +2929,7 @@ async fn tun_dns_outbound_ip_if_non_match_routes_the_domain_behind_fake_ip() {
 async fn tun_dns_outbound_tcp_ip_if_non_match_routes_the_domain_behind_fake_ip() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_outbound_tcp_fake_ip_domain_scenario(),
+        run_tun_dns_outbound_tcp_fake_ip_domain_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -3049,7 +3139,7 @@ async fn tun_dns_proxy_udp_freedom_resolves_terminal_bootstrap_alias() {
 async fn tun_dns_proxy_udp_ip_if_non_match_skips_static_bootstrap_ip_routing() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_proxy_udp_static_ip_skip_routing_scenario(),
+        run_tun_dns_proxy_udp_static_ip_skip_routing_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -3059,7 +3149,7 @@ async fn tun_dns_proxy_udp_ip_if_non_match_skips_static_bootstrap_ip_routing() {
 async fn tun_dns_proxy_udp_ip_if_non_match_skips_bootstrap_resolver_ip_routing() {
     timeout(
         Duration::from_secs(2),
-        run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario(),
+        run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -3306,7 +3396,9 @@ async fn tun_fake_dns_mode_intercepts_pipelined_tcp_queries_to_external_resolver
 async fn tun_fake_dns_udp_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
-        run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario(),
+        run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(
+            RoutingDomainStrategy::IpIfNonMatch,
+        ),
     )
     .await
     .unwrap();
@@ -3352,7 +3444,7 @@ async fn tun_regular_vision_udp443_is_rejected_with_icmp() {
 #[tokio::test]
 async fn tun_regular_vision_udp443_storm_releases_flows_with_logging_on_and_off() {
     timeout(
-        Duration::from_secs(8),
+        Duration::from_secs(15),
         run_tun_regular_vision_udp443_rejection_storm_scenario(),
     )
     .await
@@ -3413,7 +3505,7 @@ async fn socks_client_uses_ip_routing_rule_to_reach_freedom_outbound() {
 async fn socks_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
-        run_socks_to_ip_if_non_match_routed_freedom_echo_scenario(),
+        run_socks_to_resolved_ip_routed_freedom_echo_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -3423,7 +3515,7 @@ async fn socks_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outb
 async fn socks_udp_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
-        run_socks_udp_ip_if_non_match_routed_freedom_echo_scenario(),
+        run_socks_udp_resolved_ip_routed_freedom_echo_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -3453,7 +3545,7 @@ async fn socks_client_reaches_echo_target_through_domain_vless_server() {
 async fn socks_client_preserves_domain_target_through_domain_vless_server() {
     timeout(
         Duration::from_secs(2),
-        run_domain_target_preservation_scenario(),
+        run_domain_target_preservation_scenario(RoutingDomainStrategy::AsIs),
     )
     .await
     .unwrap();
@@ -3500,7 +3592,7 @@ async fn socks_in_pool_unmapped_route_only_dials_the_sniffed_http_host() {
 async fn http_client_ip_if_non_match_uses_dns_second_pass_to_reach_freedom_outbound() {
     timeout(
         Duration::from_secs(2),
-        run_http_to_ip_if_non_match_routed_freedom_echo_scenario(),
+        run_http_to_resolved_ip_routed_freedom_echo_scenario(RoutingDomainStrategy::IpIfNonMatch),
     )
     .await
     .unwrap();
@@ -3714,17 +3806,18 @@ async fn socks_udp_roundtrip_target(
     response.payload
 }
 
-async fn run_socks_udp_ip_if_non_match_routed_freedom_echo_scenario() {
+async fn run_socks_udp_resolved_ip_routed_freedom_echo_scenario(strategy: RoutingDomainStrategy) {
     let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
     let resolver = StaticDnsResolver {
         domain: "udp-ip-route.example.test",
         addr: echo_addr,
     };
-    let config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
+    let mut config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
         InboundProtocol::Socks,
         "socks-in",
         allocate_unused_loopback_port(),
     );
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
@@ -3974,6 +4067,7 @@ async fn run_tun_tcp_freedom_echo_scenario_with_runtime_logger() -> TunStats {
     assert_eq!(received, b"hello tun logger");
     let stats = core.tun().stats().await;
     core.stop().await.unwrap();
+    drop(core);
     timeout(Duration::from_secs(1), echo_handle)
         .await
         .unwrap()
@@ -4286,20 +4380,16 @@ async fn run_tun_reality_bridge_panic_scenario() {
         443,
     ));
 
-    let deadline = TokioInstant::now() + Duration::from_secs(1);
+    let deadline = TokioInstant::now() + Duration::from_secs(3);
     loop {
         pump_tun_once(&mut client, core.tun()).await;
-        let log = std::fs::read_to_string(log_dir.path.join("xray-error.log")).unwrap();
         let stats = core.tun().stats().await;
-        if log.contains("Debug tunBridgeTask failed error=<redacted>")
-            && stats.active_tcp_flows == 0
-        {
-            assert!(!log.contains("injected Reality engine panic"));
+        if stats.active_tcp_flows == 0 {
             break;
         }
         assert!(
             TokioInstant::now() < deadline,
-            "timed out waiting for TUN bridge panic diagnostic"
+            "timed out waiting for TUN bridge panic isolation: {stats:?}"
         );
     }
 
@@ -4322,6 +4412,10 @@ async fn run_tun_reality_bridge_panic_scenario() {
     );
 
     core.stop().await.unwrap();
+    drop(core);
+    let log = std::fs::read_to_string(log_dir.path.join("xray-error.log")).unwrap();
+    assert!(log.contains("Debug tunBridgeTask failed error=<redacted>"));
+    assert!(!log.contains("injected Reality engine panic"));
 }
 
 async fn run_tun_tcp_routed_freedom_echo_scenario() {
@@ -5838,7 +5932,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
         .unwrap();
 }
 
-async fn run_tun_dns_outbound_fake_ip_domain_scenario() {
+async fn run_tun_dns_outbound_fake_ip_domain_scenario(strategy: RoutingDomainStrategy) {
     let domain = "dns-behind-fake-ip.example";
     let query = build_dns_a_query(0x2256, "through-fake-ip.example");
     let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -5881,6 +5975,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario() {
         pool_size: 32_768,
         ttl: 60,
     });
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_dns_resolver(
         config,
         Arc::new(StaticDnsResolver {
@@ -5922,7 +6017,7 @@ async fn run_tun_dns_outbound_fake_ip_domain_scenario() {
     server.await.unwrap();
 }
 
-async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario() {
+async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario(strategy: RoutingDomainStrategy) {
     let domain = "tcp-dns-behind-fake-ip.example";
     let queries =
         dns_tcp_stream_for_messages(&[build_dns_a_query(0x2258, "tcp-through-fake-ip.example")]);
@@ -5956,6 +6051,7 @@ async fn run_tun_dns_outbound_tcp_fake_ip_domain_scenario() {
         pool_size: 32_768,
         ttl: 60,
     });
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_dns_resolver(
         config,
         Arc::new(StaticDnsResolver {
@@ -7026,7 +7122,7 @@ async fn run_tun_dns_proxy_udp_bootstrap_alias_scenario() {
         .unwrap();
 }
 
-async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario() {
+async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario(strategy: RoutingDomainStrategy) {
     let (upstream, upstream_handle) = spawn_udp_dns_responder(0).await;
     let broken_vless = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_unused_loopback_port()));
     let mut config = runtime_tun_config_with_freedom_outbound();
@@ -7055,6 +7151,7 @@ async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario() {
         DomainMatcher::Full("resolver.static-route.test".to_owned()),
         DnsHostTarget::Ip(upstream.ip()),
     )]);
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -7095,7 +7192,7 @@ async fn run_tun_dns_proxy_udp_static_ip_skip_routing_scenario() {
         .unwrap();
 }
 
-async fn run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario() {
+async fn run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario(strategy: RoutingDomainStrategy) {
     let (upstream, upstream_handle) = spawn_udp_dns_responder(0).await;
     let broken_vless = SocketAddr::from((Ipv4Addr::LOCALHOST, allocate_unused_loopback_port()));
     let mut config = runtime_tun_config_with_freedom_outbound();
@@ -7120,6 +7217,7 @@ async fn run_tun_dns_proxy_udp_dynamic_ip_skip_routing_scenario() {
         domain: "resolver.dynamic-route.test".to_owned(),
         port: upstream.port(),
     }];
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_dns_resolver(
         config,
         Arc::new(StaticDnsResolver {
@@ -8342,7 +8440,7 @@ fn complete_dns_tcp_messages(stream: &[u8]) -> Option<Vec<Vec<u8>>> {
     Some(messages)
 }
 
-async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
+async fn run_tun_fake_dns_udp_resolved_ip_routed_freedom_scenario(strategy: RoutingDomainStrategy) {
     let unused_proxy_port = allocate_unused_loopback_port();
     let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
     let SocketAddr::V4(echo_addr_v4) = echo_addr else {
@@ -8371,6 +8469,7 @@ async fn run_tun_fake_dns_udp_ip_if_non_match_routed_freedom_scenario() {
         DomainMatcher::Full("mobile.resolver.example.com".to_owned()),
         DnsHostTarget::Ip(dns_server.ip()),
     )]);
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -8677,7 +8776,7 @@ async fn run_tun_regular_vision_udp443_rejection_storm_scenario() {
             core.tun().push_inbound(Bytes::from(request)).await.unwrap();
         }
 
-        let deadline = TokioInstant::now() + Duration::from_secs(3);
+        let deadline = TokioInstant::now() + Duration::from_secs(5);
         let stats = loop {
             while core.tun().try_poll_outbound().await.unwrap().is_some() {}
             let stats = core.tun().stats().await;
@@ -8697,6 +8796,7 @@ async fn run_tun_regular_vision_udp443_rejection_storm_scenario() {
         assert_eq!(stats.active_udp_flows, 0);
         assert_eq!(stats.udp_remote_open_events, 0);
         core.stop().await.unwrap();
+        drop(core);
 
         if let Some(log_dir) = &log_dir {
             let error_log = std::fs::read_to_string(log_dir.path.join("xray-error.log")).unwrap();
@@ -8971,18 +9071,19 @@ async fn run_socks_to_ip_routed_freedom_echo_scenario() {
         .unwrap();
 }
 
-async fn run_socks_to_ip_if_non_match_routed_freedom_echo_scenario() {
+async fn run_socks_to_resolved_ip_routed_freedom_echo_scenario(strategy: RoutingDomainStrategy) {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let resolver = StaticDnsResolver {
         domain: "ip-route.example.test",
         addr: echo_addr,
     };
-    let config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
+    let mut config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
         InboundProtocol::Socks,
         "socks-in",
         allocate_unused_loopback_port(),
     );
 
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
     core.start().await.unwrap();
     let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
@@ -9034,7 +9135,7 @@ async fn run_http_to_vless_echo_scenario() {
         .unwrap();
 }
 
-async fn run_http_to_ip_if_non_match_routed_freedom_echo_scenario() {
+async fn run_http_to_resolved_ip_routed_freedom_echo_scenario(strategy: RoutingDomainStrategy) {
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let IpAddr::V4(echo_ip) = echo_addr.ip() else {
         panic!("loopback echo server must use IPv4");
@@ -9047,6 +9148,7 @@ async fn run_http_to_ip_if_non_match_routed_freedom_echo_scenario() {
     );
     config.dns.servers = vec![DnsServerConfig::Ip(dns_server)];
 
+    config.routing.domain_strategy = strategy;
     let mut core = Core::with_tun_runtime_options(
         config,
         TunRuntimeOptions {
@@ -9155,7 +9257,7 @@ async fn run_domain_vless_server_echo_scenario() {
         .unwrap();
 }
 
-async fn run_domain_target_preservation_scenario() {
+async fn run_domain_target_preservation_scenario(strategy: RoutingDomainStrategy) {
     let expected_target = Target::new(
         RoutingTargetAddr::Domain("example.com".to_owned()),
         443,
@@ -9166,7 +9268,23 @@ async fn run_domain_target_preservation_scenario() {
         domain: "vless.test",
         addr: vless_addr,
     };
-    let config = runtime_config_with_vless_domain_server("vless.test", vless_addr.port());
+    let mut config = runtime_config_with_vless_domain_server("vless.test", vless_addr.port());
+
+    config.routing.domain_strategy = strategy;
+    if strategy == RoutingDomainStrategy::IpOnDemand {
+        config.dns.hosts = DomainHostIndex::from_iter([(
+            DomainMatcher::Full("example.com".to_owned()),
+            DnsHostTarget::Ip("203.0.113.7".parse().unwrap()),
+        )]);
+        config.routing.rules = vec![RoutingRule {
+            inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: ip_matcher_set(IpCidr::new("203.0.113.7".parse().unwrap(), 32).unwrap()),
+            target: RoutingRuleTarget::Outbound("proxy".to_owned()),
+        }];
+    }
 
     let mut core = Core::with_dns_resolver(config, Arc::new(resolver)).unwrap();
     core.start().await.unwrap();

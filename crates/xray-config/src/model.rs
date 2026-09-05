@@ -78,6 +78,7 @@ pub enum RoutingDomainStrategy {
     #[default]
     AsIs,
     IpIfNonMatch,
+    IpOnDemand,
 }
 
 /// Xray-compatible outbound selector group from `routing.balancers`.
@@ -672,7 +673,7 @@ pub struct VlessOutboundSettings {
 #[derive(Clone, PartialEq, Eq)]
 pub struct VlessUser {
     pub id: Uuid,
-    pub encryption: String,
+    pub encryption: crate::VlessEncryption,
     pub flow: Option<String>,
     pub level: u32,
 }
@@ -892,10 +893,11 @@ impl Default for XhttpXmuxSettings {
 ///
 /// `extra` is intentionally absent from the normalized model: the parser
 /// applies Xray's one-level replacement rule and stores only the effective
-/// settings here. `downloadSettings` remains absent because it adds a second
-/// independent transport stack and is rejected until the runtime can honor it.
+/// settings here. `downloadSettings` contains one independently validated stack;
+/// recursive download configurations are rejected by the parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XhttpSettings {
+    pub download: Option<Box<XhttpDownloadSettings>>,
     pub host: Option<String>,
     /// The configured path, before XHTTP adds a leading/trailing slash and
     /// separates its query string for individual requests.
@@ -933,6 +935,7 @@ pub struct XhttpSettings {
 impl Default for XhttpSettings {
     fn default() -> Self {
         Self {
+            download: None,
             host: None,
             path: String::new(),
             mode: XhttpMode::Auto,
@@ -963,6 +966,14 @@ impl Default for XhttpSettings {
             xmux: XhttpXmuxSettings::default(),
         }
     }
+}
+
+/// One independently addressed XHTTP download carrier. Never recursively nested.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XhttpDownloadSettings {
+    pub address: TargetAddr,
+    pub port: u16,
+    pub stream: StreamSettings,
 }
 
 /// `grpcSettings`. Key spellings are Xray's, inconsistencies included: five of

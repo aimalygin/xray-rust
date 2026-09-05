@@ -1,0 +1,815 @@
+{
+  "schemaVersion": 1,
+  "xrayCoreCommit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "cases": [
+    {
+      "name": "ip-before-domain",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    },
+    {
+      "name": "ip-if-non-match-keeps-domain-first-pass",
+      "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "as-is-does-not-resolve",
+      "routing": {
+        "domainStrategy": "AsIs",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "domain-before-ip",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "rule-priority-before-address-order",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "198.51.100.10/32"
+            ],
+            "outboundTag": "second"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    },
+    {
+      "name": "combined-rule-keeps-original-domain",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip",
+            "domain": [
+              "full:example.test"
+            ]
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    },
+    {
+      "name": "combined-domain-miss-still-resolves",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip",
+            "domain": [
+              "full:other.test"
+            ]
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 1
+    },
+    {
+      "name": "inbound-miss-skips-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip",
+            "inboundTag": [
+              "other"
+            ]
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "network-miss-skips-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip",
+            "network": "udp"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "port-miss-skips-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip",
+            "port": 80
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "udp-routes-on-demand",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip",
+            "network": "udp"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "udp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    },
+    {
+      "name": "dns-error-resumes-domain-rules",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "198.51.100.10/32"
+            ],
+            "outboundTag": "second"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": true,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 1
+    },
+    {
+      "name": "dns-error-falls-back-once",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "198.51.100.10/32"
+            ],
+            "outboundTag": "second"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": true,
+      "skipDNSResolve": false,
+      "expectedTag": "default",
+      "expectedLookups": 1
+    },
+    {
+      "name": "unmatched-address-falls-back",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "198.51.100.10/32"
+            ],
+            "outboundTag": "second"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "192.0.2.1"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "default",
+      "expectedLookups": 1
+    },
+    {
+      "name": "no-ip-rule-no-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "no-rules-no-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": []
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "default",
+      "expectedLookups": 0
+    },
+    {
+      "name": "literal-ip-no-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "203.0.113.7",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 0
+    },
+    {
+      "name": "literal-ipv6-no-dns",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "2001:db8::/32"
+            ],
+            "outboundTag": "ip"
+          }
+        ]
+      },
+      "target": {
+        "address": "2001:db8::7",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 0
+    },
+    {
+      "name": "ipv6-answer-not-first",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "2001:db8::/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "203.0.113.8",
+        "2001:db8::7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    },
+    {
+      "name": "mapped-ipv4-answer",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "::ffff:cb00:7107"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    },
+    {
+      "name": "dns-bootstrap-skip-resolve",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "domain": [
+              "full:example.test"
+            ],
+            "outboundTag": "domain"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": true,
+      "expectedTag": "domain",
+      "expectedLookups": 0
+    },
+    {
+      "name": "dns-bootstrap-skip-falls-back",
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": true,
+      "expectedTag": "default",
+      "expectedLookups": 0
+    },
+    {
+      "name": "ip-if-non-match-second-pass",
+      "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+          {
+            "type": "field",
+            "ip": [
+              "203.0.113.7/32"
+            ],
+            "outboundTag": "ip"
+          },
+          {
+            "type": "field",
+            "ip": [
+              "198.51.100.10/32"
+            ],
+            "outboundTag": "second"
+          }
+        ]
+      },
+      "target": {
+        "address": "example.test",
+        "port": 443,
+        "network": "tcp",
+        "inboundTag": "socks-in"
+      },
+      "answers": [
+        "198.51.100.10",
+        "203.0.113.7"
+      ],
+      "dnsFailure": false,
+      "skipDNSResolve": false,
+      "expectedTag": "ip",
+      "expectedLookups": 1
+    }
+  ]
+}

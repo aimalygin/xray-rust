@@ -42,7 +42,7 @@ fn runtime_config() -> CoreConfig {
                 port: 9,
                 users: vec![VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
-                    encryption: "none".to_owned(),
+                    encryption: Default::default(),
                     flow: None,
                     level: 0,
                 }],

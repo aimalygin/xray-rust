@@ -183,7 +183,7 @@ impl AsyncWrite for FirstUplinkWriter {
 }
 
 #[derive(Clone)]
-enum XhttpModeDial {
+pub enum XhttpModeDial {
     Stream(XhttpDial),
     Http3(XhttpH3Dial),
 }
@@ -246,6 +246,8 @@ impl Default for XhttpXmuxPolicy {
 
 #[derive(Debug, Error)]
 pub enum XhttpTransportError {
+    #[error("XHTTP stream-one cannot use an independent download transport")]
+    SplitStreamOne,
     #[error("XHTTP dial failed: {0}")]
     Dial(#[source] TransportError),
     #[error(transparent)]
@@ -296,6 +298,20 @@ impl XhttpTransportError {
     fn retires_client(&self) -> bool {
         !matches!(self, Self::Io(error) if is_gzip_decode_error(error))
     }
+}
+
+/// Independently resolved endpoint used when opening a split XHTTP flow.
+pub struct XhttpConnectTarget<'a> {
+    pub connector: &'a ConnectorConfig,
+    pub target: &'a Target,
+    pub candidates: &'a [SocketAddr],
+    pub happy_eyeballs: Option<&'a HappyEyeballsConfig>,
+}
+
+struct DownloadContext<'a> {
+    transport: &'a XhttpTransport,
+    client: Arc<XmuxClient>,
+    dial: XhttpModeDial,
 }
 
 /// A dial-ready XHTTP transport shared by every logical stream of one
@@ -502,6 +518,62 @@ impl XhttpTransport {
         candidates: &[SocketAddr],
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, XhttpTransportError> {
+        self.open_stream_with_mode_dial(self.mode_dial(
+            dialer,
+            connector,
+            original_target,
+            candidates,
+            happy_eyeballs,
+        )?)
+        .await
+    }
+
+    /// Opens a logical flow whose GET uses an independently configured pool
+    /// and carrier. Both resolved targets retain the same host dialer.
+    pub async fn open_split_stream(
+        &self,
+        dialer: &TransportDialer,
+        upload: XhttpConnectTarget<'_>,
+        download: &Self,
+        down: XhttpConnectTarget<'_>,
+    ) -> Result<BoxedTransportStream, XhttpTransportError> {
+        let up_dial = self.mode_dial(
+            dialer,
+            upload.connector,
+            upload.target,
+            upload.candidates,
+            upload.happy_eyeballs,
+        )?;
+        let down_dial = download.mode_dial(
+            dialer,
+            down.connector,
+            down.target,
+            down.candidates,
+            down.happy_eyeballs,
+        )?;
+        self.open_with_download(up_dial, Some((download, down_dial)))
+            .await
+    }
+
+    #[doc(hidden)]
+    pub async fn open_split_stream_with_dials(
+        &self,
+        upload: XhttpModeDial,
+        download: &Self,
+        down: XhttpModeDial,
+    ) -> Result<BoxedTransportStream, XhttpTransportError> {
+        self.open_with_download(upload, Some((download, down)))
+            .await
+    }
+
+    fn mode_dial(
+        &self,
+        dialer: &TransportDialer,
+        connector: &ConnectorConfig,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<XhttpModeDial, XhttpTransportError> {
         if self.http_version == XhttpHttpVersion::Http3 {
             let material = dialer
                 .h3_dial_material(connector)
@@ -532,9 +604,7 @@ impl XhttpTransport {
                     .await
                 })
             });
-            return self
-                .open_stream_with_mode_dial(XhttpModeDial::Http3(dial))
-                .await;
+            return Ok(XhttpModeDial::Http3(dial));
         }
 
         let dialer = dialer.clone();
@@ -564,8 +634,7 @@ impl XhttpTransport {
                     .await
             })
         });
-        self.open_stream_with_mode_dial(XhttpModeDial::Stream(dial))
-            .await
+        Ok(XhttpModeDial::Stream(dial))
     }
 
     #[doc(hidden)]
@@ -590,15 +659,47 @@ impl XhttpTransport {
         &self,
         dial: XhttpModeDial,
     ) -> Result<BoxedTransportStream, XhttpTransportError> {
+        self.open_with_download(dial, None).await
+    }
+
+    async fn open_with_download(
+        &self,
+        dial: XhttpModeDial,
+        download: Option<(&Self, XhttpModeDial)>,
+    ) -> Result<BoxedTransportStream, XhttpTransportError> {
+        if download.is_some() && self.config.mode == XhttpMode::StreamOne {
+            return Err(XhttpTransportError::SplitStreamOne);
+        }
         let (client, usage) = self.xmux.select_client().await?;
         let selected = Arc::clone(&client);
+        let mut usages = FlowUsage {
+            upload: usage,
+            download: None,
+        };
+        let down = match download {
+            Some((transport, dial)) => {
+                let (client, usage) = transport.xmux.select_client().await?;
+                usages.download = Some(usage);
+                DownloadContext {
+                    transport,
+                    client,
+                    dial,
+                }
+            }
+            None => DownloadContext {
+                transport: self,
+                client: Arc::clone(&client),
+                dial: dial.clone(),
+            },
+        };
         let result = match self.config.mode {
-            XhttpMode::StreamOne => self.open_stream_one(client, usage, dial).await,
-            XhttpMode::StreamUp => self.open_stream_up(client, usage, dial).await,
-            XhttpMode::PacketUp => self.open_packet_up(client, usage, dial).await,
+            XhttpMode::StreamOne => self.open_stream_one(client, usages, dial).await,
+            XhttpMode::StreamUp => self.open_stream_up(client, usages, dial, &down).await,
+            XhttpMode::PacketUp => self.open_packet_up(client, usages, dial, &down).await,
         };
         if result.is_err() {
             selected.mark_closed();
+            down.client.mark_closed();
         }
         result
     }
@@ -606,7 +707,7 @@ impl XhttpTransport {
     async fn open_stream_one(
         &self,
         client: Arc<XmuxClient>,
-        usage: XmuxUsageLease,
+        usage: FlowUsage,
         dial: XhttpModeDial,
     ) -> Result<BoxedTransportStream, XhttpTransportError> {
         client.consume_request();
@@ -669,13 +770,20 @@ impl XhttpTransport {
     async fn open_stream_up(
         &self,
         client: Arc<XmuxClient>,
-        usage: XmuxUsageLease,
+        usage: FlowUsage,
         dial: XhttpModeDial,
+        down: &DownloadContext<'_>,
     ) -> Result<BoxedTransportStream, XhttpTransportError> {
         let session = self.new_session_id()?;
         let failure = Arc::new(SharedFailure::new());
-        let (downlink, connection_activity, downlink_opener) = self
-            .open_download(&client, &session, dial.clone(), Arc::clone(&failure))
+        let (downlink, connection_activity, downlink_opener) = down
+            .transport
+            .open_download(
+                &down.client,
+                &session,
+                down.dial.clone(),
+                Arc::clone(&failure),
+            )
             .await?;
         client.consume_request();
         let prepared = self.compose_stream(&session, XhttpStreamBody::Streaming)?;
@@ -765,13 +873,20 @@ impl XhttpTransport {
     async fn open_packet_up(
         &self,
         client: Arc<XmuxClient>,
-        usage: XmuxUsageLease,
+        usage: FlowUsage,
         dial: XhttpModeDial,
+        down: &DownloadContext<'_>,
     ) -> Result<BoxedTransportStream, XhttpTransportError> {
         let session = self.new_session_id()?;
         let failure = Arc::new(SharedFailure::new());
-        let (downlink, connection_activity, downlink_opener) = self
-            .open_download(&client, &session, dial.clone(), Arc::clone(&failure))
+        let (downlink, connection_activity, downlink_opener) = down
+            .transport
+            .open_download(
+                &down.client,
+                &session,
+                down.dial.clone(),
+                Arc::clone(&failure),
+            )
             .await?;
         let max_packet = self.draw(self.config.max_each_post_bytes)?;
         let pipe_capacity = usize::try_from(max_packet)
@@ -2059,13 +2174,20 @@ fn lock_unpoisoned<T>(mutex: &StdMutex<T>) -> StdMutexGuard<'_, T> {
     }
 }
 
+// A split flow adds one optional lease without allocating a Vec for every
+// existing non-split stream. Both slots are released by ordinary RAII.
+struct FlowUsage {
+    upload: XmuxUsageLease,
+    download: Option<XmuxUsageLease>,
+}
+
 struct XhttpLogicalStream {
     downlink: BoxedRead,
     uplink: BoxedWrite,
     failure: Arc<SharedFailure>,
     background: Vec<JoinHandle<()>>,
     _connection_activity: Vec<ConnectionActivityLease>,
-    _usage: XmuxUsageLease,
+    _usage: FlowUsage,
 }
 
 struct AbortTaskGuard {
@@ -2093,13 +2215,19 @@ impl Drop for AbortTaskGuard {
 }
 
 impl XhttpLogicalStream {
+    fn retire_clients(&self) {
+        self._usage.upload.client.mark_closed();
+        if let Some(usage) = &self._usage.download {
+            usage.client.mark_closed();
+        }
+    }
     fn new(
         downlink: BoxedRead,
         uplink: BoxedWrite,
         failure: Arc<SharedFailure>,
         background: Vec<JoinHandle<()>>,
         connection_activity: Vec<ConnectionActivityLease>,
-        usage: XmuxUsageLease,
+        usage: FlowUsage,
     ) -> Self {
         Self {
             downlink,
@@ -2129,7 +2257,7 @@ impl AsyncRead for XhttpLogicalStream {
         let this = self.get_mut();
         if let Some((error, retires_client)) = this.failure.read_error(cx) {
             if retires_client {
-                this._usage.client.mark_closed();
+                this.retire_clients();
             }
             return Poll::Ready(Err(error));
         }
@@ -2139,14 +2267,14 @@ impl AsyncRead for XhttpLogicalStream {
         // the server. Pending does not gate the response read; it only
         // registers this same task to be woken when delivery or failure moves.
         if let Poll::Ready(Err(error)) = Pin::new(&mut this.uplink).poll_flush(cx) {
-            this._usage.client.mark_closed();
+            this.retire_clients();
             this.failure.record_io(&error);
             return Poll::Ready(Err(error));
         }
         match Pin::new(&mut this.downlink).poll_read(cx, output) {
             Poll::Ready(Err(error)) => {
                 if !is_gzip_decode_error(&error) {
-                    this._usage.client.mark_closed();
+                    this.retire_clients();
                 }
                 this.failure.record_io(&error);
                 Poll::Ready(Err(error))
@@ -2165,13 +2293,13 @@ impl AsyncWrite for XhttpLogicalStream {
         let this = self.get_mut();
         if let Some((error, retires_client)) = this.failure.write_error(cx) {
             if retires_client {
-                this._usage.client.mark_closed();
+                this.retire_clients();
             }
             return Poll::Ready(Err(error));
         }
         match Pin::new(&mut this.uplink).poll_write(cx, input) {
             Poll::Ready(Err(error)) => {
-                this._usage.client.mark_closed();
+                this.retire_clients();
                 this.failure.record_io(&error);
                 Poll::Ready(Err(error))
             }
@@ -2183,13 +2311,13 @@ impl AsyncWrite for XhttpLogicalStream {
         let this = self.get_mut();
         if let Some((error, retires_client)) = this.failure.write_error(cx) {
             if retires_client {
-                this._usage.client.mark_closed();
+                this.retire_clients();
             }
             return Poll::Ready(Err(error));
         }
         match Pin::new(&mut this.uplink).poll_flush(cx) {
             Poll::Ready(Err(error)) => {
-                this._usage.client.mark_closed();
+                this.retire_clients();
                 this.failure.record_io(&error);
                 Poll::Ready(Err(error))
             }
@@ -2201,13 +2329,13 @@ impl AsyncWrite for XhttpLogicalStream {
         let this = self.get_mut();
         if let Some((error, retires_client)) = this.failure.write_error(cx) {
             if retires_client {
-                this._usage.client.mark_closed();
+                this.retire_clients();
             }
             return Poll::Ready(Err(error));
         }
         match Pin::new(&mut this.uplink).poll_shutdown(cx) {
             Poll::Ready(Err(error)) => {
-                this._usage.client.mark_closed();
+                this.retire_clients();
                 this.failure.record_io(&error);
                 Poll::Ready(Err(error))
             }

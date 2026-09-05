@@ -1,0 +1,794 @@
+{
+  "additionalSurfaces": [
+    {
+      "context": "$.log",
+      "semantics": "Accepted and ignored, including unknown fields; runtime logging belongs to the embedding API."
+    },
+    {
+      "context": "$.inbounds[].settings (tun)",
+      "fields": [
+        "userLevel"
+      ],
+      "semantics": "Only userLevel is consumed. Other input is ignored, not a supported interface/route configuration."
+    },
+    {
+      "context": "streamSettings.realitySettings",
+      "fields": [
+        "serverName",
+        "fingerprint",
+        "publicKey",
+        "shortId",
+        "spiderX",
+        "mldsa65Verify"
+      ],
+      "semantics": "Validated by the dedicated REALITY parser when selected. Additional fields are currently ignored, not advertised as runtime features."
+    },
+    {
+      "context": "$.dns.hosts",
+      "semantics": "Dynamic domain-matcher keys map to an IP, domain alias or nonempty IP array; parser budgets and geodata expansion apply."
+    },
+    {
+      "context": "$.policy.levels",
+      "semantics": "Dynamic u32 level keys map to POLICY_LEVEL."
+    },
+    {
+      "context": "wsSettings.headers; httpupgradeSettings.headers; xhttpSettings.headers",
+      "semantics": "Dynamic header names with string/null values and carrier-specific Host rules."
+    },
+    {
+      "context": "xhttpSettings.downloadSettings; splithttpSettings.downloadSettings; effective extra.downloadSettings",
+      "extends": "STREAM",
+      "fields": [
+        "address",
+        "port"
+      ],
+      "semantics": "Requires address, port 1..65535 and explicit XHTTP method/network. A separate bounded stream is parsed with paths remapped to downloadSettings; recursive downloads, stream-one and chaining are unsupported."
+    }
+  ],
+  "coreVersion": "0.6.0-dev.0",
+  "documentation": "docs/config-tooling.md",
+  "examples": {
+    "dns-routing": {
+      "dns": {
+        "hosts": {
+          "service.example": "192.0.2.80"
+        },
+        "queryStrategy": "UseIPv4",
+        "servers": [
+          "192.0.2.53"
+        ]
+      },
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        },
+        {
+          "protocol": "dns",
+          "settings": {
+            "rewriteAddress": "192.0.2.53",
+            "rewriteNetwork": "tcp",
+            "rewritePort": 53,
+            "rules": [
+              {
+                "action": "return",
+                "qType": "64-65",
+                "rCode": 3
+              }
+            ]
+          },
+          "tag": "dns-out"
+        }
+      ],
+      "routing": {
+        "domainStrategy": "IPOnDemand",
+        "rules": [
+          {
+            "network": "udp,tcp",
+            "outboundTag": "dns-out",
+            "port": 53,
+            "type": "field"
+          },
+          {
+            "ip": [
+              "192.0.2.0/24"
+            ],
+            "outboundTag": "direct",
+            "type": "field"
+          }
+        ]
+      }
+    },
+    "socks-direct": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "freedom",
+          "tag": "direct"
+        }
+      ]
+    },
+    "vless-tls": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "server.example",
+                "port": 443,
+                "users": [
+                  {
+                    "encryption": "none",
+                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "raw",
+            "security": "tls",
+            "tlsSettings": {
+              "fingerprint": "chrome",
+              "serverName": "server.example"
+            }
+          },
+          "tag": "proxy"
+        }
+      ]
+    },
+    "xhttp-download": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "vless",
+          "settings": {
+            "vnext": [
+              {
+                "address": "server.example",
+                "port": 443,
+                "users": [
+                  {
+                    "encryption": "none",
+                    "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                  }
+                ]
+              }
+            ]
+          },
+          "streamSettings": {
+            "network": "xhttp",
+            "security": "tls",
+            "tlsSettings": {
+              "alpn": [
+                "h2"
+              ],
+              "serverName": "server.example"
+            },
+            "xhttpSettings": {
+              "downloadSettings": {
+                "address": "download.example",
+                "network": "xhttp",
+                "port": 443,
+                "security": "tls",
+                "tlsSettings": {
+                  "alpn": [
+                    "h2"
+                  ],
+                  "serverName": "download.example"
+                },
+                "xhttpSettings": {
+                  "path": "/down"
+                }
+              },
+              "mode": "packet-up",
+              "path": "/up"
+            }
+          },
+          "tag": "proxy"
+        }
+      ]
+    }
+  },
+  "kind": "xray-rust-executable-config-contract",
+  "objects": [
+    {
+      "context": "$.routing.balancers[]",
+      "fields": [
+        "tag",
+        "selector",
+        "strategy",
+        "fallbackTag"
+      ],
+      "id": "BALANCER",
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+    },
+    {
+      "context": "$.routing.balancers[].strategy",
+      "fields": [
+        "type",
+        "settings"
+      ],
+      "id": "BALANCER_STRATEGY",
+      "notes": "random, roundRobin, leastPing and leastLoad only; settings are interpreted according to the selected strategy."
+    },
+    {
+      "context": "$.dns",
+      "fields": [
+        "fakeIp",
+        "servers",
+        "hosts",
+        "tag",
+        "queryStrategy",
+        "disableCache",
+        "serveStale",
+        "serveExpiredTTL",
+        "disableFallback",
+        "disableFallbackIfMatch"
+      ],
+      "id": "DNS",
+      "notes": "At most eight servers. Managed selection, cache/fallback policy and IPv4 fake IP only. Hosts and server URL semantics require the executable validator."
+    },
+    {
+      "context": "$.outbounds[].settings (dns)",
+      "fields": [
+        "rewriteNetwork",
+        "rewriteAddress",
+        "rewritePort",
+        "network",
+        "address",
+        "port",
+        "userLevel",
+        "rules",
+        "nonIPQuery",
+        "blockTypes"
+      ],
+      "id": "DNS_OUTBOUND",
+      "notes": "network/address/port aliases override rewrite* values. Deprecated nonIPQuery/blockTypes cannot be combined with rules."
+    },
+    {
+      "context": "$.outbounds[].settings.rules[] (dns)",
+      "fields": [
+        "action",
+        "qType",
+        "qtype",
+        "domain",
+        "rCode"
+      ],
+      "id": "DNS_RULE",
+      "notes": "qType accepts numeric or range-string selectors. qtype and Reject are deprecated aliases with warnings; qType/qtype cannot both be non-null."
+    },
+    {
+      "context": "$.dns.servers[] (object entries)",
+      "fields": [
+        "address",
+        "port",
+        "domains",
+        "expectedIPs",
+        "expectIPs",
+        "unexpectedIPs",
+        "tag",
+        "timeoutMs",
+        "skipFallback",
+        "queryStrategy",
+        "finalQuery"
+      ],
+      "id": "DNS_SERVER",
+      "notes": "expectedIPs is an alias of expectIPs. URL, address/port, query-family and domain/IP-filter combinations are checked by the parser."
+    },
+    {
+      "context": "$.dns.fakeIp",
+      "fields": [
+        "enabled",
+        "ipv4Pool",
+        "poolSize",
+        "ttl"
+      ],
+      "id": "FAKE_IP",
+      "notes": "IPv4 only. Positive poolSize must fit the usable pool after reserved addresses; ttl is positive."
+    },
+    {
+      "context": "streamSettings.finalmask",
+      "fields": [
+        "tcp",
+        "udp",
+        "quicParams"
+      ],
+      "id": "FINALMASK",
+      "notes": "tcp and udp masks accept only null or empty arrays; nonempty masks are unsupported."
+    },
+    {
+      "context": "$.outbounds[].settings (freedom)",
+      "fields": [],
+      "id": "FREEDOM_SETTINGS",
+      "notes": "Only an empty settings object is supported."
+    },
+    {
+      "context": "streamSettings.grpcSettings",
+      "fields": [
+        "authority",
+        "serviceName",
+        "multiMode",
+        "user_agent",
+        "idle_timeout",
+        "health_check_timeout",
+        "permit_without_stream",
+        "initial_windows_size"
+      ],
+      "id": "GRPC",
+      "notes": "Timeout/window numbers are i32 clamped at zero. Header validity and Vision combinations also require core compilation."
+    },
+    {
+      "context": "streamSettings.sockopt.happyEyeballs",
+      "fields": [
+        "prioritizeIPv6",
+        "interleave",
+        "tryDelayMs",
+        "maxConcurrentTry"
+      ],
+      "id": "HAPPY_EYEBALLS",
+      "notes": "Opt-in raw TCP race. tryDelayMs=0 disables it; bounds and transport combinations are validated."
+    },
+    {
+      "context": "streamSettings.httpupgradeSettings",
+      "fields": [
+        "path",
+        "host",
+        "headers",
+        "acceptProxyProtocol"
+      ],
+      "id": "HTTPUPGRADE",
+      "notes": "acceptProxyProtocol is ignored on the client. headers must not contain Host. REALITY is unsupported."
+    },
+    {
+      "context": "$.inbounds[].settings (http)",
+      "fields": [
+        "timeout",
+        "accounts",
+        "allowTransparent",
+        "userLevel",
+        "allowUnauthenticatedLan"
+      ],
+      "id": "HTTP_SETTINGS",
+      "notes": "accounts must be empty; allowTransparent cannot be true. timeout is accepted for compatibility."
+    },
+    {
+      "context": "$.inbounds[]",
+      "fields": [
+        "tag",
+        "protocol",
+        "listen",
+        "port",
+        "settings",
+        "sniffing"
+      ],
+      "id": "INBOUND",
+      "notes": "socks, http and tun. Only loopback listeners unless allowUnauthenticatedLan is explicitly true. TUN settings have a separate compatibility surface."
+    },
+    {
+      "context": "$.routing.balancers[].strategy.settings (leastLoad)",
+      "fields": [
+        "expected",
+        "maxRTT",
+        "tolerance",
+        "baselines",
+        "costs"
+      ],
+      "id": "LEAST_LOAD",
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+    },
+    {
+      "context": "$.routing.balancers[].strategy.settings.costs[]",
+      "fields": [
+        "regexp",
+        "match",
+        "value"
+      ],
+      "id": "LEAST_LOAD_COST",
+      "notes": "Literal substring costs only; regexp=true is unsupported."
+    },
+    {
+      "context": "$.outbounds[].mux",
+      "fields": [
+        "enabled",
+        "concurrency"
+      ],
+      "id": "MUX",
+      "notes": "enabled must be absent or false. concurrency is checked as u32 but does not enable mux."
+    },
+    {
+      "context": "$.observatory",
+      "fields": [
+        "subjectSelector",
+        "probeURL",
+        "probeInterval",
+        "enableConcurrency"
+      ],
+      "id": "OBSERVATORY",
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+    },
+    {
+      "context": "$.outbounds[]",
+      "fields": [
+        "tag",
+        "protocol",
+        "settings",
+        "streamSettings",
+        "mux",
+        "proxySettings",
+        "sendThrough"
+      ],
+      "id": "OUTBOUND",
+      "notes": "freedom, dns and vless only. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+    },
+    {
+      "context": "$.policy",
+      "fields": [
+        "levels",
+        "system"
+      ],
+      "id": "POLICY",
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+    },
+    {
+      "context": "$.policy.levels.*",
+      "fields": [
+        "handshake",
+        "connIdle",
+        "uplinkOnly",
+        "downlinkOnly",
+        "statsUserUplink",
+        "statsUserDownlink",
+        "bufferSize"
+      ],
+      "id": "POLICY_LEVEL",
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+    },
+    {
+      "context": "$.policy.system",
+      "fields": [
+        "statsInboundUplink",
+        "statsInboundDownlink",
+        "statsOutboundUplink",
+        "statsOutboundDownlink"
+      ],
+      "id": "POLICY_SYSTEM",
+      "notes": "Flags are modeled for compatibility; this is not the Xray statistics service."
+    },
+    {
+      "context": "$.outbounds[].proxySettings",
+      "fields": [
+        "tag",
+        "transportLayer"
+      ],
+      "id": "PROXY",
+      "notes": "Requires nonempty tag and transportLayer=true. REALITY chains fail parsing; missing targets, cycles and additional carrier constraints are validated by core compilation."
+    },
+    {
+      "context": "streamSettings.finalmask.quicParams",
+      "fields": [
+        "congestion",
+        "debug",
+        "bbrProfile",
+        "brutalUp",
+        "brutalDown",
+        "udpHop",
+        "initStreamReceiveWindow",
+        "maxStreamReceiveWindow",
+        "initConnectionReceiveWindow",
+        "maxConnectionReceiveWindow",
+        "maxIdleTimeout",
+        "keepAlivePeriod",
+        "disablePathMTUDiscovery",
+        "maxIncomingStreams"
+      ],
+      "id": "QUIC_PARAMS",
+      "notes": "Phase-one XHTTP H3 subset only. Values and cross-field bounds are checked by the parser and carrier compilation; listing a field does not enable every upstream profile."
+    },
+    {
+      "context": "streamSettings.tcpSettings; streamSettings.rawSettings",
+      "fields": [
+        "header",
+        "acceptProxyProtocol"
+      ],
+      "id": "RAW",
+      "notes": "acceptProxyProtocol is ignored on the client."
+    },
+    {
+      "context": "tcpSettings.header; rawSettings.header",
+      "fields": [
+        "type",
+        "request",
+        "response"
+      ],
+      "id": "RAW_HEADER",
+      "notes": "type may be absent, empty or none; request and response are ignored."
+    },
+    {
+      "context": "$",
+      "fields": [
+        "log",
+        "inbounds",
+        "outbounds",
+        "routing",
+        "observatory",
+        "dns",
+        "policy"
+      ],
+      "id": "ROOT",
+      "notes": "log is accepted and ignored. Missing/non-array inbounds and outbounds currently normalize to empty lists. Non-object JSON roots also normalize to an empty model. Parse success alone does not establish runtime usability."
+    },
+    {
+      "context": "$.routing",
+      "fields": [
+        "domainStrategy",
+        "rules",
+        "balancers"
+      ],
+      "id": "ROUTING",
+      "notes": "AsIs, IPIfNonMatch and IPOnDemand. Ordered field rules and bounded balancers only."
+    },
+    {
+      "context": "$.routing.rules[]",
+      "fields": [
+        "type",
+        "inboundTag",
+        "network",
+        "port",
+        "domain",
+        "domains",
+        "ip",
+        "outboundTag",
+        "balancerTag",
+        "ruleTag"
+      ],
+      "id": "ROUTING_RULE",
+      "notes": "Supports field rules only; domains is an alias of domain. Exactly one outboundTag or balancerTag target. Domain/geodata, compact port selectors and aggregate budgets are validated."
+    },
+    {
+      "context": "$.inbounds[].sniffing",
+      "fields": [
+        "enabled",
+        "destOverride",
+        "metadataOnly",
+        "routeOnly",
+        "domainsExcluded",
+        "excludedDomains"
+      ],
+      "id": "SNIFFING",
+      "notes": "domainsExcluded rejects nonempty arrays; excludedDomains is ignored after string-array validation. destOverride supports http, tls and quic when enabled."
+    },
+    {
+      "context": "streamSettings.sockopt",
+      "fields": [
+        "happyEyeballs"
+      ],
+      "id": "SOCKOPT",
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+    },
+    {
+      "context": "$.inbounds[].settings (socks)",
+      "fields": [
+        "auth",
+        "accounts",
+        "udp",
+        "ip",
+        "userLevel",
+        "allowUnauthenticatedLan"
+      ],
+      "id": "SOCKS_SETTINGS",
+      "notes": "auth must be noauth. accounts must be an empty array when present. ip is ignored; udp and userLevel are parsed."
+    },
+    {
+      "context": "$.outbounds[].streamSettings; XHTTP downloadSettings after removing address/port",
+      "fields": [
+        "method",
+        "network",
+        "security",
+        "tlsSettings",
+        "realitySettings",
+        "tcpSettings",
+        "rawSettings",
+        "wsSettings",
+        "httpupgradeSettings",
+        "grpcSettings",
+        "xhttpSettings",
+        "splithttpSettings",
+        "finalmask",
+        "sockopt"
+      ],
+      "id": "STREAM",
+      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
+    },
+    {
+      "context": "streamSettings.tlsSettings",
+      "fields": [
+        "serverName",
+        "allowInsecure",
+        "fingerprint",
+        "alpn",
+        "pinnedPeerCertSha256",
+        "verifyPeerCertByName"
+      ],
+      "id": "TLS",
+      "notes": "allowInsecure=true is rejected. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation."
+    },
+    {
+      "context": "streamSettings.finalmask.quicParams.udpHop",
+      "fields": [
+        "ports",
+        "interval"
+      ],
+      "id": "UDP_HOP",
+      "notes": "The parser models numeric and comma/range ports, but core carrier compilation rejects nonempty hopping. Empty/default ports are the supported runtime subset."
+    },
+    {
+      "context": "$.outbounds[].settings (vless)",
+      "fields": [
+        "vnext"
+      ],
+      "id": "VLESS",
+      "notes": "Exactly one vnext server is required."
+    },
+    {
+      "context": "$.outbounds[].settings.vnext[0]",
+      "fields": [
+        "address",
+        "port",
+        "users"
+      ],
+      "id": "VLESS_SERVER",
+      "notes": "Nonempty address, port 1..65535 and at least one UUID user. Unencrypted public-address destinations are rejected."
+    },
+    {
+      "context": "$.outbounds[].settings.vnext[0].users[]",
+      "fields": [
+        "id",
+        "encryption",
+        "flow",
+        "level",
+        "email",
+        "security"
+      ],
+      "id": "VLESS_USER",
+      "notes": "Runtime selects the first user. encryption defaults to none; non-none uses the bounded VLESS encryption parser. flow supports empty, xtls-rprx-vision and xtls-rprx-vision-udp443. email is ignored; security is type-checked but ignored."
+    },
+    {
+      "context": "streamSettings.wsSettings",
+      "fields": [
+        "path",
+        "host",
+        "headers",
+        "acceptProxyProtocol",
+        "heartbeatPeriod"
+      ],
+      "id": "WEBSOCKET",
+      "notes": "acceptProxyProtocol is ignored on the client. Host headers are normalized with a deprecation warning. REALITY is unsupported."
+    },
+    {
+      "context": "streamSettings.xhttpSettings; splithttpSettings; effective extra replacement",
+      "fields": [
+        "host",
+        "path",
+        "mode",
+        "headers",
+        "xPaddingBytes",
+        "xPaddingObfsMode",
+        "xPaddingKey",
+        "xPaddingHeader",
+        "xPaddingPlacement",
+        "xPaddingMethod",
+        "uplinkHTTPMethod",
+        "sessionIDPlacement",
+        "sessionIDKey",
+        "sessionIDTable",
+        "sessionIDLength",
+        "seqPlacement",
+        "seqKey",
+        "uplinkDataPlacement",
+        "uplinkDataKey",
+        "uplinkChunkSize",
+        "noGRPCHeader",
+        "noSSEHeader",
+        "scMaxEachPostBytes",
+        "scMinPostsIntervalMs",
+        "scMaxConcurrentPosts",
+        "scMaxBufferedPosts",
+        "scStreamUpServerSecs",
+        "serverMaxHeaderBytes",
+        "xmux",
+        "downloadSettings",
+        "extra"
+      ],
+      "id": "XHTTP",
+      "notes": "extra replaces rather than merges outer values except host/path/mode. Nested extra is inert. downloadSettings supports an independent XHTTP stack for packet-up/stream-up only; no recursive download. scMaxConcurrentPosts is ignored with a warning."
+    },
+    {
+      "context": "xhttpSettings.xmux; splithttpSettings.xmux; effective extra.xmux",
+      "fields": [
+        "maxConcurrency",
+        "maxConnections",
+        "cMaxReuseTimes",
+        "hMaxRequestTimes",
+        "hMaxReusableSecs",
+        "hKeepAlivePeriod"
+      ],
+      "id": "XMUX",
+      "notes": "Positive maxConnections and maxConcurrency are mutually exclusive. Ranges and default/zero semantics require parser validation."
+    }
+  ],
+  "schemaVersion": 1,
+  "validation": {
+    "acceptance": "Exactly the linked xray-config parser with the same geodata search paths. Warnings do not invalidate an input.",
+    "command": [
+      "xray-rust",
+      "config",
+      "check",
+      "--config",
+      "-",
+      "--json"
+    ],
+    "exitCodes": {
+      "0": "accepted, possibly with warnings",
+      "1": "parser rejected",
+      "2": "arguments, input or output failure"
+    },
+    "fieldSemantics": "Recognized keys include compatibility-only and restricted fields. Unknown keys fail when their grammar node is parsed. Activation, value types, aliases, cross-field constraints and budgets are enforced by the executable validator.",
+    "geodata": "Local files are read only when referenced; no downloads. CLI defaults match run (config directory, working directory, executable directory). --geodata-dir selects an exclusive ordered search list.",
+    "notChecked": [
+      "core outbound graph/carrier compilation",
+      "listener binding",
+      "platform host policy",
+      "network reachability"
+    ],
+    "rustFunction": "xray_config::tooling::validate_xray_json",
+    "scope": "parser"
+  }
+}

@@ -45,6 +45,7 @@ data class XrayFfiInfo(
 enum class XrayRoutingDomainStrategy(val wireValue: String) {
     AsIs("asIs"),
     IpIfNonMatch("ipIfNonMatch"),
+    IpOnDemand("ipOnDemand"),
     ;
 
     companion object {

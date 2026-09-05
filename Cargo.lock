@@ -82,6 +82,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
+name = "arrayref"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
+
+[[package]]
+name = "arrayvec"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
 name = "asn1-rs"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -178,6 +193,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -203,6 +224,19 @@ name = "bitflags"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+
+[[package]]
+name = "blake3"
+version = "1.8.5"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+ "cpufeatures 0.3.0",
+ "zeroize",
+]
 
 [[package]]
 name = "block-buffer"
@@ -295,6 +329,7 @@ checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
  "crypto-common 0.1.7",
  "inout",
+ "zeroize",
 ]
 
 [[package]]
@@ -334,6 +369,12 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "cpufeatures"
@@ -2481,7 +2522,7 @@ dependencies = [
 
 [[package]]
 name = "xray-bench"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2506,9 +2547,10 @@ dependencies = [
 
 [[package]]
 name = "xray-cli"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "libc",
+ "serde_json",
  "thiserror",
  "tokio",
  "xray-config",
@@ -2517,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "xray-config"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "libc",
  "prost",
@@ -2527,12 +2569,13 @@ dependencies = [
  "uuid",
  "xray-routing",
  "xray-utls",
+ "xray-vless-encryption",
  "zeroize",
 ]
 
 [[package]]
 name = "xray-core-rs"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2559,12 +2602,13 @@ dependencies = [
  "xray-runtime",
  "xray-transport",
  "xray-tun",
+ "xray-vless-encryption",
  "zeroize",
 ]
 
 [[package]]
 name = "xray-ffi"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "bytes",
  "libc",
@@ -2580,7 +2624,7 @@ dependencies = [
 
 [[package]]
 name = "xray-proxy"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "bytes",
  "prost",
@@ -2593,7 +2637,7 @@ dependencies = [
 
 [[package]]
 name = "xray-routing"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "aho-corasick",
  "bytes",
@@ -2603,7 +2647,7 @@ dependencies = [
 
 [[package]]
 name = "xray-runtime"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "thiserror",
  "tokio",
@@ -2622,11 +2666,12 @@ dependencies = [
  "xray-proxy",
  "xray-transport",
  "xray-tun",
+ "xray-vless-encryption",
 ]
 
 [[package]]
 name = "xray-transport"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2667,7 +2712,7 @@ dependencies = [
 
 [[package]]
 name = "xray-tun"
-version = "0.5.0"
+version = "0.6.0-dev.0"
 dependencies = [
  "bytes",
  "thiserror",
@@ -2676,7 +2721,24 @@ dependencies = [
 
 [[package]]
 name = "xray-utls"
-version = "0.5.0"
+version = "0.6.0-dev.0"
+
+[[package]]
+name = "xray-vless-encryption"
+version = "0.6.0-dev.0"
+dependencies = [
+ "aes",
+ "aws-lc-rs",
+ "base64",
+ "blake3",
+ "ctr",
+ "rand 0.8.6",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "x25519-dalek",
+ "zeroize",
+]
 
 [[package]]
 name = "yasna"

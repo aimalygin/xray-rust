@@ -1,0 +1,19 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1107,6 +1107,16 @@
+     pub fn new_derive_key(context: &str) -> Self {
+         let context_key = hazmat::hash_derive_key_context(context);
+         let context_key_words = platform::words_from_le_bytes_32(&context_key);
++        Self::new_internal(&context_key_words, DERIVE_KEY_MATERIAL)
++    }
++
++    /// Byte-context variant for interoperability with protocols using the
++    /// BLAKE3 C `blake3_hasher_init_derive_key_raw` API. The caller must retain
++    /// its protocol's domain separation; no text encoding is applied.
++    pub fn new_derive_key_bytes(context: &[u8]) -> Self {
++        let context_key = hash_all_at_once::<join::SerialJoin>(context, IV, DERIVE_KEY_CONTEXT)
++            .root_hash();
++        let context_key_words = platform::words_from_le_bytes_32(context_key.as_bytes());
+         Self::new_internal(&context_key_words, DERIVE_KEY_MATERIAL)
+     }
+ 

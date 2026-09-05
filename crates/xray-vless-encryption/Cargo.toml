@@ -1,0 +1,28 @@
+[package]
+name = "xray-vless-encryption"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Bounded VLESS encryption client for the pinned Xray wire contract"
+
+[features]
+fuzzing = ["tokio/test-util"]
+
+[dependencies]
+aes.workspace = true
+aws-lc-rs.workspace = true
+base64.workspace = true
+blake3.workspace = true
+ctr.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+x25519-dalek.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

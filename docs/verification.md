@@ -11,6 +11,12 @@ this path. Workflow setup can still download pinned actions, toolchains, and
 dependencies, so this does not mean that provisioning a fresh CI runner is an
 offline operation.
 
+Configuration tooling is part of the ordinary Rust test gate. It checks the
+generated contract for drift, shared canonical/rejected inputs, an unknown-field
+mutation at each registered parser node, VLESS/XHTTP oracle fixtures, and CLI
+JSON reports, exit codes and exclusive geodata lookup. See
+[configuration tooling](config-tooling.md) for focused reproduction commands.
+
 ### Tagged release candidates
 
 A tagged release candidate adds a blocking `rc-interop` gate. That job checks
@@ -382,8 +388,11 @@ For TLS, an omitted `sni` reuses the remote host and an omitted `fp` selects
 same 32-byte key, so this difference does not change the handshake wire.
 
 This is deliberately not a claim of complete support for every field in the
-current Xray share-link proposal. Non-`none` VLESS encryption is not
-implemented. The Apple share-link importer still rejects non-empty modern TLS
+current Xray share-link proposal. The bounded
+`mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` subset is implemented
+on raw/WS/HTTPUpgrade/gRPC/XHTTP, including Vision, one-to-eight mixed
+X25519/ML-KEM-768 NFS keys, and bounded configurable padding. The Apple share-link importer still
+rejects non-empty modern TLS
 `pcs`, `vcn`, and `ech`/`echQuery` rather than guessing a host-verification
 policy; canonical Xray JSON supports `pinnedPeerCertSha256` directly, while
 canonical Xray JSON also supports comma-separated `verifyPeerCertByName` with
@@ -391,9 +400,9 @@ ORed DNS/IP SAN checks independent of SNI. The Apple importer still rejects a
 non-empty `vcn` because it has no explicit host-policy seam; ECH remains
 fail-closed in both paths. An explicitly empty share parameter is treated as
 absent. Canonical `allowInsecure: true`, including
-legacy importer output, is rejected. XHTTP with a Vision
-flow is rejected; current Xray guidance pairs XHTTP with VLESS encryption
-rather than the raw-transport Vision flow. The importer also retains its
+legacy importer output, is rejected. XHTTP with a Vision flow requires VLESS
+encryption. Swift/Kotlin importers support encrypted raw and XHTTP links;
+WS/HTTPUpgrade/gRPC use canonical JSON. The importer also retains its
 pre-existing case-insensitive query-name lookup even though the current share
 proposal specifies case-sensitive names; duplicate consumed fields are rejected.
 
@@ -561,3 +570,23 @@ the entry by hand:
 
 See [mobile testing](mobile-testing.md) for prerequisites, outputs, and
 on-device responsibilities.
+
+
+## Independent XHTTP download gate
+
+Run `bash scripts/check-xhttp-download-oracle.sh` with the exact clean
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c` checkout. This gate is part of the
+blocking `go-oracles` job for ordinary changes and releases. It checks the
+shared Rust/Go configuration fixtures and builds all three local helper
+processes from pinned sources. The application matrix covers independent
+H1/H2/H3 uploads/downloads, REALITY, plaintext and VLESS encryption, Vision,
+server-first data, concurrent/resumed flows, TCP and UDP/XUDP. The TLS frontends
+proxy into one real Xray session namespace; all network endpoints are loopback,
+and the ephemeral TLS certificate is SHA-256-pinned without allowInsecure.
+
+The generic ignored interop invocation skips `vless_encryption::` and
+`xhttp_download::`; their dedicated scripts run them with all prerequisites.
+Transport tests independently check headers/session identity, both usage leases,
+setup cancellation, download failure, upload rollover and H3 request cancellation.
+The config/FFI fuzz corpora include valid and recursively invalid download stacks.
+Physical device and performance evidence is still required for the final candidate.

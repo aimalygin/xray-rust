@@ -191,7 +191,10 @@ main() {
   ANDROID_NDK_HOME="$ndk_path" \
   XRAY_FFI_ANDROID_DIR="$XRAY_FFI_ANDROID_DIR" \
   GRADLE_USER_HOME="$GRADLE_USER_HOME" \
-    "$GRADLE_BIN" -p "$ANDROID_PROJECT_DIR" :xraymobile:assembleDebug --no-daemon
+    "$GRADLE_BIN" -p "$ANDROID_PROJECT_DIR" \
+      :xraymobile:assembleDebug \
+      --dependency-verification strict \
+      --no-daemon
 
   local aar="$ANDROID_PROJECT_DIR/xraymobile/build/outputs/aar/xraymobile-debug.aar"
   if [[ ! -f "$aar" ]]; then

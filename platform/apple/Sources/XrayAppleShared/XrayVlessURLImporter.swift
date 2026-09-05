@@ -92,7 +92,7 @@ private struct VlessEndpoint {
         var allowInsecure: Bool?
     }
 
-    private enum XHTTPSecurity {
+    private enum StreamSecurity {
         case none
         case tls(TLSParameters)
         case reality(RealityParameters)
@@ -103,12 +103,12 @@ private struct VlessEndpoint {
         var path: String
         var mode: String
         var extra: [String: Any]?
-        var security: XHTTPSecurity
+        var security: StreamSecurity
     }
 
     private enum Transport {
-        case rawReality(RealityParameters)
-        case xhttp(XHTTPParameters)
+        case raw(StreamSecurity, flow: String?)
+        case xhttp(XHTTPParameters, flow: String?)
     }
 
     var userID: String
@@ -152,13 +152,46 @@ private struct VlessEndpoint {
         let network = query.optional("type", default: Self.canonicalNetwork)
 
         let encryption = query.optional("encryption", default: "none")
-        try Self.require(encryption, named: "encryption", toEqual: "none")
+        guard XrayVlessEncryption.isSupported(encryption) else {
+            throw XrayVlessURLImportError.unsupportedQueryValue(
+                name: "encryption", value: "<redacted>", expected: XrayVlessEncryption.expected
+            )
+        }
 
         let security = query.optional("security", default: "none")
         let flow = query.optional("flow", default: "")
 
         let transport: Transport
-        if Self.networkAliases.contains(network) {
+        if encryption != "none" && Self.networkAliases.contains(network) {
+            try Self.require(network, named: "type", toEqualOneOf: Self.networkAliases)
+            try Self.require(flow, named: "flow", toEqualOneOf: ["", Self.visionFlow, Self.visionUdp443Flow])
+            try Self.rejectUnsupportedSecurityQueryValues(in: query)
+            for name in ["host", "path", "mode", "extra"] where query.value(name) != nil {
+                throw XrayVlessURLImportError.unsupportedQueryParameter(name)
+            }
+            let rawSecurity: StreamSecurity
+            switch security {
+            case "none":
+                try Self.rejectRealityOnlyQueryValues(in: query)
+                for name in ["sni", "fp", "alpn", "allowInsecure"] where query.value(name) != nil {
+                    throw XrayVlessURLImportError.unsupportedQueryParameter(name)
+                }
+                rawSecurity = .none
+            case "tls":
+                try Self.rejectRealityOnlyQueryValues(in: query)
+                let tls = try Self.tlsParameters(from: query, defaultServerName: host)
+                if tls.allowInsecure == true {
+                    throw XrayVlessURLImportError.unsupportedQueryValue(name: "allowInsecure", value: "true", expected: "false")
+                }
+                rawSecurity = .tls(tls)
+            case "reality":
+                try Self.validateRealityCompatibilityQueryValues(in: query)
+                rawSecurity = .reality(try Self.xhttpRealityParameters(from: query, defaultServerName: host))
+            default:
+                throw XrayVlessURLImportError.unsupportedQueryValue(name: "security", value: security, expected: "none or tls or reality")
+            }
+            transport = .raw(rawSecurity, flow: flow.isEmpty ? nil : flow)
+        } else if Self.networkAliases.contains(network) {
             try Self.require(security, named: "security", toEqual: "reality")
             if !flow.isEmpty {
                 try Self.require(
@@ -167,20 +200,15 @@ private struct VlessEndpoint {
                     toEqualOneOf: [Self.visionFlow, Self.visionUdp443Flow]
                 )
             }
-            transport = .rawReality(
-                try Self.rawRealityParameters(
-                    from: query,
-                    flow: flow.isEmpty ? nil : flow
-                )
+            transport = .raw(
+                .reality(try Self.rawRealityParameters(from: query, flow: flow.isEmpty ? nil : flow)),
+                flow: flow.isEmpty ? nil : flow
             )
         } else if Self.xhttpNetworkAliases.contains(network) {
-            guard flow.isEmpty else {
-                throw XrayVlessURLImportError.unsupportedQueryValue(
-                    name: "flow",
-                    value: flow,
-                    expected: "empty"
-                )
+            if encryption == "none" && !flow.isEmpty {
+                throw XrayVlessURLImportError.unsupportedQueryValue(name: "flow", value: flow, expected: "empty")
             }
+            try Self.require(flow, named: "flow", toEqualOneOf: ["", Self.visionFlow, Self.visionUdp443Flow])
             let rawMode = query.optional("mode", default: "auto")
             let mode = rawMode.isEmpty ? "auto" : rawMode
             try Self.require(
@@ -190,15 +218,17 @@ private struct VlessEndpoint {
             )
             let extra = try query.value("extra").map(Self.decodeXHTTPExtra)
             try Self.rejectUnsupportedSecurityQueryValues(in: query)
-            let xhttpSecurity: XHTTPSecurity
+            let xhttpSecurity: StreamSecurity
             switch security {
             case "none":
                 xhttpSecurity = .none
             case "tls":
                 try Self.rejectRealityOnlyQueryValues(in: query)
-                xhttpSecurity = .tls(
-                    try Self.tlsParameters(from: query, defaultServerName: host)
-                )
+                let tls = try Self.tlsParameters(from: query, defaultServerName: host)
+                if encryption != "none" && tls.allowInsecure == true {
+                    throw XrayVlessURLImportError.unsupportedQueryValue(name: "allowInsecure", value: "true", expected: "false")
+                }
+                xhttpSecurity = .tls(tls)
             case "reality":
                 try Self.validateRealityCompatibilityQueryValues(in: query)
                 xhttpSecurity = .reality(
@@ -221,7 +251,8 @@ private struct VlessEndpoint {
                     mode: mode,
                     extra: extra,
                     security: xhttpSecurity
-                )
+                ),
+                flow: flow.isEmpty ? nil : flow
             )
         } else {
             throw XrayVlessURLImportError.unsupportedQueryValue(
@@ -249,16 +280,13 @@ private struct VlessEndpoint {
         ]
         let streamSettings: [String: Any]
         switch transport {
-        case let .rawReality(reality):
-            if let flow = reality.flow {
-                user["flow"] = flow
-            }
-            streamSettings = [
-                "network": Self.canonicalNetwork,
-                "security": "reality",
-                "realitySettings": Self.realitySettings(from: reality),
-            ]
-        case let .xhttp(xhttp):
+        case let .raw(security, flow):
+            if let flow { user["flow"] = flow }
+            var raw = Self.securitySettings(security)
+            raw["network"] = Self.canonicalNetwork
+            streamSettings = raw
+        case let .xhttp(xhttp, flow):
+            if let flow { user["flow"] = flow }
             var xhttpSettings: [String: Any] = [
                 "host": xhttp.host,
                 "path": xhttp.path,
@@ -271,26 +299,7 @@ private struct VlessEndpoint {
                 "network": "xhttp",
                 "xhttpSettings": xhttpSettings,
             ]
-            switch xhttp.security {
-            case .none:
-                xhttpStreamSettings["security"] = "none"
-            case let .tls(tls):
-                var tlsSettings: [String: Any] = [
-                    "serverName": tls.serverName,
-                    "fingerprint": tls.fingerprint,
-                ]
-                if let alpn = tls.alpn {
-                    tlsSettings["alpn"] = alpn
-                }
-                if let allowInsecure = tls.allowInsecure {
-                    tlsSettings["allowInsecure"] = allowInsecure
-                }
-                xhttpStreamSettings["security"] = "tls"
-                xhttpStreamSettings["tlsSettings"] = tlsSettings
-            case let .reality(reality):
-                xhttpStreamSettings["security"] = "reality"
-                xhttpStreamSettings["realitySettings"] = Self.realitySettings(from: reality)
-            }
+            xhttpStreamSettings.merge(Self.securitySettings(xhttp.security)) { _, new in new }
             streamSettings = xhttpStreamSettings
         }
 
@@ -372,7 +381,7 @@ private struct VlessEndpoint {
         guard value == expected else {
             throw XrayVlessURLImportError.unsupportedQueryValue(
                 name: name,
-                value: value,
+                value: name == "encryption" ? "<redacted>" : value,
                 expected: expected
             )
         }
@@ -440,6 +449,31 @@ private struct VlessEndpoint {
             alpn: alpn,
             allowInsecure: allowInsecure
         )
+    }
+
+    private static func securitySettings(_ security: StreamSecurity) -> [String: Any] {
+        var settings: [String: Any] = [:]
+        switch security {
+        case .none:
+            settings["security"] = "none"
+        case let .tls(tls):
+            var tlsSettings: [String: Any] = [
+                "serverName": tls.serverName,
+                "fingerprint": tls.fingerprint,
+            ]
+            if let alpn = tls.alpn {
+                tlsSettings["alpn"] = alpn
+            }
+            if let allowInsecure = tls.allowInsecure {
+                tlsSettings["allowInsecure"] = allowInsecure
+            }
+            settings["security"] = "tls"
+            settings["tlsSettings"] = tlsSettings
+        case let .reality(reality):
+            settings["security"] = "reality"
+            settings["realitySettings"] = Self.realitySettings(from: reality)
+        }
+        return settings
     }
 
     private static func rawRealityParameters(

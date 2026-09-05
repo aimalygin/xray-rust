@@ -230,17 +230,19 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     }
 
     func testRoutingPolicySnapshotDecodesVersionedWireContract() throws {
-        let json = #"{"schemaVersion":1,"revision":4,"ruleCount":12,"domainStrategy":"ipIfNonMatch"}"#
+        for strategy in [XrayRoutingDomainStrategy.asIs, .ipIfNonMatch, .ipOnDemand] {
+            let json = #"{"schemaVersion":1,"revision":4,"ruleCount":12,"domainStrategy":"\#(strategy.rawValue)"}"#
 
-        let snapshot = try JSONDecoder().decode(
-            XrayRoutingPolicySnapshot.self,
-            from: Data(json.utf8)
-        )
+            let snapshot = try JSONDecoder().decode(
+                XrayRoutingPolicySnapshot.self,
+                from: Data(json.utf8)
+            )
 
-        XCTAssertEqual(snapshot.schemaVersion, 1)
-        XCTAssertEqual(snapshot.revision, 4)
-        XCTAssertEqual(snapshot.ruleCount, 12)
-        XCTAssertEqual(snapshot.domainStrategy, .ipIfNonMatch)
+            XCTAssertEqual(snapshot.schemaVersion, 1)
+            XCTAssertEqual(snapshot.revision, 4)
+            XCTAssertEqual(snapshot.ruleCount, 12)
+            XCTAssertEqual(snapshot.domainStrategy, strategy)
+        }
     }
 
     func testOutboundSelectionSnapshotDecodesVersionedWireContract() throws {
