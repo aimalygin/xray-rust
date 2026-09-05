@@ -22,6 +22,15 @@ remain outside that result. No C ABI entry point or header was changed.
 
 Release-tooling findings addressed during candidate verification:
 
+- The first clean GitHub checkout exposed five omitted upstream BLAKE3
+  files: its crate lockfile and four CMake modules. They existed locally but
+  were hidden by the vendored ignore rules (including a case-insensitive
+  `blake3` directory match on macOS). The canonical files are now tracked;
+  provenance validation also rejects untracked files, including ignored
+  files, in either vendor tree before comparing the pinned archives. This
+  guard reproduced the omission locally and passed after the files were
+  added to the index. Runtime Rust sources and dependency versions did not
+  change as part of this correction.
 - Host hardening, fuzz and controlled-network jobs previously required an RC
   tag. The candidate branch and manual CI now run these same checks before
   device evidence exists. Executed classifier regressions distinguish RC tag

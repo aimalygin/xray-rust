@@ -5,6 +5,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 temporary="$(mktemp -d "${TMPDIR:-/tmp}/xray-vendor-provenance.XXXXXX")"
 trap 'rm -rf "$temporary"' EXIT
 
+# Include ignored files here: an upstream .gitignore can hide crate files on
+# the developer's filesystem even though a clean checkout will omit them.
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h3-quinn)"
+if [[ -n "$untracked" ]]; then
+  echo 'vendored source files are absent from the Git index:' >&2
+  printf '%s\n' "$untracked" >&2
+  exit 1
+fi
+
 download_and_verify() {
   local name="$1"
   local version="$2"
