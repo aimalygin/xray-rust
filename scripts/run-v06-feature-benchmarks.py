@@ -291,7 +291,11 @@ def main() -> None:
             inbound(ports[0], "none", {"network": "raw"}),
             inbound(ports[1], f"mlkem768x25519plus.random.600s.{keys['private']}", {"network": "raw"}),
             inbound(ports[2], "none", {"network": "xhttp", "xhttpSettings": {"path": "/split/", "mode": "auto"}})],
-            "outbounds": [{"protocol": "freedom"}]}
+            # The pinned Xray freedom policy blocks private destinations by
+            # default. Match the existing local interop fixture's explicit
+            # allowance so the synthetic loopback origin is reachable.
+            "outbounds": [{"protocol": "freedom", "settings": {
+                "finalRules": [{"action": "allow"}]}}]}
         write_json(scratch / "server.json", config)
         with EchoServer(("127.0.0.1", 0), Echo) as echo, contextlib.ExitStack() as stack:
             thread = threading.Thread(target=echo.serve_forever, daemon=True)
@@ -320,6 +324,7 @@ def main() -> None:
                 for name, outbound in [("process", {"protocol": "freedom"}),
                                        ("plainVless", vless(ports[0])),
                                        ("encryption", vless(ports[1], encryption))]:
+                    print(f"  measuring {name}", flush=True)
                     with core(binary, outbound, scratch, name) as (_, proxy):
                         values[name].append(bulk(proxy, origin))
                 for name, routing in [("directLatency", False), ("routing", True)]:
