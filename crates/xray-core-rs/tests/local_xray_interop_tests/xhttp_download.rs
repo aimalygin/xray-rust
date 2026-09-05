@@ -58,7 +58,11 @@ impl Drop for Task {
     }
 }
 
-async fn greeting_echo(outbound: &VlessTcpOutbound, resolver: &Resolver, dialer: &TransportDialer) {
+async fn greeting_echo(
+    outbound: &VlessTcpOutbound,
+    resolver: &Resolver,
+    dialer: &TransportDialer,
+) -> std::io::Result<()> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
     let payload: Vec<u8> = (0..16387).map(|n| (n * 197 + 31) as u8).collect();
@@ -74,15 +78,44 @@ async fn greeting_echo(outbound: &VlessTcpOutbound, resolver: &Resolver, dialer:
     let mut stream =
         open_vless_tcp_stream_with_resolver_and_dialer(outbound, &target, resolver, dialer)
             .await
-            .unwrap();
+            .map_err(std::io::Error::other)?;
     let mut greeting = [0; 8];
-    stream.read_exact(&mut greeting).await.unwrap();
+    stream.read_exact(&mut greeting).await?;
     assert_eq!(&greeting, b"greeting");
-    stream.write_all(&payload).await.unwrap();
-    stream.flush().await.unwrap();
+    stream.write_all(&payload).await?;
+    stream.flush().await?;
     let mut received = vec![0; size];
-    stream.read_exact(&mut received).await.unwrap();
+    stream.read_exact(&mut received).await?;
     assert_eq!(received.as_ref(), payload);
+    Ok(())
+}
+
+async fn warm_up_download_reality(xray: &XrayServer, outbound: &VlessTcpOutbound) {
+    // Match the existing REALITY interop gate: a fresh Go listener's first
+    // cover-origin detector contact can consume a connection with an early
+    // EOF. Warm the exact split carrier before the measured session matrix.
+    // These pools, DNS observations and tickets never enter the assertions
+    // below. A second failed probe is a hard failure, not a matrix retry.
+    let resolver = Resolver::default();
+    let dialer = TransportDialer::system().unwrap();
+    let first = timeout(
+        selected_reality_server_warmup_timeout(),
+        greeting_echo(outbound, &resolver, &dialer),
+    )
+    .await;
+    if matches!(first, Ok(Ok(()))) {
+        return;
+    }
+    let second = timeout(
+        selected_reality_server_warmup_timeout(),
+        greeting_echo(outbound, &resolver, &dialer),
+    )
+    .await;
+    assert!(
+        matches!(second, Ok(Ok(()))),
+        "split REALITY detector warmup failed: first={first:?}, second={second:?}; {}",
+        xray.logs()
+    );
 }
 
 async fn datagram(outbound: &VlessTcpOutbound, resolver: &Resolver, dialer: &TransportDialer) {
@@ -227,6 +260,16 @@ async fn full_xray_download_carrier_matrix() {
                             user["flow"] = "xtls-rprx-vision".into();
                         }
                         let parsed = parse_xray_json(&json!({"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"upload.test","port":port,"users":[user]}]},"streamSettings":upload}]}).to_string()).unwrap();
+                        if protection == "reality" {
+                            let TcpOutbound::Vless(warmup) =
+                                OutboundRouter::new(Arc::new(parsed.config.clone()))
+                                    .select_tcp_outbound()
+                                    .unwrap()
+                            else {
+                                panic!("VLESS")
+                            };
+                            warm_up_download_reality(&xray, &warmup).await;
+                        }
                         let TcpOutbound::Vless(outbound) =
                             OutboundRouter::new(Arc::new(parsed.config))
                                 .select_tcp_outbound()
@@ -242,15 +285,16 @@ async fn full_xray_download_carrier_matrix() {
                         let result = timeout(Duration::from_secs(25), async {
                             // First flow obtains a ticket. Later flows reuse both pools and the
                             // authenticated ticket; simultaneous flows exercise separate leases.
-                            greeting_echo(&outbound, &resolver, &dialer).await;
-                            tokio::join!(
+                            greeting_echo(&outbound, &resolver, &dialer).await?;
+                            tokio::try_join!(
                                 greeting_echo(&outbound, &resolver, &dialer),
                                 greeting_echo(&outbound, &resolver, &dialer)
-                            );
+                            )?;
                             datagram(&outbound, &resolver, &dialer).await;
+                            Ok::<(), std::io::Error>(())
                         })
                         .await;
-                        assert!(result.is_ok(),"{protection}/{encryption_flow}/{mode}/{up_version}->{down_version}: {}",xray.logs());
+                        assert!(matches!(result, Ok(Ok(()))),"{protection}/{encryption_flow}/{mode}/{up_version}->{down_version}: {result:?}; {}",xray.logs());
                         let queries = resolver.0.lock().unwrap();
                         assert_eq!(queries.iter().filter(|q| *q == "upload.test").count(), 4);
                         assert_eq!(queries.iter().filter(|q| *q == "download.test").count(), 4);

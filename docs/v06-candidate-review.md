@@ -20,7 +20,7 @@ codes are consistent. The machine contract explicitly limits validation to
 the parser; runtime graph compilation, host policy and network reachability
 remain outside that result. No C ABI entry point or header was changed.
 
-Two release-tooling findings were addressed before the freeze:
+Release-tooling findings addressed during candidate verification:
 
 - Host hardening, fuzz and controlled-network jobs previously required an RC
   tag. The candidate branch and manual CI now run these same checks before
@@ -31,6 +31,14 @@ Two release-tooling findings were addressed before the freeze:
   every CI campaign now retain evidence, with an always-run artifact upload.
   A deliberately failing mock target verifies both exit status and retained
   reproducer contents without substituting for a real fuzz campaign.
+- The new split-XHTTP oracle omitted the bounded REALITY listener warm-up
+  already used by the other interop gates. A cold run completed its first 60
+  profiles and then saw an HTTP/2 reset on the first REALITY contact; an
+  isolated unchanged rerun passed all 66. The matrix now requires a successful
+  preparation probe through the exact split profile (at most two attempts),
+  then creates fresh pools and DNS/protection counters for the measured
+  scenario. Its 264 asserted application flows are never retried. Persistent
+  preparation failures and TCP scenario I/O failures include the Go server log.
 
 The clean feature-performance collector adds actual process measurements for
 the four v0.6 release metrics. Its workload, baseline comparisons and initial
