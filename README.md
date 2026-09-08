@@ -13,6 +13,8 @@ Current stable release: [`v0.5.0`](https://github.com/aimalygin/xray-rust/releas
 Published release candidate: [`v0.6.0-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1),
 with the matching [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1).
 See the [candidate evidence and coverage limits](docs/v06-release-evidence.md#published-v060-rc1).
+The owner has completed real-application RC checks and authorized
+[stable v0.6.0 preparation](docs/v06-stable-promotion.md).
 
 ## Benchmarks
 

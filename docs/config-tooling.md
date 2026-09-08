@@ -65,7 +65,7 @@ An accepted report has this shape (the core version follows the binary):
 ```json
 {
   "schemaVersion": 1,
-  "coreVersion": "0.6.0-rc.1",
+  "coreVersion": "0.6.0",
   "scope": "parser",
   "valid": true,
   "diagnostics": []

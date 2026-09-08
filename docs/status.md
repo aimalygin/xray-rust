@@ -21,6 +21,11 @@ release CI and candidate-bound performance/physical-device gates passed.
 [Published evidence](v06-release-evidence.md#published-v060-rc1) records the
 exact revisions, artifacts and bounded coverage. This RC has not been promoted
 to the stable channel; its Android AAR is available from GitHub only.
+The owner confirmed real-application profile import, connect, disconnect and
+reconnect on 2026-09-08 and authorized [stable v0.6.0 publication](v06-stable-promotion.md).
+Final build/distribution work is in progress. Long device soak campaigns are
+removed from the current checklist; the completed bounded evidence remains
+recorded with its original RC identity.
 
 ## Runtime capabilities
 

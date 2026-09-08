@@ -1,8 +1,11 @@
 # v0.6 release evidence
 
-The v0.6 release pipeline accepts only a bounded ZIP produced for the exact
-clean release-candidate commit. The authoritative schema and security checks
-are implemented by `scripts/check-v06-release-evidence.py`.
+The candidate path accepts a bounded ZIP produced for the exact clean
+release-candidate commit. Its schema and security checks are implemented by
+`scripts/check-v06-release-evidence.py`. The separately authorized
+[stable v0.6.0 promotion](v06-stable-promotion.md) validates that original ZIP
+and checks the stable source delta; it never rewrites the measured candidate
+identity or reports a new physical-device run.
 
 ## Published v0.6.0-rc.1
 
@@ -110,7 +113,9 @@ checksum file, manifest provenance and tagged licenses also matched.
 The RC is distributed through GitHub only; neither Maven Central nor GitHub
 Packages received an RC coordinate. Subsequent documentation/main integration
 does not retag these releases or transfer their device evidence to a different
-core commit. A changed candidate must follow the exact-source procedure below.
+core commit. Runtime/dependency changes require the exact-source procedure
+below; the separately checked version-only stable promotion retains original
+RC measurements and reports its source delta explicitly.
 
 ## Required evidence
 
