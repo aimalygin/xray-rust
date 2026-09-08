@@ -1,7 +1,11 @@
 # XHTTP independent download transport
 
-Development increment for v0.6, 2026-09-05. Contract: Xray-core v26.7.28,
-commit `5ca6f4b7d4dc20a881d4330e498892697627ec0c`.
+Design implemented on 2026-09-05 and published in `v0.6.0-rc.1`.
+Contract: Xray-core v26.7.28, commit
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. The
+[published release evidence](v06-release-evidence.md#published-v060-rc1)
+records subsequent CI, device and performance results; the dated development
+observations below retain their original scope.
 
 ## Configuration and wire contract
 

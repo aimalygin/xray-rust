@@ -1,6 +1,15 @@
 # v0.6 implementation plan and initial review
 
-Reviewed: 2026-09-04. Development version: `0.6.0-dev.0`.
+Initial review: 2026-09-04, development version `0.6.0-dev.0`.
+
+Current status (2026-09-08 UTC): the selected Milestones A–E scope is frozen
+and matching core/mobile `v0.6.0-rc.1` prereleases are published. Scoped
+integration review, release CI and exact-candidate performance/device evidence
+are complete; see [published evidence](v06-release-evidence.md#published-v060-rc1).
+The dated increments below retain their original development observations;
+statements about pending work describe that point in time. Additional host
+capability providers and IPv6 Fake IP remain deferred. Stable publication is
+not part of this completion record.
 
 ## Compatibility decision
 
@@ -273,5 +282,7 @@ feature increments; further TUN/runtime-DNS/FFI splits follow their next feature
 No C ABI or mobile adapter migration is required. Ordinary CI verifies contract
 freshness and acceptance/rejection parity and publishes the validated artifact.
 
-Final physical-device/performance evidence, release freeze and scoped review of
-the final delta still precede RC publication.
+The subsequent release freeze and scoped integration review are recorded in
+[candidate review](v06-candidate-review.md). Physical-device/performance and
+publication gates passed for the exact published RC; their results and limits
+are recorded in [release evidence](v06-release-evidence.md#published-v060-rc1).

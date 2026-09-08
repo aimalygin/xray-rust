@@ -1,9 +1,11 @@
 # Development roadmap
 
-Status: living document, last reviewed 2026-09-04.
+Status: living document, last reviewed 2026-09-08 (UTC).
 
-`v0.5.0` is the current stable release. Phases 1 and 2 below are retained as
-release history; Phase 3 is the active plan for `v0.6`. This roadmap is not a
+`v0.5.0` is the current stable release. Matching core and mobile
+`v0.6.0-rc.1` prereleases are published. Phases 1 and 2 below are retained as
+release history; Phase 3 is in RC stabilization before a separate stable
+release decision. This roadmap is not a
 promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
@@ -406,12 +408,14 @@ required before, and does not substitute for, the Apple/Android hardware gate.
 
 ## Phase 3: `v0.6` modern VLESS and richer client policy
 
-Status: implementation started as `0.6.0-dev.0`. Completed increments add
-`IPOnDemand`, bounded VLESS 1-RTT/0-RTT, relay chains, configurable padding,
-mobile import, fuzzing, and pinned interop.
-This is not a feature freeze or release candidate. See the
-[initial review and implementation plan](v06-implementation-plan.md) for the
-baseline decision, delivery order, exact routing contract, and evidence.
+Status: feature freeze completed and matching core/mobile `v0.6.0-rc.1`
+prereleases published. The selected scope includes `IPOnDemand`, bounded
+VLESS 1-RTT/0-RTT with relay chains and padding, independent XHTTP downloads,
+mobile projection, and Milestone E configuration tooling. The exact-candidate
+release gates passed; see [published evidence](v06-release-evidence.md#published-v060-rc1).
+The [initial review and implementation plan](v06-implementation-plan.md)
+retains the baseline decision and delivery history. Stable promotion and
+registry publication remain separate from this RC completion.
 
 Goal: add the modern VLESS encryption and client-policy capabilities with the
 same fail-closed configuration, pinned interoperability, and bounded mobile
@@ -426,7 +430,7 @@ an in-core control plane remain outside this phase.
 Initial decision: retain the audited exact `v26.7.28` baseline. The new routing
 and encryption oracles use that checkout. The focused
 [VLESS encryption design](vless-encryption-design.md) records the implemented subset
-and remaining crypto work. The [XHTTP download design](xhttp-download-design.md) defines its bounded
+and verification boundaries. The [XHTTP download design](xhttp-download-design.md) defines its bounded
 independent transport and lifecycle contract.
 
 - Audit the stable Xray-core release selected when `v0.6` development begins
@@ -456,9 +460,10 @@ together with dedicated record/handshake fuzz targets and 540 full-Xray
 application flows across 204 profiles, including local REALITY. The exact Go oracle now proves
 real cold/resumed paths, mixed chains, custom padding, expiry, cancellation,
 and cold recovery. Review also added pre-dial ML-KEM coefficient validation.
-The focused independent review and IR-01–IR-13 remediation are complete;
-[final-candidate evidence](v06-release-evidence.md) remains open. Milestone B
-is not release-complete.
+The focused independent review, IR-01–IR-13 remediation and
+[exact-candidate release evidence](v06-release-evidence.md#published-v060-rc1)
+are complete for the published RC's bounded scope. This is not an external
+security audit or a stable-release declaration.
 
 - Implement only the client-side VLESS post-quantum encryption modes present in
   the pinned Xray-core contract. Do not invent a Rust-specific wire variant,
@@ -479,8 +484,9 @@ is not release-complete.
 First increment implemented: canonical `IPOnDemand`, ordered lazy resolution,
 a 256-address fail-closed work cap, managed cache/cancellation and policy
 revision tests, a pinned Go oracle, and equivalent Swift/Kotlin snapshot
-decoding. Targeted physical-device evidence and any new host capability
-provider remain outstanding.
+decoding. The targeted physical-device scenarios passed for the published
+RC. A new host capability provider was not selected for this release; process,
+user, interface and network-state routing inputs remain deferred.
 
 - Preserve Xray-compatible `IPOnDemand`: delay resolution until an IP rule
   needs it, evaluate every bounded returned address, preserve ordered rule
@@ -499,14 +505,15 @@ provider remain outstanding.
 
 ### Milestone D: XHTTP completeness before transport breadth
 
-Implemented in the development tree: one independently addressed XHTTP download
+Published in `v0.6.0-rc.1`: one independently addressed XHTTP download
 stack for packet-up/stream-up, with independent security/HTTP version, resolver
 and protected dialing, XMUX pooling, shared-session failure/cancellation and
 upload rollover. Config parsing and carrier compilation live in dedicated
 modules. The supported subset and pinned verification command are described in
 [the download design](xhttp-download-design.md). Exact-candidate device and
-performance evidence remain open. Adaptive H3 windows and multiple active H3
-requests stay deferred until the stated measurements justify them.
+performance gates passed within the [published limits](v06-release-evidence.md#published-v060-rc1).
+Adaptive H3 windows and multiple active H3 requests stay deferred until the
+stated measurements justify them.
 
 - Implement a documented, bounded client subset of populated
   `downloadSettings` with an independently validated transport configuration
@@ -526,7 +533,7 @@ requests stay deferred until the stated measurements justify them.
 
 ### Milestone E: configuration tooling and maintainability
 
-Implemented for the current increment (2026-09-05): the generated
+Completed and published in `v0.6.0-rc.1`: the generated
 [executable configuration contract](config-contract.json) and
 [CLI/Rust tooling](config-tooling.md) share the parser's object-field registry
 and exact acceptance rules. CI checks canonical/rejected fixtures, unknown-field
@@ -550,10 +557,10 @@ refactor obligation for other large runtime modules remains in force.
 
 ### Conditional IPv6 Fake IP increment
 
-IPv6 Fake IP may enter `v0.6` only after an approved mapping/lease/restore
-design and end-to-end Apple and Android coverage for IPv6-only, dual-stack,
-DNS64/NAT64, network transition, restart, and pool exhaustion. Otherwise it
-stays deferred without blocking the release; IPv4 Fake IP behavior must not
+IPv6 Fake IP is deferred beyond the frozen `v0.6.0-rc.1` scope. A future
+increment requires an approved mapping/lease/restore design and end-to-end
+Apple and Android coverage for IPv6-only, dual-stack, DNS64/NAT64, network
+transition, restart, and pool exhaustion. IPv4 Fake IP behavior must not
 regress.
 
 ### Release gates

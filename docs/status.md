@@ -11,14 +11,16 @@ been independently security audited. “Supported” below means implemented in
 this repository and covered by tests; it does not imply complete behavioral
 parity with every Xray-core release.
 
-Current stable packages are `v0.5.0`. The unpublished source candidate is
-`0.6.0-rc.1`; its first addition is `IPOnDemand` routing with a pinned Go
-oracle and updated Swift/Kotlin snapshot decoders. A bounded VLESS 1-RTT/0-RTT
-encryption subset with mixed relay chains and configurable padding is also
-implemented. Independently addressed XHTTP downloadSettings are implemented
-for packet-up/stream-up, including mixed HTTP versions. See the
-[implementation plan](v06-implementation-plan.md) for completed scope and
-remaining release evidence. The published mobile SDK remains at `v0.5.0`.
+Current stable packages are `v0.5.0`. The published candidate is
+[`v0.6.0-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1),
+with the matching [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1).
+It adds `IPOnDemand` routing, bounded VLESS 1-RTT/0-RTT encryption with mixed
+relay chains and configurable padding, independent XHTTP `downloadSettings`
+for packet-up/stream-up, and parser-backed configuration tooling. The full
+release CI and candidate-bound performance/physical-device gates passed.
+[Published evidence](v06-release-evidence.md#published-v060-rc1) records the
+exact revisions, artifacts and bounded coverage. This RC has not been promoted
+to the stable channel; its Android AAR is available from GitHub only.
 
 ## Runtime capabilities
 
@@ -31,10 +33,10 @@ remaining release evidence. The published mobile SDK remains at `v0.5.0`.
 | Direct fd-backed TUN | Supported | Raw-IP Android and Darwin-utun framing paths; host integration is platform-owned |
 | Freedom/direct outbound | Supported | TCP and UDP integration tests |
 | VLESS over TCP | Supported | Local fake-server and optional Xray-core interoperability tests; plaintext public servers fail closed while Xray's private/reserved/test IP and private/test/dotless domain set remains available for local fixtures. The guard intentionally covers legacy `vnext`, which the pinned Xray release leaves unguarded. |
-| VLESS encryption | Development subset | Bounded 1-RTT/0-RTT `native`/`xorpub`/`random`, one-to-eight mixed X25519/ML-KEM-768 relay keys, bounded configurable padding, raw/WS/HTTPUpgrade/gRPC/XHTTP, optional Vision, TCP/UDP/XUDP. Tickets are memory-only and fail closed on rejected/cancelled resumption. Pinned Go vectors, real resumed-session checks, encrypted-record and full-Xray none/TLS/REALITY interop run in CI. Swift/Kotlin share-link import uses shared validation fixtures; dedicated handshake/record fuzz targets are implemented. 540 full-Xray application flows cover 204 profiles; focused independent review and its remediation are complete; exact-candidate evidence remains pending; see [design](vless-encryption-design.md). |
+| VLESS encryption | Supported subset in v0.6 RC | Bounded 1-RTT/0-RTT `native`/`xorpub`/`random`, one-to-eight mixed X25519/ML-KEM-768 relay keys, bounded configurable padding, raw/WS/HTTPUpgrade/gRPC/XHTTP, optional Vision, TCP/UDP/XUDP. Tickets are memory-only and fail closed on rejected/cancelled resumption. Pinned Go vectors, real resumed-session checks, encrypted-record and full-Xray none/TLS/REALITY interop run in CI. Swift/Kotlin share-link import uses shared validation fixtures; dedicated handshake/record fuzz targets are implemented. 540 full-Xray application flows cover 204 profiles; focused independent review and its remediation are complete; exact-candidate release gates passed within the [published coverage](v06-release-evidence.md#published-v060-rc1); see [design](vless-encryption-design.md). |
 | VLESS over WebSocket / HTTPUpgrade | Supported subset | Browser-masqueraded HTTP/1.1 upgrade with early data and keepalive; REALITY is refused; Vision requires VLESS encryption, matching Xray; live Xray-core interoperability tests |
 | VLESS over gRPC | Supported subset | One pooled HTTP/2 connection per outbound carrying `Hunk` or `MultiHunk` messages, with grpc-go's keepalive gate and dormancy; REALITY is accepted; Vision requires VLESS encryption, matching Xray; Go-oracle wire fixtures and live Xray-core interoperability tests |
-| VLESS over XHTTP | Supported subset | All three modes over production HTTP/1.1, pooled HTTP/2, and protected HTTP/3 over QUIC v1, including UUID/custom-table `sessionID*` generation, xmux, hermetic wire/lifecycle/pooling coverage, and live Xray-core interoperability for `packet-up`, `stream-up`, and `stream-one`. Development downloadSettings adds an independently validated download stack for packet-up/stream-up; see [design](xhttp-download-design.md) |
+| VLESS over XHTTP | Supported subset | All three modes over production HTTP/1.1, pooled HTTP/2, and protected HTTP/3 over QUIC v1, including UUID/custom-table `sessionID*` generation, xmux, hermetic wire/lifecycle/pooling coverage, and live Xray-core interoperability for `packet-up`, `stream-up`, and `stream-one`. The v0.6 RC adds an independently validated download stack through `downloadSettings` for packet-up/stream-up; see [design](xhttp-download-design.md) |
 | TLS | Supported subset | Certificate-verified local integration tests; the uTLS-shaped ClientHello sent by default is covered by per-fingerprint shape tests. Canonical `allowInsecure: true` fails closed. `pinnedPeerCertSha256` supports Xray's full-DER leaf short-circuit and presented-CA pin; comma-separated `verifyPeerCertByName` supports ORed DNS/IP SAN verification against system roots or the pinned CA without changing SNI. |
 | REALITY client | Supported subset | Deterministic primitive tests and optional local Xray-core REALITY+Vision interoperability tests |
 | TCP Happy Eyeballs | Supported subset | Opt-in Xray-compatible Freedom/VLESS raw-TCP candidate race; bounded and cancellation-safe, with one TLS/REALITY handshake after connect |

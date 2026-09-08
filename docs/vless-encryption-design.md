@@ -212,9 +212,11 @@ Earlier validation on 2026-09-04, before the Vision/carrier increment:
 
 All ten ignored encryption integration test functions in the current tree
 are explicitly executed by the Go gate. No ignored release
-campaign is represented as having run. These results are from an uncommitted
-development tree; the local XCFramework is only a macOS test slice, and the
-distribution repository remains pinned to `v0.5.0`.
+campaign is represented as having run. Those dated results came from an uncommitted
+development tree with only a macOS test slice, while the distribution
+repository was still pinned to `v0.5.0`. The later published core/mobile
+`v0.6.0-rc.1` gates and physical/performance coverage are recorded separately
+in [release evidence](v06-release-evidence.md#published-v060-rc1).
 
 Two dedicated fuzz targets now exercise records and the actual client
 handshake using bounded, fragmented in-memory I/O. They generate authenticated

@@ -589,4 +589,7 @@ The generic ignored interop invocation skips `vless_encryption::` and
 Transport tests independently check headers/session identity, both usage leases,
 setup cancellation, download failure, upload rollover and H3 request cancellation.
 The config/FFI fuzz corpora include valid and recursively invalid download stacks.
-Physical device and performance evidence is still required for the final candidate.
+The exact `v0.6.0-rc.1` device and performance gates passed; see
+[published evidence and limits](v06-release-evidence.md#published-v060-rc1).
+Those results bind only to the recorded core commit/tree. Future candidates
+must supply their own evidence under the same release policy.

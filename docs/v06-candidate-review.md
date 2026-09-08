@@ -61,8 +61,15 @@ candidate without publishing a tag; a later version-only commit would break
 the exact-commit evidence binding and require all campaigns to be repeated.
 
 This document is source-review context, not evidence that a future commit has
-passed. Bind the automated run, raw benchmarks and subsequent physical-device
-campaign to the frozen full commit and tree. A fix invalidates that candidate's
-combined gate result and requires a new run. Release remains blocked until
-both physical-device reports and performance artifacts pass the existing
-exact-candidate archive validator.
+passed. Bind the automated run, raw benchmarks and physical-device campaign
+to the frozen full commit and tree. A fix invalidates that candidate's combined
+gate result and requires a new run.
+
+Publication update (2026-09-08 UTC): the frozen core commit
+`1e713ca3e6c57be5747b4915b31e0db040a01c0c` passed the complete release CI and
+exact-candidate archive validation, including both physical-device reports and
+performance artifacts. Matching core/mobile `v0.6.0-rc.1` prereleases are
+published. See [release evidence](v06-release-evidence.md#published-v060-rc1)
+for the immutable inputs, artifact verification and explicit coverage limits.
+This closes the RC evidence condition; it does not extend this review to a
+future revision or constitute an external security audit.

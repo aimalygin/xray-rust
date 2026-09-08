@@ -2,7 +2,7 @@
 
 Status: completed against the `0.6.0-dev.0` development tree on 2026-09-04.
 
-Release decision: **NO-GO for a v0.6 release candidate or stable release**.
+Original release decision (2026-09-04): **NO-GO for a v0.6 release candidate or stable release**.
 Continued development is reasonable. No Critical finding, and no High or Medium
 remotely exploitable defect in the reviewed VLESS wire/cryptographic runtime,
 was identified. Three High release-integrity findings, five Medium assurance
@@ -12,8 +12,17 @@ findings, and five Low runtime or verification findings remain open.
 > controls for IR-01 through IR-13 have been added and verified. The finding
 > statuses below describe the original reviewed tree. See
 > [Remediation verification](#remediation-verification--2026-09-05) for the
-> current status. The release decision remains NO-GO until a clean immutable
-> v0.6 candidate supplies the required physical-device and performance evidence.
+> status as of that update. At that time the release decision remained NO-GO
+> pending a clean immutable candidate's physical-device and performance evidence.
+>
+> Publication update (2026-09-08 UTC): the scoped
+> [candidate integration review](v06-candidate-review.md), all blocking release
+> CI gates, and [exact-candidate device/performance evidence](v06-release-evidence.md#published-v060-rc1)
+> are complete for core `1e713ca3e6c57be5747b4915b31e0db040a01c0c`.
+> Matching core/mobile `v0.6.0-rc.1` prereleases are published; IR-01's
+> operational evidence condition is satisfied for that candidate. The original
+> findings and dated remediation assessment below are retained as history.
+> This update is not a new independent audit or approval of a stable release.
 
 This is an independent, tool-assisted source and release-engineering review,
 not a contracted third-party audit or a formal cryptographic proof. Three

@@ -11,8 +11,12 @@ long-term supported release series.
 
 ## 0.6.0-rc.1 - 2026-09-05
 
-- Prepared the source candidate for exact-commit pre-device verification.
-  Publication remains gated on CI, performance and physical-device evidence.
+- Published the frozen source candidate and matching mobile SDK after the
+  exact-commit CI, performance and bounded physical-device gates passed.
+  [Release evidence](docs/v06-release-evidence.md#published-v060-rc1) records
+  source provenance, published artifacts and coverage limits. The date above
+  identifies the candidate freeze; publication completed on 2026-09-08 UTC.
+  Long soak tests were omitted by owner decision and are not claimed.
 - Added the generated supported-configuration contract, exact parser-backed
   `config check` with JSON reports/stdin/resource directories, and canonical
   `config example` exports. Parser and tooling share recognized field sets;
