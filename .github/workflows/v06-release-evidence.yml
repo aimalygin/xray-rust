@@ -45,7 +45,8 @@ jobs:
           echo "$EVIDENCE_SHA256  $archive" | sha256sum --check -
           tree="$(git rev-parse 'HEAD^{tree}')"
           bash scripts/check-v06-release-evidence.sh "$archive" "$GITHUB_SHA" "$tree" \
-            | tee "$RUNNER_TEMP/v06-evidence-validation.txt"
+            > "$RUNNER_TEMP/v06-evidence-validation.txt"
+          cat "$RUNNER_TEMP/v06-evidence-validation.txt"
 
       - name: Preserve validated release evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

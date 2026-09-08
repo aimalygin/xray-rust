@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -151,6 +152,45 @@ class StablePromotionTests(unittest.TestCase):
             archive.write_bytes(archive.read_bytes() + b"changed")
             with self.assertRaisesRegex(ValueError, "checksum differs"):
                 PROMOTION.validate(self.root, archive, revision, tree)
+
+    def test_workflow_propagates_validator_failure(self):
+        # Run the real workflow shell with GitHub's default bash -e behavior.
+        # A logging pipe must not convert a rejected archive into success.
+        lines = (ROOT / ".github/workflows/v06-release-evidence.yml").read_text().splitlines()
+        start = lines.index("      - name: Download and validate exact-candidate evidence")
+        start = lines.index("        run: |", start) + 1
+        commands = []
+        for line in lines[start:]:
+            if line.startswith("          "):
+                commands.append(line[10:])
+            elif not line:
+                commands.append("")
+            else:
+                break
+        self.write("scripts/check-v06-release-evidence.sh", "exit 17\n")
+        fake_bin = self.root / "fake-bin"
+        fake_bin.mkdir()
+        for name, body in {
+            "curl": ': > "$RUNNER_TEMP/v06-release-evidence.zip"',
+            "sha256sum": "cat >/dev/null",
+            "git": "printf '%040d\\n' 0",
+        }.items():
+            path = fake_bin / name
+            path.write_text("#!/bin/sh\n" + body + "\n")
+            path.chmod(0o755)
+        env = os.environ.copy()
+        env.update(
+            PATH=str(fake_bin) + os.pathsep + env["PATH"],
+            RUNNER_TEMP=str(self.root),
+            GITHUB_SHA="1" * 40,
+            EVIDENCE_URL="https://example.invalid/evidence.zip",
+            EVIDENCE_SHA256="0" * 64,
+        )
+        result = subprocess.run(
+            ["bash", "-e", "-c", "\n".join(commands)],
+            cwd=self.root, env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 17, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
