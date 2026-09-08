@@ -11,7 +11,8 @@ been independently security audited. “Supported” below means implemented in
 this repository and covered by tests; it does not imply complete behavioral
 parity with every Xray-core release.
 
-Current stable packages are `v0.5.0`. The published candidate is
+The `v0.6.0` stable source preserves the runtime and dependencies of the
+published candidate
 [`v0.6.0-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1),
 with the matching [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1).
 It adds `IPOnDemand` routing, bounded VLESS 1-RTT/0-RTT encryption with mixed
@@ -19,11 +20,13 @@ relay chains and configurable padding, independent XHTTP `downloadSettings`
 for packet-up/stream-up, and parser-backed configuration tooling. The full
 release CI and candidate-bound performance/physical-device gates passed.
 [Published evidence](v06-release-evidence.md#published-v060-rc1) records the
-exact revisions, artifacts and bounded coverage. This RC has not been promoted
-to the stable channel; its Android AAR is available from GitHub only.
+exact revisions, artifacts and bounded coverage. The original RC remains a
+GitHub-only prerelease; stable core/mobile publication results are available
+from [core v0.6.0](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0)
+and [mobile v0.6.0](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0).
 The owner confirmed real-application profile import, connect, disconnect and
 reconnect on 2026-09-08 and authorized [stable v0.6.0 publication](v06-stable-promotion.md).
-Final build/distribution work is in progress. Long device soak campaigns are
+Long device soak campaigns are
 removed from the current checklist; the completed bounded evidence remains
 recorded with its original RC identity.
 

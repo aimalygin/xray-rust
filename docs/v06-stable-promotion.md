@@ -1,9 +1,14 @@
 # v0.6.0 stable promotion
 
-Status: preparation and final automated verification in progress, authorized
-by the owner on 2026-09-08. The published packages remain `v0.6.0-rc.1` until
-stable release publication completes. Milestones A–E and RC distribution are
-complete; see [published RC evidence](v06-release-evidence.md#published-v060-rc1).
+Stable source version: `v0.6.0`, authorized by the owner on 2026-09-08.
+Milestones A–E, RC distribution and owner application acceptance are complete;
+see [published RC evidence](v06-release-evidence.md#published-v060-rc1).
+Publication results and final workflow links belong to the
+[core release](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0),
+[mobile release](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0)
+and [Maven Central coordinate](https://central.sonatype.com/artifact/io.github.aimalygin/xray-rust-mobile/0.6.0).
+This source record describes the promotion boundary; it does not by itself
+assert that pending workflows or distribution steps have completed.
 
 ## Application acceptance
 
@@ -40,7 +45,7 @@ stable commit from the measured candidate. Stable tag CI repeats that check.
 The mobile SDK still requires a successful evidence run/artifact bound to
 its exact locked stable core commit and tree.
 
-## Remaining release work
+## Publication sequence
 
 - Run the full automated core release matrix on the final stable revision and
   publish the annotated source-only `v0.6.0` GitHub release after it passes.

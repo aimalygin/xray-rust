@@ -3,7 +3,8 @@
 All notable changes will be documented in this file.
 
 In this changelog, the stable channel means a non-prerelease tag eligible for
-registry publication; `v0.5.0` is the current stable release. All versions
+registry publication. Published packages are listed in
+[GitHub Releases](https://github.com/aimalygin/xray-rust/releases). All versions
 below 1.0 remain pre-1.0 in API and security maturity and do not imply a
 long-term supported release series.
 

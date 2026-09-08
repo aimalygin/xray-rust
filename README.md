@@ -9,12 +9,12 @@ client runtime; its supported compatibility surface is documented below.
 
 This project is unofficial and is not affiliated with XTLS or Xray-core.
 
-Current stable release: [`v0.5.0`](https://github.com/aimalygin/xray-rust/releases/tag/v0.5.0).
+Stable source version: [`v0.6.0`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0).
 Published release candidate: [`v0.6.0-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1),
 with the matching [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1).
 See the [candidate evidence and coverage limits](docs/v06-release-evidence.md#published-v060-rc1).
 The owner has completed real-application RC checks and authorized
-[stable v0.6.0 preparation](docs/v06-stable-promotion.md).
+[stable v0.6.0 promotion](docs/v06-stable-promotion.md).
 
 ## Benchmarks
 

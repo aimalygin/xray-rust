@@ -2,11 +2,12 @@
 
 Status: living document, last reviewed 2026-09-08 (UTC).
 
-`v0.5.0` is the current stable release. Matching core and mobile
+The stable source version is `v0.6.0`. Matching core and mobile
 `v0.6.0-rc.1` prereleases are published. Phases 1 and 2 below are retained as
 release history; Phase 3 implementation and RC application acceptance are
 complete. The owner authorized stable `v0.6.0` publication on 2026-09-08;
-[final build and publication work](v06-stable-promotion.md) is in progress. This roadmap is not a
+[promotion record](v06-stable-promotion.md) describes final build gates and
+links to publication results. This roadmap is not a
 promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
@@ -591,8 +592,8 @@ and runs final automated gates on the stable revision.
 ### Exit criteria
 
 The selected Milestones A–E criteria are complete in the published RC.
-Only final stable builds and distribution remain; owner application
-acceptance is recorded in [stable promotion](v06-stable-promotion.md).
+Owner application acceptance and the final stable build/distribution sequence
+are recorded in [stable promotion](v06-stable-promotion.md).
 
 - The selected Xray-core baseline, full commit, audit delta, regenerated
   fixtures, and blocking supported-surface interop results are published.

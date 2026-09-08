@@ -43,6 +43,7 @@ NON_RUNTIME_FILES = {
     "scripts/check-v06-release-evidence.sh",
     "scripts/tests/test_v06_stable_promotion.py",
     "scripts/tests/check-prerelease-workflow.test.sh",
+    "scripts/tests/check-scheduled-interop-workflow.test.sh",
 }
 VERSIONED_FILES = {"Cargo.toml", "Cargo.lock", "docs/config-contract.json"}
 

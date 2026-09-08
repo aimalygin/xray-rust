@@ -13,7 +13,7 @@ Matching [core](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1)
 and [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1)
 prereleases are published; publication and public-consumer verification
 completed on 2026-09-08 UTC. The selected Milestones A–E scope is frozen.
-`v0.5.0` remains the stable release. This record closes the RC evidence work;
+At RC publication, `v0.5.0` was the stable release. This dated record closes the RC evidence work;
 it does not promote either package to stable or authorize registry publication.
 
 ### Exact source and automated gates
