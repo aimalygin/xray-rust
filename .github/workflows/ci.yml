@@ -57,7 +57,7 @@ jobs:
           else
             echo "is_rc=false" >>"$GITHUB_OUTPUT"
           fi
-          if [[ "$is_rc" == true || "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/heads/codex/v06-candidate ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/* || "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/heads/codex/v06-candidate ]]; then
             echo "run_release_gates=true" >>"$GITHUB_OUTPUT"
           else
             echo "run_release_gates=false" >>"$GITHUB_OUTPUT"
@@ -120,7 +120,7 @@ jobs:
           retention-days: 14
 
   release-evidence:
-    if: needs.release-metadata.outputs.is_rc == 'true'
+    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0'
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -132,6 +132,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-metadata.outputs.candidate_commit }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Download validated exact-candidate evidence
@@ -158,7 +159,7 @@ jobs:
         run: |
           archive="$RUNNER_TEMP/v06-release-evidence/v06-release-evidence.zip"
           test -f "$archive"
-          python3 scripts/check-v06-release-evidence.py \
+          bash scripts/check-v06-release-evidence.sh \
             "$archive" "$CANDIDATE_COMMIT" "$CANDIDATE_TREE"
 
   secrets:
@@ -230,7 +231,7 @@ jobs:
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
-          python3 -m unittest scripts.tests.test_v06_release_evidence
+          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28

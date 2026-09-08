@@ -45,7 +45,7 @@
       "semantics": "Requires address, port 1..65535 and explicit XHTTP method/network. A separate bounded stream is parsed with paths remapped to downloadSettings; recursive downloads, stream-one and chaining are unsupported."
     }
   ],
-  "coreVersion": "0.6.0-rc.1",
+  "coreVersion": "0.6.0",
   "documentation": "docs/config-tooling.md",
   "examples": {
     "dns-routing": {

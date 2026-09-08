@@ -3,11 +3,30 @@
 All notable changes will be documented in this file.
 
 In this changelog, the stable channel means a non-prerelease tag eligible for
-registry publication; `v0.5.0` is the current stable release. All versions
+registry publication. Published packages are listed in
+[GitHub Releases](https://github.com/aimalygin/xray-rust/releases). All versions
 below 1.0 remain pre-1.0 in API and security maturity and do not imply a
 long-term supported release series.
 
 ## Unreleased
+
+## 0.6.0 - 2026-09-08
+
+- Promotes the completed v0.6 RC scope: bounded VLESS 1-RTT/0-RTT encryption,
+  lazy `IPOnDemand` routing, independent XHTTP downloads, mobile projection,
+  and supported-configuration schema and CLI tooling.
+- Preserves the RC runtime, dependencies, adapters and C ABI. Only version
+  metadata, release verification tooling and documentation change; a blocking
+  promotion check verifies that boundary against the published RC commit.
+- The owner confirmed RC profile import, connect, disconnect and reconnect in
+  a real application on 2026-09-08. This is an owner report, separate from CI
+  and the archived bounded iPhone 13 / Samsung device campaigns.
+- Accepts the published RC device and performance evidence with its original
+  commit/tree identity. Long device soak campaigns are removed from the
+  current release checklist at the owner's request and are not claimed.
+  Final automated builds and release gates run on the stable source revision.
+- See [stable promotion](docs/v06-stable-promotion.md) for provenance,
+  publication steps and the exact verification boundary.
 
 ## 0.6.0-rc.1 - 2026-09-05
 

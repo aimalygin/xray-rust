@@ -215,7 +215,7 @@ check_classification() {
 }
 
 check_classification push refs/tags/v0.6.0-rc.1 true true
-check_classification push refs/tags/v0.6.0 false false
+check_classification push refs/tags/v0.6.0 false true
 check_classification push refs/heads/codex/v06-candidate false true
 check_classification push refs/heads/v0.6.0-rc.1 false false
 check_classification push refs/heads/main false false
@@ -228,9 +228,14 @@ for job in rc-interop host-hardening fuzz-smoke controlled-network; do
   grep -Fxq "    if: needs.release-metadata.outputs.run_release_gates == 'true'" <<<"$(job_body "$job")" || \
     die "$job is not enabled for candidate verification"
 done
-for job in release-evidence publish-prerelease; do
+for job in publish-prerelease; do
   grep -Fxq "    if: needs.release-metadata.outputs.is_rc == 'true'" <<<"$(job_body "$job")" || \
     die "$job is not restricted to RC tag publication"
 done
+
+grep -Fxq "    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0'" <<<"$(job_body release-evidence)" || \
+  die "stable v0.6.0 is not gated on release evidence"
+grep -Fq 'bash scripts/check-v06-release-evidence.sh' <<<"$(job_body release-evidence)" || \
+  die "release boundary does not revalidate candidate or promotion evidence"
 
 echo "verified idempotent source-only prerelease workflow policy and candidate isolation"

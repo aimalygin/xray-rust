@@ -2,10 +2,12 @@
 
 Status: living document, last reviewed 2026-09-08 (UTC).
 
-`v0.5.0` is the current stable release. Matching core and mobile
+The stable source version is `v0.6.0`. Matching core and mobile
 `v0.6.0-rc.1` prereleases are published. Phases 1 and 2 below are retained as
-release history; Phase 3 is in RC stabilization before a separate stable
-release decision. This roadmap is not a
+release history; Phase 3 implementation and RC application acceptance are
+complete. The owner authorized stable `v0.6.0` publication on 2026-09-08;
+[promotion record](v06-stable-promotion.md) describes final build gates and
+links to publication results. This roadmap is not a
 promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
@@ -306,9 +308,9 @@ will not be run as a retrospective or `v0.6` release gate.
   health, and structured diagnostic events. Do not add an in-core HTTP server.
 - Keep Android VLESS share-link import, statistics, and event coverage at
   parity with the supported portable Apple surface where platform APIs permit.
-- Add physical-device transition and soak coverage: Wi-Fi/cellular changes,
-  sleep/wake, memory pressure, extension/service restart, DNS64/NAT64,
-  cancellation, and long-lived XHTTP H2/H3 sessions.
+- Preserve the completed bounded Apple/Android device evidence and its
+  documented limits. Long device campaigns are excluded from the current
+  work list by owner decision on 2026-09-08.
 
 The version/capability foundation and cross-platform selection/health surface
 are implemented. A core-owned registry now supplies typed connection
@@ -414,8 +416,9 @@ VLESS 1-RTT/0-RTT with relay chains and padding, independent XHTTP downloads,
 mobile projection, and Milestone E configuration tooling. The exact-candidate
 release gates passed; see [published evidence](v06-release-evidence.md#published-v060-rc1).
 The [initial review and implementation plan](v06-implementation-plan.md)
-retains the baseline decision and delivery history. Stable promotion and
-registry publication remain separate from this RC completion.
+retains the baseline decision and delivery history. The owner confirmed real-app
+profile import, connect, disconnect and reconnect on 2026-09-08 and authorized
+[stable promotion and registry publication](v06-stable-promotion.md).
 
 Goal: add the modern VLESS encryption and client-policy capabilities with the
 same fail-closed configuration, pinned interoperability, and bounded mobile
@@ -565,14 +568,19 @@ regress.
 
 ### Release gates
 
-- Run bounded physical Apple and Android scenarios for the high-risk behavior
+The RC physical/performance gates below are completed, not outstanding tasks.
+Long device soak tests are absent from the current checklist. Stable promotion
+revalidates the original RC archive, verifies unchanged runtime/dependencies,
+and runs final automated gates on the stable revision.
+
+- Completed bounded physical Apple and Android scenarios for the high-risk behavior
   changed by `v0.6`: VLESS encryption, resolver-driven `IPOnDemand`, XHTTP
   download/session lifecycle, cancellation, and host adapter projection. There
   is no fixed six-hour minimum. Each report identifies the exact candidate,
   device and OS, scenario duration, transitions, traffic result, and explicit
   resource limits; simulator results cannot replace claimed device evidence.
   The candidate-bound archive format and submission procedure are documented
-  in `docs/v06-release-evidence.md`; the RC publication workflow revalidates
+  in `docs/v06-release-evidence.md`; the RC publication workflow revalidated
   that archive against the exact tagged commit and tree.
 - Keep the pinned interop, ASan/Miri/Loom, fuzz, controlled RTT/loss,
   supply-chain, Apple build, four-ABI Android, and clean performance gates
@@ -582,6 +590,10 @@ regress.
   evidence collection, not unfinished feature development.
 
 ### Exit criteria
+
+The selected Milestones A–E criteria are complete in the published RC.
+Owner application acceptance and the final stable build/distribution sequence
+are recorded in [stable promotion](v06-stable-promotion.md).
 
 - The selected Xray-core baseline, full commit, audit delta, regenerated
   fixtures, and blocking supported-surface interop results are published.
@@ -662,7 +674,7 @@ The roadmap is evaluated by outcomes, not only completed features:
 | Area | Measure |
 | --- | --- |
 | Compatibility | Blocking supported-surface interop against the exact stable Xray-core reference; scheduled early warning against upstream `main` |
-| Reliability | No unexplained memory/task growth or unrecoverable tunnel failure in transition, fault-injection, and extended device-soak tests |
+| Reliability | No unexplained memory/task growth or unrecoverable tunnel failure in bounded transition, fault-injection, and physical-device scenarios |
 | Security | Fuzz and dependency gates for parser/wire/FFI surfaces; tracked review of `unsafe`, secrets, and pinned forks; independent audit before a stable 1.0 claim |
 | Performance | Reproducible current-version results with raw provenance; no regression outside an explicitly justified budget |
 | Mobile SDK | Versioned capability discovery and equivalent essential lifecycle, selection, health, and diagnostic APIs on Apple and Android |

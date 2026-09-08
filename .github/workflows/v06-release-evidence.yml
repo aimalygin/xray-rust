@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       evidence_url:
-        description: HTTPS URL of the bounded physical-device and performance evidence ZIP
+        description: HTTPS URL of exact-candidate evidence, or the published RC ZIP for stable promotion
         required: true
         type: string
       evidence_sha256:
@@ -27,6 +27,7 @@ jobs:
       - name: Check out exact evidence candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Download and validate exact-candidate evidence
@@ -43,12 +44,16 @@ jobs:
             --output "$archive" "$EVIDENCE_URL"
           echo "$EVIDENCE_SHA256  $archive" | sha256sum --check -
           tree="$(git rev-parse 'HEAD^{tree}')"
-          python3 scripts/check-v06-release-evidence.py "$archive" "$GITHUB_SHA" "$tree"
+          bash scripts/check-v06-release-evidence.sh "$archive" "$GITHUB_SHA" "$tree" \
+            > "$RUNNER_TEMP/v06-evidence-validation.txt"
+          cat "$RUNNER_TEMP/v06-evidence-validation.txt"
 
       - name: Preserve validated release evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: v06-release-evidence-${{ github.sha }}
-          path: ${{ runner.temp }}/v06-release-evidence.zip
+          path: |
+            ${{ runner.temp }}/v06-release-evidence.zip
+            ${{ runner.temp }}/v06-evidence-validation.txt
           if-no-files-found: error
           retention-days: 90
