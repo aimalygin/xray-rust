@@ -68,7 +68,7 @@ printf 'invoke|%s\n' "$*" >>"$FAKE_CARGO_LOG"
 case "${1:-}" in
   test)
     if [[ "$*" == *"--test local_xray_interop_tests"* ]]; then
-      [[ "$*" == *"-- --ignored --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --nocapture --test-threads=1"* ]] || {
+      [[ "$*" == *"-- --ignored --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1"* ]] || {
         echo 'RC interop Cargo invocation did not run the ignored suite serially' >&2
         exit 91
       }

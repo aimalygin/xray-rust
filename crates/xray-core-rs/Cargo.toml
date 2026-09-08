@@ -30,6 +30,7 @@ xray-routing = { path = "../xray-routing" }
 xray-runtime = { path = "../xray-runtime" }
 xray-transport = { path = "../xray-transport" }
 xray-tun = { path = "../xray-tun" }
+xray-vless-encryption = { path = "../xray-vless-encryption" }
 zeroize.workspace = true
 
 [dev-dependencies]

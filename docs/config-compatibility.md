@@ -4,6 +4,12 @@
 a schema-compatible replacement for Xray-core. Unsupported modeled fields
 normally fail parsing with a JSON path instead of being silently approximated.
 
+Use `xray-rust config check --config client.json --json` for exact parser
+validation without starting the core. [Configuration tooling](config-tooling.md)
+documents the generated [machine-readable contract](config-contract.json),
+canonical examples, geodata lookup and the boundary between parser acceptance
+and later runtime validation.
+
 ## Minimal loopback example
 
 This config exposes unauthenticated SOCKS5 only on loopback and routes through
@@ -67,12 +73,30 @@ subset rather than full Xray sniffing behavior.
 
 `freedom`, `vless`, and `dns` are supported. DNS outbound settings are described
 below. VLESS accepts one `vnext` server with one or more UUID users, but the
-runtime currently selects the first user.
-`encryption: "none"`, optional `level`, and these flow values are accepted:
+runtime currently selects the first user. With `encryption: "none"`, optional
+`level` and these flow values are accepted:
 
 - empty/no flow;
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
+
+The development `0.6` line also accepts bounded
+`mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` configurations with one
+to eight ordered canonical unpadded base64url X25519 (32-byte) or ML-KEM-768
+(1,184-byte) public keys. Optional padding uses the upstream alternating
+length/gap syntax, capped at 32 parts, 65,553 bytes, one second per gap and five
+seconds total. Encryption composes with raw, WebSocket, HTTPUpgrade, gRPC,
+and XHTTP, including both Vision flows. Existing carrier/security constraints
+still apply; REALITY remains unavailable on WebSocket/HTTPUpgrade. A missing encryption field defaults to `none`; explicit
+non-string values fail. Malformed ML-KEM coefficients and low-order X25519
+keys fail before dialing. Swift/Kotlin share-link import supports the same
+bounded shape over `tcp`/`raw` and XHTTP/SplitHTTP with none/TLS/REALITY security,
+including both Vision flows. WS/HTTPUpgrade/gRPC links still require JSON.
+Encrypted links reject irrelevant transport/security fields and insecure TLS
+verification; unsupported encryption errors redact the value. A 0-RTT ticket
+is memory-only, is invalidated on rejected/cancelled resumption, and never
+causes automatic early-data replay. See the
+[wire/lifecycle design](vless-encryption-design.md) for limits and validation.
 
 `streamSettings.method` (preferred in v26.7.28) and its `network` alias accept
 `tcp`/`raw`, `ws`/`websocket`, `httpupgrade`, `grpc`, and
@@ -115,13 +139,14 @@ chain remain rejected rather than bypassing the configured edge. When a VLESS
 hop can carry the next domain target, the target stays unresolved until that
 hop; only terminal Freedom carriers use local destination resolution.
 
-VLESS with `encryption: "none"` and no stream security fails closed for a
+VLESS whose first selected user has `encryption: "none"` and no stream security fails closed for a
 public server address. This adopts Xray-core v26.7.28's policy but deliberately
 closes an upstream legacy-schema gap: Xray invokes the guard for simplified
 top-level VLESS settings, while its legacy `vnext` shape bypasses it.
 xray-rust supports `vnext` and applies the guard there as an intentional
 security hardening, so this one unsafe legacy profile is rejected even though
-the pinned Xray binary accepts it. Such a server must use TLS or REALITY unless
+the pinned Xray binary accepts it. Such a server must use TLS, REALITY, or the
+supported VLESS encryption subset unless
 its IP is in Xray's exemption set (`0.0.0.0/8`, `10/8`,
 `100.64/10`, `127/8`, `169.254/16`, `172.16/12`, `192.0.0/24`,
 `192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`,
@@ -237,8 +262,8 @@ behavior too, and rarely what the author intended.
 
 #### What these transports cannot be combined with
 
-Xray refuses both pairings too, so refusing them here only moves the failure
-earlier — the two land in different places, but neither reaches the wire:
+With `encryption: "none"`, Xray refuses both pairings too, so refusing them
+here only moves the failure earlier — the two land in different places, but neither reaches the wire:
 
 - **REALITY is rejected** at parse time, matching Xray's "REALITY only supports
   RAW, XHTTP and gRPC for now", which Xray raises while building the stream
@@ -281,10 +306,12 @@ The configured security and ALPN list choose the wire engine before dialing:
 
 This follows Xray's configured-list decision; it is not an ALPN fallback
 ladder. In particular, the H3 branch requires TLS, advertises exactly `h3`, and
-never retries over H2/H1. REALITY is supported on H2. Vision is not: as with
+never retries over H2/H1. REALITY is supported on H2. Without VLESS encryption,
+Vision is refused: as with
 gRPC, XHTTP returns an HTTP stream wrapper rather than the TLS/REALITY
 connection Vision needs to inspect directly, and xray-core refuses the same
-shape later in its VLESS outbound.
+shape later in its VLESS outbound. Enabling VLESS encryption provides the
+protected layer required by Vision, including on XHTTP.
 
 `host` resolves the HTTP authority ahead of `tlsSettings.serverName` or
 `realitySettings.serverName`, then the VLESS server address. The native client
@@ -350,9 +377,20 @@ Range fields accept a JSON integer or Xray's string form such as
 `packet-up`; cookie/header uplink-data placement is also packet-up-only.
 `noSSEHeader` and `serverMaxHeaderBytes` are accepted but have no client-side
 effect because they configure Xray's inbound response/listener. A null
-`downloadSettings` is equivalent to absent; a populated effective value is
-rejected because it requires a second independent transport stack. `extra`
-follows Xray's one-level `SplitHTTPConfig.Build` replacement: its object (or a
+`downloadSettings` is equivalent to absent. A populated effective value selects
+one independent XHTTP download stack, requiring explicit `address`, `port`, and
+`network: "xhttp"` (or `splithttp`, including the `method` alias). It has its own
+TLS/REALITY identity, HTTP version, XHTTP settings, QUIC policy and XMUX pool.
+The download request uses the upload's session ID. Upload modes are `packet-up`
+and `stream-up`; REALITY `auto` becomes `stream-up` when downloadSettings exists.
+`stream-one`, effective nested downloads, protected-upload/plaintext-download
+combinations, and transport-layer chaining with downloads are refused. Without
+VLESS encryption the independent plaintext destination must satisfy the same
+private/test address exemption as the upload. Unknown fields and `allowInsecure`
+remain errors. The endpoints must converge on the same server session namespace.
+See [download design](xhttp-download-design.md) for ownership and evidence.
+Canonical JSON is supported; Swift/Kotlin share-link import does not yet project
+populated downloadSettings. `extra` follows Xray's one-level `SplitHTTPConfig.Build` replacement: its object (or a
 zero-valued config for JSON null) replaces every outer field except `host`,
 `path`, and `mode`, which always come from the outer object. A nested `extra`
 is inert because Xray does not invoke `Build` recursively. The removed legacy
@@ -552,29 +590,19 @@ REALITY is accepted with gRPC, matching Xray's "REALITY only supports RAW,
 XHTTP and gRPC for now" — gRPC is on that list where ws and httpupgrade are
 not.
 
-`xtls-rprx-vision` is rejected, and both ends refuse it in different places —
-on neither end at config time. Here the profile parses and the outbound builds;
-what refuses is the guard the connect path runs before it dials, because this
-client admits Vision only on the raw transport under `tls` or `reality`. On
-xray-core the transport dial *succeeds* and the refusal comes later still, from
-the VLESS outbound's `Process`, which accepts exactly two shapes
-(`proxy/vless/outbound/outbound.go:268-285`): a `*encryption.CommonConn` —
-VLESS `encryption` is on — which is tested first and does not care what the
-network is; or, failing that, an `iConn` that is a `*tls.Conn`, `*tls.UConn`
-or `*reality.UConn`. Everything else gets "XTLS only supports TLS and REALITY
-directly for now."
+With `encryption: "none"`, `xtls-rprx-vision` is refused by the pre-dial
+runtime guard on gRPC. The profile still parses and builds, matching Xray's
+configuration acceptance. Xray's VLESS `Process` first accepts an
+`*encryption.CommonConn`; otherwise it requires the dialer to return a TLS or
+REALITY connection directly (`proxy/vless/outbound/outbound.go:268-285`).
+gRPC returns a Hunk/MultiHunk wrapper, so the latter branch cannot work.
 
-Neither shape is reachable over gRPC here. `conn` becomes a
-`*encryption.CommonConn` whenever `h.encryption != nil`
-(`outbound.go:211-216`), and this client accepts `encryption: "none"` alone,
-so the first branch is out for every profile we parse. The second asks whether
-the transport dialer handed the security conn straight back as `iConn`, which
-is a property of the dialer and not of `network` or of `security`: the gRPC
-dialer feeds that conn to grpc's `ContextDialer`
-(`transport/internet/grpc/dial.go:138-151`) and returns a `HunkConn` or
-`MultiHunkConn` wrapper instead (`dial.go:65,74`). Adding `security: tls` does
-not change that; the wrapper is what the dialer returns either way, and ws,
-httpupgrade and xhttp wrap their TLS conn the same way.
+With VLESS encryption enabled, the CommonConn branch is available on every
+implemented carrier. Vision Direct removes that encryption layer alone,
+retaining the gRPC wrapper and its TLS/REALITY protection; random mode also
+retains header masking. The same rule enables encrypted Vision on WebSocket,
+HTTPUpgrade, and XHTTP. See the [encryption design](vless-encryption-design.md)
+for the full-Xray application matrix and remaining evidence boundaries.
 
 Resist restating that as a list of networks; every such shortcut written here
 so far has been wrong. mKCP carries Vision, because its dialer ends
@@ -883,7 +911,7 @@ the scheduler does not leave detached connection tasks running.
 
 Supported routing configuration:
 
-- `domainStrategy`: `AsIs` or `IPIfNonMatch`;
+- `domainStrategy`: `AsIs`, `IPIfNonMatch`, or `IPOnDemand` (since `0.6.0-dev.0`);
 - rule `type`: `field`;
 - selectors: `inboundTag`, `domain`/`domains`, `ip`, `network`, and `port`;
 - destination: exactly one of `outboundTag` or `balancerTag`;
@@ -896,6 +924,24 @@ comma-separated string. `port` accepts a number or comma/range string over
 `0..=65535`. Rules are evaluated in declaration order, and every populated
 selector field inside one rule is ANDed; alternatives belong in arrays/ranges
 or separate ordered rules.
+
+`IPOnDemand` resolves a domain when evaluation reaches an IP condition, after
+the rule's inbound/network/port predicates and before its domain predicate,
+matching the pinned Xray order. An earlier matching domain-only rule avoids
+DNS entirely. A combined domain/IP rule can trigger DNS even when its domain
+predicate will not match. Every returned address is eligible, while rule order
+takes priority over address order and the outbound receives the original
+destination. At most 256 unique socket-address candidates are allowed; an
+oversized result fails the selection rather than being truncated. The resolver
+owns its result allocation; this is a bound on routing work.
+
+Each selection attempts at most one lookup through the shared managed
+resolver/cache. On lookup failure or an empty answer, later domain/metadata
+rules still apply, otherwise the configured default is used. Internal DNS
+bootstrap routing skips resolution for both strategies to prevent recursion.
+The new strategy inherits configured DNS families, single-flight, bounded
+stale service, and cancellation; it does not introduce its own resolver or
+background tasks. Literal IP targets never require DNS.
 
 Balancer selectors use Xray's prefix semantics and accept either one string or
 an array. Tagged outbound candidates are deduplicated through the same
@@ -928,7 +974,7 @@ opened flows and lazy handler/transport pools remain intact. Non-empty strategy
 ABI 1.4 can reparse and atomically publish a scoped top-level `routing` object
 for new flows. Ordered rules, `domainStrategy`, and their compiled
 `geosite`/`geoip` matchers change together as one revision; a selection that
-awaits an `IPIfNonMatch` lookup retains its original revision. Direct targets
+awaits an `IPIfNonMatch` or `IPOnDemand` lookup retains its original revision. Direct targets
 must name loaded outbounds. Balancer targets may be reused only with the exact
 loaded balancer definitions because group membership, strategies, fallback
 edges, and handler pools remain part of the immutable graph. Other top-level

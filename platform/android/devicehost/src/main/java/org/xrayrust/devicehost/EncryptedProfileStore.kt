@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import java.io.File
+import java.io.InputStream
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -47,8 +48,9 @@ internal class EncryptedProfileStore(context: Context) {
         if (!exists()) {
             return null
         }
-        val envelope = atomicFile.readFully()
-        require(envelope.size <= MAX_ENVELOPE_BYTES) { "encrypted profile is too large" }
+        val envelope = atomicFile.openRead().use { input ->
+            readBoundedProfileEnvelope(input, MAX_ENVELOPE_BYTES)
+        }
         val (iv, ciphertext) = try {
             ProfileCipherEnvelope.decode(envelope)
         } finally {
@@ -100,6 +102,32 @@ internal class EncryptedProfileStore(context: Context) {
         const val GCM_TAG_BITS = 128
         const val MAX_ENVELOPE_BYTES = 1024 * 1024
         val ASSOCIATED_DATA = "xray-rust-device-gate-profile-v1".toByteArray(Charsets.UTF_8)
+    }
+}
+
+internal fun readBoundedProfileEnvelope(input: InputStream, maximumBytes: Int): ByteArray {
+    require(maximumBytes in 0 until Int.MAX_VALUE) { "invalid encrypted profile size limit" }
+    val scratch = ByteArray(maximumBytes + 1)
+    var size = 0
+    try {
+        while (size < scratch.size) {
+            val count = input.read(scratch, size, scratch.size - size)
+            if (count < 0) {
+                return scratch.copyOf(size)
+            }
+            if (count == 0) {
+                val byte = input.read()
+                if (byte < 0) {
+                    return scratch.copyOf(size)
+                }
+                scratch[size++] = byte.toByte()
+            } else {
+                size += count
+            }
+        }
+        throw IllegalArgumentException("encrypted profile is too large")
+    } finally {
+        scratch.fill(0)
     }
 }
 

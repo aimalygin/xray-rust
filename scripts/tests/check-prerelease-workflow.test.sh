@@ -184,4 +184,53 @@ if grep -Eiq "$registry_publish_pattern" <<<"$rc_path"; then
   die "RC publication path can publish to a package registry"
 fi
 
-echo "verified idempotent source-only prerelease workflow policy"
+# Execute the actual workflow classifier: a manual run (even on an RC tag)
+# must run verification without acquiring publication privileges.
+classifier="$(
+  awk '
+    /- name: Classify candidate/ { capture = 1; next }
+    capture && /        run: \|/ { script = 1; next }
+    script && /^          / { sub(/^          /, ""); print; next }
+    script && /^      - name:/ { exit }
+  ' "$WORKFLOW"
+)"
+[[ -n "$classifier" ]] || die "candidate classifier is missing"
+classifier_output="$(mktemp)"
+trap 'rm -f "$classifier_output"' EXIT
+
+check_classification() {
+  local event="$1" ref="$2" expected_rc="$3" expected_gates="$4"
+  : >"$classifier_output"
+  (
+    cd "$WORKSPACE_ROOT"
+    export GITHUB_EVENT_NAME="$event" GITHUB_REF="$ref"
+    export RELEASE_TAG="${ref#refs/*/}" GITHUB_OUTPUT="$classifier_output"
+    bash -eu -o pipefail -c "$classifier"
+  )
+  grep -Fxq "is_rc=$expected_rc" "$classifier_output" || die "unsafe RC classification: $event $ref"
+  grep -Fxq "run_release_gates=$expected_gates" "$classifier_output" || die "wrong candidate gates: $event $ref"
+  if [[ "$expected_rc" == false ]] && grep -q '^artifact_name=' "$classifier_output"; then
+    die "verification-only candidate creates a publication artifact: $event $ref"
+  fi
+}
+
+check_classification push refs/tags/v0.6.0-rc.1 true true
+check_classification push refs/tags/v0.6.0 false false
+check_classification push refs/heads/codex/v06-candidate false true
+check_classification push refs/heads/v0.6.0-rc.1 false false
+check_classification push refs/heads/main false false
+check_classification workflow_dispatch refs/heads/main false true
+check_classification workflow_dispatch refs/tags/v0.6.0-rc.1 false true
+check_classification schedule refs/heads/main false false
+check_classification pull_request refs/pull/1/merge false false
+
+for job in rc-interop host-hardening fuzz-smoke controlled-network; do
+  grep -Fxq "    if: needs.release-metadata.outputs.run_release_gates == 'true'" <<<"$(job_body "$job")" || \
+    die "$job is not enabled for candidate verification"
+done
+for job in release-evidence publish-prerelease; do
+  grep -Fxq "    if: needs.release-metadata.outputs.is_rc == 'true'" <<<"$(job_body "$job")" || \
+    die "$job is not restricted to RC tag publication"
+done
+
+echo "verified idempotent source-only prerelease workflow policy and candidate isolation"

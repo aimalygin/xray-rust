@@ -24,6 +24,11 @@ behavior and the end-to-end connection-reuse contract. Keep this patch local
 until the same cancellation fix is available in a compatible upstream
 release, then remove the path override and this vendored copy together.
 
+The canonical crate archive SHA-256 is
+`8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4`.
+`scripts/check-vendored-sources.sh` re-downloads it, applies
+`XRAY-PATCH.diff` without fuzz, and requires an exact source-tree match.
+
 ## Overview
 
 `h3-quinn` provides the integration between the `h3` HTTP/3 implementation and the `quinn` QUIC transport library. This creates a fully functional HTTP/3 client and server using Quinn as the underlying QUIC implementation.

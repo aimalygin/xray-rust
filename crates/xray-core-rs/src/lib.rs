@@ -242,6 +242,8 @@ pub enum CoreError {
     RoutingPolicyBalancerTopologyChanged,
     #[error("routing policy revision is exhausted")]
     RoutingPolicyRevisionExhausted,
+    #[error("IPOnDemand DNS answer exceeds the routing limit of {limit} addresses")]
+    RoutingDnsAddressLimitExceeded { limit: usize },
     #[error(transparent)]
     OutboundProxyGraph(#[from] OutboundProxyGraphError),
     #[error("outbound chaining does not support {0}")]

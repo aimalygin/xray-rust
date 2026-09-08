@@ -498,6 +498,12 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("xray_tun_poll_udp_slow_flow_event"));
     assert!(jni.contains("xray_tun_poll_udp_response_gap_event"));
     assert!(jni.contains("xray_tun_poll_udp_quic_blocked_event"));
+    assert!(jni.contains("#define XRAY_JNI_CATCH_RETURN"));
+    assert!(jni.contains("#define XRAY_JNI_CATCH_VOID"));
+    assert!(jni.contains("catch (const std::bad_alloc &)"));
+    assert!(jni.contains("\"java/lang/OutOfMemoryError\", \"native allocation failed\""));
+    assert!(jni.contains("\"java/lang/IllegalStateException\", \"native operation failed\""));
+    assert!(jni.contains("if (array == nullptr)"));
 
     let jni_new = jni
         .find("Java_org_xrayrust_mobile_XrayCore_nativeNew")
@@ -512,6 +518,25 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
         jni_version_check < jni_core_new,
         "JNI adapter must validate the FFI ABI before creating a core"
     );
+}
+
+#[test]
+fn android_profile_store_bounds_encrypted_input_before_allocating_plaintext() {
+    let source = fs::read_to_string(workspace_root().join(
+        "platform/android/devicehost/src/main/java/org/xrayrust/devicehost/EncryptedProfileStore.kt",
+    ))
+    .expect("read Android encrypted profile store");
+    let tests = fs::read_to_string(workspace_root().join(
+        "platform/android/devicehost/src/test/java/org/xrayrust/devicehost/ProfileCipherEnvelopeTest.kt",
+    ))
+    .expect("read Android encrypted profile tests");
+
+    assert!(source.contains("readBoundedProfileEnvelope(input, MAX_ENVELOPE_BYTES)"));
+    assert!(source.contains("val scratch = ByteArray(maximumBytes + 1)"));
+    assert!(source.contains("throw IllegalArgumentException(\"encrypted profile is too large\")"));
+    assert!(source.contains("scratch.fill(0)"));
+    assert!(!source.contains("atomicFile.readFully()"));
+    assert!(tests.contains("fun boundedReaderAcceptsLimitAndRejectsTheNextByte()"));
 }
 
 #[test]
@@ -531,8 +556,8 @@ fn android_adapter_exposes_bounded_vless_share_link_import() {
         "private const val MAX_XHTTP_EXTRA_BYTES = 64 * 1024",
         "setOf(\"tcp\", \"raw\")",
         "setOf(\"xhttp\", \"splithttp\")",
-        "XhttpSecurity.Tls",
-        "XhttpSecurity.Reality",
+        "StreamSecurity.Tls",
+        "StreamSecurity.Reality",
         "query.rejectDuplicates(criticalQueryNames)",
         "decodeXhttpExtra",
         "VLESS URL contains unsupported `$name`.",
@@ -1428,7 +1453,7 @@ fn android_script_covers_rust_targets_and_jni_abis() {
 }
 
 #[test]
-fn android_jni_library_is_linked_for_sixteen_kibibyte_pages() {
+fn android_jni_library_has_hardened_linker_surface() {
     let cmake = fs::read_to_string(
         workspace_root().join("platform/android/xraymobile/src/main/cpp/CMakeLists.txt"),
     )
@@ -1436,6 +1461,9 @@ fn android_jni_library_is_linked_for_sixteen_kibibyte_pages() {
 
     assert!(cmake.contains("-Wl,-z,max-page-size=16384"));
     assert!(cmake.contains("-Wl,-z,common-page-size=16384"));
+    assert!(cmake.contains("-Wl,--exclude-libs,ALL"));
+    assert!(cmake.contains("CXX_VISIBILITY_PRESET hidden"));
+    assert!(cmake.contains("VISIBILITY_INLINES_HIDDEN YES"));
     assert!(cmake.contains("target_link_options"));
 }
 

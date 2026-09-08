@@ -3,8 +3,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/v06-candidate]
     tags: ["v*"]
+  workflow_dispatch:
   schedule:
     - cron: "17 6 * * 1"
 
@@ -23,33 +24,46 @@ env:
 
 jobs:
   release-metadata:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/codex/v06-candidate'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       artifact_name: ${{ steps.release.outputs.artifact_name }}
+      candidate_commit: ${{ steps.release.outputs.candidate_commit }}
+      candidate_tree: ${{ steps.release.outputs.candidate_tree }}
       is_rc: ${{ steps.release.outputs.is_rc }}
+      run_release_gates: ${{ steps.release.outputs.run_release_gates }}
     steps:
-      - name: Check out release tag
+      - name: Check out candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Verify release tag and changelog
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         run: bash scripts/check-release-version.sh "$GITHUB_REF_NAME"
 
-      - name: Classify release tag
+      - name: Classify candidate
         id: release
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]]; then
+          is_rc=false
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/* && "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]]; then
+            is_rc=true
             echo "is_rc=true" >>"$GITHUB_OUTPUT"
             echo "artifact_name=github-prerelease-${RELEASE_TAG}" >>"$GITHUB_OUTPUT"
           else
             echo "is_rc=false" >>"$GITHUB_OUTPUT"
           fi
+          if [[ "$is_rc" == true || "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/heads/codex/v06-candidate ]]; then
+            echo "run_release_gates=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "run_release_gates=false" >>"$GITHUB_OUTPUT"
+          fi
+          echo "candidate_commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          echo "candidate_tree=$(git rev-parse 'HEAD^{tree}')" >>"$GITHUB_OUTPUT"
 
       - name: Prepare source prerelease bundle
         if: steps.release.outputs.is_rc == 'true'
@@ -104,6 +118,48 @@ jobs:
           path: ${{ runner.temp }}/github-prerelease
           if-no-files-found: error
           retention-days: 14
+
+  release-evidence:
+    if: needs.release-metadata.outputs.is_rc == 'true'
+    needs: release-metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out exact release candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-metadata.outputs.candidate_commit }}
+          persist-credentials: false
+
+      - name: Download validated exact-candidate evidence
+        env:
+          CANDIDATE_COMMIT: ${{ needs.release-metadata.outputs.candidate_commit }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          run_id="$(
+            gh api \
+              "repos/$RELEASE_REPOSITORY/actions/workflows/v06-release-evidence.yml/runs?event=workflow_dispatch&status=success&head_sha=$CANDIDATE_COMMIT&per_page=100" \
+              --jq '.workflow_runs | sort_by(.created_at) | last | .id // empty'
+          )"
+          [[ "$run_id" =~ ^[1-9][0-9]*$ ]]
+          gh run download "$run_id" \
+            --repo "$RELEASE_REPOSITORY" \
+            --name "v06-release-evidence-$CANDIDATE_COMMIT" \
+            --dir "$RUNNER_TEMP/v06-release-evidence"
+
+      - name: Revalidate evidence at the release boundary
+        env:
+          CANDIDATE_COMMIT: ${{ needs.release-metadata.outputs.candidate_commit }}
+          CANDIDATE_TREE: ${{ needs.release-metadata.outputs.candidate_tree }}
+        run: |
+          archive="$RUNNER_TEMP/v06-release-evidence/v06-release-evidence.zip"
+          test -f "$archive"
+          python3 scripts/check-v06-release-evidence.py \
+            "$archive" "$CANDIDATE_COMMIT" "$CANDIDATE_TREE"
 
   secrets:
     runs-on: ubuntu-24.04
@@ -174,6 +230,7 @@ jobs:
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
+          python3 -m unittest scripts.tests.test_v06_release_evidence
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
@@ -200,6 +257,16 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
+
+      - name: Publish validated configuration contract
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: configuration-contract
+          path: |
+            docs/config-contract.json
+            docs/config-tooling.md
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Test mobile build-script guards
         run: bash scripts/tests/check-mobile-toolchains.test.sh
@@ -234,8 +301,31 @@ jobs:
       - name: Verify Go-oracle fixtures
         run: bash scripts/verify-oracle-fixtures.sh
 
+      - name: Check out pinned routing and encryption oracle
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: XTLS/Xray-core
+          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          path: Xray-core
+          persist-credentials: false
+
+      - name: Verify routing domain strategies against pinned Xray-core
+        run: bash scripts/check-routing-oracle.sh
+
+      - name: Install pinned Rust toolchain for encryption interop
+        run: rustup toolchain install 1.96.0 --profile minimal
+
+      - name: Select pinned Rust toolchain
+        run: rustup default 1.96.0
+
+      - name: Verify VLESS encryption primitives and live pinned interop
+        run: bash scripts/check-vless-encryption-oracle.sh
+
+      - name: Verify independent XHTTP downloads against pinned Xray-core
+        run: bash scripts/check-xhttp-download-oracle.sh
+
   rc-interop:
-    if: needs.release-metadata.outputs.is_rc == 'true'
+    if: needs.release-metadata.outputs.run_release_gates == 'true'
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -358,7 +448,7 @@ jobs:
         run: echo "::warning title=Xray-core main compatibility smoke failed::revision=${{ steps.xray.outputs.revision }} run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
   host-hardening:
-    if: needs.release-metadata.outputs.is_rc == 'true'
+    if: needs.release-metadata.outputs.run_release_gates == 'true'
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -386,7 +476,7 @@ jobs:
         run: bash scripts/run-v05-host-hardening.sh asan
 
   fuzz-smoke:
-    if: needs.release-metadata.outputs.is_rc == 'true'
+    if: needs.release-metadata.outputs.run_release_gates == 'true'
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -405,10 +495,20 @@ jobs:
       - name: Run extended ASan parser, wire, TUN, DNS, and FFI campaigns
         env:
           XRAY_V05_FUZZ_SECONDS: "60"
+          XRAY_FUZZ_EVIDENCE_DIR: ${{ runner.temp }}/fuzz-evidence
         run: bash scripts/run-v05-host-hardening.sh fuzz
 
+      - name: Preserve fuzz corpus and crash reproducers
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/fuzz-evidence
+          if-no-files-found: warn
+          retention-days: 14
+
   controlled-network:
-    if: needs.release-metadata.outputs.is_rc == 'true'
+    if: needs.release-metadata.outputs.run_release_gates == 'true'
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -453,7 +553,7 @@ jobs:
       - name: Upload controlled-network evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: v05-controlled-network-${{ github.ref_name }}
+          name: v05-controlled-network-${{ github.sha }}
           path: ${{ runner.temp }}/v05-controlled-network
           if-no-files-found: error
           retention-days: 14
@@ -592,6 +692,7 @@ jobs:
           platform/android/gradlew \
             -p platform/android \
             :xraymobile:testDebugUnitTest \
+            --dependency-verification strict \
             --no-daemon
 
   supply-chain:
@@ -620,6 +721,15 @@ jobs:
           grep -Fxq \
             'distributionUrl=https\://services.gradle.org/distributions/gradle-8.14.2-bin.zip' \
             platform/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Verify vendored crate provenance and exact patch set
+        run: bash scripts/check-vendored-sources.sh
+
+      - name: Verify Gradle dependency provenance against canonical repositories
+        run: |
+          python3 scripts/check-gradle-verification.py \
+            platform/android/gradle/verification-metadata.xml \
+            --online
           grep -Fxq \
             'distributionSha256Sum=7197a12f450794931532469d4ff21a59ea2c1cd59a3ec3f89c035c3c420a6999' \
             platform/android/gradle/wrapper/gradle-wrapper.properties
@@ -638,6 +748,7 @@ jobs:
     if: needs.release-metadata.outputs.is_rc == 'true'
     needs:
       - release-metadata
+      - release-evidence
       - secrets
       - rust
       - go-oracles

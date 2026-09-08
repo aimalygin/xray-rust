@@ -1526,6 +1526,14 @@ async fn start_xray_vless_server(
     xray_checkout: &Path,
     server_config: XrayVlessServerConfig,
 ) -> XrayServer {
+    start_xray_vless_server_customized(xray_checkout, server_config, |_| {}).await
+}
+
+async fn start_xray_vless_server_customized(
+    xray_checkout: &Path,
+    server_config: XrayVlessServerConfig,
+    customize: impl FnOnce(&mut serde_json::Value),
+) -> XrayServer {
     let temp_dir = create_temp_dir("xray-rust-local-interop");
     let binary = temp_dir
         .path
@@ -1554,21 +1562,36 @@ async fn start_xray_vless_server(
         .as_ref()
         .map(|identity| Arc::clone(&identity.client_config));
     write_xray_vless_config(&config_path, port, &server_config, tls_identity.as_ref());
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    customize(&mut json);
+    fs::write(&config_path, serde_json::to_vec(&json).unwrap()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
 
-    let build_output = Command::new("go")
-        .arg("build")
-        .arg("-o")
-        .arg(&binary)
-        .arg("./main")
-        .current_dir(xray_checkout)
-        .output()
-        .expect("start go build for Xray-core");
-    assert!(
-        build_output.status.success(),
-        "go build ./main failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&build_output.stdout),
-        String::from_utf8_lossy(&build_output.stderr)
-    );
+    let binary = if let Some(built) = env::var_os("XRAY_VLESS_FULL_BINARY") {
+        PathBuf::from(built)
+    } else {
+        let build_output = Command::new("go")
+            .arg("build")
+            .arg("-o")
+            .arg(&binary)
+            .arg("./main")
+            .current_dir(xray_checkout)
+            .output()
+            .expect("start go build for Xray-core");
+        assert!(
+            build_output.status.success(),
+            "go build ./main failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&build_output.stdout),
+            String::from_utf8_lossy(&build_output.stderr)
+        );
+
+        binary
+    };
 
     let mut child = Command::new(&binary)
         .arg("run")
@@ -1780,7 +1803,7 @@ fn rust_vless_outbound(
             port: xray_addr.port(),
             users: vec![VlessUser {
                 id: TEST_UUID.parse().expect("static uuid"),
-                encryption: "none".to_owned(),
+                encryption: Default::default(),
                 flow: flow.map(ToOwned::to_owned),
                 level: 0,
             }],
@@ -3398,3 +3421,9 @@ fn bulk_interop_payload(len: usize) -> Vec<u8> {
         })
         .collect()
 }
+
+#[path = "local_xray_interop_tests/vless_encryption.rs"]
+mod vless_encryption;
+
+#[path = "local_xray_interop_tests/xhttp_download.rs"]
+mod xhttp_download;

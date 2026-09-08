@@ -1,0 +1,1 @@
+{"outbounds":[{"protocol":"vless","settings":{"vnext":[{"address":"example.test","port":443,"users":[{"id":"00010203-0405-0607-0809-0a0b0c0d0e0f","encryption":"mlkem768x25519plus.random.1rtt.CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}]}}]}

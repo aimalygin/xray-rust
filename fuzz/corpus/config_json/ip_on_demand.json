@@ -1,0 +1,11 @@
+{
+  "inbounds": [],
+  "outbounds": [{"tag": "direct", "protocol": "freedom", "settings": {}}],
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      {"type": "field", "network": "tcp,udp", "port": "80,443", "ip": ["203.0.113.0/24", "2001:db8::/32"], "domain": ["domain:example.test"], "outboundTag": "direct"},
+      {"type": "field", "domain": ["full:example.test"], "outboundTag": "direct"}
+    ]
+  }
+}

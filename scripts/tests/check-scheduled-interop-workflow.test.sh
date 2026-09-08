@@ -193,8 +193,9 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, codex/v06-candidate]
     tags: ["v*"]
+  workflow_dispatch:
   schedule:
     - cron: "17 6 * * 1"
 permissions:
@@ -219,6 +220,7 @@ EXPECTED
 
 expected_job_headers="$(cat <<'EXPECTED'
   release-metadata:
+  release-evidence:
   secrets:
   rust:
   go-oracles:
@@ -237,7 +239,7 @@ EXPECTED
 
 expected_rc_interop="$(cat <<'EXPECTED'
   rc-interop:
-    if: needs.release-metadata.outputs.is_rc == 'true'
+    if: needs.release-metadata.outputs.run_release_gates == 'true'
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -375,6 +377,7 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
+          python3 -m unittest scripts.tests.test_v06_release_evidence
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
@@ -393,6 +396,15 @@ expected_rust="$(cat <<'EXPECTED'
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --no-deps --locked
+      - name: Publish validated configuration contract
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: configuration-contract
+          path: |
+            docs/config-contract.json
+            docs/config-tooling.md
+          if-no-files-found: error
+          retention-days: 14
       - name: Test mobile build-script guards
         run: bash scripts/tests/check-mobile-toolchains.test.sh
 EXPECTED
@@ -401,6 +413,7 @@ EXPECTED
 expected_publish_needs="$(cat <<'EXPECTED'
     needs:
       - release-metadata
+      - release-evidence
       - secrets
       - rust
       - go-oracles

@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -387,6 +388,45 @@ int32_t protect_socket(int32_t fd, void *user_data) {
 
 } // namespace
 
+namespace {
+
+void throw_jni_boundary_exception(
+    JNIEnv *env,
+    const char *class_name,
+    const char *message) noexcept {
+  if (env == nullptr || env->ExceptionCheck()) {
+    return;
+  }
+  jclass exception_class = env->FindClass(class_name);
+  if (exception_class != nullptr) {
+    env->ThrowNew(exception_class, message);
+  }
+}
+
+} // namespace
+
+#define XRAY_JNI_CATCH_RETURN(env, fallback)                              \
+  catch (const std::bad_alloc &) {                                        \
+    throw_jni_boundary_exception(                                         \
+        env, "java/lang/OutOfMemoryError", "native allocation failed"); \
+    return (fallback);                                                     \
+  }                                                                       \
+  catch (...) {                                                           \
+    throw_jni_boundary_exception(                                         \
+        env, "java/lang/IllegalStateException", "native operation failed"); \
+    return (fallback);                                                     \
+  }
+
+#define XRAY_JNI_CATCH_VOID(env)                                          \
+  catch (const std::bad_alloc &) {                                        \
+    throw_jni_boundary_exception(                                         \
+        env, "java/lang/OutOfMemoryError", "native allocation failed"); \
+  }                                                                       \
+  catch (...) {                                                           \
+    throw_jni_boundary_exception(                                         \
+        env, "java/lang/IllegalStateException", "native operation failed"); \
+  }
+
 extern "C" JNIEXPORT jint JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeFfiVersionMajor(JNIEnv *, jclass) {
   return static_cast<jint>(xray_ffi_version_major());
@@ -403,29 +443,28 @@ Java_org_xrayrust_mobile_XrayCore_nativeFfiCapabilities(JNIEnv *, jclass) {
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_org_xrayrust_mobile_XrayCore_nativeNew(JNIEnv *env, jclass) {
+Java_org_xrayrust_mobile_XrayCore_nativeNew(JNIEnv *env, jclass) try {
   if (!ensure_supported_ffi_abi(env)) {
     return 0;
   }
 
+  auto native = std::make_unique<NativeCore>();
   XrayError *error = nullptr;
-  XrayCoreHandle *core = xray_core_new(&error);
-  if (core == nullptr) {
+  native->core = xray_core_new(&error);
+  if (native->core == nullptr) {
     throw_core_exception(env, xray_error_code(error), error);
     return 0;
   }
 
-  auto native = std::make_unique<NativeCore>();
-  native->core = core;
   return reinterpret_cast<jlong>(native.release());
-}
+} XRAY_JNI_CATCH_RETURN(env, 0)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeLoadConfig(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jstring config_json) {
+    jstring config_json) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -440,13 +479,13 @@ Java_org_xrayrust_mobile_XrayCore_nativeLoadConfig(
   XrayStatus status =
       xray_core_load_config_json(native->core, utf8_config.c_str(), &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeConfigWarnings(
     JNIEnv *env,
     jobject,
-    jlong handle) {
+    jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return nullptr;
@@ -482,7 +521,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeConfigWarnings(
     return nullptr;
   }
   return utf8_to_jstring(env, std::string_view(buffer.data(), written));
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetOutboundSelectorOverride(
@@ -490,7 +529,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetOutboundSelectorOverride(
     jobject,
     jlong handle,
     jstring group_tag,
-    jstring outbound_tag) {
+    jstring outbound_tag) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -510,14 +549,14 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetOutboundSelectorOverride(
       utf8_outbound_tag.c_str(),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeClearOutboundSelectorOverride(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jstring group_tag) {
+    jstring group_tag) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -534,14 +573,14 @@ Java_org_xrayrust_mobile_XrayCore_nativeClearOutboundSelectorOverride(
       utf8_group_tag.c_str(),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeReplaceRoutingPolicyJson(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jstring config_json) {
+    jstring config_json) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -558,74 +597,74 @@ Java_org_xrayrust_mobile_XrayCore_nativeReplaceRoutingPolicyJson(
       utf8_config.c_str(),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeRoutingPolicySnapshotJson(
     JNIEnv *env,
     jobject,
-    jlong handle) {
+    jlong handle) try {
   return snapshot_json(
       env,
       core_from_handle(handle),
       xray_core_routing_policy_snapshot_json,
       "xray returned an invalid routing policy snapshot length");
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeOutboundSelectionSnapshotJson(
     JNIEnv *env,
     jobject,
-    jlong handle) {
+    jlong handle) try {
   return snapshot_json(
       env,
       core_from_handle(handle),
       xray_core_outbound_selection_snapshot_json,
       "xray returned an invalid outbound selection snapshot length");
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeOutboundHealthSnapshotJson(
     JNIEnv *env,
     jobject,
-    jlong handle) {
+    jlong handle) try {
   return snapshot_json(
       env,
       core_from_handle(handle),
       xray_core_outbound_health_snapshot_json,
       "xray returned an invalid outbound health snapshot length");
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeConnectionSnapshotJson(
     JNIEnv *env,
     jobject,
-    jlong handle) {
+    jlong handle) try {
   return snapshot_json(
       env,
       core_from_handle(handle),
       xray_core_connection_snapshot_json,
       "xray returned an invalid connection snapshot length");
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeOutboundAccountingSnapshotJson(
     JNIEnv *env,
     jobject,
-    jlong handle) {
+    jlong handle) try {
   return snapshot_json(
       env,
       core_from_handle(handle),
       xray_core_outbound_accounting_snapshot_json,
       "xray returned an invalid outbound accounting snapshot length");
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jlong connection_id) {
+    jlong connection_id) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -641,14 +680,14 @@ Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection(
       static_cast<uint64_t>(connection_id),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativePollTunDiagnosticEvent(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jint kind) {
+    jint kind) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return nullptr;
@@ -818,14 +857,14 @@ Java_org_xrayrust_mobile_XrayCore_nativePollTunDiagnosticEvent(
       has_outbound_tag ? &outbound_tag_view : nullptr,
       has_event_error ? &event_error_view : nullptr,
       values);
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jobject protector_object) {
+    jobject protector_object) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -849,7 +888,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector(
   if (check_status(env, status, error)) {
     native->protector = std::move(protector);
   }
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe(
@@ -858,7 +897,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe(
     jlong handle,
     jstring url,
     jlong timeout_ms,
-    jstring outbound_tag) {
+    jstring outbound_tag) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -889,7 +928,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe(
       &error);
 
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
@@ -898,7 +937,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
     jlong handle,
     jint fd,
     jint packet_format,
-    jint close_policy) {
+    jint close_policy) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -912,14 +951,14 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
       static_cast<int32_t>(close_policy),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jint profile) {
+    jint profile) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -931,14 +970,14 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile(
       static_cast<int32_t>(profile),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jboolean collect) {
+    jboolean collect) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -950,14 +989,14 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings(
       collect == JNI_TRUE ? 1 : 0,
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetDnsBootstrapMode(
     JNIEnv *env,
     jobject,
     jlong handle,
-    jint mode) {
+    jint mode) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -969,7 +1008,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetDnsBootstrapMode(
       static_cast<int32_t>(mode),
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging(
@@ -977,7 +1016,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging(
     jobject,
     jlong handle,
     jstring directory,
-    jboolean enabled) {
+    jboolean enabled) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -995,10 +1034,10 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging(
       enabled == JNI_TRUE ? 1 : 0,
       &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) {
+Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -1007,10 +1046,10 @@ Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle
   XrayError *error = nullptr;
   XrayStatus status = xray_core_start(native->core, &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
-Java_org_xrayrust_mobile_XrayCore_nativeStop(JNIEnv *env, jobject, jlong handle) {
+Java_org_xrayrust_mobile_XrayCore_nativeStop(JNIEnv *env, jobject, jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -1019,7 +1058,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeStop(JNIEnv *env, jobject, jlong handle)
   XrayError *error = nullptr;
   XrayStatus status = xray_core_stop(native->core, &error);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeFree(JNIEnv *, jobject, jlong handle) {
@@ -1032,7 +1071,7 @@ Java_org_xrayrust_mobile_XrayCore_nativePushPacket(
     jobject,
     jlong handle,
     jbyteArray packet,
-    jint length) {
+    jint length) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return;
@@ -1060,7 +1099,7 @@ Java_org_xrayrust_mobile_XrayCore_nativePushPacket(
       &error);
   env->ReleaseByteArrayElements(packet, bytes, JNI_ABORT);
   check_status(env, status, error);
-}
+} XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativePollPackets(
@@ -1070,7 +1109,7 @@ Java_org_xrayrust_mobile_XrayCore_nativePollPackets(
     jobject storage,
     jintArray lengths,
     jint max_packet_bytes,
-    jint wait_milliseconds) {
+    jint wait_milliseconds) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return 0;
@@ -1142,10 +1181,10 @@ Java_org_xrayrust_mobile_XrayCore_nativePollPackets(
         native->java_poll_lengths.data());
   }
   return static_cast<jint>(packet_count);
-}
+} XRAY_JNI_CATCH_RETURN(env, 0)
 
 extern "C" JNIEXPORT jlongArray JNICALL
-Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle) {
+Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
     return nullptr;
@@ -1181,6 +1220,12 @@ Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle
       static_cast<jlong>(stats.tcp443_first_byte_duration_ms_max),
   };
   jlongArray array = env->NewLongArray(19);
+  if (array == nullptr) {
+    return nullptr;
+  }
   env->SetLongArrayRegion(array, 0, 19, values);
   return array;
-}
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
+
+#undef XRAY_JNI_CATCH_VOID
+#undef XRAY_JNI_CATCH_RETURN

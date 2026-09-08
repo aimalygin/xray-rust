@@ -1,10 +1,22 @@
 package org.xrayrust.devicehost
 
+import java.io.ByteArrayInputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class ProfileCipherEnvelopeTest {
+    @Test
+    fun boundedReaderAcceptsLimitAndRejectsTheNextByte() {
+        assertArrayEquals(
+            byteArrayOf(1, 2, 3, 4),
+            readBoundedProfileEnvelope(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4)), 4),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            readBoundedProfileEnvelope(ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5)), 4)
+        }
+    }
+
     @Test
     fun roundTripsFixedLengthIvAndCiphertext() {
         val iv = ByteArray(12) { it.toByte() }

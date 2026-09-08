@@ -167,14 +167,23 @@ are explicit alternatives. Imported VLESS profiles keep VLESS as the default
 outbound and only bypass private IP ranges through Freedom; the importer does
 not add domain-based captive-portal bypasses.
 
+Development `0.6` also imports bounded
+`mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` with one-to-eight
+canonical X25519/ML-KEM-768 relay keys and optional bounded padding over
+`tcp`/`raw` and `xhttp`/`splithttp`, with none, TLS, or REALITY security and
+optional Vision/Vision-UDP443. WS/HTTPUpgrade/gRPC profiles use JSON. Encrypted
+links reject irrelevant raw transport fields and insecure TLS. Key encodings,
+padding limits, and low-order/modulus checks match shared Rust fixtures; error
+messages redact rejected encryption values. This does not change the published
+`v0.5.0` distribution.
+
 The VLESS URL importer accepts raw/TCP + REALITY links and `xhttp`/`splithttp`
 links with `security=none`, TLS, or REALITY. XHTTP `host`, `path`, and `mode`
 remain outer settings. TLS imports preserve `sni`, `fp`, comma-separated
 `alpn`, and a valid legacy `allowInsecure`; absent `sni` and `fp` use the share
 format defaults (the remote host and `chrome`). REALITY imports preserve
 `pbk`, `fp`, `sni`, `sid`, `spx`, and `pqv`; an absent `sni` also defaults to
-the remote host. Vision flow is rejected for every XHTTP security mode because
-the runtime only supports it on raw/TCP.
+the remote host. XHTTP Vision requires VLESS encryption.
 
 An XHTTP `extra` JSON object is decoded from the usual single URL encoding or
 one additional percent-encoding layer and passed to the core for Xray-compatible
@@ -182,7 +191,7 @@ replacement. The importer caps `extra` at 64 KiB, never logs its contents, and
 does not recursively percent-decode it. Duplicate security-critical query
 fields and non-empty unsupported `pcs`, `vcn`, or ECH settings fail closed
 rather than producing a partial config; explicitly empty values are harmless
-no-ops. Raw/TCP + `security=none` remains rejected.
+no-ops. Unencrypted raw/TCP + `security=none` remains rejected.
 
 The reference XrayClient UI includes a sample-only **DNS Testing** section.
 `Config JSON` adds no DNS override and leaves DNS behavior to the stored JSON.

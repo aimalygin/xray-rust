@@ -18,6 +18,21 @@ xray-ffi = { path = "../crates/xray-ffi" }
 xray-proxy = { path = "../crates/xray-proxy" }
 xray-transport = { path = "../crates/xray-transport" }
 xray-tun = { path = "../crates/xray-tun" }
+xray-vless-encryption = { path = "../crates/xray-vless-encryption", features = ["fuzzing"] }
+
+[[bin]]
+name = "vless_encryption_records"
+path = "fuzz_targets/vless_encryption_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vless_encryption_handshake"
+path = "fuzz_targets/vless_encryption_handshake.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "config_json"

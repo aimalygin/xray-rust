@@ -38,6 +38,7 @@ run_asan() {
       --locked \
       -p xray-config \
       -p xray-proxy \
+      -p xray-vless-encryption \
       -p xray-transport \
       -p xray-tun \
       -p xray-core-rs \
@@ -60,8 +61,17 @@ run_fuzz() (
   fi
 
   local fuzz_root
-  fuzz_root="$(mktemp -d "${TMPDIR:-/tmp}/xray-v05-fuzz.XXXXXX")"
-  trap 'rm -rf -- "$fuzz_root"' EXIT
+  local fuzz_parent="${XRAY_FUZZ_EVIDENCE_DIR:-${TMPDIR:-/tmp}}"
+  mkdir -p "$fuzz_parent"
+  fuzz_root="$(mktemp -d "$fuzz_parent/xray-v05-fuzz.XXXXXX")"
+  # Keep reproducers on failure, and keep every CI campaign's evidence. Only
+  # successful local runs without an explicit evidence directory are temporary.
+  trap 'status=$?; if [[ "$status" == 0 && -z "${XRAY_FUZZ_EVIDENCE_DIR:-}" ]]; then rm -rf -- "$fuzz_root"; else echo "fuzz evidence retained at $fuzz_root"; fi; exit "$status"' EXIT
+  {
+    git rev-parse HEAD
+    git rev-parse 'HEAD^{tree}'
+    printf 'seconds_per_target=%s\n' "$seconds"
+  } >"$fuzz_root/campaign.txt"
 
   local target
   for target in \
@@ -72,6 +82,8 @@ run_fuzz() (
     quic_sniff \
     xhttp_framing \
     tun_queue \
+    vless_encryption_records \
+    vless_encryption_handshake \
     ffi_lifecycle; do
     local corpus_dir="$fuzz_root/corpus/$target"
     local artifact_dir="$fuzz_root/artifacts/$target"
@@ -84,6 +96,9 @@ run_fuzz() (
       max_len=16384
       timeout=15
     fi
+    # ThinLTO can discard dependency coverage registration on the pinned
+    # toolchain. Keep cross-crate counters and symbols for actionable crashes.
+    CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_STRIP=none \
     cargo "+$NIGHTLY" fuzz run "$target" "$corpus_dir" -- \
       -max_total_time="$seconds" \
       -max_len="$max_len" \

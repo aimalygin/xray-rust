@@ -1,3 +1,5 @@
+#[path = "stream_xhttp_transport_tests/split_download.rs"]
+mod split_download;
 use std::collections::VecDeque;
 use std::io;
 use std::pin::Pin;

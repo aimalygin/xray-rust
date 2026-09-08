@@ -10,6 +10,9 @@ client runtime; its supported compatibility surface is documented below.
 This project is unofficial and is not affiliated with XTLS or Xray-core.
 
 Current stable release: [`v0.5.0`](https://github.com/aimalygin/xray-rust/releases/tag/v0.5.0).
+Published release candidate: [`v0.6.0-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1),
+with the matching [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1).
+See the [candidate evidence and coverage limits](docs/v06-release-evidence.md#published-v060-rc1).
 
 ## Benchmarks
 
@@ -178,6 +181,7 @@ for setup details.
 - [Status and supported features](docs/status.md)
 - [Architecture](docs/architecture.md)
 - [Configuration compatibility](docs/config-compatibility.md)
+- [Configuration contract and CLI tooling](docs/config-tooling.md)
 - [C ABI lifecycle and ownership](docs/ffi.md)
 - [Verification](docs/verification.md)
 - [Mobile testing](docs/mobile-testing.md)

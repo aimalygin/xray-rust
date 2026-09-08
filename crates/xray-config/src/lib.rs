@@ -2,6 +2,10 @@ mod diagnostic;
 mod geodata;
 mod model;
 mod parser;
+mod surface;
+pub mod tooling;
+
+pub use xray_vless_encryption::Encryption as VlessEncryption;
 
 pub use diagnostic::{Diagnostic, DiagnosticSeverity};
 pub use model::{
@@ -18,10 +22,11 @@ pub use model::{
     RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingPortRange, RoutingRule,
     RoutingRuleTarget, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
     StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
-    XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings, DEFAULT_DNS_SERVER_TIMEOUT_MS,
-    DEFAULT_OBSERVATORY_PROBE_INTERVAL, DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS,
-    MAX_DNS_SERVE_EXPIRED_TTL_SECONDS, OBSERVATORY_PROBE_TIMEOUT,
+    XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
+    XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    DEFAULT_DNS_SERVER_TIMEOUT_MS, DEFAULT_OBSERVATORY_PROBE_INTERVAL,
+    DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
+    OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,

@@ -56,7 +56,7 @@ env \
   GOTOOLCHAIN=local \
   CGO_ENABLED=0 \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests \
-    -- --ignored --nocapture --test-threads=1
+    -- --ignored --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1
 
 cargo build --locked --release -p xray-cli --bin xray-rust
 xray_rust_binary="${CARGO_TARGET_DIR:-target}/release/xray-rust"

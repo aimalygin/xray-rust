@@ -2812,6 +2812,54 @@ fn ffi_config_errors_do_not_echo_vless_credentials() {
 }
 
 #[test]
+fn ffi_accepts_bounded_vless_encryption_and_redacts_rejected_values() {
+    // X25519's public base point, synthetic and not a private credential.
+    let key = "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    for (encryption, expected) in [
+        (
+            format!("mlkem768x25519plus.native.1rtt.{key}"),
+            XrayStatus::Ok,
+        ),
+        (
+            format!("mlkem768x25519plus.native.0rtt.{key}"),
+            XrayStatus::Ok,
+        ),
+        (
+            format!("mlkem768x25519plus.random.0rtt.100-35-35.{key}.{key}"),
+            XrayStatus::Ok,
+        ),
+        (
+            format!("mlkem768x25519plus.native.1rtt.99-35-35.{key}"),
+            XrayStatus::ConfigError,
+        ),
+        (
+            format!("unknown-key-bearing-format.{key}"),
+            XrayStatus::ConfigError,
+        ),
+    ] {
+        let mut err = std::ptr::null_mut();
+        let core = unsafe { xray_core_new(&mut err) };
+        let raw = CString::new(format!(r#"{{"outbounds":[{{"protocol":"vless","settings":{{"vnext":[{{"address":"example.test","port":443,"users":[{{"id":"00010203-0405-0607-0809-0a0b0c0d0e0f","encryption":"{encryption}"}}]}}]}}}}]}}"#)).unwrap();
+        assert_eq!(
+            unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+            expected
+        );
+        if expected == XrayStatus::ConfigError {
+            let message = error_message(err);
+            // The existing C error API projects diagnostic messages; JSON
+            // paths are tested at the parser boundary above it.
+            assert!(message.contains("VLESS encryption"));
+            assert!(!message.contains(key));
+            assert!(!message.contains(&encryption));
+        }
+        unsafe {
+            xray_error_free(err);
+            xray_core_free(core);
+        }
+    }
+}
+
+#[test]
 fn ffi_replaces_reused_error_pointer() {
     let mut err = std::ptr::null_mut();
     let core = unsafe { xray_core_new(&mut err) };

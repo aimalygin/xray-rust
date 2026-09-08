@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 libc.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 xray-config = { path = "../xray-config" }

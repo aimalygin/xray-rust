@@ -100,14 +100,16 @@ class XrayTunBackendTest {
 
     @Test
     fun routingPolicySnapshotParsesVersionedWireContract() {
-        val snapshot = parseRoutingPolicySnapshot(
-            """{"schemaVersion":1,"revision":4,"ruleCount":12,"domainStrategy":"ipIfNonMatch"}""",
-        )
+        for (strategy in XrayRoutingDomainStrategy.entries) {
+            val snapshot = parseRoutingPolicySnapshot(
+                """{"schemaVersion":1,"revision":4,"ruleCount":12,"domainStrategy":"${strategy.wireValue}"}""",
+            )
 
-        assertEquals(1, snapshot.schemaVersion)
-        assertEquals(4L, snapshot.revision)
-        assertEquals(12, snapshot.ruleCount)
-        assertEquals(XrayRoutingDomainStrategy.IpIfNonMatch, snapshot.domainStrategy)
+            assertEquals(1, snapshot.schemaVersion)
+            assertEquals(4L, snapshot.revision)
+            assertEquals(12, snapshot.ruleCount)
+            assertEquals(strategy, snapshot.domainStrategy)
+        }
     }
 
     @Test

@@ -1,0 +1,1395 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "loopback-policy",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true,
+              "accounts": [],
+              "ip": "127.0.0.1",
+              "userLevel": 0,
+              "allowUnauthenticatedLan": false
+            },
+            "tag": "socks-in",
+            "sniffing": {
+              "enabled": true,
+              "destOverride": [
+                "http",
+                "tls",
+                "quic"
+              ],
+              "metadataOnly": false,
+              "routeOnly": true,
+              "domainsExcluded": [],
+              "excludedDomains": []
+            }
+          },
+          {
+            "tag": "http-in",
+            "protocol": "http",
+            "port": 1081,
+            "settings": {
+              "accounts": [],
+              "allowTransparent": false,
+              "userLevel": 0
+            }
+          },
+          {
+            "tag": "tun-in",
+            "protocol": "tun"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct",
+            "settings": {},
+            "mux": {
+              "enabled": false,
+              "concurrency": 8
+            }
+          }
+        ],
+        "policy": {
+          "levels": {
+            "0": {
+              "handshake": 4,
+              "connIdle": 300,
+              "uplinkOnly": 2,
+              "downlinkOnly": 5,
+              "bufferSize": 16,
+              "statsUserUplink": false,
+              "statsUserDownlink": false
+            }
+          },
+          "system": {
+            "statsInboundUplink": false,
+            "statsInboundDownlink": false,
+            "statsOutboundUplink": false,
+            "statsOutboundDownlink": false
+          }
+        },
+        "observatory": {
+          "subjectSelector": [
+            "direct"
+          ],
+          "probeURL": "https://probe.example/generate_204",
+          "probeInterval": "10s",
+          "enableConcurrency": false
+        }
+      },
+      "accepted": true,
+      "objects": {
+        "ROOT": "",
+        "INBOUND": "/inbounds/0",
+        "SNIFFING": "/inbounds/0/sniffing",
+        "SOCKS_SETTINGS": "/inbounds/0/settings",
+        "HTTP_SETTINGS": "/inbounds/1/settings",
+        "OUTBOUND": "/outbounds/0",
+        "FREEDOM_SETTINGS": "/outbounds/0/settings",
+        "MUX": "/outbounds/0/mux",
+        "POLICY": "/policy",
+        "POLICY_LEVEL": "/policy/levels/0",
+        "POLICY_SYSTEM": "/policy/system",
+        "OBSERVATORY": "/observatory"
+      }
+    },
+    {
+      "name": "dns-policy",
+      "config": {
+        "dns": {
+          "hosts": {
+            "service.example": "192.0.2.80"
+          },
+          "queryStrategy": "UseIPv4",
+          "servers": [
+            {
+              "address": "192.0.2.53",
+              "port": 53,
+              "domains": [
+                "domain:example"
+              ],
+              "expectIPs": [
+                "192.0.2.0/24"
+              ],
+              "unexpectedIPs": [],
+              "tag": "upstream",
+              "timeoutMs": 2000,
+              "skipFallback": false,
+              "queryStrategy": "UseIPv4",
+              "finalQuery": false
+            }
+          ],
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/15",
+            "poolSize": 128,
+            "ttl": 60
+          }
+        },
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          },
+          {
+            "protocol": "dns",
+            "settings": {
+              "rewriteAddress": "192.0.2.53",
+              "rewriteNetwork": "tcp",
+              "rewritePort": 53,
+              "rules": [
+                {
+                  "action": "return",
+                  "qType": "64-65",
+                  "rCode": 3
+                }
+              ]
+            },
+            "tag": "dns-out"
+          }
+        ],
+        "routing": {
+          "domainStrategy": "IPOnDemand",
+          "rules": [
+            {
+              "network": "udp,tcp",
+              "outboundTag": "dns-out",
+              "port": 53,
+              "type": "field"
+            },
+            {
+              "ip": [
+                "192.0.2.0/24"
+              ],
+              "outboundTag": "direct",
+              "type": "field"
+            }
+          ]
+        }
+      },
+      "accepted": true,
+      "objects": {
+        "DNS": "/dns",
+        "DNS_SERVER": "/dns/servers/0",
+        "FAKE_IP": "/dns/fakeIp",
+        "DNS_OUTBOUND": "/outbounds/1/settings",
+        "DNS_RULE": "/outbounds/1/settings/rules/0",
+        "ROUTING": "/routing",
+        "ROUTING_RULE": "/routing/rules/0"
+      }
+    },
+    {
+      "name": "balancer",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          }
+        ],
+        "routing": {
+          "domainStrategy": "IPIfNonMatch",
+          "balancers": [
+            {
+              "tag": "select",
+              "selector": [
+                "direct"
+              ],
+              "fallbackTag": "direct",
+              "strategy": {
+                "type": "leastLoad",
+                "settings": {
+                  "expected": 1,
+                  "maxRTT": "1s",
+                  "tolerance": 0.1,
+                  "baselines": [
+                    "100ms"
+                  ],
+                  "costs": [
+                    {
+                      "regexp": false,
+                      "match": "direct",
+                      "value": 1.0
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "rules": [
+            {
+              "type": "field",
+              "domain": [
+                "domain:example"
+              ],
+              "balancerTag": "select"
+            }
+          ]
+        }
+      },
+      "accepted": true,
+      "objects": {
+        "BALANCER": "/routing/balancers/0",
+        "BALANCER_STRATEGY": "/routing/balancers/0/strategy",
+        "LEAST_LOAD": "/routing/balancers/0/strategy/settings",
+        "LEAST_LOAD_COST": "/routing/balancers/0/strategy/settings/costs/0"
+      }
+    },
+    {
+      "name": "transport-chain",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct",
+            "proxySettings": {
+              "tag": "exit",
+              "transportLayer": true
+            }
+          },
+          {
+            "tag": "exit",
+            "protocol": "freedom"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "PROXY": "/outbounds/0/proxySettings"
+      }
+    },
+    {
+      "name": "raw-tls-happy-eyeballs",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "rawSettings": {
+                "header": {
+                  "type": "none",
+                  "request": {},
+                  "response": {}
+                },
+                "acceptProxyProtocol": false
+              },
+              "sockopt": {
+                "happyEyeballs": {
+                  "prioritizeIPv6": false,
+                  "interleave": 1,
+                  "tryDelayMs": 250,
+                  "maxConcurrentTry": 2
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "VLESS": "/outbounds/0/settings",
+        "VLESS_SERVER": "/outbounds/0/settings/vnext/0",
+        "VLESS_USER": "/outbounds/0/settings/vnext/0/users/0",
+        "STREAM": "/outbounds/0/streamSettings",
+        "TLS": "/outbounds/0/streamSettings/tlsSettings",
+        "RAW": "/outbounds/0/streamSettings/rawSettings",
+        "RAW_HEADER": "/outbounds/0/streamSettings/rawSettings/header",
+        "SOCKOPT": "/outbounds/0/streamSettings/sockopt",
+        "HAPPY_EYEBALLS": "/outbounds/0/streamSettings/sockopt/happyEyeballs"
+      }
+    },
+    {
+      "name": "ws",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "ws",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "wsSettings": {
+                "path": "/ws",
+                "host": "server.example",
+                "headers": {
+                  "User-Agent": "fixture"
+                },
+                "heartbeatPeriod": 10,
+                "acceptProxyProtocol": false
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "WEBSOCKET": "/outbounds/0/streamSettings/wsSettings"
+      }
+    },
+    {
+      "name": "httpupgrade",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "httpupgrade",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "httpupgradeSettings": {
+                "path": "/upgrade",
+                "host": "server.example",
+                "headers": {
+                  "User-Agent": "fixture"
+                },
+                "acceptProxyProtocol": false
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "HTTPUPGRADE": "/outbounds/0/streamSettings/httpupgradeSettings"
+      }
+    },
+    {
+      "name": "grpc",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "grpc",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "grpcSettings": {
+                "serviceName": "tunnel",
+                "authority": "server.example",
+                "multiMode": true,
+                "user_agent": "golang",
+                "idle_timeout": -1,
+                "health_check_timeout": 20,
+                "permit_without_stream": false,
+                "initial_windows_size": 65535
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "GRPC": "/outbounds/0/streamSettings/grpcSettings"
+      }
+    },
+    {
+      "name": "xhttp-download",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "xhttp",
+              "security": "tls",
+              "tlsSettings": {
+                "alpn": [
+                  "h2"
+                ],
+                "serverName": "server.example"
+              },
+              "xhttpSettings": {
+                "downloadSettings": {
+                  "address": "download.example",
+                  "network": "xhttp",
+                  "port": 443,
+                  "security": "tls",
+                  "tlsSettings": {
+                    "alpn": [
+                      "h2"
+                    ],
+                    "serverName": "download.example"
+                  },
+                  "xhttpSettings": {
+                    "path": "/down"
+                  }
+                },
+                "mode": "packet-up",
+                "path": "/up",
+                "xmux": {
+                  "maxConnections": 1,
+                  "hMaxRequestTimes": "100-200"
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "XHTTP": "/outbounds/0/streamSettings/xhttpSettings",
+        "XMUX": "/outbounds/0/streamSettings/xhttpSettings/xmux"
+      }
+    },
+    {
+      "name": "h3-defaults",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "xhttp",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "server.example",
+                "alpn": [
+                  "h3"
+                ]
+              },
+              "xhttpSettings": {
+                "mode": "packet-up",
+                "path": "/h3"
+              },
+              "finalmask": {
+                "tcp": [],
+                "udp": null,
+                "quicParams": {
+                  "udpHop": {
+                    "ports": 0,
+                    "interval": 5
+                  }
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {
+        "FINALMASK": "/outbounds/0/streamSettings/finalmask",
+        "QUIC_PARAMS": "/outbounds/0/streamSettings/finalmask/quicParams",
+        "UDP_HOP": "/outbounds/0/streamSettings/finalmask/quicParams/udpHop"
+      }
+    },
+    {
+      "name": "inert-log-tun-fields",
+      "config": {
+        "inbounds": [
+          {
+            "protocol": "tun",
+            "settings": {
+              "userLevel": 0,
+              "ignored": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          }
+        ],
+        "log": {
+          "output": "ignored"
+        }
+      },
+      "accepted": true,
+      "objects": {}
+    },
+    {
+      "name": "reality-compatible-unknown",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "reality",
+              "realitySettings": {
+                "serverName": "server.example",
+                "fingerprint": "chrome",
+                "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+                "shortId": "02030405",
+                "spiderX": "/",
+                "ignored": true
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {}
+    },
+    {
+      "name": "empty-object",
+      "config": {},
+      "accepted": true,
+      "objects": {}
+    },
+    {
+      "name": "legacy-null-root",
+      "config": null,
+      "accepted": true,
+      "objects": {}
+    },
+    {
+      "name": "legacy-non-array-inbounds",
+      "config": {
+        "inbounds": {},
+        "outbounds": []
+      },
+      "accepted": true,
+      "objects": {}
+    },
+    {
+      "name": "removed-xhttp-field-warning",
+      "config": {
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "xhttp",
+              "security": "tls",
+              "tlsSettings": {
+                "alpn": [
+                  "h2"
+                ],
+                "serverName": "server.example"
+              },
+              "xhttpSettings": {
+                "downloadSettings": {
+                  "address": "download.example",
+                  "network": "xhttp",
+                  "port": 443,
+                  "security": "tls",
+                  "tlsSettings": {
+                    "alpn": [
+                      "h2"
+                    ],
+                    "serverName": "download.example"
+                  },
+                  "xhttpSettings": {
+                    "path": "/down"
+                  }
+                },
+                "mode": "packet-up",
+                "path": "/up",
+                "scMaxConcurrentPosts": 32
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      },
+      "accepted": true,
+      "objects": {},
+      "warningPath": "$.outbounds[0].streamSettings.xhttpSettings.scMaxConcurrentPosts"
+    },
+    {
+      "name": "legacy-qtype-warning",
+      "config": {
+        "dns": {
+          "hosts": {
+            "service.example": "192.0.2.80"
+          },
+          "queryStrategy": "UseIPv4",
+          "servers": [
+            {
+              "address": "192.0.2.53",
+              "port": 53,
+              "domains": [
+                "domain:example"
+              ],
+              "expectIPs": [
+                "192.0.2.0/24"
+              ],
+              "unexpectedIPs": [],
+              "tag": "upstream",
+              "timeoutMs": 2000,
+              "skipFallback": false,
+              "queryStrategy": "UseIPv4",
+              "finalQuery": false
+            }
+          ],
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.18.0.0/15",
+            "poolSize": 128,
+            "ttl": 60
+          }
+        },
+        "inbounds": [
+          {
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "protocol": "socks",
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            },
+            "tag": "socks-in"
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "tag": "direct"
+          },
+          {
+            "protocol": "dns",
+            "settings": {
+              "rewriteAddress": "192.0.2.53",
+              "rewriteNetwork": "tcp",
+              "rewritePort": 53,
+              "rules": [
+                {
+                  "action": "return",
+                  "rCode": 3,
+                  "qtype": "64-65"
+                }
+              ]
+            },
+            "tag": "dns-out"
+          }
+        ],
+        "routing": {
+          "domainStrategy": "IPOnDemand",
+          "rules": [
+            {
+              "network": "udp,tcp",
+              "outboundTag": "dns-out",
+              "port": 53,
+              "type": "field"
+            },
+            {
+              "ip": [
+                "192.0.2.0/24"
+              ],
+              "outboundTag": "direct",
+              "type": "field"
+            }
+          ]
+        }
+      },
+      "accepted": true,
+      "objects": {},
+      "warningPath": "$.outbounds[1].settings.rules[0].qtype"
+    },
+    {
+      "name": "unsupported-protocol",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].protocol",
+      "base": "loopback-policy",
+      "set": {
+        "/outbounds/0/protocol": "vmess"
+      }
+    },
+    {
+      "name": "unsupported-top-level",
+      "accepted": false,
+      "errorPath": "$.reverse",
+      "base": "loopback-policy",
+      "set": {
+        "/reverse": {}
+      }
+    },
+    {
+      "name": "sendThrough-null-rejected",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].sendThrough",
+      "base": "loopback-policy",
+      "set": {
+        "/outbounds/0/sendThrough": null
+      }
+    },
+    {
+      "name": "mux-enabled",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].mux.enabled",
+      "base": "loopback-policy",
+      "set": {
+        "/outbounds/0/mux/enabled": true
+      }
+    },
+    {
+      "name": "lan-not-opted-in",
+      "accepted": false,
+      "errorPath": "$.inbounds[0].listen",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/0/listen": "0.0.0.0"
+      }
+    },
+    {
+      "name": "authenticated-socks",
+      "accepted": false,
+      "errorPath": "$.inbounds[0].settings.auth",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/0/settings/auth": "password"
+      }
+    },
+    {
+      "name": "transparent-http",
+      "accepted": false,
+      "errorPath": "$.inbounds[1].settings.allowTransparent",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/1/settings/allowTransparent": true
+      }
+    },
+    {
+      "name": "sniffing-domain-exclusion",
+      "accepted": false,
+      "errorPath": "$.inbounds[0].sniffing.domainsExcluded",
+      "base": "loopback-policy",
+      "set": {
+        "/inbounds/0/sniffing/domainsExcluded": [
+          "example.test"
+        ]
+      }
+    },
+    {
+      "name": "insecure-tls",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.allowInsecure",
+      "base": "transport-chain",
+      "set": {
+        "/outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example",
+                "allowInsecure": true
+              },
+              "rawSettings": {
+                "header": {
+                  "type": "none",
+                  "request": {},
+                  "response": {}
+                },
+                "acceptProxyProtocol": false
+              },
+              "sockopt": {
+                "happyEyeballs": {
+                  "prioritizeIPv6": false,
+                  "interleave": 1,
+                  "tryDelayMs": 250,
+                  "maxConcurrentTry": 2
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unsupported-carrier",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.network",
+      "base": "transport-chain",
+      "set": {
+        "/outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "kcp",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "rawSettings": {
+                "header": {
+                  "type": "none",
+                  "request": {},
+                  "response": {}
+                },
+                "acceptProxyProtocol": false
+              },
+              "sockopt": {
+                "happyEyeballs": {
+                  "prioritizeIPv6": false,
+                  "interleave": 1,
+                  "tryDelayMs": 250,
+                  "maxConcurrentTry": 2
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "encryption-key-redaction",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.vnext[0].users[0].encryption",
+      "base": "transport-chain",
+      "set": {
+        "/outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "private-fixture-value-must-not-be-echoed",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "rawSettings": {
+                "header": {
+                  "type": "none",
+                  "request": {},
+                  "response": {}
+                },
+                "acceptProxyProtocol": false
+              },
+              "sockopt": {
+                "happyEyeballs": {
+                  "prioritizeIPv6": false,
+                  "interleave": 1,
+                  "tryDelayMs": 250,
+                  "maxConcurrentTry": 2
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "zero-vless-port",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.vnext[0].port",
+      "base": "transport-chain",
+      "set": {
+        "/outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 0,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "fingerprint": "chrome",
+                "serverName": "server.example"
+              },
+              "rawSettings": {
+                "header": {
+                  "type": "none",
+                  "request": {},
+                  "response": {}
+                },
+                "acceptProxyProtocol": false
+              },
+              "sockopt": {
+                "happyEyeballs": {
+                  "prioritizeIPv6": false,
+                  "interleave": 1,
+                  "tryDelayMs": 250,
+                  "maxConcurrentTry": 2
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "dns-rule-conflicting-alias",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.rules[0].qtype",
+      "base": "dns-policy",
+      "set": {
+        "/outbounds/1/settings/rules/0/qtype": 65
+      }
+    },
+    {
+      "name": "fake-ip-pool-capacity",
+      "accepted": false,
+      "errorPath": "$.dns.fakeIp.poolSize",
+      "base": "dns-policy",
+      "set": {
+        "/dns/fakeIp/poolSize": 4294967295
+      }
+    },
+    {
+      "name": "fake-ip-ipv6",
+      "accepted": false,
+      "errorPath": "$.dns.fakeIp.ipv6Pool",
+      "base": "dns-policy",
+      "set": {
+        "/dns/fakeIp/ipv6Pool": "2001:db8::/64"
+      }
+    },
+    {
+      "name": "missing-geodata",
+      "accepted": false,
+      "errorPath": "$.routing.rules[0].domain[0]",
+      "base": "balancer",
+      "set": {
+        "/routing/rules/0/domain/0": "geosite:missing-test-data"
+      }
+    },
+    {
+      "name": "regex-balancer-cost",
+      "accepted": false,
+      "errorPath": "$.routing.balancers[0].strategy.settings.costs[0].regexp",
+      "base": "balancer",
+      "set": {
+        "/routing/balancers/0/strategy/settings/costs/0/regexp": true
+      }
+    },
+    {
+      "name": "nonempty-finalmask",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp",
+      "base": "transport-chain",
+      "set": {
+        "/outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "xhttp",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "server.example",
+                "alpn": [
+                  "h3"
+                ]
+              },
+              "xhttpSettings": {
+                "mode": "packet-up",
+                "path": "/h3"
+              },
+              "finalmask": {
+                "tcp": [],
+                "udp": [
+                  {}
+                ],
+                "quicParams": {
+                  "udpHop": {
+                    "ports": 0,
+                    "interval": 5
+                  }
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      }
+    },
+    {
+      "name": "download-stream-one",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.xhttpSettings.downloadSettings",
+      "base": "transport-chain",
+      "set": {
+        "/outbounds": [
+          {
+            "protocol": "vless",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "server.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "encryption": "none",
+                      "id": "00010203-0405-0607-0809-0a0b0c0d0e0f"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "xhttp",
+              "security": "tls",
+              "tlsSettings": {
+                "alpn": [
+                  "h2"
+                ],
+                "serverName": "server.example"
+              },
+              "xhttpSettings": {
+                "downloadSettings": {
+                  "address": "download.example",
+                  "network": "xhttp",
+                  "port": 443,
+                  "security": "tls",
+                  "tlsSettings": {
+                    "alpn": [
+                      "h2"
+                    ],
+                    "serverName": "download.example"
+                  },
+                  "xhttpSettings": {
+                    "path": "/down"
+                  }
+                },
+                "mode": "stream-one",
+                "path": "/up",
+                "xmux": {
+                  "maxConnections": 1,
+                  "hMaxRequestTimes": "100-200"
+                }
+              }
+            },
+            "tag": "proxy"
+          }
+        ]
+      }
+    }
+  ]
+}

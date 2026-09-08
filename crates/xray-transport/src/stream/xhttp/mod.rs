@@ -17,7 +17,7 @@ pub use config::{
 pub(crate) use h2::connect_h2;
 pub(crate) use h3::{connect_quic_transport, H3ConnectConfig};
 pub use h3::{H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig};
-pub use transport::{XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy};
+pub use transport::{XhttpConnectTarget, XhttpHttpVersion, XhttpTransport, XhttpXmuxPolicy};
 
 /// Internal HTTP/1.1 engine surface used by XHTTP orchestration and focused
 /// integration tests. This is not a standalone HTTP client API.
@@ -50,8 +50,8 @@ pub mod h3_test_only {
 #[doc(hidden)]
 pub mod transport_test_only {
     pub use super::transport::{
-        XhttpClock, XhttpDial, XhttpH3Dial, XhttpH3DialFuture, XhttpHttpVersion, XhttpTransport,
-        XhttpTransportError, XhttpXmuxPolicy,
+        XhttpClock, XhttpDial, XhttpH3Dial, XhttpH3DialFuture, XhttpHttpVersion, XhttpModeDial,
+        XhttpTransport, XhttpTransportError, XhttpXmuxPolicy,
     };
 }
 

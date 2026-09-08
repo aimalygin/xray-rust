@@ -1,0 +1,950 @@
+{
+  "schemaVersion": 1,
+  "xrayCoreCommit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "cases": [
+    {
+      "name": "plain-h1",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "stream-up",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "stream-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "auto",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "auto",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "tls-http-1.1",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "serverName": "download.test",
+              "alpn": [
+                "http/1.1"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "serverName": "upload.test",
+          "alpn": [
+            "http/1.1"
+          ]
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "tls-h2",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "serverName": "download.test",
+              "alpn": [
+                "h2"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "serverName": "upload.test",
+          "alpn": [
+            "h2"
+          ]
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "tls-h3",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "serverName": "download.test",
+              "alpn": [
+                "h3"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "serverName": "upload.test",
+          "alpn": [
+            "h3"
+          ]
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "mixed-http-1.1-h2",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "alpn": [
+                "h2"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "alpn": [
+            "http/1.1"
+          ]
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "mixed-h2-h3",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "alpn": [
+                "h3"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "alpn": [
+            "h2"
+          ]
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "mixed-h3-http-1.1",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "alpn": [
+                "http/1.1"
+              ]
+            }
+          }
+        },
+        "tlsSettings": {
+          "alpn": [
+            "h3"
+          ]
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "legacy-download",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "splithttp",
+            "security": "none",
+            "splithttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "method-priority",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "raw",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "method": "XHTTP"
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "default-download-settings",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none"
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "",
+        "host": ""
+      }
+    },
+    {
+      "name": "download-mode-inert",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test",
+              "mode": "stream-one"
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "extra-download",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "extra": {
+            "downloadSettings": {
+              "address": "127.0.0.1",
+              "port": 8443,
+              "network": "xhttp",
+              "security": "none",
+              "xhttpSettings": {
+                "path": "/down",
+                "host": "download.test"
+              }
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "outer-download-erased",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          },
+          "extra": {}
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true
+    },
+    {
+      "name": "null-download",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": null
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true
+    },
+    {
+      "name": "nested-extra-inert",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test",
+              "extra": {
+                "extra": {
+                  "downloadSettings": {}
+                }
+              }
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "download-alias-priority",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "splithttpSettings": {
+              "path": "ignored"
+            }
+          }
+        }
+      },
+      "rustAccept": true,
+      "goAccept": true,
+      "download": {
+        "address": "127.0.0.1",
+        "port": 8443,
+        "path": "/down",
+        "host": "download.test"
+      }
+    },
+    {
+      "name": "stream-one-rejected",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "stream-one",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": false,
+      "errorSuffix": "downloadSettings"
+    },
+    {
+      "name": "missing-address",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.address"
+    },
+    {
+      "name": "missing-port",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.port"
+    },
+    {
+      "name": "zero-port",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 0,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.port"
+    },
+    {
+      "name": "oversized-port",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 65536,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": false,
+      "errorSuffix": "downloadSettings.port"
+    },
+    {
+      "name": "non-xhttp",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "raw",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.network"
+    },
+    {
+      "name": "method-priority-rejection",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "method": "raw"
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.network"
+    },
+    {
+      "name": "recursive",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test",
+              "downloadSettings": {
+                "network": "xhttp"
+              }
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.xhttpSettings.downloadSettings"
+    },
+    {
+      "name": "recursive-extra",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test",
+              "extra": {
+                "downloadSettings": {
+                  "network": "xhttp"
+                }
+              }
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.xhttpSettings.extra.downloadSettings"
+    },
+    {
+      "name": "no-security-inheritance",
+      "stream": {
+        "network": "xhttp",
+        "security": "tls",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        },
+        "tlsSettings": {
+          "serverName": "upload.test"
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.security"
+    },
+    {
+      "name": "insecure-tls",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "tls",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "tlsSettings": {
+              "allowInsecure": true
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": false,
+      "errorSuffix": "downloadSettings.tlsSettings.allowInsecure"
+    },
+    {
+      "name": "header-injection",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test",
+              "headers": {
+                "Host": "other.test"
+              }
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": false,
+      "errorSuffix": "downloadSettings.xhttpSettings.headers"
+    },
+    {
+      "name": "wrong-type",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": []
+        }
+      },
+      "rustAccept": false,
+      "goAccept": false,
+      "errorSuffix": "downloadSettings"
+    },
+    {
+      "name": "unknown-download-key",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "127.0.0.1",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            },
+            "unrecognized": true
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.unrecognized"
+    },
+    {
+      "name": "public-plaintext",
+      "stream": {
+        "network": "xhttp",
+        "security": "none",
+        "xhttpSettings": {
+          "path": "/up",
+          "mode": "packet-up",
+          "downloadSettings": {
+            "address": "public.example.com",
+            "port": 8443,
+            "network": "xhttp",
+            "security": "none",
+            "xhttpSettings": {
+              "path": "/down",
+              "host": "download.test"
+            }
+          }
+        }
+      },
+      "rustAccept": false,
+      "goAccept": true,
+      "errorSuffix": "downloadSettings.address"
+    }
+  ]
+}

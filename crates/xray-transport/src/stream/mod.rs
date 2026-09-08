@@ -65,9 +65,9 @@ pub use xhttp::test_only as xhttp_h1_test_only;
 pub use xhttp::transport_test_only as xhttp_transport_test_only;
 pub use xhttp::{
     H3Congestion, H3QuicConfig, H3QuicVersion, H3UdpHopConfig, XhttpConfig, XhttpConfigInput,
-    XhttpEndpoint, XhttpHttpVersion, XhttpMetadataPlacement, XhttpMode, XhttpModeSelection,
-    XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme, XhttpSessionIdConfig,
-    XhttpTransport, XhttpUplinkDataPlacement, XhttpXmuxPolicy,
+    XhttpConnectTarget, XhttpEndpoint, XhttpHttpVersion, XhttpMetadataPlacement, XhttpMode,
+    XhttpModeSelection, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpRange, XhttpScheme,
+    XhttpSessionIdConfig, XhttpTransport, XhttpUplinkDataPlacement, XhttpXmuxPolicy,
 };
 
 /// The transport layered over the security layer. `Raw` is a no-op.
