@@ -36,7 +36,7 @@ blake3 = { version = "=1.8.5", features = ["zeroize", "pure"] }
 bytes = "1"
 ctr = { version = "0.9.2", features = ["zeroize"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-ghash = { version = "0.5", features = ["zeroize"] }
+ghash = { version = "0.6", features = ["zeroize"] }
 h2 = "0.4.16"
 h3 = "=0.0.8"
 h3-quinn = "=0.0.10"
