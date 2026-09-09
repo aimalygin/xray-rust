@@ -10,6 +10,19 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.6.1 - 2026-09-09
+
+- Promotes the tested `0.6.1-rc.1` implementation to stable, including the
+  4 MiB XHTTP/H2 stream receive window and bounded TUN download prefetch.
+- Runtime code, Swift/Kotlin adapters, public C ABI, compiler settings and
+  external dependency versions and source identities are unchanged from RC1.
+  Only workspace version metadata, the generated contract's `coreVersion`
+  and release documentation change.
+- Retains the original RC1 device and performance evidence with its measured
+  commit/tree identity. Stable builds and automated release gates run in
+  GitHub Actions; no new local tests, benchmarks or device campaigns are
+  claimed. See [stable promotion](docs/v061-stable-promotion.md).
+
 ## 0.6.1-rc.1 - 2026-09-09
 
 - Add optional `xhttpSettings.h2StreamReceiveWindow` (integer bytes,
