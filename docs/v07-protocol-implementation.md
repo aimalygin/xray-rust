@@ -1,0 +1,287 @@
+# v0.7 Hysteria 2 and WireGuard implementation
+
+Started on 2026-09-08. The owner selected both client protocols for v0.7 and
+explicitly retained Xray-core **v26.7.28**, commit
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Go remains 1.26.5 in the oracle
+workflow. The v26.9.8 migration is deferred. Hysteria 2 and WireGuard now have
+bounded JSON/core runtime outbounds. SDK capability changes and release
+acceptance are still pending.
+
+## First implemented increment
+
+### Hysteria 2
+
+`xray-proxy::hysteria` now implements:
+
+- TCP request and response encoding/decoding. Request bytes include the QUIC
+  stream type `0x401`; the pinned Xray transport writes it separately from the
+  proxy codec. Decoders return the consumed offset without consuming application
+  bytes. All legal QUIC varint widths, including non-minimal encodings, work.
+- Complete UDP message encoding/decoding including the actual session ID.
+  Xray's serializer leaves the first four bytes to its UDP transport, which
+  must not be mistaken for a protocol requirement to emit zeros.
+- Zero-copy outgoing fragmentation with explicit datagram-size checks and a
+  checked 255-fragment ceiling. The caller assigns packet IDs and serializes
+  each borrowed fragment into a QUIC datagram.
+- Reassembly tied to one session on one authenticated connection. It accepts
+  out-of-order/identical duplicate fragments, discards an incomplete packet
+  when a different packet ID arrives, and checks address, count and duplicate
+  payload consistency. A completed packet immediately releases partial state.
+
+Bounds: 2,048 address bytes, 2,048 response-message bytes and 4,096 padding
+bytes match the pinned proxy codec. UDP payload/reassembly is capped at 65,535
+bytes, before any smaller limit imposed by the IP adapter. One partial packet
+retains at most 255 fragment slots plus one address and the configured payload
+budget. Assembly temporarily needs an additional complete payload allocation.
+The caller supplies a positive expiry duration and calls `expire` from a timer;
+the deadline starts with the first fragment and duplicates cannot prolong it.
+The future connection manager must bound the number of live sessions globally.
+
+Intentional validation differences from the pinned Go implementation:
+
+- Fragment count zero and out-of-range fragmented indices fail immediately.
+  The fragment ID remains irrelevant for an unfragmented message, per the
+  protocol. Conflicting addresses/counts/duplicate data clear partial state.
+- Address bytes must be UTF-8; host:port validation belongs to the runtime.
+- Oversized UDP payloads and more than 255 fragments return errors rather than
+  relying on integer truncation. Empty UDP payloads are rejected because the
+  pinned Xray parser requires at least one payload byte.
+- Response messages stay opaque bytes and are omitted from Debug. Only status
+  zero is successful; arbitrary nonzero statuses retain Xray's failure behavior.
+
+The [Hysteria protocol specification](https://v2.hysteria.network/docs/developers/Protocol/)
+is supplementary. The exact oracle, rather than today's expanded specification,
+defines this increment's version identity. HTTP/3 authentication, QUIC sockets,
+congestion control, Salamander and hopping are not implemented by this codec.
+
+### WireGuard
+
+`xray-proxy::wireguard` now implements:
+
+- Fixed-size decoded key material accepting 64-character hex, standard base64
+  and URL-safe base64, with optional single `=` padding. Errors omit input;
+  Debug is redacted; decoded storage is zeroized on drop. Unlike Xray's config
+  helper, parsing checks the decoded 32-byte length immediately. Public-point
+  and key-role checks still belong to the eventual crypto engine.
+- A validated, normalized `AllowedIp` prefix preserving IPv4/IPv6 identity,
+  including IPv4-mapped IPv6. The existing general-purpose routing `Cidr`
+  unmaps these addresses and cannot be reused for cryptokey routing.
+- Immutable longest-prefix peer selection. Identical normalized prefixes use
+  the last inserted peer, matching the exact wireguard-go dependency. Source
+  validation uses the same lookup, so a less-specific peer cannot impersonate
+  the source space assigned to a more-specific peer.
+
+Initial construction budgets are 128 peers and 4,096 input allowed-IP entries.
+The compact sorted lookup has bounded linear work; benchmark it with realistic
+peer sets before connecting it to the per-packet runtime. No-route means denial.
+The caller must provide an authenticated engine peer identity for source checks;
+an endpoint IP or the claimed source in a packet is insufficient.
+
+This is not an implementation of WireGuard cryptography, handshakes, rekeying,
+or a TUN device. Existing workspace `base64` and `zeroize` dependencies are reused;
+no new crypto-engine dependency or version is introduced.
+
+## Executable evidence
+
+The generator in `tools/v07-protocol-oracle/main.go` imports the pinned Xray
+TCP/UDP codecs, key parser and its actual wireguard-go `AllowedIPs` table.
+Deterministic generated fixtures cover both IP families, IPv4-mapped IPv6,
+overlapping/identical prefixes, TCP framing and UDP fragmentation. All test
+keys are synthetic public vectors generated from bytes `0xe0` through `0xff`.
+
+`scripts/check-v07-protocol-oracle.sh` verifies the exact clean checkout using
+the existing oracle guard, regenerates and byte-compares the fixtures, then
+runs the Rust differential tests. The existing CI Go-oracles job runs it
+without changing the reference revision or Go version.
+
+The new `v07_protocols` fuzz target covers raw wire/key/prefix parsing, sequences
+of UDP fragments, bounded round trips and routing/source checks. Deterministic
+seeds are committed; the existing bounded fuzz campaign runs the new target.
+Negative tests cover truncation, oversized varints, cross-session fragments,
+conflicting duplicates, expiry, memory budgets, malformed keys and redaction.
+
+Reproduce from the repository root:
+
+```sh
+cargo test --locked -p xray-proxy
+cargo clippy --locked -p xray-proxy --all-targets -- -D warnings -W clippy::perf -W clippy::suspicious
+XRAY_CORE_CHECKOUT=/path/to/pinned/Xray-core bash scripts/check-v07-protocol-oracle.sh
+CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_STRIP=none cargo +nightly-2026-05-22 fuzz run v07_protocols fuzz/corpus/v07_protocols -- -max_total_time=30 -max_len=65536 -timeout=10
+```
+
+These are codec and policy comparisons. Live protocol connections and device
+acceptance remain separate evidence requirements.
+
+Observed locally on macOS arm64, 2026-09-08: all 90 `xray-proxy` tests passed
+(18 new); the regenerated pinned Go fixture matched; proxy Clippy, formatting,
+the fixture-safety check and the hardening-script guard passed. The new ASan
+fuzz target completed 1,230,557 executions in 31 seconds with no crash. This is
+a bounded smoke run, not comprehensive fuzz coverage or a memory benchmark.
+
+## Remaining implementation boundaries
+
+1. Pin a native Hysteria server for independent interoperability and verify
+   physical-device memory, network transitions and throughput. The Xray JSON
+   parser and core TCP/UDP runtime are integrated in increment three below.
+2. Add independent WireGuard reference coverage. Multi-peer routing/isolation and
+   optional per-peer PSK are now integrated with redacted, zeroizing engine ownership.
+   Protected UDP/IP, smoltcp TCP/UDP and cancellation are integrated; see the
+   [runtime contract](v07-wireguard-runtime.md). Process/device memory still needs
+   measurement.
+3. Preserve separate WireGuard bootstrap and routed destination DNS. The runtime
+   follows v26.7.28; v26.9.8-only `remoteDNS`, ChromeParrot and `dialerProxy` remain
+   outside this work.
+4. Mirror implemented configuration/capabilities in Swift/Kotlin and profile
+   import. Core registration must never accept a configuration that only reaches
+   an unsupported-outbound failure after startup.
+5. Complete independent live TCP/UDP, reconnect, MTU/fragmentation, peer isolation,
+   resource recovery and physical-device tests before mobile artifact publication.
+
+Release criteria remain in the [roadmap](roadmap.md#phase-4-v07-hysteria-2-and-wireguard-clients).
+
+## Second implemented increment: live Hysteria transport
+
+`xray-transport::hysteria` exposes a single authenticated QUIC client and TCP/UDP
+flow leases. It reuses the existing TLS trust/SNI/verification policy and socket
+protector. Authentication is an HTTP/3 POST to `https://hysteria/auth`, with status
+233, bounded headers, credential redaction and Go-compatible boolean/rate parsing.
+Duplicate/missing/malformed protocol response headers fail closed. Authentication
+and each TCP open/UDP send have deadlines; caller cancellation closes pending
+connections or resets pending streams. No destination traffic is sent before auth.
+
+The initial accepted transport subset is QUIC v1 with stock TLS 1.3/H3 and Quinn
+BBR or Reno, one already-resolved server endpoint, TCP streams and QUIC UDP
+datagrams. ALPN must be absent or exactly `h3`; TLS fingerprints are rejected.
+Existing H3 diagnostics reject unsupported congestion/hopping settings. Salamander,
+Brutal bandwidth mode, hopping, QUIC v2 and Xray's autogrowing receive windows are
+not implemented. Defaults use fixed 2 MiB stream/3 MiB connection windows and a
+30-second idle timeout; these are an explicit bounded subset, not full Xray
+transport-parameter or congestion-algorithm parity. Endpoint bootstrap DNS and
+automatic reconnection are provided by the third increment below.
+
+Default budgets per connection: 64 TCP streams, 32 UDP sessions, four queued
+packets per UDP session, a shared 1 MiB queued-payload budget, at most one 65,535-byte
+partial reassembly per session, five-second fragment expiry, and 256 KiB each for
+QUIC receive/send datagrams. Config validation caps these respectively at 256,
+128, 16, 4 MiB, 65,535 bytes and 30 seconds. Reassembly metadata and temporary
+completed payload allocations are additional bounded storage; these are logical
+buffer budgets, not a measured process-memory limit. Excess incoming UDP is
+dropped without blocking other sessions. Session IDs are never reused within a
+connection; dropping a UDP flow removes its routing/reassembly state.
+
+Clones and open flows retain the connection. Explicit `close()` closes all flows,
+aborts workers, removes registry state and releases the client's socket references.
+Quinn drains asynchronously; already-returned TCP handles/queued UDP receivers must
+also be dropped to release their own retained storage. Dropping the final lease
+closes the connection. TCP FIN preserves reads; prefetched response bytes are
+returned to the caller. Stream errors omit untrusted server text. UDP receive is
+cancel-safe; its idle policy is left to the runtime.
+
+Live testing uncovered two pinned-Xray behaviors and one compatibility issue:
+
+- Hysteria destinations in private address space are blocked by Xray's default
+  freedom policy. The synthetic test server explicitly permits loopback.
+- Xray writes a successful TCP response before dialing the destination. A refused
+  target therefore fails on the data stream, not necessarily during `open_tcp`.
+- The pinned quic-go fork may accept a datagram up to the discovered MTU and then
+  discard it when packet overhead makes it too large. Advertising Quinn's usual
+  65,535-byte limit lost full-size reply fragments locally. Hysteria now advertises
+  Xray's 1,200-byte frame limit while retaining its separate 256 KiB receive queue.
+  A [minimal patch to unchanged Quinn 0.11.16](../vendor/quinn-proto/XRAY-PATCH.md)
+  exposes that separation. XHTTP/H3 and DoQ leave the optional cap unset.
+
+`scripts/check-hysteria-interop.sh` verifies the exact clean Xray checkout, builds
+the full reference binary, and runs local TCP/UDP echo tests. It covers 4 KiB
+fragmentation in both directions, simultaneous UDP flows, TCP/UDP slot limits,
+flow removal, cancelled receives, explicit close, wrong credentials, refused TCP
+destinations, fresh reconnect and stream ownership after client drop. Mock QUIC/H3
+tests cover auth failure/timeout/cancellation, malformed headers, socket-protection
+failure and success, untrusted certificates, TCP rejection/timeout/cancellation,
+half-close, prefetched bytes, and eventual socket release while a closed client
+handle remains alive. Registry tests cover shared/per-flow queue limits.
+
+Observed locally on macOS arm64, 2026-09-08: the transport test suite and all 32
+existing XHTTP/H3 tests passed, including DoQ unit coverage; both full pinned-Xray
+Hysteria scenarios passed. Strict transport Clippy passed. The vendored-source
+provenance gate verified the complete published Quinn archive and exact patch, and
+the new transport-parameter unit test passed. The Go-oracles CI job now includes
+the live Hysteria script. This is transport evidence, not runtime/SDK, independent
+native-server, throughput, physical-device or release acceptance.
+
+Additional reproduction commands:
+
+```sh
+cargo test --locked -p xray-transport
+XRAY_CORE_CHECKOUT=/path/to/pinned/Xray-core bash scripts/check-hysteria-interop.sh
+bash scripts/check-vendored-sources.sh
+```
+
+
+## Third implemented increment: Hysteria core runtime
+
+The [canonical JSON profile](../tests/fixtures/configs/hysteria2.json) is now
+accepted by `xray-config` and the executable config contract/tooling. Both
+`settings.version` and `streamSettings.hysteriaSettings.version` must be 2.
+The outbound has one `address`/nonzero `port`; authentication lives in the
+transport's `auth`. Authentication is bounded to 1..4096 bytes with no control
+characters, zeroized in the typed model and omitted from Debug/diagnostics.
+
+The runtime subset requires the Hysteria transport and TLS together. ALPN may
+be omitted or exactly `h3`; generic TCP TLS's default Chrome fingerprint is
+not inherited. Explicit nonempty fingerprints, insecure TLS, incompatible
+security/carriers, outbound chaining, QUIC/socket overrides, hopping, bandwidth
+and obfuscation options fail validation. This initial runtime selects the
+transport's fixed-window BBR defaults. Reno remains a native-transport option,
+not an accepted JSON setting. Typed invalid Hysteria configs also fail core
+construction before listeners start. The core/package version remains 0.6.0
+until the separate release/versioning work.
+
+`OutboundFactory` retains one lazily authenticated session per configured
+Hysteria node, shared by TCP and UDP. Endpoint DNS uses the bootstrap resolver;
+destination domains remain encoded for the remote server unless routing or a
+selected direct outbound separately requires local resolution. Concurrent opens
+coalesce through one admission lock. A ten-second total connection deadline
+includes lock contention, DNS and at most eight endpoint candidates, each with
+at most three seconds for connection establishment. These shorter candidate
+attempts do not shorten the transport's TCP-open/UDP-send deadlines.
+
+New flows reuse a live connection; a stale connection is replaced after fresh
+endpoint resolution. There is no replay of application traffic. Cached sessions
+are reusable only under the same TLS connector family and socket-protector
+identity. A different policy fails closed, including when a caller reuses a
+public `TcpOutbound` with a different dialer. Core stop cancels pending auth/DNS,
+closes initialized sessions and rejects subsequent session opens.
+
+SOCKS TCP/UDP, HTTP CONNECT, TUN TCP/UDP, routed managed DNS and wire-preserving
+TUN DNS now dispatch through Hysteria. UDP adapters retain bounded native
+sessions/queues, existing inbound idle timeouts, connection inventory and
+accounting, host-close cancellation and TUN telemetry. FakeDNS-visible TUN/UDP
+reply identities remain those of the original flow. UDP DNS ignores unmatched
+responses; oversized-response handling keeps the existing bounded validation
+prefix. Internal DNS sessions are released after each exchange.
+
+Observed on macOS arm64: **675 core tests**, **370 config tests**, strict Clippy
+for config/core/transport and the workspace check passed. Four additional live
+runtime scenarios against exact Xray v26.7.28 passed: SOCKS/HTTP/4 KiB UDP with
+shared QUIC and accounting; concurrent opens with trust/protector isolation;
+TUN TCP/UDP and host close; TUN wire DNS plus routed managed destination lookup.
+The guarded Hysteria interop script runs these along with the two native
+transport scenarios. Deterministic tests cover typed preflight, the total DNS
+operation deadline, caller cancellation and closing concurrent pending opens.
+
+This enables raw JSON profiles through the core API. It does not yet update
+Swift/Kotlin profile import, publish mobile binaries or complete v0.7 acceptance.
+
+## Fourth implemented increment: WireGuard core runtime
+
+`xray-wireguard` connects the exact patched GotaTun engine to protected UDP and a
+bounded smoltcp client interface. JSON and typed configuration now dispatch TCP
+and UDP through SOCKS, HTTP CONNECT, TUN and routed DNS, with accounting and host
+close. TCP and UDP share one device per configured outbound. See the
+[accepted settings, resource budgets and test evidence](v07-wireguard-runtime.md).
+
+The engine reference and Xray-core reference remain unchanged. The current subset
+accepts up to eight peers with optional per-peer PSK, longest-prefix routing and
+authenticated source isolation. Reserved-byte extensions and custom
+stream/chaining settings are rejected. Mobile SDK profile work and independent/physical-device
+acceptance remain separate release steps.

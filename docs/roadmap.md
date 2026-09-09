@@ -11,6 +11,10 @@ links to publication results. This roadmap is not a
 promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
+The owner selected Hysteria 2 and WireGuard client support for `v0.7` on
+2026-09-08. Phase 4 records that target and the initial upstream support check;
+the implementation contract and release evidence remain to be developed.
+
 The current compatibility baseline is Xray-core `v26.7.28` at full commit
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. See the
 [migration audit](xray-core-v26.7.28-migration-audit.md) for the exact upstream
@@ -611,6 +615,68 @@ are recorded in [stable promotion](v06-stable-promotion.md).
   and the stable C ABI remains backward compatible or follows a documented
   major transition.
 
+## Phase 4: `v0.7` Hysteria 2 and WireGuard clients
+
+Status: implementation started on 2026-09-08. The
+[upstream support check](v07-upstream-protocol-support.md) confirms both protocols
+in pinned Xray-core `v26.7.28`. The
+[implementation increments](v07-protocol-implementation.md) now include Hysteria
+wire codecs, authenticated QUIC transport and a bounded JSON/core runtime
+outbound for SOCKS, HTTP, TUN and routed DNS, with live reference tests.
+WireGuard now has a bounded GotaTun/smoltcp client registered in JSON and the
+core for SOCKS, HTTP, TUN and routed DNS. Its contract accepts up to eight peers,
+IPv4/IPv6, TCP/UDP, per-peer PSK and protected sockets. Overlapping allowedIPs and
+authenticated source isolation are covered; independent/mobile acceptance remains pending. The [runtime contract](v07-wireguard-runtime.md)
+records accepted options, budgets and executable evidence. The
+[adapter review](v07-wireguard-adapter.md) tracks those boundaries. Swift/Kotlin
+profile import, independent references and physical-device acceptance remain
+release work.
+
+Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
+matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed
+configuration, routing, diagnostics, and cancellation. This owner decision
+supersedes the earlier recommendation to implement Trojan first. Trojan,
+Shadowsocks 2022, and VMess remain demand-driven backlog items.
+
+### Initial work
+
+- The owner decided on 2026-09-08 to retain exact `v26.7.28`
+  (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) while implementing both clients.
+  The completed [v26.9.8 source audit](xray-core-v26.9.8-migration-audit.md)
+  remains future migration evidence; that migration does not gate this work.
+- Define the Hysteria 2 client contract across the `hysteria` outbound,
+  Hysteria QUIC transport, TLS authentication, TCP streams, UDP sessions and
+  fragmentation. Explicitly decide the supported congestion-control,
+  bandwidth, Salamander, and UDP-hopping options against the selected source.
+- Define the WireGuard client contract for keys, peers, allowed IPs, local
+  addresses, endpoint resolution, MTU, keepalive, rekeying, and cancellation.
+  Select a Rust implementation and a bounded packet/flow integration suitable
+  for Apple and Android; review dependency licenses and maintenance before
+  adoption.
+- Split affected large runtime modules along their ownership boundaries
+  before adding the new protocol implementations. Reuse the outbound factory,
+  resolver, protected dialing, routing, and management surfaces where their
+  existing contracts fit.
+- Define equivalent Swift/Kotlin configuration and profile-import support for
+  the implemented subset, including secret redaction and capability discovery.
+
+### Release criteria
+
+- Both client protocols have documented accepted/rejected configurations and
+  blocking interoperability against the exact selected Xray-core revision.
+  Also pin native Hysteria 2 and WireGuard reference implementations to verify
+  the claimed standard-protocol behavior independently of Xray extensions.
+- New wire, crypto, parser, packet, and FFI boundaries have negative tests,
+  fuzz coverage, explicit resource budgets, and security review appropriate to
+  the changed surface. Existing VLESS/XHTTP and ABI checks remain blocking.
+- Targeted physical Apple/Android scenarios cover changed lifecycle risks,
+  including cancellation, reconnect, UDP behavior, and resource recovery.
+  No fixed-duration long soak campaign is introduced.
+- Feature freeze, a matching core/mobile RC, and application acceptance precede
+  stable publication. Exact supported options and implementation sequencing
+  must be recorded before feature freeze; this roadmap does not assert full
+  upstream feature parity or add server-side scope.
+
 ## Deferred security work before `1.0`
 
 `v0.5.0` completed the focused credential redaction, zeroization, and secret
@@ -628,21 +694,18 @@ revision and existing dependency/security gates. Reconsider that decision only
 during `1.0` planning or earlier if a concrete security finding, upstream
 incompatibility, or maintenance failure invalidates the current pin.
 
-## Protocol expansion after `v0.6`
+## Further protocol expansion after the selected `v0.7` scope
 
 Protocol work is demand-driven and begins only after the previous release
 gates are sustained in CI.
 
-Recommended order:
+The remaining candidates have no assigned release or mandatory order:
 
 1. **Trojan client.** It can reuse the existing TLS, stream, DNS, routing, and
    outbound lifecycle while exercising the new outbound factory seam.
 2. **Shadowsocks 2022.** Add it as an optional client component if profile
    corpus and integrator demand justify the crypto and compatibility surface.
 3. **VMess.** Implement only if real migration data shows material active use.
-4. **WireGuard or Hysteria.** Treat either as a separately designed project,
-   not a small protocol adapter, because each adds a substantial networking,
-   platform, performance, and security surface.
 
 Each protocol requires a pinned reference implementation, fixture corpus,
 blocking interop coverage, fuzz targets, resource budgets, mobile lifecycle

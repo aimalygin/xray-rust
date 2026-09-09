@@ -325,6 +325,15 @@ jobs:
       - name: Verify independent XHTTP downloads against pinned Xray-core
         run: bash scripts/check-xhttp-download-oracle.sh
 
+      - name: Verify Hysteria wire and WireGuard routing primitives against pinned Xray-core
+        run: bash scripts/check-v07-protocol-oracle.sh
+
+      - name: Verify live Hysteria TCP and UDP against pinned Xray-core
+        run: bash scripts/check-hysteria-interop.sh
+
+      - name: Verify bounded WireGuard engine and TCP UDP core runtime against pinned Xray-core
+        run: bash scripts/check-wireguard-runtime.sh
+
   rc-interop:
     if: needs.release-metadata.outputs.run_release_gates == 'true'
     needs: release-metadata

@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h3-quinn)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h3-quinn vendor/quinn-proto vendor/gotatun)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -35,6 +35,9 @@ download_and_verify \
 download_and_verify \
   h3-quinn 0.0.10 \
   8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4
+download_and_verify \
+  quinn-proto 0.11.16 \
+  2f4bfc015262b9df63c8845072ce59068853ff5872180c2ce2f13038b970e560
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/blake3-1.8.5" \
@@ -54,4 +57,14 @@ for path in Cargo.toml LICENSE README.md src; do
     "$ROOT/vendor/h3-quinn/$path"
 done
 
-echo "verified vendored sources against checksum-pinned crates.io archives"
+patch --batch --fuzz=0 -p1 \
+  -d "$temporary/quinn-proto-0.11.16" \
+  <"$ROOT/vendor/quinn-proto/XRAY-PATCH.diff"
+diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
+  "$temporary/quinn-proto-0.11.16" "$ROOT/vendor/quinn-proto"
+cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.16/Cargo.toml" \
+  --no-default-features --features rustls-ring --lib \
+  transport_parameters::test::advertised_datagram_cap
+
+bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
+echo "verified vendored sources against checksum-pinned archives"
