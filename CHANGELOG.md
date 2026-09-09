@@ -10,6 +10,8 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.6.1-rc.1 - 2026-09-09
+
 - Add optional `xhttpSettings.h2StreamReceiveWindow` (integer bytes,
   65,535–16,777,216). Absent/null keeps the 4 MiB default; connection credit
   remains 16 MiB. Support aliases, `extra` and independently configured
