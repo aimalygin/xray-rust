@@ -1,7 +1,9 @@
 mod dns;
+mod hysteria;
 mod routing;
 mod stream;
 mod vless;
+mod wireguard;
 mod xhttp;
 
 use std::{
@@ -56,6 +58,7 @@ const TUN_CLIENT_IPV4: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 2);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StreamNetwork {
     Raw,
+    Hysteria,
     WebSocket,
     HttpUpgrade,
     Grpc,
@@ -927,6 +930,8 @@ impl Parser<'_> {
             Some("freedom") => OutboundProtocol::Freedom,
             Some("dns") => OutboundProtocol::Dns,
             Some("vless") => OutboundProtocol::Vless,
+            Some("hysteria") => OutboundProtocol::Hysteria,
+            Some("wireguard") => OutboundProtocol::Wireguard,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -942,6 +947,12 @@ impl Parser<'_> {
         self.validate_outbound_compatibility(outbound, index);
 
         let settings = match protocol {
+            OutboundProtocol::Wireguard => {
+                OutboundSettings::Wireguard(self.parse_wireguard_settings(outbound, index)?)
+            }
+            OutboundProtocol::Hysteria => {
+                OutboundSettings::Hysteria(self.parse_hysteria_settings(outbound, index)?)
+            }
             OutboundProtocol::Freedom => {
                 self.validate_freedom_settings(outbound.get("settings"), index);
                 OutboundSettings::Freedom
@@ -955,6 +966,7 @@ impl Parser<'_> {
         };
         let stream = self.parse_stream_settings(outbound, index)?;
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
+        self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
 
         if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
             self.error(
@@ -977,7 +989,10 @@ impl Parser<'_> {
                         .is_none_or(|user| user.encryption.is_none())
                     && !vless.server.is_xray_plaintext_server_exempt()
             }
-            OutboundSettings::Freedom | OutboundSettings::Dns(_) => false,
+            OutboundSettings::Freedom
+            | OutboundSettings::Dns(_)
+            | OutboundSettings::Hysteria(_)
+            | OutboundSettings::Wireguard(_) => false,
         };
         if rejects_plaintext_server {
             self.error(

@@ -218,6 +218,32 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         match outbound {
+            outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+                if server_socket_has_nonzero_scope(server) {
+                    return Err(io::Error::other(
+                        "scoped IPv6 DNS target is unsupported by this outbound",
+                    ));
+                }
+                let session = crate::outbound::datagram::open(
+                    &outbound,
+                    &target,
+                    self.bootstrap_resolver.as_ref(),
+                    self.bootstrap_resolver.as_ref(),
+                    self.transport_dialer.as_ref(),
+                )
+                .await
+                .map_err(io::Error::other)?;
+                session
+                    .send(&target, query)
+                    .await
+                    .map_err(io::Error::other)?;
+                loop {
+                    let reply = session.recv().await.map_err(io::Error::other)?;
+                    if dns_response_matches_query(query, &reply.payload) {
+                        return Ok(reply.payload);
+                    }
+                }
+            }
             UdpOutbound::Freedom => {
                 let server = self.resolved_server(server).await?;
                 let _udp_exchange_permit = self.direct_executor.try_reserve_udp_exchange()?;
@@ -411,7 +437,9 @@ impl RoutedDnsQueryTransport {
                 )
                 .await?
             }
-            outbound @ TcpOutbound::Vless(_) => {
+            outbound @ (TcpOutbound::Vless(_)
+            | TcpOutbound::Hysteria(_)
+            | TcpOutbound::Wireguard(_)) => {
                 if server_socket_has_nonzero_scope(server) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,

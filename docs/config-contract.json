@@ -111,6 +111,45 @@
         ]
       }
     },
+    "hysteria2": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "hysteria",
+          "settings": {
+            "address": "server.example",
+            "port": 443,
+            "version": 2
+          },
+          "streamSettings": {
+            "hysteriaSettings": {
+              "auth": "synthetic-example-auth",
+              "version": 2
+            },
+            "network": "hysteria",
+            "security": "tls",
+            "tlsSettings": {
+              "alpn": [
+                "h3"
+              ],
+              "serverName": "server.example"
+            }
+          },
+          "tag": "proxy"
+        }
+      ]
+    },
     "socks-direct": {
       "inbounds": [
         {
@@ -168,6 +207,134 @@
               "fingerprint": "chrome",
               "serverName": "server.example"
             }
+          },
+          "tag": "proxy"
+        }
+      ]
+    },
+    "wireguard": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "wireguard",
+          "settings": {
+            "address": [
+              "10.44.0.2/32",
+              "fd44::2/128"
+            ],
+            "mtu": 1420,
+            "peers": [
+              {
+                "allowedIPs": [
+                  "0.0.0.0/0",
+                  "::/0"
+                ],
+                "endpoint": "server.example:51820",
+                "keepAlive": 0,
+                "publicKey": "5353535353535353535353535353535353535353535353535353535353535353"
+              }
+            ],
+            "secretKey": "4242424242424242424242424242424242424242424242424242424242424242"
+          },
+          "tag": "proxy"
+        }
+      ]
+    },
+    "wireguard-multi-peer": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "wireguard",
+          "settings": {
+            "address": [
+              "10.44.0.2/32",
+              "fd44::2/128"
+            ],
+            "mtu": 1420,
+            "peers": [
+              {
+                "allowedIPs": [
+                  "0.0.0.0/0",
+                  "::/0"
+                ],
+                "endpoint": "server.example:51820",
+                "keepAlive": 0,
+                "publicKey": "5353535353535353535353535353535353535353535353535353535353535353"
+              },
+              {
+                "allowedIPs": [
+                  "198.51.100.7/24",
+                  "2001:db8:b::7/64"
+                ],
+                "endpoint": "second.example:51820",
+                "keepAlive": 0,
+                "preSharedKey": "6464646464646464646464646464646464646464646464646464646464646464",
+                "publicKey": "6464646464646464646464646464646464646464646464646464646464646464"
+              }
+            ],
+            "secretKey": "4242424242424242424242424242424242424242424242424242424242424242"
+          },
+          "tag": "proxy"
+        }
+      ]
+    },
+    "wireguard-psk": {
+      "inbounds": [
+        {
+          "listen": "127.0.0.1",
+          "port": 1080,
+          "protocol": "socks",
+          "settings": {
+            "auth": "noauth",
+            "udp": true
+          },
+          "tag": "socks-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "wireguard",
+          "settings": {
+            "address": [
+              "10.44.0.2/32",
+              "fd44::2/128"
+            ],
+            "mtu": 1420,
+            "peers": [
+              {
+                "allowedIPs": [
+                  "0.0.0.0/0",
+                  "::/0"
+                ],
+                "endpoint": "server.example:51820",
+                "keepAlive": 0,
+                "preSharedKey": "6464646464646464646464646464646464646464646464646464646464646464",
+                "publicKey": "5353535353535353535353535353535353535353535353535353535353535353"
+              }
+            ],
+            "secretKey": "4242424242424242424242424242424242424242424242424242424242424242"
           },
           "tag": "proxy"
         }
@@ -466,7 +633,7 @@
         "sendThrough"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom, dns and vless only. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom, dns, vless, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",
@@ -641,11 +808,12 @@
         "grpcSettings",
         "xhttpSettings",
         "splithttpSettings",
+        "hysteriaSettings",
         "finalmask",
         "sockopt"
       ],
       "id": "STREAM",
-      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
+      "notes": "method takes priority over network. raw/tcp, ws/websocket, httpupgrade, grpc, xhttp/splithttp, hysteria; security none/tls/reality. Carrier/security combinations and inactive block handling require the validator."
     },
     {
       "context": "streamSettings.tlsSettings",
@@ -659,6 +827,51 @@
       ],
       "id": "TLS",
       "notes": "allowInsecure=true is rejected. fromMitm is unsupported. Fingerprints, certificate pins and name constraints use parser validation."
+    },
+    {
+      "context": "$.outbounds[].settings (wireguard)",
+      "fields": [
+        "secretKey",
+        "address",
+        "peers",
+        "mtu",
+        "reserved",
+        "domainStrategy",
+        "noKernelTun"
+      ],
+      "id": "WIREGUARD",
+      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK; nonzero reserved bytes, custom streams and chaining are unsupported."
+    },
+    {
+      "context": "$.outbounds[].settings.peers[] (wireguard)",
+      "fields": [
+        "publicKey",
+        "preSharedKey",
+        "endpoint",
+        "keepAlive",
+        "allowedIPs"
+      ],
+      "id": "WIREGUARD_PEER",
+      "notes": "A nonzero IP/domain endpoint is required. Nonempty allowedIPs; at most 256 prefixes across all peers. Default allows both families. Longest prefix wins; identical normalized prefixes belong to the last configured peer. PSK accepts key encodings; absent, empty or all-zero means unset. Inbound user settings are unsupported."
+    },
+    {
+      "context": "$.outbounds[].settings (hysteria)",
+      "fields": [
+        "version",
+        "address",
+        "port"
+      ],
+      "id": "HYSTERIA",
+      "notes": "Version 2, one server, nonzero port; requires matching Hysteria transport and TLS. No chaining."
+    },
+    {
+      "context": "streamSettings.hysteriaSettings",
+      "fields": [
+        "version",
+        "auth"
+      ],
+      "id": "HYSTERIA_TRANSPORT",
+      "notes": "Version 2 and bounded authentication; stock QUIC TLS/h3, default bounded BBR configuration. QUIC/socket overrides, fingerprints, bandwidth/obfuscation/hopping options are rejected."
     },
     {
       "context": "streamSettings.finalmask.quicParams.udpHop",

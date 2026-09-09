@@ -18,6 +18,12 @@ use std::os::windows::io::AsRawSocket;
 mod dialer;
 mod dns;
 mod happy_eyeballs;
+pub mod hysteria;
+
+/// Validate a TLS DNS/IP verification name without performing network I/O.
+pub fn validate_tls_server_name(server_name: &str) -> Result<(), TransportError> {
+    tls::parse_tls_server_name(server_name).map(|_| ())
+}
 mod penetrating_tls;
 pub mod reality;
 pub mod reality_connector;
@@ -499,6 +505,19 @@ pub(crate) fn canonicalize_socket_addr(addr: SocketAddr) -> SocketAddr {
         Some(ipv4) => SocketAddr::V4(SocketAddrV4::new(ipv4, ipv6.port())),
         None => addr,
     }
+}
+
+/// Protect a bound UDP socket before async registration or any network I/O.
+pub fn protect_std_udp_socket(
+    socket: &StdUdpSocket,
+    socket_protector: Option<&dyn SocketProtector>,
+) -> Result<(), TransportError> {
+    if let Some(protector) = socket_protector {
+        protector
+            .protect(SocketHandle::from_std_udp_socket(socket))
+            .map_err(TransportError::SocketProtection)?;
+    }
+    Ok(())
 }
 
 pub fn protect_udp_socket(

@@ -22,8 +22,8 @@ xray-rust config check --config client.json --json
 cat client.json | xray-rust config check --config - --json
 ```
 
-Examples are `socks-direct`, `vless-tls`, `xhttp-download` and `dns-routing`.
-Their `.example` names, documentation addresses and UUID are synthetic; supply
+Examples are `socks-direct`, `vless-tls`, `hysteria2`, `wireguard`, `wireguard-psk`, `wireguard-multi-peer`, `xhttp-download` and `dns-routing`.
+Their `.example` names, documentation addresses, UUID, WireGuard keys and Hysteria authentication are synthetic; supply
 your own endpoints and credentials before use. Example export never rewrites
 an existing profile unless you explicitly redirect output to that file.
 

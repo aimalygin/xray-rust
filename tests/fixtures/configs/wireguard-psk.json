@@ -1,0 +1,40 @@
+{
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "protocol": "socks",
+      "listen": "127.0.0.1",
+      "port": 1080,
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "wireguard",
+      "settings": {
+        "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+        "address": [
+          "10.44.0.2/32",
+          "fd44::2/128"
+        ],
+        "mtu": 1420,
+        "peers": [
+          {
+            "publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+            "endpoint": "server.example:51820",
+            "allowedIPs": [
+              "0.0.0.0/0",
+              "::/0"
+            ],
+            "keepAlive": 0,
+            "preSharedKey": "6464646464646464646464646464646464646464646464646464646464646464"
+          }
+        ]
+      }
+    }
+  ]
+}

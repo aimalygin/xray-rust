@@ -1,3 +1,5 @@
+mod datagram;
+
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -2524,7 +2526,7 @@ async fn open_tcp_bridge_stream(
                 )
                 .await?);
             }
-            TcpOutbound::Vless(_)
+            TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_)
                 if upstream
                     .socket_addr()
                     .is_some_and(socket_addr_has_nonzero_scope) =>
@@ -2535,7 +2537,7 @@ async fn open_tcp_bridge_stream(
                 )
                 .into());
             }
-            TcpOutbound::Vless(_) => {}
+            TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {}
             TcpOutbound::Chained { .. } => {
                 if matches!(outbound.primary(), TcpOutbound::Vless(_))
                     && upstream
@@ -2555,7 +2557,8 @@ async fn open_tcp_bridge_stream(
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             context.dns_resolver.as_ref()
         }
-        TcpOutbound::Vless(_) => context.bootstrap_dns_resolver(),
+        TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) => context.bootstrap_dns_resolver(),
+        TcpOutbound::Wireguard(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     open_tcp_stream_with_resolvers_and_dialer(
@@ -2910,6 +2913,9 @@ async fn bridge_tcp_flow_inner(
         );
         let mut connection_close = connection.close_receiver();
         let policy_timeout = match outbound.primary() {
+            TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
+                effective_policy_for_level(&context.config, Some(0)).handshake
+            }
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
                 context.inbound_policy.handshake
             }
@@ -4053,6 +4059,21 @@ async fn bridge_udp_flow(
     }
 
     match outbound {
+        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+            datagram::bridge(
+                key,
+                generation,
+                dial_target,
+                outbound,
+                context,
+                from_stack,
+                shutdown,
+                first_payload,
+                connection,
+                connection_close,
+            )
+            .await
+        }
         UdpOutbound::Freedom => {
             bridge_udp_freedom_flow(
                 key,

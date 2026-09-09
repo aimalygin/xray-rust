@@ -467,6 +467,16 @@ pub(crate) async fn connect_quic_transport(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
+    connect_quic_transport_with_datagrams(config, expected_alpn, None).await
+}
+
+/// Optional receive/send byte budgets and advertised frame-size cap for QUIC datagrams.
+/// `None` preserves the existing XHTTP/DoQ transport configuration.
+pub(crate) async fn connect_quic_transport_with_datagrams(
+    config: H3ConnectConfig,
+    expected_alpn: &'static [u8],
+    datagram_buffers: Option<(usize, usize, u16)>,
+) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
     if config.tls_config.alpn_protocols.len() != 1
@@ -476,7 +486,7 @@ pub(crate) async fn connect_quic_transport(
         return Err(H3Error::InvalidAlpn { expected });
     }
 
-    let (endpoint_config, client_config) = build_quinn_config(&config)?;
+    let (endpoint_config, client_config) = build_quinn_config(&config, datagram_buffers)?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
     let bind_addr = match remote_addr.ip() {
         IpAddr::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
@@ -598,7 +608,10 @@ fn is_socket_protection_error(error: &H3Error) -> bool {
     )
 }
 
-fn build_quinn_config(config: &H3ConnectConfig) -> Result<(EndpointConfig, ClientConfig), H3Error> {
+fn build_quinn_config(
+    config: &H3ConnectConfig,
+    datagram_buffers: Option<(usize, usize, u16)>,
+) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
 
@@ -628,6 +641,11 @@ fn build_quinn_config(config: &H3ConnectConfig) -> Result<(EndpointConfig, Clien
         .stream_receive_window(stream_window)
         .receive_window(connection_window)
         .max_concurrent_bidi_streams(max_incoming);
+    if let Some((receive, send, frame_size)) = datagram_buffers {
+        transport.datagram_receive_buffer_size(Some(receive));
+        transport.datagram_send_buffer_size(send);
+        transport.advertised_datagram_frame_size(Some(frame_size));
+    }
     if config.quic.disable_path_mtu_discovery {
         transport.mtu_discovery_config(None);
     }

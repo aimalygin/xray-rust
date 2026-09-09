@@ -96,6 +96,11 @@ impl TransportDialer {
         self.socket_protector.as_deref()
     }
 
+    /// The same trust policy and socket protector used by this dialer.
+    pub fn tls_connector(&self) -> &TlsConnector {
+        &self.tls
+    }
+
     pub fn socket_protector_arc(&self) -> Option<Arc<dyn SocketProtector>> {
         self.socket_protector.clone()
     }

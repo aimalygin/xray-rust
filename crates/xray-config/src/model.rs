@@ -543,6 +543,8 @@ pub enum OutboundProtocol {
     Freedom,
     Dns,
     Vless,
+    Hysteria,
+    Wireguard,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -550,6 +552,8 @@ pub enum OutboundSettings {
     Freedom,
     Dns(DnsOutboundSettings),
     Vless(VlessOutboundSettings),
+    Hysteria(HysteriaOutboundSettings),
+    Wireguard(WireguardOutboundSettings),
 }
 
 impl OutboundSettings {
@@ -558,7 +562,56 @@ impl OutboundSettings {
             Self::Freedom => OutboundProtocol::Freedom,
             Self::Dns(_) => OutboundProtocol::Dns,
             Self::Vless(_) => OutboundProtocol::Vless,
+            Self::Hysteria(_) => OutboundProtocol::Hysteria,
+            Self::Wireguard(_) => OutboundProtocol::Wireguard,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireguardOutboundSettings {
+    pub secret_key: xray_proxy::wireguard::KeyMaterial,
+    pub peers: Vec<WireguardPeerSettings>,
+    pub addresses: Vec<std::net::IpAddr>,
+    pub mtu: u16,
+    pub domain_strategy: WireguardDomainStrategy,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireguardPeerSettings {
+    pub public_key: xray_proxy::wireguard::KeyMaterial,
+    pub preshared_key: Option<xray_proxy::wireguard::KeyMaterial>,
+    pub endpoint: TargetAddr,
+    pub port: u16,
+    pub allowed_ips: Vec<xray_proxy::wireguard::AllowedIp>,
+    pub keepalive: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WireguardDomainStrategy {
+    ForceIp,
+    ForceIpv4,
+    ForceIpv6,
+    ForceIpv4v6,
+    ForceIpv6v4,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HysteriaOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct HysteriaSettings {
+    pub auth: zeroize::Zeroizing<String>,
+}
+
+impl fmt::Debug for HysteriaSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HysteriaSettings")
+            .field("auth", &"<redacted>")
+            .finish()
     }
 }
 
@@ -788,13 +841,13 @@ pub struct QuicIntervalRange {
 /// The stream transport `streamSettings.network` selected, with its own
 /// settings block already parsed.
 ///
-/// `network` above stays `Network::Tcp` for all of these: every transport we
-/// support runs over a TCP connection, and the variant only says what gets
-/// layered on top of it.
+/// Hysteria uses `Network::Udp`. Other variants retain `Network::Tcp` for
+/// compatibility; XHTTP selects its TCP or QUIC carrier at runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamTransport {
     /// `tcp` / `raw`: nothing layered on top.
     Raw,
+    Hysteria(HysteriaSettings),
     WebSocket(WebSocketSettings),
     HttpUpgrade(HttpUpgradeSettings),
     Grpc(GrpcSettings),

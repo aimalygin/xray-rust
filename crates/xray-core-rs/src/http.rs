@@ -228,6 +228,14 @@ async fn handle_http_connection(
                 outbound_policy.relay_buffer_size(),
             )
         }
+        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(0));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     let outbound_label = crate::debug_log::tcp_outbound_label(&outbound);

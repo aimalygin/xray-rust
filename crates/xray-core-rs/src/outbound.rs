@@ -1,4 +1,9 @@
 mod encryption;
+pub(crate) mod hysteria;
+pub use hysteria::HysteriaOutbound;
+pub(crate) mod wireguard;
+pub use wireguard::WireguardOutbound;
+pub(crate) mod datagram;
 mod routing;
 mod xhttp;
 
@@ -330,6 +335,8 @@ pub enum TcpOutbound {
     Freedom,
     FreedomHappyEyeballs(HappyEyeballsConfig),
     Vless(Box<VlessTcpOutbound>),
+    Hysteria(HysteriaOutbound),
+    Wireguard(WireguardOutbound),
     Chained {
         outbound: Box<TcpOutbound>,
         proxy: Box<TcpOutbound>,
@@ -346,6 +353,8 @@ pub(crate) struct SelectedTcpOutbound {
 pub enum UdpOutbound {
     Freedom,
     Vless(Box<VlessTcpOutbound>),
+    Hysteria(HysteriaOutbound),
+    Wireguard(WireguardOutbound),
 }
 
 /// One configured handler selected for a TCP session. DNS remains a message
@@ -583,7 +592,7 @@ impl TcpOutbound {
         match self.primary() {
             Self::Freedom => None,
             Self::FreedomHappyEyeballs(config) => Some(config),
-            Self::Vless(_) => None,
+            Self::Vless(_) | Self::Hysteria(_) | Self::Wireguard(_) => None,
             Self::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
         }
     }
@@ -615,6 +624,12 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
                     )
                     .await
             }
+            TcpOutbound::Wireguard(_) => Err(TransportError::ChainedOutbound(
+                "WireGuard chaining is unsupported".into(),
+            )),
+            TcpOutbound::Hysteria(_) => Err(TransportError::ChainedOutbound(
+                "Hysteria chaining is unsupported".into(),
+            )),
             TcpOutbound::Vless(outbound) => open_vless_tcp_stream_with_resolved_server_and_dialer(
                 outbound,
                 original_target,
@@ -657,6 +672,12 @@ fn prepare_outbound_proxy_dialer<'a>(
                     .into_boxed_slice()
             }
             TcpOutbound::Vless(_) => Box::default(),
+            TcpOutbound::Wireguard(_) => {
+                return Err(CoreError::UnsupportedOutboundProxyNetwork("WireGuard"));
+            }
+            TcpOutbound::Hysteria(_) => {
+                return Err(CoreError::UnsupportedOutboundProxyNetwork("Hysteria"))
+            }
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => Box::default(),
             TcpOutbound::Chained { .. } => {
                 unreachable!("a compiled chain wrapper has one plain primary outbound")
@@ -675,7 +696,7 @@ fn prepare_outbound_proxy_dialer<'a>(
 
 fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
     match proxy.primary() {
-        TcpOutbound::Vless(_) => false,
+        TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => false,
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => match proxy {
             TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
             _ => true,
@@ -756,6 +777,8 @@ struct CachedOutboundEntry {
     udp: OnceLock<Result<UdpOutbound, CachedOutboundError>>,
     dns: OnceLock<Result<DnsOutbound, CachedOutboundError>>,
     vless: OnceLock<Result<VlessTcpOutbound, CachedOutboundError>>,
+    hysteria: OnceLock<Result<HysteriaOutbound, CachedOutboundError>>,
+    wireguard: OnceLock<Result<WireguardOutbound, CachedOutboundError>>,
 }
 
 /// Opaque identity of one configured node in one immutable outbound graph.
@@ -770,6 +793,8 @@ pub struct OutboundNodeId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutboundNodeKind {
+    Hysteria,
+    Wireguard,
     Freedom,
     Vless,
     Dns,
@@ -979,6 +1004,8 @@ impl OutboundGraph {
                 kind: match outbound.settings {
                     OutboundSettings::Freedom => OutboundNodeKind::Freedom,
                     OutboundSettings::Vless(_) => OutboundNodeKind::Vless,
+                    OutboundSettings::Hysteria(_) => OutboundNodeKind::Hysteria,
+                    OutboundSettings::Wireguard(_) => OutboundNodeKind::Wireguard,
                     OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
                 },
             })
@@ -1204,6 +1231,8 @@ fn build_outbound_proxy_edges(
                 Some("XHTTP downloadSettings with outbound chaining is unsupported")
             }
             (OutboundSettings::Dns(_), _) => Some("DNS outbounds are not TCP carriers"),
+            (OutboundSettings::Hysteria(_), _) => Some("Hysteria chaining is unsupported"),
+            (OutboundSettings::Wireguard(_), _) => Some("WireGuard chaining is unsupported"),
             (
                 _,
                 StreamSettings {
@@ -1847,6 +1876,7 @@ pub struct OutboundFactory {
     graph: Arc<OutboundGraph>,
     entries: Box<[CachedOutboundEntry]>,
     selection: Arc<OutboundSelectionOverlay>,
+    sessions_closed: std::sync::atomic::AtomicBool,
 }
 
 impl OutboundFactory {
@@ -1860,6 +1890,7 @@ impl OutboundFactory {
             graph,
             entries,
             selection,
+            sessions_closed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -2662,6 +2693,72 @@ impl OutboundFactory {
         }
     }
 
+    fn cached_hysteria_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<HysteriaOutbound, CachedOutboundError> {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let result = self
+            .entry(node)?
+            .hysteria
+            .get_or_init(|| {
+                HysteriaOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+            })
+            .clone();
+        if self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = &result {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        result
+    }
+
+    fn cached_wireguard_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<WireguardOutbound, CachedOutboundError> {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let result = self
+            .entry(node)?
+            .wireguard
+            .get_or_init(|| {
+                WireguardOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+            })
+            .clone();
+        if self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = &result {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        result
+    }
+
+    pub(crate) fn close_sessions(&self) {
+        self.sessions_closed.store(true, Ordering::Release);
+        for entry in &self.entries {
+            if let Some(Ok(outbound)) = entry.wireguard.get() {
+                outbound.close();
+            }
+            if let Some(Ok(outbound)) = entry.hysteria.get() {
+                outbound.close();
+            }
+        }
+    }
+
     fn compile_tcp_outbound(
         &self,
         node: OutboundNodeId,
@@ -2670,11 +2767,19 @@ impl OutboundFactory {
             .graph
             .configured_outbound(node)
             .ok_or(CachedOutboundError::NoSupportedOutbound)?;
-        if outbound.stream.network != Network::Tcp {
+        if outbound.stream.network != Network::Tcp
+            && !matches!(outbound.settings, OutboundSettings::Hysteria(_))
+        {
             return Err(CachedOutboundError::UnsupportedOutboundNetwork);
         }
 
         let compiled = match &outbound.settings {
+            OutboundSettings::Hysteria(_) => self
+                .cached_hysteria_outbound(node)
+                .map(TcpOutbound::Hysteria),
+            OutboundSettings::Wireguard(_) => self
+                .cached_wireguard_outbound(node)
+                .map(TcpOutbound::Wireguard),
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
@@ -2714,6 +2819,12 @@ impl OutboundFactory {
             return Err(CachedOutboundError::UnsupportedOutboundProxyNetwork("UDP"));
         }
         match &outbound.settings {
+            OutboundSettings::Hysteria(_) => self
+                .cached_hysteria_outbound(node)
+                .map(UdpOutbound::Hysteria),
+            OutboundSettings::Wireguard(_) => self
+                .cached_wireguard_outbound(node)
+                .map(UdpOutbound::Wireguard),
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
@@ -2753,9 +2864,10 @@ impl OutboundFactory {
                 DnsOutbound::new_with_stream(settings.clone(), &configured.stream, conn_idle)
                     .map_err(CachedOutboundError::from_core_error)
             }
-            OutboundSettings::Freedom | OutboundSettings::Vless(_) => {
-                Err(CachedOutboundError::NoSupportedOutbound)
-            }
+            OutboundSettings::Freedom
+            | OutboundSettings::Vless(_)
+            | OutboundSettings::Hysteria(_)
+            | OutboundSettings::Wireguard(_) => Err(CachedOutboundError::NoSupportedOutbound),
         }
     }
 }
@@ -2813,6 +2925,7 @@ fn build_transport_layer(
 
     Ok(match &outbound.stream.transport {
         StreamTransport::Raw => TransportLayer::Raw,
+        StreamTransport::Hysteria(_) => return Err(CoreError::UnsupportedOutboundNetwork),
         StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
             path: websocket.path.clone(),
             host: websocket.host.clone().unwrap_or_else(host_fallback),
@@ -3055,11 +3168,17 @@ fn host_and_port(server: &TargetAddr, port: u16) -> String {
 
 #[cfg(test)]
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
-    if outbound.stream.network != Network::Tcp {
+    if outbound.stream.network != Network::Tcp
+        && !matches!(outbound.settings, OutboundSettings::Hysteria(_))
+    {
         return Err(CoreError::UnsupportedOutboundNetwork);
     }
 
     match &outbound.settings {
+        OutboundSettings::Hysteria(_) => HysteriaOutbound::new(outbound).map(TcpOutbound::Hysteria),
+        OutboundSettings::Wireguard(_) => {
+            WireguardOutbound::new(outbound).map(TcpOutbound::Wireguard)
+        }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Freedom => {
             if !stream_transport_is_dialable(&outbound.stream) {
@@ -3078,6 +3197,10 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
 #[cfg(test)]
 fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreError> {
     match &outbound.settings {
+        OutboundSettings::Hysteria(_) => HysteriaOutbound::new(outbound).map(UdpOutbound::Hysteria),
+        OutboundSettings::Wireguard(_) => {
+            WireguardOutbound::new(outbound).map(UdpOutbound::Wireguard)
+        }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Freedom => {
             if !stream_transport_is_dialable(&outbound.stream) {
@@ -3377,6 +3500,21 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
     requires_local_resolution: bool,
 ) -> Result<BoxedTransportStream, CoreError> {
     match outbound {
+        TcpOutbound::Wireguard(outbound) => {
+            outbound
+                .open_tcp(
+                    target,
+                    destination_resolver,
+                    bootstrap_resolver,
+                    transport_dialer,
+                )
+                .await
+        }
+        TcpOutbound::Hysteria(outbound) => {
+            outbound
+                .open_tcp(target, bootstrap_resolver, transport_dialer)
+                .await
+        }
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             let candidates = if requires_local_resolution {
                 resolve_server_candidates(target, destination_resolver).await?

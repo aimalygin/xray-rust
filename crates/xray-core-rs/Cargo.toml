@@ -29,11 +29,15 @@ xray-proxy = { path = "../xray-proxy" }
 xray-routing = { path = "../xray-routing" }
 xray-runtime = { path = "../xray-runtime" }
 xray-transport = { path = "../xray-transport" }
+xray-wireguard = { path = "../xray-wireguard" }
 xray-tun = { path = "../xray-tun" }
 xray-vless-encryption = { path = "../xray-vless-encryption" }
 zeroize.workspace = true
 
 [dev-dependencies]
+x25519-dalek.workspace = true
+base64.workspace = true
+quinn.workspace = true
 h2.workspace = true
 http.workspace = true
 loom.workspace = true
