@@ -1,0 +1,107 @@
+--- a/src/config/transport.rs
++++ b/src/config/transport.rs
+@@ -47,6 +47,7 @@
+     pub(crate) crypto_buffer_size: usize,
+     pub(crate) allow_spin: bool,
+     pub(crate) datagram_receive_buffer_size: Option<usize>,
++    pub(crate) advertised_datagram_frame_size: Option<u16>,
+     pub(crate) datagram_send_buffer_size: usize,
+     #[cfg(test)]
+     pub(crate) deterministic_packet_numbers: bool,
+@@ -284,6 +285,15 @@
+     /// exceeds this value, old datagrams are dropped until it is no longer exceeded.
+     pub fn datagram_receive_buffer_size(&mut self, value: Option<usize>) -> &mut Self {
+         self.datagram_receive_buffer_size = value;
++        self
++    }
++
++    /// Optional cap on the advertised maximum DATAGRAM frame size, independent
++    /// of the aggregate receive queue budget. `None` preserves upstream behavior.
++    /// Does not enable datagrams when receiving is disabled, and cannot advertise
++    /// more than the configured receive buffer can hold. Zero advertises no support.
++    pub fn advertised_datagram_frame_size(&mut self, value: Option<u16>) -> &mut Self {
++        self.advertised_datagram_frame_size = value;
+         self
+     }
+ 
+@@ -382,6 +392,7 @@
+             crypto_buffer_size: 16 * 1024,
+             allow_spin: true,
+             datagram_receive_buffer_size: Some(STREAM_RWND as usize),
++            advertised_datagram_frame_size: None,
+             datagram_send_buffer_size: 1024 * 1024,
+             #[cfg(test)]
+             deterministic_packet_numbers: false,
+@@ -418,6 +429,7 @@
+             crypto_buffer_size,
+             allow_spin,
+             datagram_receive_buffer_size,
++            advertised_datagram_frame_size,
+             datagram_send_buffer_size,
+             #[cfg(test)]
+                 deterministic_packet_numbers: _,
+@@ -450,6 +462,10 @@
+             .field("crypto_buffer_size", crypto_buffer_size)
+             .field("allow_spin", allow_spin)
+             .field("datagram_receive_buffer_size", datagram_receive_buffer_size)
++            .field(
++                "advertised_datagram_frame_size",
++                advertised_datagram_frame_size,
++            )
+             .field("datagram_send_buffer_size", datagram_send_buffer_size)
+             // congestion_controller_factory not debug
+             .field("enable_segmentation_offload", enable_segmentation_offload);
+--- a/src/transport_parameters.rs
++++ b/src/transport_parameters.rs
+@@ -167,9 +167,15 @@
+                 CidQueue::LEN as u32
+             }
+             .into(),
+-            max_datagram_frame_size: config
+-                .datagram_receive_buffer_size
+-                .map(|x| (x.min(u16::MAX.into()) as u16).into()),
++            max_datagram_frame_size: config.datagram_receive_buffer_size.map(|x| {
++                (x.min(
++                    config
++                        .advertised_datagram_frame_size
++                        .unwrap_or(u16::MAX)
++                        .into(),
++                ) as u16)
++                    .into()
++            }),
+             grease_quic_bit: endpoint_config.grease_quic_bit,
+             min_ack_delay: Some(
+                 VarInt::from_u64(u64::try_from(TIMER_GRANULARITY.as_micros()).unwrap()).unwrap(),
+@@ -727,6 +733,32 @@
+     use super::*;
+ 
+     #[test]
++    fn advertised_datagram_cap_preserves_the_receive_queue_budget() {
++        let mut config = TransportConfig::default();
++        config.datagram_receive_buffer_size(Some(256 * 1024));
++        let advertised = |config: &TransportConfig| {
++            TransportParameters::new(
++                config,
++                &EndpointConfig::default(),
++                &crate::RandomConnectionIdGenerator::new(8),
++                ConnectionId::new(&[0; 8]),
++                None,
++                &mut rand::rng(),
++            )
++            .max_datagram_frame_size
++            .map(|size| size.into_inner())
++        };
++        assert_eq!(advertised(&config), Some(65535));
++        config.advertised_datagram_frame_size(Some(1200));
++        assert_eq!(advertised(&config), Some(1200));
++        assert_eq!(config.datagram_receive_buffer_size, Some(256 * 1024));
++        config.datagram_receive_buffer_size(Some(1000));
++        assert_eq!(advertised(&config), Some(1000));
++        config.datagram_receive_buffer_size(None);
++        assert_eq!(advertised(&config), None);
++    }
++
++    #[test]
+     fn coding() {
+         let mut buf = Vec::new();
+         let params = TransportParameters {

@@ -122,3 +122,17 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+## GotaTun WireGuard engine
+
+- Project: [Mullvad GotaTun](https://github.com/mullvad/gotatun)
+- Version: 0.9.1, commit `dab390cdf9dcfb7a6fa85dd8798db92b681ad296`.
+- License: MPL-2.0, with retained upstream BSD notices.
+- Complete notices: [LICENSE](vendor/gotatun/LICENSE) and
+  [LICENSE-CLOUDFLARE](vendor/gotatun/LICENSE-CLOUDFLARE).
+- Modified source and reproducible patch:
+  [provenance](vendor/gotatun/XRAY-PATCH.md).
+
+The vendored engine adds bounded resource ownership for the WireGuard client.
+It is built with the `ring` and `device` features. The complete covered source,
+local patch and notices are retained in this repository for source distribution.
