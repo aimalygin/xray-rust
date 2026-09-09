@@ -49,6 +49,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "v07_protocols"
+path = "fuzz_targets/v07_protocols.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vless_wire"
 path = "fuzz_targets/vless_wire.rs"
 test = false

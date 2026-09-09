@@ -9,6 +9,7 @@ publish.workspace = true
 description = "VLESS, Vision, and XUDP protocol primitives for xray-rust"
 
 [dependencies]
+base64.workspace = true
 bytes.workspace = true
 prost.workspace = true
 rand.workspace = true
@@ -16,3 +17,7 @@ thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 xray-routing = { path = "../xray-routing" }
+zeroize.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -1,0 +1,130 @@
+{
+  "keys": [
+    {
+      "decodedHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "input": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+    },
+    {
+      "decodedHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "input": "4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8="
+    },
+    {
+      "decodedHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "input": "4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8"
+    },
+    {
+      "decodedHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "input": "4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8="
+    },
+    {
+      "decodedHex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+      "input": "4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8"
+    }
+  ],
+  "lookups": [
+    {
+      "address": "203.0.113.7",
+      "peer": 0
+    },
+    {
+      "address": "10.1.2.3",
+      "peer": 1
+    },
+    {
+      "address": "10.42.2.1",
+      "peer": 2
+    },
+    {
+      "address": "10.42.1.200",
+      "peer": 4
+    },
+    {
+      "address": "2001:db8::1",
+      "peer": 6
+    },
+    {
+      "address": "fd00::1",
+      "peer": 5
+    },
+    {
+      "address": "::ffff:c000:204",
+      "peer": 7
+    },
+    {
+      "address": "192.0.2.4",
+      "peer": 0
+    }
+  ],
+  "reference": "Xray-core v26.7.28 / 5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "routes": [
+    {
+      "peer": 0,
+      "prefix": "0.0.0.0/0"
+    },
+    {
+      "peer": 1,
+      "prefix": "10.0.0.0/8"
+    },
+    {
+      "peer": 2,
+      "prefix": "10.42.0.0/16"
+    },
+    {
+      "peer": 3,
+      "prefix": "10.42.1.0/24"
+    },
+    {
+      "peer": 4,
+      "prefix": "10.42.1.99/24"
+    },
+    {
+      "peer": 5,
+      "prefix": "::/0"
+    },
+    {
+      "peer": 6,
+      "prefix": "2001:db8::/32"
+    },
+    {
+      "peer": 7,
+      "prefix": "::ffff:c000:200/120"
+    }
+  ],
+  "scope": "wire codecs and WireGuard allowed-IP lookup; no live network interop",
+  "tcpRequests": [
+    {
+      "address": "example.com:443",
+      "wire": "44010f6578616d706c652e636f6d3a34343300"
+    },
+    {
+      "address": "192.0.2.1:80",
+      "wire": "44010c3139322e302e322e313a383000"
+    },
+    {
+      "address": "[2001:db8::1]:53",
+      "wire": "4401105b323030313a6462383a3a315d3a353300"
+    }
+  ],
+  "tcpResponses": [
+    {
+      "message": "",
+      "ok": true,
+      "wire": "000000"
+    },
+    {
+      "message": "connection refused",
+      "ok": false,
+      "wire": "0112636f6e6e656374696f6e207265667573656400"
+    }
+  ],
+  "udp": {
+    "fragments": [
+      "01020304123400040e6578616d706c652e636f6d3a3533303132333435363738",
+      "01020304123401040e6578616d706c652e636f6d3a3533396162636465666768",
+      "01020304123402040e6578616d706c652e636f6d3a3533696a6b6c6d6e6f7071",
+      "01020304123403040e6578616d706c652e636f6d3a353372737475767778797a"
+    ],
+    "maxDatagramSize": 32,
+    "wire": "01020304123400010e6578616d706c652e636f6d3a3533303132333435363738396162636465666768696a6b6c6d6e6f707172737475767778797a"
+  }
+}

@@ -2626,13 +2626,16 @@ dependencies = [
 name = "xray-proxy"
 version = "0.6.0"
 dependencies = [
+ "base64",
  "bytes",
  "prost",
  "rand 0.8.6",
+ "serde_json",
  "thiserror",
  "tokio",
  "uuid",
  "xray-routing",
+ "zeroize",
 ]
 
 [[package]]

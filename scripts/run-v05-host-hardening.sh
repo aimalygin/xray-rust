@@ -78,6 +78,7 @@ run_fuzz() (
     config_json \
     dns_wire \
     vless_wire \
+    v07_protocols \
     inbound_wire \
     quic_sniff \
     xhttp_framing \
