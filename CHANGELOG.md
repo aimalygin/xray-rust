@@ -10,6 +10,24 @@ long-term supported release series.
 
 ## Unreleased
 
+- Add optional `xhttpSettings.h2StreamReceiveWindow` (integer bytes,
+  65,535–16,777,216). Absent/null keeps the 4 MiB default; connection credit
+  remains 16 MiB. Support aliases, `extra` and independently configured
+  download carriers. Other transports and POST pacing retain their defaults.
+
+- Raise XHTTP/H2 stream receive credit to 4 MiB to remove the 64 KiB
+  single-download bottleneck on high-RTT paths (issue #28), retaining the
+  16 MiB connection window. Add delayed-path, partial-read, stalled-stream
+  and cancellation regressions; document the increased per-stream buffering
+  allowance and related transport limits in the
+  [window audit](docs/transport-window-audit.md).
+- Prevent a stalled TUN TCP download from blocking neighboring TCP, UDP and
+  control events. Bound remote prefetch to 256 KiB per flow, preserve DNS frame
+  and FIN ordering, and keep upload and host cancellation responsive while
+  waiting for download space. Batch immediately ready reads without waiting
+  for more data. Add deterministic and runtime regressions;
+  record the repeated [iPhone validation](docs/issue28-tun-validation.md).
+
 ## 0.6.0 - 2026-09-08
 
 - Promotes the completed v0.6 RC scope: bounded VLESS 1-RTT/0-RTT encryption,

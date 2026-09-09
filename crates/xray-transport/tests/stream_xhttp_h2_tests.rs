@@ -14,9 +14,12 @@ use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 
 use xray_transport::stream::xhttp_h2_test_only::{
-    connect_h2, connect_h2_with_keepalive, H2Client, H2Error,
+    connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, H2Client, H2Error,
 };
 use xray_transport::{BoxedTransportStream, TransportStream};
+
+#[path = "stream_xhttp_h2_tests/receive_window.rs"]
+mod receive_window;
 
 const DEADLINE: Duration = Duration::from_secs(3);
 
@@ -248,8 +251,17 @@ async fn pair() -> (H2Client, TestServer) {
 }
 
 async fn pair_with(builder: server::Builder) -> (H2Client, TestServer) {
+    pair_with_window(builder, None).await
+}
+
+async fn pair_with_window(builder: server::Builder, window: Option<u32>) -> (H2Client, TestServer) {
     let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
-    let client = connect_h2(Box::new(client_io) as BoxedTransportStream);
+    let client = async {
+        match window {
+            Some(window) => connect_h2_with_receive_window(Box::new(client_io), None, window).await,
+            None => connect_h2(Box::new(client_io)).await,
+        }
+    };
     let server = builder.handshake::<_, Bytes>(server_io);
     let (client, server) = tokio::join!(client, server);
     let server = server.expect("server HTTP/2 handshake");
@@ -939,7 +951,7 @@ async fn response_releases_flow_control_across_small_partial_reads() {
             .expect("send response HEADERS");
         response_body
             .send_data(server_payload, true)
-            .expect("queue response larger than one stream window");
+            .expect("queue response for small partial reads");
     });
 
     let mut body = client

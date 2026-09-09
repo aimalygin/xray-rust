@@ -363,6 +363,8 @@ impl Parser<'_> {
 
         Some(XhttpSettings {
             download,
+            h2_stream_receive_window: self
+                .xhttp_h2_stream_receive_window(settings, &settings_path)?,
             host: (!host.is_empty()).then_some(host),
             path,
             mode,
@@ -494,6 +496,7 @@ impl Parser<'_> {
             return;
         }
         self.reject_unknown_fields(settings, settings_path, &surface::XHTTP);
+        let _ = self.xhttp_h2_stream_receive_window(settings, settings_path);
 
         let identity_keys: &[&str] = if validate_identity {
             &["host", "path", "mode"]
@@ -731,6 +734,28 @@ impl Parser<'_> {
                     None
                 }
             },
+        }
+    }
+
+    /// An optional Rust extension, deliberately not a range/string setting.
+    fn xhttp_h2_stream_receive_window(
+        &mut self,
+        settings: &Value,
+        settings_path: &str,
+    ) -> Option<Option<u32>> {
+        let raw = match settings.get("h2StreamReceiveWindow") {
+            None | Some(Value::Null) => return Some(None),
+            Some(raw) => raw,
+        };
+        match raw.as_u64() {
+            Some(value @ 65_535..=16_777_216) => Some(Some(value as u32)),
+            _ => {
+                self.error(
+                    format!("{settings_path}.h2StreamReceiveWindow"),
+                    "h2StreamReceiveWindow must be an integer from 65535 to 16777216 bytes, or null",
+                );
+                None
+            }
         }
     }
 
