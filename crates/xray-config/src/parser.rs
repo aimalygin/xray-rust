@@ -41,8 +41,8 @@ const MAX_DNS_OUTBOUND_RULES: usize = 4_096;
 const MAX_DNS_QTYPE_SELECTORS: usize = 65_536;
 const MAX_ROUTING_PORT_SELECTORS: usize = 65_536;
 pub const MAX_CONFIG_DOMAIN_MATCHERS: usize = 250_000;
-const MAX_CONFIG_IP_MATCHERS: usize = 300_000;
-const MAX_CONFIG_MATCHERS: usize = 500_000;
+const MAX_CONFIG_IP_MATCHERS: usize = 750_000;
+const MAX_CONFIG_MATCHERS: usize = 1_000_000;
 const MAX_CONFIG_GEODATA_ATTR_FILTERS: usize = 32;
 const MAX_CONFIG_GEODATA_ATTRIBUTE_SIZE: usize = 256;
 const MAX_DNS_SERVERS: usize = 8;
@@ -2613,11 +2613,28 @@ mod tests {
 
         assert!(domain_budget.consume_domain_matchers(250_000));
         assert!(!domain_budget.consume_domain_matchers(1));
-        assert!(ip_budget.consume_ip_matchers(300_000));
+        assert!(ip_budget.consume_ip_matchers(750_000));
         assert!(!ip_budget.consume_ip_matchers(1));
-        assert!(combined_budget.consume_domain_matchers(200_000));
-        assert!(combined_budget.consume_ip_matchers(300_000));
+        assert!(combined_budget.consume_domain_matchers(250_000));
+        assert!(combined_budget.consume_ip_matchers(750_000));
+        assert_eq!(combined_budget.remaining_total_matchers(), 0);
         assert!(!combined_budget.consume_domain_matchers(1));
+        assert!(!combined_budget.consume_ip_matchers(1));
+    }
+
+    #[test]
+    fn combined_matcher_budget_can_be_stricter_than_individual_limits() {
+        let mut budget = MatcherBudget::new(MatcherBudgetLimits {
+            domain_matchers: 3,
+            ip_matchers: 3,
+            total_matchers: 4,
+            ..DEFAULT_MATCHER_BUDGET_LIMITS
+        });
+
+        assert!(budget.consume_domain_matchers(2));
+        assert!(budget.consume_ip_matchers(2));
+        assert!(!budget.consume_domain_matchers(1));
+        assert!(!budget.consume_ip_matchers(1));
     }
 
     #[test]

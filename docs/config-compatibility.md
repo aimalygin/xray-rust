@@ -1527,6 +1527,18 @@ File names must be relative and cannot escape a configured search directory.
 Parsing enforces file, entry, matcher, rule, attribute, domain, and CIDR budgets
 to bound untrusted input.
 
+A selected GeoIP entry may contain up to 500,000 CIDRs. The entry is checked
+before protobuf decoding. Every expansion is charged against the shared
+per-configuration IP and total matcher budgets, including repeated references
+to a cached category in different rules or DNS selectors.
+
+This allows large current country sets: for example, Loyalsoldier's
+[202609082347 snapshot](https://github.com/Loyalsoldier/v2ray-rules-dat/releases/tag/202609082347)
+contains 300,531 CIDRs in `geoip:us`, exceeding the earlier limits of 250,000
+CIDRs per category and 300,000 IP matchers per configuration. Raising these
+ceilings increases the maximum parsing work and routing state a configuration
+can request. File-size, entry-size, path, and other resource checks still apply.
+
 ## Diagnostics
 
 Parser errors include JSON paths. Warnings do not fail a load; callers should
@@ -1535,6 +1547,6 @@ display them. The C ABI exposes warnings through
 them through their platform logging paths.
 
 Current aggregate limits include 4,096 routing rules, 250,000 domain matchers,
-300,000 IP matchers, and 500,000 matchers total per config. These limits are
+750,000 IP matchers, and 1,000,000 matchers total per config. These limits are
 implementation safeguards and may change across major ABI or documented
 configuration revisions.
