@@ -4,8 +4,8 @@ Started on 2026-09-08. The owner selected both client protocols for v0.7 and
 explicitly retained Xray-core **v26.7.28**, commit
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Go remains 1.26.5 in the oracle
 workflow. The v26.9.8 migration is deferred. Hysteria 2 and WireGuard now have
-bounded JSON/core runtime outbounds. SDK capability changes and release
-acceptance are still pending.
+bounded JSON/core runtime outbounds. Swift/Kotlin import and protocol capability
+discovery are available through ABI 1.5; release acceptance remains pending.
 
 ## First implemented increment
 
@@ -285,3 +285,24 @@ accepts up to eight peers with optional per-peer PSK, longest-prefix routing and
 authenticated source isolation. Reserved-byte extensions and custom
 stream/chaining settings are rejected. Mobile SDK profile work and independent/physical-device
 acceptance remain separate release steps.
+
+## Mobile DNS bootstrap increment
+
+The Swift provider and Kotlin VPN preflight now pin Hysteria server domains and
+all WireGuard peer endpoint hosts before installing tunnel DNS. Apple excludes
+all outer carrier candidates; Android retains protected sockets. FakeDNS-only
+profiles reject default/domain-capable Freedom or WireGuard paths, including
+balancer candidates and fallbacks, because those outbounds need real destination
+IPs. The [mobile bootstrap contract](v07-mobile-bootstrap.md) records tests,
+unchanged lifecycle bounds and remaining SDK/device work.
+
+## Mobile profile import increment
+
+One Rust parser imports the supported Hysteria2 URI and WireGuard `.conf`
+subsets into TUN configs. ABI 1.5 validates the generated config and runtime
+key/policy constraints without starting a core, and advertises independent
+outbound/import capability bits. Swift and Kotlin share the FFI implementation,
+preserve Unicode credentials and reject unsupported settings with redacted
+errors. WireGuard retains multi-peer/PSK/AllowedIPs policy and requires explicit
+real DNS; Hysteria uses remote resolution through bounded FakeIP by default.
+See [source syntax, SDK APIs, limits and tests](v07-profile-import.md).

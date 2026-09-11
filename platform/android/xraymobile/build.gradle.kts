@@ -56,3 +56,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+// Optional host JNI proof using the same bridge source and a current Rust
+// library. Ordinary JVM tests keep running without loading Android binaries.
+tasks.withType<Test>().configureEach {
+    providers.gradleProperty("xrayNativeImportLibraryPath").orNull?.let { path ->
+        systemProperty("java.library.path", path)
+        systemProperty("xray.test.nativeImport", "true")
+        outputs.upToDateWhen { false }
+    }
+}

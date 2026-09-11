@@ -198,12 +198,32 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION = 1 << 12,
   XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH = 1 << 13,
   XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT = 1 << 14,
-  XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE = 1 << 15
+  XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE = 1 << 15,
+  XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND = 1 << 16,
+  XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND = 1 << 17,
+  XRAY_FFI_CAPABILITY_PROFILE_IMPORT = 1 << 18
 } XrayFfiCapability;
 
 uint32_t xray_ffi_version_major(void);
 uint32_t xray_ffi_version_minor(void);
 uint64_t xray_ffi_capabilities(void);
+
+/* ABI 1.5, PROFILE_IMPORT plus the selected outbound capability. Offline,
+ * thread-safe and handle-free. UTF-8 request (<=256 KiB):
+ * {"format":"hysteria2"|"wireguard","text":"...","name":"...",
+ *  "dnsServers":["IP",...]}; name and dnsServers are optional.
+ * Source text <=64 KiB. No network, file access, commands or VPN startup.
+ * Result (<=256 KiB): {"schemaVersion":1,"name":"...","serverAddress":"...",
+ * "configJSON":"..."}. The result contains credentials: caller owns/wipes it.
+ * Size query: buffer=NULL, buffer_len=0; written excludes the trailing NUL.
+ * Small buffer: BUFFER_TOO_SMALL, required length in written, buffer untouched.
+ * Other errors: written=0, buffer untouched. Inputs/outputs must not overlap.
+ * request_json is a readable byte span, not a NUL-terminated string. written
+ * points to one writable size_t. error follows the ordinary initialized-slot
+ * ownership contract. Input remains unchanged for the duration of each call. */
+XrayStatus xray_profile_import_json(
+    const uint8_t *request_json, size_t request_len,
+    char *buffer, size_t buffer_len, size_t *written, XrayError **error);
 
 XrayCoreHandle *xray_core_new(XrayError **error);
 /* Searches dir first, then the process default geodata directories. */

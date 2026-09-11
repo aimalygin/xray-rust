@@ -37,7 +37,9 @@ data class XrayImportedProfile(
     val name: String,
     val serverAddress: String,
     val configJson: String,
-)
+) {
+    override fun toString(): String = "XrayImportedProfile(<redacted>)"
+}
 
 /**
  * Imports the same fail-closed VLESS share-link subset as the Apple adapter.

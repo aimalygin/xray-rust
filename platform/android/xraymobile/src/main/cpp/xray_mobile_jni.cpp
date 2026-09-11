@@ -442,6 +442,63 @@ Java_org_xrayrust_mobile_XrayCore_nativeFfiCapabilities(JNIEnv *, jclass) {
   return static_cast<jlong>(xray_ffi_capabilities());
 }
 
+// These byte owners contain profile credentials. Wipe before deallocation on
+// both return and exception paths; JVM strings/arrays are owned by the caller.
+namespace {
+struct SecretImportBytes {
+  std::vector<jbyte> bytes;
+  explicit SecretImportBytes(size_t count) : bytes(count) {}
+  ~SecretImportBytes() {
+    volatile jbyte *data = bytes.data();
+    for (size_t index = 0; index < bytes.size(); ++index) data[index] = 0;
+  }
+};
+} // namespace
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeImportProfileJson(
+    JNIEnv *env, jclass, jbyteArray request) try {
+  if (!ensure_supported_ffi_abi(env)) return nullptr;
+  if (xray_ffi_version_minor() < 5 ||
+      (xray_ffi_capabilities() & XRAY_FFI_CAPABILITY_PROFILE_IMPORT) == 0) {
+    throw_illegal_argument(env, "native profile import is unavailable");
+    return nullptr;
+  }
+  if (request == nullptr) {
+    throw_illegal_argument(env, "profile import request must not be null");
+    return nullptr;
+  }
+  const jsize length = env->GetArrayLength(request);
+  if (length > 256 * 1024) {
+    throw_illegal_argument(env, "profile import request exceeds its size limit");
+    return nullptr;
+  }
+  SecretImportBytes input(static_cast<size_t>(length) + 1);
+  env->GetByteArrayRegion(request, 0, length, input.bytes.data());
+  if (env->ExceptionCheck()) return nullptr;
+  const auto *data = reinterpret_cast<const uint8_t *>(input.bytes.data());
+  size_t required = 0;
+  XrayError *error = nullptr;
+  auto status = xray_profile_import_json(data, length, nullptr, 0, &required, &error);
+  if (!check_status(env, status, error)) return nullptr;
+  if (required == 0 || required > 256 * 1024) {
+    throw_illegal_argument(env, "invalid imported profile response size");
+    return nullptr;
+  }
+  SecretImportBytes output(required + 1);
+  size_t written = 0;
+  status = xray_profile_import_json(data, length,
+      reinterpret_cast<char *>(output.bytes.data()), output.bytes.size(), &written, &error);
+  if (!check_status(env, status, error)) return nullptr;
+  if (written > required) {
+    throw_illegal_argument(env, "invalid imported profile response size");
+    return nullptr;
+  }
+  jbyteArray result = env->NewByteArray(static_cast<jsize>(written));
+  if (result != nullptr) env->SetByteArrayRegion(result, 0, static_cast<jsize>(written), output.bytes.data());
+  return result;
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeNew(JNIEnv *env, jclass) try {
   if (!ensure_supported_ffi_abi(env)) {

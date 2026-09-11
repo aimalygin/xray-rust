@@ -627,10 +627,14 @@ WireGuard now has a bounded GotaTun/smoltcp client registered in JSON and the
 core for SOCKS, HTTP, TUN and routed DNS. Its contract accepts up to eight peers,
 IPv4/IPv6, TCP/UDP, per-peer PSK and protected sockets. Overlapping allowedIPs and
 authenticated source isolation are covered; independent/mobile acceptance remains pending. The [runtime contract](v07-wireguard-runtime.md)
-records accepted options, budgets and executable evidence. The
-[adapter review](v07-wireguard-adapter.md) tracks those boundaries. Swift/Kotlin
-profile import, independent references and physical-device acceptance remain
-release work.
+records accepted options, budgets and executable evidence. Mobile
+[DNS bootstrap and FakeDNS topology validation](v07-mobile-bootstrap.md) now cover
+both protocols on Swift/Kotlin, including all WireGuard peers. The
+[adapter review](v07-wireguard-adapter.md) tracks those boundaries. Shared Rust
+[Hysteria2 link / WireGuard file import](v07-profile-import.md) now reaches both
+SDKs through ABI 1.5, including protocol capability discovery, bounded inputs
+and redacted errors. Independent references, application integration and
+physical-device acceptance remain release work.
 
 Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
 matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed

@@ -14,6 +14,13 @@ mode flag the script keeps the same `--all` behavior.
 
 ## ABI and script contracts
 
+For ABI 1.5 Hysteria2/WireGuard import, use the current native library/header
+with the [shared import fixtures and SDK checks](v07-profile-import.md#verification).
+`scripts/test-profile-import-jni.sh` builds host Rust/JNI and runs the Kotlin
+boundary tests plus actual JNI import. It requires the configured JDK and
+Android SDK and supports macOS/Linux. This host proof does not start a VPN or
+replace device testing.
+
 Run the platform-independent contract tests first:
 
 ```sh
@@ -122,16 +129,17 @@ direct or pinned tunnel-owned address on every URL port; classic non-URL
 servers retain their legacy port-53 safety check.
 
 Before Network Extension installs the anchor, the provider resolves every
-domain VLESS server and domain classic/TCP/TLS-URL `dns.servers` endpoint through
-the then-current dual-stack system resolver. Domain hosts from `tcp://`,
+domain VLESS/Hysteria server, every WireGuard peer endpoint host, and domain
+classic/TCP/TLS-URL `dns.servers` endpoint through the then-current dual-stack
+system resolver. Domain hosts from `tcp://`,
 `tcp+local://`, and `tls://` are pinned with the URI port; IP-literal URLs skip the system
 lookup. It writes every ordered A/AAAA result into a canonical exact `full:` IP
 array in `dns.hosts` without replacing an existing bare or `full:` exact
 mapping (bare keys are exact in Xray, not keywords), follows aliases for at most
-eight steps, and preserves each VLESS address, DNS server URI, and object policy
-field exactly in runtime JSON. Apple installs both IPv4 and IPv6
-default tunnel routes plus an excluded `/32` or `/128` for every VLESS carrier
-candidate before the core is created; pinned DNS-upstream addresses receive no
+eight steps, and preserves each carrier address/endpoint, DNS server URI, and
+object policy field exactly in runtime JSON. Apple installs both IPv4 and IPv6
+default tunnel routes plus an excluded `/32` or `/128` for every
+VLESS/Hysteria/WireGuard carrier candidate before the core is created; pinned DNS-upstream addresses receive no
 global route exclusion. Routed DNS follows outbound policy, while local TCP DNS
 uses the provider-process policy described above. DNS64 results are accepted on
 IPv6-only networks. Tunnel-owned addresses are never installed as exclusions;
@@ -156,11 +164,12 @@ URL behavior, UDP-message framing onto TCP upstreams, ordered upstream failover,
 UDP-truncation retry over TCP, and fail-closed handling of missing, conflicting,
 malformed, or unreachable DNS settings.
 
-Fake-only mobile configurations are accepted when the default path is VLESS
-and every Freedom split rule is IP-only: restored domains then remain domains
-and are resolved remotely. With no `dns.servers`, a default Freedom outbound or
-a TUN-applicable domain/catch-all Freedom rule is rejected before the VPN is
-installed. This applies to both reference adapters and avoids silently choosing
+Fake-only mobile configurations are accepted when the default path is VLESS or
+Hysteria and every Freedom/WireGuard split rule is IP-only: restored domains
+then remain domains and are resolved remotely. With no `dns.servers`, a default
+Freedom/WireGuard outbound or a TUN-applicable domain/catch-all rule selecting
+either protocol is rejected (including balancer candidates and fallbacks)
+before the VPN is installed. This applies to both reference adapters and avoids silently choosing
 a public resolver. The Apple direct reference profile therefore needs an
 explicit host DNS override; the compatibility helper that formerly added
 fake-IP to the legacy direct profile is now a no-op.
@@ -185,6 +194,10 @@ The Rust core consumes every pinned carrier candidate independently of global
 `dns.queryStrategy`; the policy applies only to destination-facing managed
 lookups. This preserves DNS64/NAT64 bootstrap on IPv6-only networks. The raw
 UDP/TCP DNS proxy still forwards the client's original question type unchanged.
+
+The [v0.7 mobile bootstrap contract](v07-mobile-bootstrap.md) records the focused
+Hysteria/WireGuard preparation and topology tests. These run without a live
+server and do not replace physical-device acceptance.
 
 The Android library's `XrayVlessUrlImporter` unit matrix mirrors the portable
 Apple share-link subset: raw/TCP REALITY plus XHTTP/SplitHTTP with none, TLS,

@@ -8,12 +8,13 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.4`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.5`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
 policy replacement requires the ABI 1.4 capability bit, before calling optional
-symbols.
+symbols. Profile import requires minor >=5, `PROFILE_IMPORT` and the selected
+`HYSTERIA2_OUTBOUND` or `WIREGUARD_OUTBOUND` capability.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -29,6 +30,18 @@ surfaces present in the loaded library. Use the `XRAY_FFI_CAPABILITY_*` values
 from the header and preserve/ignore unknown bits. A capability bit is added in
 the same change as its optional API; it does not override major/minor
 compatibility checks.
+
+## Offline profile import
+
+ABI 1.5 adds `xray_profile_import_json`, a handle-free, bounded UTF-8 JSON API
+for Hysteria 2 links and WireGuard configuration text. Its two-call output
+protocol, supported fields, routing/DNS policy and equivalent Swift/Kotlin
+entry points are documented in [mobile profile import](v07-profile-import.md).
+Import validates configuration and typed runtime policy without starting the
+VPN or contacting the endpoint. The result contains credentials and belongs to
+the caller. New bits 16, 17 and 18 respectively advertise Hysteria 2 outbound,
+WireGuard outbound and this import surface; they do not claim full upstream
+option coverage or device acceptance.
 
 ## Recommended lifecycle
 

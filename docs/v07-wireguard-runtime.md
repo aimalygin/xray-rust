@@ -69,7 +69,8 @@ Tokio registration and all handshake/keepalive/data I/O. A protection failure
 closes the entire partially built socket set before the device starts.
 
 All peer endpoints are resolved through bootstrap DNS, in configuration order,
-before any device sockets are created. A failed/cancelled lookup discards the
+before any device sockets are created. The [mobile preflight](v07-mobile-bootstrap.md)
+now pins all peer hosts before tunnel setup. A failed/cancelled lookup discards the
 whole initialization. Only the first candidate for each endpoint is used;
 endpoint failover/re-resolution on network transitions is still
 release work. Destination DNS uses the managed resolver and routing policy before

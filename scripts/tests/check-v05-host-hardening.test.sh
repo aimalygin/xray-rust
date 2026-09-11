@@ -12,7 +12,7 @@ die() {
 }
 
 for target in \
-  config_json dns_wire vless_wire v07_protocols inbound_wire quic_sniff xhttp_framing tun_queue vless_encryption_records vless_encryption_handshake ffi_lifecycle; do
+  config_json profile_import dns_wire vless_wire v07_protocols inbound_wire quic_sniff xhttp_framing tun_queue vless_encryption_records vless_encryption_handshake ffi_lifecycle; do
   grep -Fq "name = \"$target\"" "$WORKSPACE_ROOT/fuzz/Cargo.toml" || \
     die "fuzz manifest omits $target"
   grep -Fq "    $target" "$HARDENING" || \

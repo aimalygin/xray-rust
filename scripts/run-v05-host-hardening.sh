@@ -76,6 +76,7 @@ run_fuzz() (
   local target
   for target in \
     config_json \
+    profile_import \
     dns_wire \
     vless_wire \
     v07_protocols \

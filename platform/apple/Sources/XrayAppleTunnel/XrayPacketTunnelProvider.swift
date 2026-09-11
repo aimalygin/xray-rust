@@ -49,7 +49,7 @@ public enum XrayPacketTunnelProviderError: Error, LocalizedError, CustomNSError 
         case .invalidDNSConfiguration:
             return "DNS requires enabled dns.fakeIp, at least one dns.servers upstream, or explicit IP servers; fake-IP cannot be combined with explicit servers."
         case .invalidDNSRoutingTopology:
-            return "Fake-IP without dns.servers cannot use Freedom as the default or from a TUN domain-capable routing rule."
+            return "Fake-IP without dns.servers cannot use Freedom or WireGuard as the default or from a TUN domain-capable routing rule."
         case .outboundServerResolutionFailed:
             return "A proxy or DNS bootstrap hostname could not be resolved before tunnel DNS interception was enabled."
         case .dnsBootstrapTimedOut:
@@ -1177,17 +1177,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         }
         let outbounds = root["outbounds"] as? [[String: Any]] ?? []
         for outbound in outbounds {
-            guard (outbound["protocol"] as? String)?.lowercased() == "vless",
-                  let settings = outbound["settings"] as? [String: Any],
-                  let vnext = settings["vnext"] as? [[String: Any]],
-                  !vnext.isEmpty
-            else {
-                continue
-            }
-            for server in vnext {
-                guard let rawAddress = server["address"] as? String else {
-                    continue
-                }
+            for rawAddress in try outboundBootstrapAddresses(outbound) {
                 if let address = canonicalIPAddress(rawAddress) {
                     guard !isTunnelOwnedIPAddress(address) else {
                         throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
@@ -1203,7 +1193,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
                 }
 
-                // Preserve the exact configured VLESS address for routing and
+                // Preserve the exact configured carrier address for routing and
                 // TLS metadata. Only the dns.hosts lookup key is canonical.
                 appendBootstrapDomain(
                     domain,
@@ -1294,6 +1284,68 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         prepared.json = pinnedJSON
         prepared.excludedServerAddresses = excludedAddresses
         return prepared
+    }
+
+    // Only extracts carrier hosts. Core validation still owns the protocol
+    // schema; credentials and inner WireGuard addresses never enter DNS lookup.
+    private static func outboundBootstrapAddresses(_ outbound: [String: Any]) throws -> [String] {
+        let protocolName = (outbound["protocol"] as? String)?.lowercased()
+        guard ["vless", "hysteria", "wireguard"].contains(protocolName) else { return [] }
+        guard let settings = outbound["settings"] as? [String: Any] else {
+            throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+        }
+        switch protocolName {
+        case "vless":
+            guard let servers = settings["vnext"] as? [[String: Any]] else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            return try servers.map { server in
+                guard let address = server["address"] as? String else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                return address
+            }
+        case "hysteria":
+            guard let address = settings["address"] as? String else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            return [address]
+        default:
+            guard let peers = settings["peers"] as? [[String: Any]],
+                  (1...8).contains(peers.count) else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            return try peers.map { peer in
+                guard let endpoint = peer["endpoint"] as? String,
+                      endpoint.utf8.count <= 260,
+                      let separator = endpoint.lastIndex(of: ":") else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                let port = endpoint[endpoint.index(after: separator)...]
+                guard !port.isEmpty, port.utf8.allSatisfy({ (48...57).contains($0) }),
+                      let number = UInt16(port), number != 0 else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                let host = String(endpoint[..<separator])
+                if host.hasPrefix("["), host.hasSuffix("]") {
+                    let address = String(host.dropFirst().dropLast())
+                    guard address.contains(":"), !address.contains("%"),
+                          address == address.trimmingCharacters(in: .whitespacesAndNewlines),
+                          canonicalIPAddress(address) != nil else {
+                        throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                    }
+                    return address
+                }
+                guard !host.isEmpty, host.utf8.count <= 253,
+                      host.utf8.allSatisfy({
+                          (48...57).contains($0) || (65...90).contains($0)
+                              || (97...122).contains($0) || [45, 46, 95].contains($0)
+                      }) else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                return host
+            }
+        }
     }
 
     private static func appendBootstrapDomain(
@@ -2153,7 +2205,8 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             )
         } catch XrayMobileDNSPreflightError.unavailable {
             throw XrayPacketTunnelProviderError.invalidDNSConfiguration
-        } catch XrayMobileDNSPreflightError.unsafeFakeIPFreedomRouting {
+        } catch XrayMobileDNSPreflightError.unsafeFakeIPFreedomRouting,
+                XrayMobileDNSPreflightError.unsafeFakeIPWireguardRouting {
             throw XrayPacketTunnelProviderError.invalidDNSRoutingTopology
         }
     }

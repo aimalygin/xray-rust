@@ -103,6 +103,61 @@ final class XrayMobileDNSPreflightTests: XCTestCase {
         assertError(.unavailable, configJSON: configJSON)
     }
 
+    func testWireguardFakeIPRequiresDestinationDNS() {
+        assertError(.unsafeFakeIPWireguardRouting,
+                    configJSON: fakeIPConfig().replacingOccurrences(of: "vless", with: "wireguard"))
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            fakeIPConfig(dnsServers: ["192.0.2.53"]).replacingOccurrences(of: "vless", with: "wireguard")
+        ))
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+            fakeIPConfig().replacingOccurrences(of: "vless", with: "hysteria")
+        ))
+    }
+
+    func testWireguardFakeIPRoutingDistinguishesDomainAndIPOnlyRules() {
+        for matchers: [String: Any] in [[:], ["domain": ["domain:example"]],
+                                      ["domains": ["domain:example"], "ip": ["192.0.2.0/24"]]] {
+            var rule = matchers
+            rule["outboundTag"] = "direct"
+            rule["inboundTag"] = ["tun-in"]
+            assertError(.unsafeFakeIPWireguardRouting, configJSON:
+                fakeIPConfig(rules: [rule]).replacingOccurrences(of: "freedom", with: "wireguard"))
+        }
+        for rule: [String: Any] in [
+            ["outboundTag": "direct", "ip": ["192.0.2.0/24"]],
+            ["outboundTag": "direct", "domain": ["domain:example"], "inboundTag": ["socks-in"]],
+        ] {
+            XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(
+                fakeIPConfig(rules: [rule]).replacingOccurrences(of: "freedom", with: "wireguard")
+            ))
+        }
+    }
+
+    func testFakeIPChecksBalancerCandidatesAndFallbacks() {
+        for balancer: [String: Any] in [
+            ["tag": "pool", "selector": ["dir"]],
+            ["tag": "pool", "selector": ["proxy"], "fallbackTag": "direct"],
+        ] {
+            for (name, error) in [("wireguard", XrayMobileDNSPreflightError.unsafeFakeIPWireguardRouting),
+                                  ("freedom", .unsafeFakeIPFreedomRouting)] {
+                assertError(error, configJSON: fakeIPConfig(
+                    rules: [["balancerTag": "pool"]], balancers: [balancer]
+                ).replacingOccurrences(of: "freedom", with: name))
+            }
+            for rule: [String: Any] in [
+                ["balancerTag": "pool", "ip": ["192.0.2.0/24"]],
+                ["balancerTag": "pool", "inboundTag": ["socks-in"]],
+            ] {
+                XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(fakeIPConfig(
+                    rules: [rule], balancers: [balancer]
+                ).replacingOccurrences(of: "freedom", with: "wireguard")))
+            }
+        }
+        XCTAssertNoThrow(try XrayMobileDNSPreflight.validate(fakeIPConfig(
+            rules: [["balancerTag": "pool"]], balancers: [["tag": "pool", "selector": ["proxy"]]]
+        )))
+    }
+
     private func assertError(
         _ expected: XrayMobileDNSPreflightError,
         configJSON: String,
@@ -127,7 +182,8 @@ final class XrayMobileDNSPreflightTests: XCTestCase {
     private func fakeIPConfig(
         freedomFirst: Bool = false,
         rules: [[String: Any]] = [],
-        dnsServers: [Any] = []
+        dnsServers: [Any] = [],
+        balancers: [[String: Any]] = []
     ) -> String {
         let proxy: [String: Any] = ["protocol": "vless", "tag": "proxy"]
         let freedom: [String: Any] = ["protocol": "freedom", "tag": "direct"]
@@ -141,7 +197,7 @@ final class XrayMobileDNSPreflightTests: XCTestCase {
             ],
             "inbounds": [["protocol": "tun", "tag": "tun-in"]],
             "outbounds": freedomFirst ? [freedom, proxy] : [proxy, freedom],
-            "routing": ["rules": rules],
+            "routing": ["rules": rules, "balancers": balancers],
         ]
         let data = try! JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
         return String(decoding: data, as: UTF8.self)

@@ -73,6 +73,15 @@ This prevents proxy sockets from being routed back into the VPN.
 
 ## VLESS share-link import
 
+Development v0.7 additionally provides
+`XrayProfileImporter.profile(text, XrayProfileFormat.Hysteria2)` and `.Wireguard`
+for Hysteria2 links and WireGuard `.conf` text through shared Rust/C ABI 1.5.
+Check `XrayCore.ffiInfo().supportsProfileImport(format)`. WireGuard requires
+literal IP DNS servers in the file or `dnsServers` and preserves AllowedIPs
+split routing; unsupported parameters fail explicitly. Host UI and secure
+storage remain caller-owned. See the [import contract](../../docs/v07-profile-import.md).
+Use a matching freshly built native library, header and JNI bridge.
+
 `XrayVlessUrlImporter.profile(rawUrl)` returns an `XrayImportedProfile` with a
 display name, server address, and JSON config ready for `XrayCore.create` or
 `XrayVpnService.startXrayTunnel`. It accepts a bare link, a link embedded in
@@ -108,17 +117,20 @@ applicable `dns.hosts` rule. Bare host keys use Xray's exact/full semantics.
 ## Reference VPN DNS bootstrap
 
 `XrayVpnService` uses the stricter mobile policy automatically. Before calling
-`Builder.establish()`, it resolves domain-valued VLESS server addresses and
-domain-valued `dns.servers` with Android's system resolver. This includes
+`Builder.establish()`, it resolves domain-valued VLESS/Hysteria 2 server addresses,
+all WireGuard peer endpoint hosts, and domain-valued `dns.servers` with Android's
+system resolver. This includes
 `tcp://`, `tcp+local://`, `tls://`, `https://`, `https+local://`, and
 `quic+local://` endpoints;
 an IP-literal URL needs no
 bootstrap lookup. It preserves every usable A/AAAA result in resolver order,
 removes duplicates, and writes a nonempty exact `full:` IP array under
 `dns.hosts`, then creates the core with `XrayDnsBootstrapMode.StaticOnly`. The
-original VLESS address, DNS server URI, and DNS object policy fields remain
-unchanged, so TLS/REALITY server names, DNS tags, and domain routing are not
-changed.
+original carrier address/endpoint strings, authentication, DNS server URI, and
+DNS object policy fields remain unchanged. Literal, resolved, and aliased carrier
+addresses that point to a tunnel-owned address fail preparation. Every outer
+WireGuard/Hysteria UDP socket still uses `VpnService.protect(fd)`; no global
+route exclusions are added. See the [v0.7 bootstrap contract](../../docs/v07-mobile-bootstrap.md).
 
 `tcp://`, `tls://`, and `https://` use normal Freedom/VLESS selection and an
 object server's `tag`. A `+local` URL instead bypasses the Xray router and opens
@@ -184,14 +196,13 @@ and `serveExpiredTTL`. Stale service requires an explicit bounded 1-through-
 validation. NXDOMAIN/NODATA are cached for 30 seconds, while transport failures
 are never cached.
 
-Fake-IP does not itself provide the real address needed by a Freedom outbound.
-When `dns.fakeIp.enabled` is true and `dns.servers` is empty, the reference
-service therefore rejects the config before `Builder.establish()` if Freedom is
-the default outbound or a TUN-applicable rule can route domain traffic to
-Freedom. A VLESS default with IP-only Freedom split-routing rules remains valid,
-because domain targets stay on the proxy while literal IP destinations can be
-sent directly. Configuring at least one `dns.servers` upstream also makes these
-Freedom topologies valid. The preflight never inserts or substitutes a public
+Fake-IP does not provide the real destination address needed by Freedom or
+WireGuard. When `dns.fakeIp.enabled` is true and `dns.servers` is empty, the
+reference service rejects either protocol as the default or through a
+TUN-applicable domain-capable rule, including balancer prefix candidates and
+`fallbackTag`, before `Builder.establish()`. VLESS/Hysteria defaults with IP-only
+Freedom/WireGuard split routes remain valid. Configuring a `dns.servers`
+upstream permits domain routes through these protocols. The preflight never inserts or substitutes a public
 DNS server.
 
 ## Host application responsibilities

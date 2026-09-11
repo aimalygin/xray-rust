@@ -2,6 +2,7 @@ mod diagnostic;
 mod geodata;
 mod model;
 mod parser;
+pub mod profile_import;
 mod surface;
 pub mod tooling;
 

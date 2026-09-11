@@ -140,6 +140,9 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let connectionManagement = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT.rawValue)
     )
+    public static let hysteria2Outbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND.rawValue))
+    public static let wireguardOutbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND.rawValue))
+    public static let profileImport = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_PROFILE_IMPORT.rawValue))
     public static let routingPolicyUpdate = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE.rawValue)
     )

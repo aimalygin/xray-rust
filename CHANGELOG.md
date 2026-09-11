@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Add shared Rust import for Hysteria2 links and WireGuard configuration files,
+  exposed through C ABI 1.5 and equivalent Swift/Kotlin SDK APIs. Advertise
+  protocol/import capabilities and validate bounded input with redacted errors.
+  Preserve WireGuard peers, PSKs and split routes; require explicit real DNS.
+- Prepare Hysteria 2 and all WireGuard peer endpoint DNS before mobile tunnel
+  setup on Apple and Android, preserving profile addresses and credentials.
+  Apple adds outer-carrier route exclusions; Android keeps socket protection.
+- Reject FakeDNS-only mobile routes that require real destination DNS through
+  WireGuard or Freedom, including balancer candidates and fallbacks. Preserve
+  VLESS/Hysteria remote resolution and IP-only split routes.
+
 ## 0.6.1 - 2026-09-09
 
 - Promotes the tested `0.6.1-rc.1` implementation to stable, including the
