@@ -20,9 +20,9 @@ PY
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
 cd "$WORKSPACE_ROOT"
-XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
+env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
   cargo test --locked -p xray-transport --test hysteria_interop_tests -- --ignored --nocapture
 
-XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
+env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
   cargo test --locked -p xray-core-rs --test hysteria_runtime_tests \
   --test runtime_data_path_tests hysteria_runtime_ -- --ignored --nocapture

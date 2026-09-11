@@ -19,12 +19,12 @@ use xray_core_rs::Core;
 use xray_transport::{DnsResolver, TransportDialer, TransportError};
 pub const DEADLINE: Duration = Duration::from_secs(40);
 pub const INNER_IP: Ipv4Addr = Ipv4Addr::new(198, 51, 100, 7);
-pub struct XrayServer {
+pub struct ReferenceServer {
     pub address: SocketAddr,
     preshared_key: Option<[u8; 32]>,
     _reference: reference::Reference,
 }
-impl XrayServer {
+impl ReferenceServer {
     pub async fn start() -> Self {
         Self::start_with_psk(None).await
     }
@@ -68,7 +68,9 @@ impl DnsResolver for Bootstrap {
         Ok(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
     }
 }
-pub fn core(server: &XrayServer) -> (Core, Arc<Protector>, Arc<Bootstrap>, Arc<TransportDialer>) {
+pub fn core(
+    server: &ReferenceServer,
+) -> (Core, Arc<Protector>, Arc<Bootstrap>, Arc<TransportDialer>) {
     let protector = Arc::new(Protector::default());
     let bootstrap = Arc::new(Bootstrap::default());
     let dialer = Arc::new(

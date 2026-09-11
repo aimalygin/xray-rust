@@ -281,13 +281,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # One toolchain builds all three oracle modules: the root one declares
-      # `go 1.24` and the masquerade and gRPC ones `go 1.26`, and a `go`
-      # directive is a minimum. The committed fixtures reproduce byte for byte
+      # One toolchain builds the oracle modules and the direct WireGuard
+      # reference. The root declares `go 1.24`, masquerade and gRPC `go 1.26`,
+      # and WireGuard `go 1.26.5`; a `go` directive is a minimum.
+      # The committed fixtures reproduce byte for byte
       # under 1.24.0, 1.26.0, 1.26.3 and 1.26.5, so the pin below is a pin, not
       # a constraint.
       #
-      # Every module's `go.sum` is listed: the cache key is built from these
+      # Every locally committed module's `go.sum` is listed: the cache key uses these
       # paths alone, so a module missing from the list has its dependencies
       # re-downloaded on every run.
       - name: Install pinned Go toolchain
@@ -298,6 +299,7 @@ jobs:
             go.sum
             tools/reality-oracle/masquerade/go.sum
             tools/reality-oracle/grpc/go.sum
+            tools/wireguard-reference/go.sum
 
       - name: Verify Go-oracle fixtures
         run: bash scripts/verify-oracle-fixtures.sh
@@ -331,8 +333,26 @@ jobs:
       - name: Verify live Hysteria TCP and UDP against pinned Xray-core
         run: bash scripts/check-hysteria-interop.sh
 
+      - name: Check out independent native Hysteria reference
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: apernet/hysteria
+          ref: 619a6f856b69fb7ee6a7a379e810e68b84004605 # app/v2.12.2
+          path: target/references/hysteria-2.12.2
+          persist-credentials: false
+
+      - name: Verify live Hysteria transport and core against the independent native server
+        run: |
+          python3 scripts/tests/verify-hysteria-reference.test.py
+          bash scripts/check-native-hysteria-interop.sh
+
       - name: Verify bounded WireGuard engine and TCP UDP core runtime against pinned Xray-core
         run: bash scripts/check-wireguard-runtime.sh
+
+      - name: Verify WireGuard TCP UDP and authenticated peer isolation without Xray
+        run: |
+          python3 scripts/tests/verify-wireguard-reference.test.py
+          bash scripts/check-native-wireguard-interop.sh
 
   rc-interop:
     if: needs.release-metadata.outputs.run_release_gates == 'true'

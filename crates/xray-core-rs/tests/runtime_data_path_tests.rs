@@ -11788,10 +11788,10 @@ fn httpupgrade_host_falls_back_past_tls_to_the_destination() {
 mod hysteria_support;
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-hysteria-interop.sh"]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_tun_tcp_udp_and_host_close() {
     timeout(hysteria_support::DEADLINE, async {
-        let server = hysteria_support::XrayServer::start().await;
+        let server = hysteria_support::ReferenceServer::start().await;
         let (tcp_address, _tcp) = hysteria_support::tcp_echo().await;
         let (udp_address, _udp) = hysteria_support::udp_echo().await;
         let (mut core, protector, bootstrap, _) = hysteria_support::core(&server);
@@ -11861,10 +11861,10 @@ async fn hysteria_runtime_tun_tcp_udp_and_host_close() {
 }
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-hysteria-interop.sh"]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_tun_dns_wire_and_managed_destination_lookup() {
     timeout(hysteria_support::DEADLINE, async {
-        let server = hysteria_support::XrayServer::start().await;
+        let server = hysteria_support::ReferenceServer::start().await;
         let upstream = spawn_observed_udp_dns_a_server(Ipv4Addr::LOCALHOST).await;
         let upstream_probe = upstream.probe();
         let (echo_address, _tcp) = hysteria_support::tcp_echo().await;
@@ -11909,10 +11909,10 @@ async fn hysteria_runtime_tun_dns_wire_and_managed_destination_lookup() {
 mod wireguard_support;
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-wireguard-runtime.sh"]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
     timeout(wireguard_support::DEADLINE, async {
-        let server = wireguard_support::XrayServer::start().await;
+        let server = wireguard_support::ReferenceServer::start().await;
         let (tcp_address, _tcp) = wireguard_support::tcp_echo().await;
         let (udp_address, _udp) = wireguard_support::udp_echo().await;
         let (mut core, protector, bootstrap, _) = wireguard_support::core(&server);
@@ -11985,10 +11985,10 @@ async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
 }
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-wireguard-runtime.sh"]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
     timeout(wireguard_support::DEADLINE, async {
-        let server = wireguard_support::XrayServer::start().await;
+        let server = wireguard_support::ReferenceServer::start().await;
         let upstream = spawn_observed_udp_dns_a_server(wireguard_support::INNER_IP).await;
         let upstream_probe = upstream.probe();
         let (echo_address, _tcp) = wireguard_support::tcp_echo().await;

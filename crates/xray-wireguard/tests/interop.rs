@@ -40,13 +40,13 @@ fn config(endpoint: SocketAddr, peer: &PublicKey) -> Config {
     }
 }
 #[tokio::test]
-#[ignore = "requires checksum-guarded Xray-core v26.7.28 binary"]
-async fn pinned_xray_tcp_udp_ipv4_ipv6_and_half_close() {
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn pinned_reference_tcp_udp_ipv4_ipv6_and_half_close() {
     roundtrip(None).await;
 }
 #[tokio::test]
-#[ignore = "requires checksum-guarded Xray-core v26.7.28 binary"]
-async fn pinned_xray_psk_tcp_udp_ipv4_ipv6_and_half_close() {
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn pinned_reference_psk_tcp_udp_ipv4_ipv6_and_half_close() {
     roundtrip(Some([0x64; 32])).await;
 }
 async fn roundtrip(psk: Option<[u8; 32]>) {
@@ -140,9 +140,9 @@ async fn roundtrip(psk: Option<[u8; 32]>) {
 }
 
 #[tokio::test]
-#[ignore = "requires checksum-guarded Xray-core v26.7.28 binary"]
-async fn pinned_xray_wrong_or_missing_psk_never_delivers_application_data_and_recovers() {
-    timeout(Duration::from_secs(40), async {
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn pinned_reference_wrong_keys_or_psk_never_deliver_application_data_and_recover() {
+    timeout(Duration::from_secs(60), async {
         let server = StaticSecret::from([0x53;32]);
         let client_public = PublicKey::from(&StaticSecret::from([0x42;32]));
         let reference = support::Reference::start_with_psk(&server, &client_public, Some(&[0x64;32])).await;
@@ -150,17 +150,26 @@ async fn pinned_xray_wrong_or_missing_psk_never_delivers_application_data_and_re
         let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST,0)).await.unwrap();
         let tcp_target = SocketAddr::new("198.51.100.7".parse().unwrap(),tcp.local_addr().unwrap().port());
         let udp_target = SocketAddr::new("198.51.100.7".parse().unwrap(),udp.local_addr().unwrap().port());
-        for bad in [None, Some([0x65;32])] {
+        for (bad, private_seed, server_seed) in [
+            (None, 0x42, 0x53),
+            (Some([0x65;32]), 0x42, 0x53),
+            (Some([0x64;32]), 0x43, 0x53),
+            (Some([0x64;32]), 0x42, 0x54),
+        ] {
             let mut cfg = config(reference.address,&PublicKey::from(&server));
+            cfg.secret_key = KeyMaterial::parse(&STANDARD.encode([private_seed;32])).unwrap();
+            cfg.peers[0].public_key = KeyMaterial::parse(&STANDARD.encode(
+                PublicKey::from(&StaticSecret::from([server_seed;32])).as_bytes()
+            )).unwrap();
             cfg.peers[0].preshared_key = bad.map(|key| KeyMaterial::parse(&STANDARD.encode(key)).unwrap());
             let client = Client::start(cfg,None).await.unwrap();
             let session = client.open_udp(udp_target).await.unwrap();
-            session.send(b"must not escape failed PSK authentication").await.unwrap();
+            session.send(b"must not escape failed authentication").await.unwrap();
             let mut bytes = [0;128];
             tokio::select! {
                 result = client.connect(tcp_target) => assert!(matches!(result, Err(xray_wireguard::Error::Timeout))),
-                _ = tcp.accept() => panic!("TCP reached application with incorrect PSK"),
-                _ = udp.recv(&mut bytes) => panic!("UDP reached application with incorrect PSK"),
+                _ = tcp.accept() => panic!("TCP reached application with incorrect key or PSK"),
+                _ = udp.recv(&mut bytes) => panic!("UDP reached application with incorrect key or PSK"),
             }
             timeout(Duration::from_secs(2),client.shutdown()).await.unwrap();
             assert_eq!(client.available_tcp_slots(),16);

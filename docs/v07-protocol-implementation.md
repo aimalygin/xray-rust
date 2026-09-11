@@ -120,22 +120,24 @@ a bounded smoke run, not comprehensive fuzz coverage or a memory benchmark.
 
 ## Remaining implementation boundaries
 
-1. Pin a native Hysteria server for independent interoperability and verify
-   physical-device memory, network transitions and throughput. The Xray JSON
-   parser and core TCP/UDP runtime are integrated in increment three below.
-2. Add independent WireGuard reference coverage. Multi-peer routing/isolation and
-   optional per-peer PSK are now integrated with redacted, zeroizing engine ownership.
+1. Native Hysteria v2.12.2 is now pinned for independent transport/core checks;
+   see [coverage and reference limitations](v07-native-hysteria-interop.md).
+   Physical-device memory, network transitions and throughput remain pending.
+2. Direct official wireguard-go now covers live TCP/UDP, wrong keys/PSK, peer
+   routing/isolation and core/TUN/DNS paths independently of Xray integration;
+   see [reference provenance and coverage](v07-native-wireguard-interop.md).
    Protected UDP/IP, smoltcp TCP/UDP and cancellation are integrated; see the
    [runtime contract](v07-wireguard-runtime.md). Process/device memory still needs
    measurement.
 3. Preserve separate WireGuard bootstrap and routed destination DNS. The runtime
    follows v26.7.28; v26.9.8-only `remoteDNS`, ChromeParrot and `dialerProxy` remain
    outside this work.
-4. Mirror implemented configuration/capabilities in Swift/Kotlin and profile
-   import. Core registration must never accept a configuration that only reaches
-   an unsupported-outbound failure after startup.
-5. Complete independent live TCP/UDP, reconnect, MTU/fragmentation, peer isolation,
-   resource recovery and physical-device tests before mobile artifact publication.
+4. Swift/Kotlin configuration, capability discovery and profile import are
+   implemented; application integration and device acceptance remain pending.
+5. Complete broader WireGuard roaming, replay, timed keepalive/rekey,
+   fragmentation/path-MTU, server-crash recovery and physical-device tests before
+   mobile artifact publication. Host checks for either protocol do not replace
+   device evidence.
 
 Release criteria remain in the [roadmap](roadmap.md#phase-4-v07-hysteria-2-and-wireguard-clients).
 
@@ -283,8 +285,8 @@ close. TCP and UDP share one device per configured outbound. See the
 The engine reference and Xray-core reference remain unchanged. The current subset
 accepts up to eight peers with optional per-peer PSK, longest-prefix routing and
 authenticated source isolation. Reserved-byte extensions and custom
-stream/chaining settings are rejected. Mobile SDK profile work and independent/physical-device
-acceptance remain separate release steps.
+stream/chaining settings are rejected. Subsequent increments add mobile SDK
+profiles and direct reference coverage; physical-device acceptance remains pending.
 
 ## Mobile DNS bootstrap increment
 
@@ -306,3 +308,24 @@ preserve Unicode credentials and reject unsupported settings with redacted
 errors. WireGuard retains multi-peer/PSK/AllowedIPs policy and requires explicit
 real DNS; Hysteria uses remote resolution through bounded FakeIP by default.
 See [source syntax, SDK APIs, limits and tests](v07-profile-import.md).
+
+## Independent native Hysteria increment
+
+The official Hysteria v2.12.2 application is now pinned by full commit and built
+without source changes. The shared transport/core interoperability suites run
+against both it and the unchanged Xray v26.7.28 reference. Native-only tests
+cover the UDP-disabled capability and its exact UDP serialization-buffer boundary.
+The blocking CI job verifies source cleanliness and runs both references.
+See [reproduction, supported scenarios and observed differences](v07-native-hysteria-interop.md).
+
+## Direct official WireGuard increment
+
+A dedicated test executable now uses the unmodified official wireguard-go
+0.0.20250522 engine without Xray imports. Exact module versions and checksums,
+replacement rejection and module-cache verification guard the reference build.
+Shared adapter/core tests run through its in-memory IP interface; raw authenticated
+peer tests use a Unix packet bridge to exercise source isolation with the official
+engine. Twelve live scenarios cover both IP families, TCP/UDP, wrong keys/PSK,
+peer routing/isolation, MTU bounds, recovery and core/TUN/DNS integration.
+The existing engine/Xray gate remains mandatory alongside the new CI gate.
+See [provenance, reproduction and remaining acceptance work](v07-native-wireguard-interop.md).

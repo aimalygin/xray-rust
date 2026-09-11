@@ -18,6 +18,10 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use xray_proxy::wireguard::KeyMaterial;
 use xray_wireguard::PeerConfig;
 
+#[cfg(unix)]
+#[path = "native.rs"]
+mod native;
+
 pub struct RawPeer {
     pub config: PeerConfig,
     pub received: mpsc::Receiver<Packet<Ip>>,
@@ -32,6 +36,10 @@ impl Drop for RawPeer {
 }
 impl RawPeer {
     pub async fn start(seed: u8, ipv6: bool, prefixes: &[&str]) -> Self {
+        #[cfg(unix)]
+        if std::env::var_os("NATIVE_WIREGUARD_BINARY").is_some() {
+            return native::start(seed, ipv6, prefixes).await;
+        }
         let socket = Arc::new(
             UdpSocket::bind(if ipv6 { "[::1]:0" } else { "127.0.0.1:0" })
                 .await

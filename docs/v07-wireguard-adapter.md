@@ -75,13 +75,14 @@ contract. Do not import v26.9.8-only `remoteDNS` or `dialerProxy` options. Stand
 WireGuard is the initial protocol: Xray reserved-byte extensions and nonstandard
 obfuscation are separate explicitly rejected options until implemented and tested.
 
-The initial runtime has real TCP/UDP coverage against the pinned Xray WireGuard
-server. Before release, extend it against an independently pinned WireGuard
-reference. Required cases include wrong keys/PSK, source spoofing between peers,
-allowed-IP overlap, authenticated roaming, replay, keepalive/rekey, IPv4/IPv6,
-MTU/fragmentation, exhausted queues, socket-protector rejection, cancellation,
-suspend/resume and repeated stop/start. No crypto protocol is implemented anew in
-this repository.
+The runtime has real TCP/UDP coverage against pinned Xray and
+[direct official wireguard-go](v07-native-wireguard-interop.md). Both gates cover
+wrong keys/PSK, allowed-IP overlap, IPv4/IPv6, MTU payload bounds and fresh startup;
+the direct gate also replaces controlled GotaTun peers for source-spoofing and
+unavailable-peer isolation tests. Existing client tests cover exhausted queues,
+socket-protector rejection and cancellation. Broader independent authenticated
+roaming, replay, timed keepalive/rekey, fragmentation and physical suspend/resume
+remain release work. No crypto protocol is implemented anew in this repository.
 
 
 ## Executed IP/UDP adoption probe
@@ -212,5 +213,6 @@ now has 89 tests. The runtime accepts optional PSK; see its
 The [runtime increment](v07-wireguard-runtime.md) now adds protected sockets,
 cancellation ownership, smoltcp TCP/UDP, IPv4/IPv6 and JSON/core registration.
 The runtime now covers up to eight peers, prefix overlap and authenticated source
-isolation. Remaining work includes independent reference coverage, mobile SDK
-profiles and physical-device acceptance.
+isolation. Direct reference coverage and mobile SDK profiles are implemented;
+broader independent protocol cases, application integration and physical-device
+acceptance remain pending.

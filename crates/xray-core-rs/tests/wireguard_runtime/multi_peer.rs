@@ -25,7 +25,7 @@ impl DnsResolver for Bootstrap {
     }
 }
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-wireguard-runtime.sh"]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_multi_peer_json_bootstrap_shared_ownership_and_host_close() {
     timeout(DEADLINE,async {
         let client_public = PublicKey::from(&StaticSecret::from([0x42;32]));

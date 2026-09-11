@@ -3,7 +3,7 @@
 mod server;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-pub use server::{Task, XrayServer, AUTH, DEADLINE};
+pub use server::{ReferenceServer, Task, AUTH, DEADLINE};
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{
@@ -55,7 +55,9 @@ impl DnsResolver for Bootstrap {
     }
 }
 
-pub fn core(server: &XrayServer) -> (Core, Arc<Protector>, Arc<Bootstrap>, Arc<TransportDialer>) {
+pub fn core(
+    server: &ReferenceServer,
+) -> (Core, Arc<Protector>, Arc<Bootstrap>, Arc<TransportDialer>) {
     let protector = Arc::new(Protector::default());
     let bootstrap = Arc::new(Bootstrap::default());
     let dialer = Arc::new(

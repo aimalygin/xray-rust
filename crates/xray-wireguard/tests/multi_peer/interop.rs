@@ -1,10 +1,10 @@
 use super::*;
 
 // Distinct loopback backends identify the peer actually selected by the native
-// client. Each peer uses an independent unchanged Xray process and PSK.
+// client. Each peer uses an independent pinned reference process and PSK.
 #[tokio::test]
-#[ignore = "requires checksum-guarded Xray-core v26.7.28 binary"]
-async fn pinned_xray_multiple_peers_overlaps_and_equal_prefixes_tcp_udp() {
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn pinned_reference_multiple_peers_overlaps_and_equal_prefixes_tcp_udp() {
     timeout(Duration::from_secs(30), async {
         let public = PublicKey::from(&StaticSecret::from([0x42; 32]));
         let mut references = Vec::new();

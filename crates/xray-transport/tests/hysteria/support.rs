@@ -1,4 +1,4 @@
-// This helper is shared by focused mock tests and the optional full Xray suite.
+// Shared by mock tests and the pinned Xray/native Hysteria interoperability suites.
 #![allow(dead_code)]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -77,17 +77,32 @@ fn pem(label: &str, bytes: &[u8]) -> String {
     pem
 }
 
-pub struct XrayServer {
+pub struct ReferenceServer {
     child: Child,
     pub directory: PathBuf,
     pub address: SocketAddr,
     pub connector: TlsConnector,
+    native: bool,
 }
 
-impl XrayServer {
+impl ReferenceServer {
     pub async fn start() -> Self {
-        let binary = std::env::var_os("XRAY_HYSTERIA_BINARY")
-            .expect("run scripts/check-hysteria-interop.sh to build the pinned Xray binary");
+        Self::start_with_udp(true).await
+    }
+
+    pub async fn start_with_udp(udp_enabled: bool) -> Self {
+        let (binary, native) = match (
+            std::env::var_os("XRAY_HYSTERIA_BINARY"),
+            std::env::var_os("NATIVE_HYSTERIA_BINARY"),
+        ) {
+            (Some(binary), None) => (binary, false),
+            (None, Some(binary)) => (binary, true),
+            _ => panic!("select exactly one pinned reference with check-hysteria-interop.sh or check-native-hysteria-interop.sh"),
+        };
+        assert!(
+            native || udp_enabled,
+            "UDP-disable scenario requires native Hysteria"
+        );
         let directory = std::env::temp_dir().join(format!(
             "xray-hysteria-{}-{:016x}",
             std::process::id(),
@@ -104,14 +119,24 @@ impl XrayServer {
         std::fs::write(directory.join("key.pem"), identity.key_pem).unwrap();
         let reservation = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = reservation.local_addr().unwrap();
-        let config = serde_json::json!({"log":{"loglevel":"debug"},
+        let config = if native {
+            serde_json::json!({
+                "listen": address.to_string(),
+                "tls": {"cert": directory.join("cert.pem"), "key": directory.join("key.pem")},
+                "auth": {"type": "password", "password": AUTH},
+                "ignoreClientBandwidth": true,
+                "disableUDP": !udp_enabled,
+            })
+        } else {
+            serde_json::json!({"log":{"loglevel":"debug"},
             "inbounds":[{"listen":"127.0.0.1","port":address.port(),"protocol":"hysteria",
                 "settings":{"version":2,"users":[{"auth":AUTH}]},
                 "streamSettings":{"network":"hysteria","security":"tls", "hysteriaSettings":{"version":2},
                     "tlsSettings":{"alpn":["h3"],"certificates":[{"certificateFile":directory.join("cert.pem"),"keyFile":directory.join("key.pem")}]} }}],
             // Pinned Xray blocks private destinations for Hysteria by default.
             // These synthetic echo fixtures explicitly permit loopback only.
-            "outbounds":[{"protocol":"freedom","settings":{"finalRules":[{"action":"allow","ip":["127.0.0.0/8","::1/128"]}]}}]});
+            "outbounds":[{"protocol":"freedom","settings":{"finalRules":[{"action":"allow","ip":["127.0.0.0/8","::1/128"]}]}}]})
+        };
         std::fs::write(
             directory.join("config.json"),
             serde_json::to_vec(&config).unwrap(),
@@ -119,9 +144,23 @@ impl XrayServer {
         .unwrap();
         drop(reservation);
         let log = std::fs::File::create(directory.join("server.log")).unwrap();
-        let child = Command::new(binary)
-            .arg("run")
-            .arg("-config")
+        let mut command = Command::new(binary);
+        let startup_message = if native {
+            command.args([
+                "server",
+                "--disable-update-check",
+                "--log-level",
+                "debug",
+                "--log-format",
+                "json",
+                "--config",
+            ]);
+            "server up and running"
+        } else {
+            command.args(["run", "-config"]);
+            "core: Xray 26.7.28 started"
+        };
+        let child = command
             .arg(directory.join("config.json"))
             .stdin(Stdio::null())
             .stdout(log.try_clone().unwrap())
@@ -133,22 +172,23 @@ impl XrayServer {
             directory,
             address,
             connector: identity.connector,
+            native,
         };
         let deadline = tokio::time::Instant::now() + DEADLINE;
         loop {
             assert!(
                 server.child.try_wait().unwrap().is_none(),
-                "Xray exited at startup"
+                "Hysteria reference exited at startup"
             );
             if std::fs::read_to_string(server.directory.join("server.log"))
                 .unwrap()
-                .contains("core: Xray 26.7.28 started")
+                .contains(startup_message)
             {
                 break;
             }
             assert!(
                 tokio::time::Instant::now() < deadline,
-                "Xray startup deadline"
+                "Hysteria reference startup deadline"
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -158,15 +198,29 @@ impl XrayServer {
     pub fn config(&self) -> HysteriaConfig {
         HysteriaConfig::new(self.address, tls_settings(), AUTH.into())
     }
+
+    pub fn is_native(&self) -> bool {
+        self.native
+    }
+
+    pub fn fragmented_udp_payload_len(&self) -> usize {
+        // Native v2.12.2 serializes into a 4096-byte buffer *before* fragmentation.
+        // Leave room for its wire header; retain the existing 4 KiB Xray scenario.
+        if self.native {
+            4000
+        } else {
+            4096
+        }
+    }
 }
 
-impl Drop for XrayServer {
+impl Drop for ReferenceServer {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
         if std::thread::panicking() {
             eprintln!(
-                "local Xray test log:\n{}",
+                "local Hysteria reference log:\n{}",
                 std::fs::read_to_string(self.directory.join("server.log")).unwrap_or_default()
             );
         }

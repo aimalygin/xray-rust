@@ -9,10 +9,10 @@ use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram}
 use xray_routing::{Network, Target, TargetAddr};
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-hysteria-interop.sh"]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
     timeout(DEADLINE, async {
-        let server = XrayServer::start().await;
+        let server = ReferenceServer::start().await;
         let (tcp_addr, _tcp) = tcp_echo().await;
         let (udp_addr, _udp) = udp_echo().await;
         let (mut core, protector, bootstrap, _dialer) = core(&server);
@@ -43,7 +43,7 @@ async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
         let (_control, relay) = socks(socks_addr, 3, "0.0.0.0", 0).await;
         let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let target = Target::new(TargetAddr::Ip(udp_addr.ip()), udp_addr.port(), Network::Udp);
-        let payload = vec![0x5a; 4096];
+        let payload = vec![0x5a; server.fragmented_udp_payload_len()];
         udp.send_to(
             &encode_socks5_udp_datagram(&target, &payload).unwrap(),
             relay,
@@ -97,7 +97,10 @@ async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
             .iter()
             .find(|o| o.outbound_tag.as_deref() == Some("proxy"))
             .unwrap();
-        assert!(proxy.uplink_bytes >= 4096 && proxy.downlink_bytes >= 4096);
+        assert!(
+            proxy.uplink_bytes >= payload.len() as u64
+                && proxy.downlink_bytes >= payload.len() as u64
+        );
         assert_eq!(proxy.host_closed_connections, 2);
         core.stop().await.unwrap();
         while !core.connection_snapshot().connections.is_empty() {
@@ -123,13 +126,13 @@ async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
 }
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-hysteria-interop.sh"]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_concurrent_open_isolated_trust_and_socket_policy() {
     use std::sync::Arc;
     use xray_core_rs::{open_tcp_stream_with_resolver_and_dialer, CoreError, OutboundRouter};
     use xray_transport::{hysteria::HysteriaError, TransportDialer};
     timeout(DEADLINE, async {
-        let server = XrayServer::start().await;
+        let server = ReferenceServer::start().await;
         let (address, _echo) = tcp_echo().await;
         let (_core, protector, bootstrap, dialer) = core(&server);
         let config = xray_config::parse_xray_json(&profile(server.address).to_string())

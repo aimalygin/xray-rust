@@ -171,10 +171,13 @@ The local server binds only loopback. Inner documentation destinations
 `198.51.100.7` and `2001:db8::7` are redirected by Xray Freedom to loopback echo
 listeners. No packets are sent to those addresses on the host network.
 
-Independent WireGuard/Hysteria servers, broader key/rekey/roaming cases,
-mobile SDK profile import, cross-compilation and physical
-Apple/Android memory/network acceptance remain release work. No mobile binaries
-or stable v0.7 artifacts are published by this increment.
+[Direct official WireGuard](v07-native-wireguard-interop.md) and
+[native Hysteria](v07-native-hysteria-interop.md) reference gates and
+[mobile SDK profile import](v07-profile-import.md) are now implemented.
+Broader replay/rekey/roaming and fragmentation cases, application integration,
+cross-compilation and physical Apple/Android memory/network acceptance remain
+release work. No mobile binaries or stable v0.7 artifacts are published by this
+increment.
 
 Initial runtime evidence on macOS arm64: all 678 core, 372 config and 26 CLI tests passed;
 WireGuard's 86 engine tests, IP probe, four native tests and five live scenarios
@@ -222,3 +225,9 @@ probe passed; the source/vendor guard and regenerated Go protocol oracle matched
 Strict Clippy, workspace/all-target compilation (including FFI and fuzz), formatting
 and all 13 fixture-safety checks passed. Linux and physical-device acceptance
 remain unverified here.
+
+Direct reference increment: the standalone official wireguard-go gate runs the
+same ten adapter/core scenarios without Xray, plus both raw multi-peer isolation
+scenarios using official peers. Wrong client/server keys join the existing
+wrong/missing PSK matrix. All twelve live scenarios passed on macOS arm64;
+see the [reference contract and limits](v07-native-wireguard-interop.md).

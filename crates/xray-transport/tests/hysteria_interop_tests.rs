@@ -4,7 +4,7 @@ mod support;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::Duration;
-use support::{Task, XrayServer, DEADLINE};
+use support::{ReferenceServer, Task, DEADLINE};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time::timeout;
@@ -12,9 +12,9 @@ use xray_routing::{Network, Target, TargetAddr};
 use xray_transport::hysteria::{HysteriaClient, HysteriaError};
 
 #[tokio::test]
-#[ignore = "requires exact Xray-core v26.7.28 binary; use check-hysteria-interop.sh"]
-async fn pinned_xray_tcp_udp_fragmentation_limits_and_reconnect() {
-    let server = XrayServer::start().await;
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
+async fn pinned_reference_tcp_udp_fragmentation_limits_and_reconnect() {
+    let server = ReferenceServer::start().await;
     let tcp_listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let tcp_address = tcp_listener.local_addr().unwrap();
     let tcp_target = Target::new(
@@ -74,7 +74,7 @@ async fn pinned_xray_tcp_udp_fragmentation_limits_and_reconnect() {
         client.open_udp(),
         Err(HysteriaError::SessionLimit)
     ));
-    let payload = vec![0x42; 4096];
+    let payload = vec![0x42; server.fragmented_udp_payload_len()];
     // Receiving can run concurrently with sending on the same flow.
     let receiver = Arc::clone(&first);
     let receiving =
@@ -133,9 +133,9 @@ async fn pinned_xray_tcp_udp_fragmentation_limits_and_reconnect() {
 }
 
 #[tokio::test]
-#[ignore = "requires exact Xray-core v26.7.28 binary; use check-hysteria-interop.sh"]
-async fn pinned_xray_rejects_wrong_auth_and_closes_failed_tcp_destination() {
-    let server = XrayServer::start().await;
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
+async fn pinned_reference_rejects_wrong_auth_and_closes_failed_tcp_destination() {
+    let server = ReferenceServer::start().await;
     let mut wrong = server.config();
     wrong.auth = zeroize::Zeroizing::new("wrong-synthetic-auth".into());
     assert_eq!(
@@ -151,12 +151,19 @@ async fn pinned_xray_rejects_wrong_auth_and_closes_failed_tcp_destination() {
     let address = reservation.local_addr().unwrap();
     drop(reservation);
     let target = Target::new(TargetAddr::Ip(address.ip()), address.port(), Network::Tcp);
-    // The pinned server acknowledges the Hysteria request before DispatchLink
-    // attempts the destination connection. Failure arrives on the data stream.
-    let mut tcp = client.open_tcp(&target).await.unwrap();
-    let mut byte = [0];
-    let result = timeout(DEADLINE, tcp.read(&mut byte)).await.unwrap();
-    assert!(matches!(result, Ok(0) | Err(_)));
+    if server.is_native() {
+        // Native Hysteria dials before acknowledging the request.
+        assert!(matches!(
+            client.open_tcp(&target).await,
+            Err(HysteriaError::TcpRejected)
+        ));
+    } else {
+        // Xray acknowledges before DispatchLink dials; failure arrives on the stream.
+        let mut tcp = client.open_tcp(&target).await.unwrap();
+        let mut byte = [0];
+        let result = timeout(DEADLINE, tcp.read(&mut byte)).await.unwrap();
+        assert!(matches!(result, Ok(0) | Err(_)));
+    }
     assert!(client.is_live());
     client.close();
 }

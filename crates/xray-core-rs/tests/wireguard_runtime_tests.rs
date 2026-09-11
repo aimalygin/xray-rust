@@ -12,18 +12,18 @@ use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram}
 use xray_routing::{Network, Target, TargetAddr};
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-wireguard-runtime.sh"]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_socks_http_udp_share_session_account_and_stop() {
     sharing_accounting_and_stop(None).await;
 }
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-wireguard-runtime.sh"]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_psk_socks_http_udp_share_session_account_and_stop() {
     sharing_accounting_and_stop(Some([0x64; 32])).await;
 }
 async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
     timeout(DEADLINE, async {
-        let server = XrayServer::start_with_psk(psk).await;
+        let server = ReferenceServer::start_with_psk(psk).await;
         let (tcp_addr, _tcp) = tcp_echo().await;
         let (udp_addr, _udp) = udp_echo().await;
         let (mut core, protector, bootstrap, _dialer) = core(&server);
@@ -138,13 +138,13 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
 }
 
 #[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-wireguard-runtime.sh"]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_concurrent_open_isolated_socket_policy() {
     use std::sync::Arc;
     use xray_core_rs::{open_tcp_stream_with_resolver_and_dialer, CoreError, OutboundRouter};
     use xray_wireguard::Error;
     timeout(DEADLINE, async {
-        let server = XrayServer::start().await;
+        let server = ReferenceServer::start().await;
         let (address, _echo) = tcp_echo().await;
         let (_core, protector, bootstrap, dialer) = core(&server);
         let config = xray_config::parse_xray_json(&profile(server.address).to_string())

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -10,7 +11,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 const WAIT: Duration = Duration::from_secs(5);
 pub struct Reference {
     child: Child,
-    directory: PathBuf,
+    pub directory: PathBuf,
     pub address: SocketAddr,
 }
 impl Drop for Reference {
@@ -51,7 +52,61 @@ impl Reference {
         listen: IpAddr,
         redirect_port: u16,
     ) -> Self {
-        let directory = std::env::temp_dir().join(format!(
+        Self::start_inner(
+            server_secret,
+            client_public,
+            preshared_key,
+            listen,
+            redirect_port,
+            false,
+        )
+        .await
+    }
+
+    pub async fn start_raw(
+        server_secret: &StaticSecret,
+        client_public: &PublicKey,
+        preshared_key: &[u8; 32],
+        listen: IpAddr,
+    ) -> Self {
+        Self::start_inner(
+            server_secret,
+            client_public,
+            Some(preshared_key),
+            listen,
+            0,
+            true,
+        )
+        .await
+    }
+
+    async fn start_inner(
+        server_secret: &StaticSecret,
+        client_public: &PublicKey,
+        preshared_key: Option<&[u8; 32]>,
+        listen: IpAddr,
+        redirect_port: u16,
+        raw: bool,
+    ) -> Self {
+        let (binary, native) = match (
+            std::env::var_os("XRAY_WIREGUARD_BINARY"),
+            std::env::var_os("NATIVE_WIREGUARD_BINARY"),
+        ) {
+            (Some(binary), None) => (binary, false),
+            (None, Some(binary)) => (binary, true),
+            _ => panic!("select exactly one reference with check-wireguard-runtime.sh or check-native-wireguard-interop.sh"),
+        };
+        assert!(
+            !raw || native,
+            "raw packet bridge requires native wireguard-go"
+        );
+        // Darwin's per-user temporary path can exceed sockaddr_un's path limit.
+        let root = if raw {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
+        let directory = root.join(format!(
             "xray-wg-probe-{}-{}",
             std::process::id(),
             rand::random::<u64>()
@@ -81,21 +136,39 @@ impl Reference {
             config["inbounds"][0]["settings"]["peers"][0]["preSharedKey"] =
                 serde_json::json!(STANDARD.encode(key));
         }
+        if native {
+            fn hex(bytes: &[u8]) -> String {
+                bytes.iter().map(|b| format!("{b:02x}")).collect()
+            }
+            config = serde_json::json!({
+                "listen": address.to_string(),
+                "privateKey": hex(&server_secret.to_bytes()),
+                "peerKey": hex(client_public.as_bytes()),
+                "presharedKey": preshared_key.map(|key| hex(key)).unwrap_or_default(),
+                "redirectPort": redirect_port,
+            });
+            if raw {
+                config["packetSocket"] = serde_json::json!(directory.join("server.sock"));
+                config["packetClient"] = serde_json::json!(directory.join("client.sock"));
+            }
+        }
         std::fs::write(directory.join("config.json"), config.to_string()).unwrap();
         drop(reservation);
         let log = std::fs::File::create(directory.join("log")).unwrap();
-        let child = Command::new(
-            std::env::var_os("XRAY_WIREGUARD_BINARY")
-                .expect("run scripts/check-wireguard-adapter-prototype.sh"),
-        )
-        .arg("run")
-        .arg("-config")
-        .arg(directory.join("config.json"))
-        .stdin(Stdio::null())
-        .stdout(log.try_clone().unwrap())
-        .stderr(log)
-        .spawn()
-        .unwrap();
+        let mut command = Command::new(binary);
+        let startup = if native {
+            "wireguard-go reference ready"
+        } else {
+            command.args(["run", "-config"]);
+            "core: Xray 26.7.28 started"
+        };
+        let child = command
+            .arg(directory.join("config.json"))
+            .stdin(Stdio::null())
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap();
         let mut reference = Self {
             child,
             directory,
@@ -109,7 +182,7 @@ impl Reference {
                 );
                 if std::fs::read_to_string(reference.directory.join("log"))
                     .unwrap()
-                    .contains("core: Xray 26.7.28 started")
+                    .contains(startup)
                 {
                     break;
                 }
