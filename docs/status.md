@@ -138,6 +138,26 @@ every TLS ALPN list other than the exact H1/H3 cases select HTTP/2. REALITY is
 accepted. Without VLESS encryption, Vision remains refused because XHTTP returns an HTTP wrapper
 rather than the security connection Vision needs to splice into.
 
+The unreleased XHTTP/H2 implementation raises per-stream receive credit from
+65,535 bytes to 4 MiB to address the single-download RTT ceiling in issue #28.
+The connection window stays at 16 MiB. An optional Rust-specific
+`xhttpSettings.h2StreamReceiveWindow`
+selects 65,535–16,777,216 bytes; absent/null retains 4 MiB. Independent
+downloads have their own setting. Other protocol decisions are recorded in
+the [follow-up plan](transport-window-followups.md). Larger credit permits
+more data per unread response and fewer completely stalled responses before
+shared credit is exhausted; the [transport window audit](transport-window-audit.md) records
+the bounds, regression tests and related gRPC/H3 constraints. The initial
+[iPhone A/B](issue28-iphone-validation.md) exposed shared TUN backpressure.
+The accompanying TUN repair keeps neighboring data/control events moving
+and bounds remote prefetch to 256 KiB per flow. The repeated
+[device campaign](issue28-tun-validation.md) passed stalled-reader and
+cancellation checks on XHTTP/H2 and raw VLESS/TCP. These bounded checks do
+not establish process-wide OOM safety or remove H2's shared-credit limit.
+The separate [Rust/Go client comparison](issue28-client-comparison.md)
+measures a single download on the same delayed host path, including a
+150 Mbit/s condition and a condition without a configured rate limit.
+
 The production HTTP/3 branch is intentionally narrower. It is selected only by
 TLS with the exact configured ALPN list `["h3"]`, opens a protected UDP socket,
 races resolved candidates with the normal Happy Eyeballs policy, requires

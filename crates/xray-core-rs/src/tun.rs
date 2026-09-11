@@ -73,6 +73,10 @@ const LOW_MEMORY_TCP_BRIDGE_CHANNEL_DEPTH: usize = 64;
 // channel and surfaces as udp_channel_dropped_packets.
 const UDP_BRIDGE_CHANNEL_DEPTH: usize = 256;
 const BRIDGE_READ_BUFFER_SIZE: usize = 16 * 1024;
+// A small pipeline hides stack/task scheduling latency without allowing an
+// unread application to fill a multi-megabyte queue for every TCP flow.
+const TCP_DOWNLOAD_CHUNK_SIZE: usize = 64 * 1024;
+const TCP_REMOTE_PREFETCH_LIMIT: usize = 4 * TCP_DOWNLOAD_CHUNK_SIZE;
 const TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = TCP_BRIDGE_CHANNEL_DEPTH + 1;
 const MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize = MOBILE_TCP_BRIDGE_CHANNEL_DEPTH + 1;
 const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize =
@@ -99,6 +103,16 @@ const TCP_FLOW_SUMMARY_MILESTONE_BYTES: u64 = 1024 * 1024;
 const UDP_SLOW_FLOW_THRESHOLD_MS: u64 = 500;
 const UDP_RESPONSE_GAP_THRESHOLD_MS: u64 = 500;
 const UDP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[cfg(test)]
+#[path = "tun_backpressure_tests.rs"]
+mod backpressure_tests;
+
+#[path = "tun_download.rs"]
+mod download;
+use download::{
+    read_remote_batch, send_remote_data, DownloadDelivery, PendingDownload, RemoteReadEnd,
+};
 
 #[path = "tun_dns.rs"]
 mod dns_proxy;
@@ -818,12 +832,6 @@ impl TunPacketOutcome {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct StackEventApplication {
-    continue_draining: bool,
-    tcp_stack_dirty: bool,
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "TUN runtime task receives shared dependencies explicitly"
@@ -891,6 +899,7 @@ pub(crate) async fn serve_tun_endpoint(
         transport_dialer,
         connection_registry,
         stack_tx,
+        tcp_download_serial: Arc::new(tokio::sync::Mutex::new(())),
         tun: Arc::clone(&tun),
         tun_runtime_options,
         runtime_policy,
@@ -955,9 +964,9 @@ pub(crate) async fn serve_tun_endpoint(
                     Err(_) => {}
                 }
             }
-            event = stack_rx.recv(), if delayed_stack_events.is_empty() => {
+            event = stack_rx.recv() => {
                 if let Some(event) = event {
-                    let application = apply_or_delay_stack_event(
+                    tcp_stack_dirty |= apply_or_delay_stack_event(
                         event,
                         &mut delayed_stack_events,
                         &mut tcp_flows,
@@ -966,7 +975,6 @@ pub(crate) async fn serve_tun_endpoint(
                         &mut device,
                         Some(tun.as_ref()),
                     );
-                    tcp_stack_dirty |= application.tcp_stack_dirty;
                 }
             }
             joined = bridge_tasks.join_next(), if !bridge_tasks.is_empty() => {
@@ -1433,6 +1441,7 @@ struct TunRuntimeContext {
     transport_dialer: Arc<TransportDialer>,
     connection_registry: Arc<ConnectionRegistry>,
     stack_tx: mpsc::Sender<StackEvent>,
+    tcp_download_serial: Arc<tokio::sync::Mutex<()>>,
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
     runtime_policy: TunRuntimePolicy,
@@ -1461,6 +1470,22 @@ fn dns_tcp_flow_limit(global_tcp_flow_limit: usize) -> usize {
 }
 
 impl TunRuntimeContext {
+    async fn send_remote_data(
+        &self,
+        handle: SocketHandle,
+        generation: u64,
+        data: Bytes,
+    ) -> Result<(), ()> {
+        send_remote_data(
+            &self.stack_tx,
+            &self.tcp_download_serial,
+            handle,
+            generation,
+            data,
+        )
+        .await
+    }
+
     fn bootstrap_dns_resolver(&self) -> &dyn DnsResolver {
         self.dns_bootstrap_resolver
             .as_deref()
@@ -1525,6 +1550,8 @@ struct TcpFlow {
     remote_open: bool,
     pending_remote: VecDeque<Bytes>,
     pending_remote_bytes: usize,
+    has_deferred_remote_data: bool,
+    pending_remote_delivery: Option<DownloadDelivery>,
     remote_closed: bool,
     remote_aborted: bool,
 }
@@ -1753,6 +1780,7 @@ enum StackEvent {
         handle: SocketHandle,
         generation: u64,
         data: Bytes,
+        delivery: DownloadDelivery,
     },
     RemoteClosed {
         handle: SocketHandle,
@@ -1912,6 +1940,12 @@ fn open_ready_tcp_flows(
         };
         let (to_remote, from_stack) =
             mpsc::channel(context.runtime_policy.tcp_upload.channel_depth);
+        // Clones within this flow (including parallel DNS lookups) share the
+        // serial gate; unrelated TCP flows must never share it.
+        let context = TunRuntimeContext {
+            tcp_download_serial: Arc::new(tokio::sync::Mutex::new(())),
+            ..context.clone()
+        };
         flows.insert(
             handle,
             TcpFlow {
@@ -1921,6 +1955,8 @@ fn open_ready_tcp_flows(
                 remote_open: false,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -2018,6 +2054,8 @@ fn insert_aborted_tcp_flow(
             remote_open: false,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
+            has_deferred_remote_data: false,
+            pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: true,
         },
@@ -2134,8 +2172,11 @@ fn drain_stack_events(
 ) -> bool {
     let mut tcp_stack_dirty = false;
 
-    while let Some(event) = delayed_stack_events.pop_front() {
-        let application = apply_or_delay_stack_event(
+    // Retry each deferred flow once. A blocked flow goes to the back instead
+    // of preventing delivery to every other flow and to UDP/control events.
+    for _ in 0..delayed_stack_events.len() {
+        let event = delayed_stack_events.pop_front().expect("deferred event");
+        tcp_stack_dirty |= apply_or_delay_stack_event(
             event,
             delayed_stack_events,
             tcp_flows,
@@ -2144,14 +2185,14 @@ fn drain_stack_events(
             device,
             tun,
         );
-        tcp_stack_dirty |= application.tcp_stack_dirty;
-        if !application.continue_draining {
-            return tcp_stack_dirty;
-        }
     }
 
-    while let Ok(event) = stack_rx.try_recv() {
-        let application = apply_or_delay_stack_event(
+    // Bound work even when producers keep refilling the shared channel.
+    for _ in 0..STACK_EVENT_CHANNEL_DEPTH {
+        let Ok(event) = stack_rx.try_recv() else {
+            break;
+        };
+        tcp_stack_dirty |= apply_or_delay_stack_event(
             event,
             delayed_stack_events,
             tcp_flows,
@@ -2160,10 +2201,6 @@ fn drain_stack_events(
             device,
             tun,
         );
-        tcp_stack_dirty |= application.tcp_stack_dirty;
-        if !application.continue_draining {
-            return tcp_stack_dirty;
-        }
     }
 
     tcp_stack_dirty
@@ -2177,27 +2214,21 @@ fn apply_or_delay_stack_event(
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
     device: &mut PacketDevice,
     tun: Option<&TunEndpoint>,
-) -> StackEventApplication {
+) -> bool {
     let tcp_stack_dirty = !matches!(
         &event,
         StackEvent::UdpDatagram { .. } | StackEvent::UdpClosed { .. }
     );
     match try_apply_stack_event(event, tcp_flows, flow_budget_state, udp_flows, device) {
-        Ok(()) => StackEventApplication {
-            continue_draining: true,
-            tcp_stack_dirty,
-        },
+        Ok(()) => {}
         Err(event) => {
             if let Some(tun) = tun {
                 tun.record_tcp_remote_to_stack_backpressure();
             }
-            delayed_stack_events.push_front(event);
-            StackEventApplication {
-                continue_draining: false,
-                tcp_stack_dirty,
-            }
+            delayed_stack_events.push_back(event);
         }
     }
+    tcp_stack_dirty
 }
 
 fn try_apply_stack_event(
@@ -2220,6 +2251,7 @@ fn try_apply_stack_event(
             handle,
             generation,
             data,
+            delivery,
         } => {
             let Some(flow) = tcp_flows
                 .get_mut(&handle)
@@ -2227,18 +2259,28 @@ fn try_apply_stack_event(
             else {
                 return Ok(());
             };
+            if flow.remote_aborted {
+                flow.has_deferred_remote_data = false;
+                return Ok(());
+            }
             if !flow_budget_state.can_enqueue_remote_data(flow.pending_remote_bytes, data.len()) {
+                flow.has_deferred_remote_data = true;
                 return Err(StackEvent::RemoteData {
                     handle,
                     generation,
                     data,
+                    delivery,
                 });
             }
+            flow.has_deferred_remote_data = false;
             let pending_before = flow.pending_remote_bytes;
             let next_pending_bytes = pending_before.saturating_add(data.len());
             flow.pending_remote_bytes = next_pending_bytes;
             flow_budget_state.record_pending_remote_enqueue(pending_before, data.len());
             flow.pending_remote.push_back(data);
+            debug_assert!(flow.pending_remote_delivery.is_none());
+            flow.pending_remote_delivery = Some(delivery);
+            acknowledge_remote_data(flow);
         }
         StackEvent::RemoteClosed { handle, generation } => {
             if let Some(flow) = tcp_flows
@@ -2403,12 +2445,27 @@ fn write_remote_data_to_sockets(
                 break;
             }
         }
-        if flow.remote_closed && flow.pending_remote.is_empty() && socket.may_send() {
+        acknowledge_remote_data(flow);
+        if flow.remote_closed
+            && flow.pending_remote.is_empty()
+            && !flow.has_deferred_remote_data
+            && socket.may_send()
+        {
             socket.close();
         }
     }
 
     written_bytes
+}
+
+fn acknowledge_remote_data(flow: &mut TcpFlow) {
+    // Reserve room for the next maximum-size chunk before letting its producer
+    // read again. A deferred chunk and admitted data share this per-flow bound.
+    if flow.pending_remote_bytes <= TCP_REMOTE_PREFETCH_LIMIT - TCP_DOWNLOAD_CHUNK_SIZE {
+        if let Some(delivery) = flow.pending_remote_delivery.take() {
+            delivery.complete();
+        }
+    }
 }
 
 fn read_socket_data_to_remote(
@@ -3269,7 +3326,9 @@ where
     W: AsyncWrite + Unpin,
     T: TcpFirstByteTiming,
 {
-    let mut read_buffer = vec![0; BRIDGE_READ_BUFFER_SIZE];
+    let mut read_buffer = vec![0; TCP_DOWNLOAD_CHUNK_SIZE];
+    let mut pending_download: Option<PendingDownload<'_>> = None;
+    let mut remote_read_end = None;
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
     let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
@@ -3277,6 +3336,15 @@ where
     tokio::pin!(idle_sleep);
 
     let termination = loop {
+        if pending_download.is_none() {
+            if let Some(end) = remote_read_end.take() {
+                match end {
+                    RemoteReadEnd::Closed => context.tun.record_tcp_remote_closed(),
+                    RemoteReadEnd::Failed => context.tun.record_tcp_remote_read_error(),
+                }
+                break TcpBridgeTermination::Graceful;
+            }
+        }
         tokio::select! {
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
@@ -3318,34 +3386,30 @@ where
                     .as_mut()
                     .reset(TokioInstant::now() + idle_timeout);
             }
-            read = remote_reader.read(&mut read_buffer) => {
-                let read = match read {
-                    Ok(read) => read,
-                    Err(_) => {
-                        context.tun.record_tcp_remote_read_error();
-                        break TcpBridgeTermination::Graceful;
-                    }
-                };
-                if read == 0 {
-                    context.tun.record_tcp_remote_closed();
+            delivered = async { pending_download.as_mut().expect("pending download").await }, if pending_download.is_some() => {
+                pending_download = None;
+                if !matches!(delivered, Some(Ok(()))) {
                     break TcpBridgeTermination::Graceful;
+                }
+                idle_sleep.as_mut().reset(TokioInstant::now() + idle_timeout);
+            }
+            (read, end) = read_remote_batch(remote_reader, &mut read_buffer), if pending_download.is_none() => {
+                remote_read_end = end;
+                if read == 0 {
+                    continue;
                 }
                 timing.record_first_byte(context.tun.as_ref(), target);
                 context.tun.record_tcp_remote_read(read);
                 traffic.record_downlink(read as u64);
                 timing.record_remote_read(context.tun.as_ref(), target, read);
-                let delivered = await_with_optional_timeout(
+                pending_download = Some(Box::pin(await_with_optional_timeout(
                     operation_timeout,
-                    context.stack_tx.send(StackEvent::RemoteData {
+                    context.send_remote_data(
                         handle,
                         generation,
-                        data: Bytes::copy_from_slice(&read_buffer[..read]),
-                    }),
-                )
-                .await;
-                if !matches!(delivered, Some(Ok(()))) {
-                    break TcpBridgeTermination::Graceful;
-                }
+                        Bytes::copy_from_slice(&read_buffer[..read]),
+                    ),
+                )));
                 idle_sleep
                     .as_mut()
                     .reset(TokioInstant::now() + idle_timeout);
@@ -6887,6 +6951,8 @@ mod tests {
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -6921,6 +6987,8 @@ mod tests {
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: NORMAL_TCP_REMOTE_PENDING_LIMIT,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -6934,6 +7002,7 @@ mod tests {
                 handle,
                 generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
+                delivery: DownloadDelivery::test(),
             })
             .unwrap();
 
@@ -6972,6 +7041,8 @@ mod tests {
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -6983,6 +7054,7 @@ mod tests {
             handle,
             generation: 1,
             data: Bytes::from_static(&[1, 2, 3, 4]),
+            delivery: DownloadDelivery::test(),
         }]);
 
         drain_stack_events(
@@ -7018,6 +7090,8 @@ mod tests {
                 remote_open: false,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -7035,6 +7109,7 @@ mod tests {
                 handle,
                 generation: 1,
                 data: Bytes::from_static(b"stale"),
+                delivery: DownloadDelivery::test(),
             },
             StackEvent::RemoteClosed {
                 handle,
@@ -7080,6 +7155,8 @@ mod tests {
             remote_open: false,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
+            has_deferred_remote_data: false,
+            pending_remote_delivery: None,
             remote_closed: false,
             remote_aborted: false,
         };
@@ -7132,6 +7209,8 @@ mod tests {
                 remote_open: true,
                 pending_remote,
                 pending_remote_bytes: 1024 * 1024,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -7145,6 +7224,7 @@ mod tests {
                 handle,
                 generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
+                delivery: DownloadDelivery::test(),
             })
             .unwrap();
 
@@ -7185,6 +7265,8 @@ mod tests {
                 remote_open: true,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -7198,6 +7280,7 @@ mod tests {
                 handle,
                 generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
+                delivery: DownloadDelivery::test(),
             })
             .unwrap();
 
@@ -7242,6 +7325,8 @@ mod tests {
                 remote_open: true,
                 pending_remote,
                 pending_remote_bytes: PRESSURE_TCP_REMOTE_PENDING_LIMIT,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -7255,6 +7340,7 @@ mod tests {
                 handle,
                 generation: 1,
                 data: Bytes::from_static(&[1, 2, 3, 4]),
+                delivery: DownloadDelivery::test(),
             })
             .unwrap();
 
@@ -7335,6 +7421,8 @@ mod tests {
                 remote_open: true,
                 pending_remote,
                 pending_remote_bytes: TCP_BUFFER_SIZE,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
                 remote_closed: false,
                 remote_aborted: false,
             },
@@ -7745,7 +7833,7 @@ mod tests {
     const TCP_ACK: u8 = 0x10;
 
     #[allow(clippy::too_many_arguments)]
-    fn build_ipv4_tcp_packet(
+    pub(super) fn build_ipv4_tcp_packet(
         source: Ipv4Addr,
         source_port: u16,
         destination: Ipv4Addr,
@@ -7793,7 +7881,7 @@ mod tests {
         internet_checksum(&pseudo)
     }
 
-    fn ipv4_tcp_sequence(packet: &[u8]) -> Option<u32> {
+    pub(super) fn ipv4_tcp_sequence(packet: &[u8]) -> Option<u32> {
         let tcp = ipv4_tcp_header_and_payload(packet)?;
         Some(u32::from_be_bytes([tcp[4], tcp[5], tcp[6], tcp[7]]))
     }

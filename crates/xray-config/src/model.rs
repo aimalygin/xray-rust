@@ -951,6 +951,9 @@ impl Default for XhttpXmuxSettings {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XhttpSettings {
     pub download: Option<Box<XhttpDownloadSettings>>,
+    /// Rust-specific H2 receive credit per stream, in bytes. None uses 4 MiB.
+    /// Does not change H1/H3 or the 16 MiB H2 connection window.
+    pub h2_stream_receive_window: Option<u32>,
     pub host: Option<String>,
     /// The configured path, before XHTTP adds a leading/trailing slash and
     /// separates its query string for individual requests.
@@ -989,6 +992,7 @@ impl Default for XhttpSettings {
     fn default() -> Self {
         Self {
             download: None,
+            h2_stream_receive_window: None,
             host: None,
             path: String::new(),
             mode: XhttpMode::Auto,

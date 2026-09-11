@@ -1,3 +1,5 @@
+#[path = "stream_xhttp_transport_tests/h2_receive_window.rs"]
+mod h2_receive_window;
 #[path = "stream_xhttp_transport_tests/split_download.rs"]
 mod split_download;
 use std::collections::VecDeque;
@@ -973,9 +975,18 @@ async fn h2_packet_up_retries_once_when_goaway_refuses_uncommitted_pooled_reques
                     }
                 }
             };
-            respond
-                .send_response(ok_response(), true)
-                .expect("send fresh packet response");
+            let mut response = respond.send_response(ok_response(), false).unwrap();
+            response.reserve_capacity(128 * 1024 + 1);
+            let capacity = std::future::poll_fn(|cx| response.poll_capacity(cx))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                capacity,
+                128 * 1024,
+                "retry must retain the configured stream window"
+            );
+            response.send_data(Bytes::new(), true).unwrap();
             fresh_record
                 .send((path, body))
                 .expect("fresh packet record receiver");
@@ -992,6 +1003,7 @@ async fn h2_packet_up_retries_once_when_goaway_refuses_uncommitted_pooled_reques
         unlimited_xmux(),
         5,
     );
+    let transport = h2_receive_window::with_window(transport, 128 * 1024);
     let mut stream = transport.open_stream_with_dial(dial).await.unwrap();
     timeout(DEADLINE, downlink_ready_rx)
         .await

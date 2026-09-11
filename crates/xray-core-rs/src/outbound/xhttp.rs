@@ -269,6 +269,7 @@ pub(super) fn xhttp_config(
     // headers, while the latter caps listener request heads. The H1/H2 client
     // engines retain their independent defensive 10 MiB response-head cap.
     XhttpConfig::normalize(XhttpConfigInput {
+        h2_stream_receive_window: settings.h2_stream_receive_window,
         mode: if is_reality
             && settings.download.is_some()
             && settings.mode == xray_config::XhttpMode::Auto
@@ -539,6 +540,40 @@ mod tests {
 
     fn config() -> Value {
         json!({"outbounds":[{"tag":"split","protocol":"vless","settings":{"vnext":[{"address":"upload.test","port":443,"users":[{"id":"00010203-0405-0607-0809-0a0b0c0d0e0f","encryption":"none"}]}]},"streamSettings":{"network":"xhttp","security":"none","xhttpSettings":{"downloadSettings":{"address":"download.test","port":8443,"network":"xhttp","security":"tls","tlsSettings":{"alpn":["h3"]},"xhttpSettings":{"path":"/down"}}}}}]})
+    }
+
+    #[test]
+    fn independent_h2_window_settings_compile_without_changing_other_carriers() {
+        for alpn in ["h2", "h3"] {
+            let mut raw = config();
+            let up = &mut raw["outbounds"][0]["streamSettings"]["xhttpSettings"];
+            up["h2StreamReceiveWindow"] = json!(1048576);
+            up["downloadSettings"]["tlsSettings"]["alpn"] = json!([alpn]);
+            up["downloadSettings"]["xhttpSettings"]["h2StreamReceiveWindow"] = json!(8388608);
+            let parsed = xray_config::parse_xray_json(&raw.to_string()).unwrap();
+            let outbound = build_vless_tcp_outbound(&parsed.config.outbounds[0]).unwrap();
+            let TransportLayer::Xhttp(up) = outbound.transport_layer() else {
+                panic!("XHTTP")
+            };
+            let down = &outbound.payload.download.as_ref().unwrap().transport;
+            assert_eq!(up.config().h2_stream_receive_window, 1048576);
+            assert_eq!(down.config().h2_stream_receive_window, 8388608);
+            assert_eq!(up.http_version(), XhttpHttpVersion::Http1);
+            assert_eq!(
+                down.http_version(),
+                if alpn == "h2" {
+                    XhttpHttpVersion::Http2
+                } else {
+                    XhttpHttpVersion::Http3
+                }
+            );
+            assert!(!up.shares_xmux_with(down));
+            if alpn == "h3" {
+                let diagnostics = down.h3_quic_config().diagnostics().unwrap();
+                assert_eq!(diagnostics.stream_receive_window, 2 * 1024 * 1024);
+                assert_eq!(diagnostics.connection_receive_window, 3 * 1024 * 1024);
+            }
+        }
     }
 
     #[test]

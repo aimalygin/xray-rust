@@ -25,10 +25,22 @@ use tokio::time::{Duration, Instant};
 
 use crate::BoxedTransportStream;
 
-/// Keeps one slow response from consuming the receive window shared by every
-/// XHTTP stream on the connection. Per-stream flow control remains at the
-/// HTTP/2 default, so an individual unread body is still tightly bounded.
-const CONNECTION_WINDOW_SIZE: u32 = 16 * 1024 * 1024;
+use super::config::{
+    h2_stream_receive_window, XhttpConfigError, DEFAULT_H2_STREAM_RECEIVE_WINDOW,
+    H2_CONNECTION_RECEIVE_WINDOW,
+};
+
+/// Matches x/net/http2's default stream receive credit. The HTTP/2 default
+/// (65,535 bytes) limits a download to about 4.6 Mbit/s at RTT 113 ms even
+/// when the connection window is larger (issue #28). Credit is replenished
+/// only as the caller reads; this does not eagerly allocate a 4 MiB buffer.
+const STREAM_WINDOW_SIZE: u32 = DEFAULT_H2_STREAM_RECEIVE_WINDOW;
+
+/// Aggregate unread DATA credit remains bounded at 16 MiB per connection.
+/// At the 4 MiB default, three full unread responses leave a complete stream
+/// window for other traffic. Four can exhaust it until a consumer reads or cancels;
+/// this is not an RSS bound (TLS, framing and application buffers add to it).
+const CONNECTION_WINDOW_SIZE: u32 = H2_CONNECTION_RECEIVE_WINDOW;
 
 /// Bounds the copy made by one [`AsyncWrite::poll_write`] call.
 const MAX_UPLOAD_DATA_BYTES: usize = 16 * 1024;
@@ -39,6 +51,8 @@ const PING_TIMEOUT: Duration = Duration::from_secs(15);
 /// HTTP/2 connection, request, and response failures.
 #[derive(Debug, Error)]
 pub enum H2Error {
+    #[error(transparent)]
+    Configuration(#[from] XhttpConfigError),
     #[error("HTTP/2 {context}: {source}")]
     Protocol {
         context: &'static str,
@@ -211,9 +225,20 @@ pub async fn connect_h2(io: BoxedTransportStream) -> Result<H2Client, H2Error> {
 /// like x/net/http2's zero `ReadIdleTimeout`. An unanswered PING retires the
 /// entire connection after x/net/http2's 15-second `PingTimeout`.
 pub async fn connect_h2_with_keepalive(
-    mut io: BoxedTransportStream,
+    io: BoxedTransportStream,
     read_idle: Option<Duration>,
 ) -> Result<H2Client, H2Error> {
+    connect_h2_with_receive_window(io, read_idle, STREAM_WINDOW_SIZE).await
+}
+
+/// Opens H2 with fixed per-stream receive credit and optional keepalive.
+/// Invalid windows fail before any handshake; connection credit stays 16 MiB.
+pub async fn connect_h2_with_receive_window(
+    mut io: BoxedTransportStream,
+    read_idle: Option<Duration>,
+    stream_receive_window: u32,
+) -> Result<H2Client, H2Error> {
+    let stream_receive_window = h2_stream_receive_window(Some(stream_receive_window))?;
     // XHTTP cannot use Vision direct mode, so retaining TLS record boundaries
     // after the stream has moved into h2 is pure overhead.
     io.release_record_alignment();
@@ -222,6 +247,7 @@ pub async fn connect_h2_with_keepalive(
     let (io, last_read) = WatchedIo::new(io, read_idle.is_some());
     let mut builder = client::Builder::new();
     builder
+        .initial_window_size(stream_receive_window)
         .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
         .initial_max_send_streams(1);
     let (send_request, mut connection) = builder

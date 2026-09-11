@@ -68,6 +68,9 @@ use xray_transport::{
 };
 use xray_tun::{TunEndpoint, TunError, TunStats};
 
+#[path = "runtime_data_path_tests/tun_download_backpressure.rs"]
+mod tun_download_backpressure;
+
 fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
     let mut matchers = IpMatcherSet::builder();
     matchers.insert_cidr(cidr.cidr(), false);
