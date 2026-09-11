@@ -359,8 +359,48 @@ The accepted `xhttpSettings` surface is:
 - packet/stream controls: `noGRPCHeader`, `noSSEHeader`,
   `scMaxEachPostBytes`, `scMinPostsIntervalMs`, `scMaxBufferedPosts`,
   `scStreamUpServerSecs`, and `serverMaxHeaderBytes`;
+- Rust-specific H2 receive credit: `h2StreamReceiveWindow`;
 - `xmux`, with `maxConcurrency`, `maxConnections`, `cMaxReuseTimes`,
   `hMaxRequestTimes`, `hMaxReusableSecs`, and `hKeepAlivePeriod`.
+
+`h2StreamReceiveWindow` is an optional **xray-rust extension**, in bytes.
+It accepts an integer from **65,535 through 16,777,216** inclusive. An absent
+field or `null` selects **4,194,304 bytes (4 MiB)**; zero, fractional numbers,
+strings and ranges are rejected. It controls the receive window of each
+HTTP/2 stream opened by this XHTTP carrier, in all XHTTP modes, including
+reused, rotated and replacement connections. It does not change upload
+credit, H1, H3, gRPC or the fixed **16 MiB connection receive window**.
+Go Xray-core does not implement this extension.
+
+For example, the following is a `streamSettings` fragment:
+
+```json
+{
+  "network": "xhttp",
+  "security": "tls",
+  "tlsSettings": { "serverName": "proxy.example", "alpn": ["h2"] },
+  "xhttpSettings": {
+    "path": "/split/",
+    "mode": "packet-up",
+    "h2StreamReceiveWindow": 4194304
+  }
+}
+```
+
+The same field is accepted under the legacy `splithttpSettings` alias.
+When `extra` is present, put the field **inside `extra`**: the usual
+replacement semantics apply and an outer value is discarded. An independent
+`downloadSettings` carrier uses its own `xhttpSettings.h2StreamReceiveWindow`;
+it does not inherit the upload carrier's override. H1/H3 carriers accept a
+valid value but do not use it.
+
+Larger values permit more unread data per stream; they do not eagerly
+allocate the entire window. At 8 MiB, two entirely unread streams can exhaust
+the 16 MiB connection credit; at 16 MiB, one can. This setting is not a
+process-memory budget, and separate H2 connections have separate limits.
+The 4 MiB default retains the issue #28 policy. See the
+[window audit](transport-window-audit.md) for measured tradeoffs and the
+[deferred protocol decisions](transport-window-followups.md).
 
 An empty `sessionIDTable` selects Xray's lowercase UUID v4 fallback. A non-empty
 table selects target-compatible custom IDs after Xray's ASCII, positive-length,

@@ -1079,11 +1079,7 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
             biased;
             () = wait_for_tun_shutdown(&mut shutdown) => false,
             () = &mut idle_sleep => false,
-            result = context.stack_tx.send(StackEvent::RemoteData {
-                handle,
-                generation,
-                data: response,
-            }) => result.is_ok(),
+            result = context.send_remote_data(handle, generation, response) => result.is_ok(),
         };
         if !sent {
             close_guard.abort().await;
@@ -1278,11 +1274,7 @@ pub(super) async fn bridge_dns_outbound_tcp_flow(
                     () = &mut idle_sleep => false,
                     result = timeout(
                         DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-                        context.stack_tx.send(StackEvent::RemoteData {
-                            handle,
-                            generation,
-                            data: response,
-                        }),
+                        context.send_remote_data(handle, generation, response),
                     ) => matches!(result, Ok(Ok(()))),
                 };
                 if !sent {
@@ -1440,11 +1432,7 @@ async fn bridge_preconnected_dns_outbound_transfer(
             () = wait_for_tun_shutdown(&mut shutdown) => false,
             result = timeout(
                 operation_timeout,
-                context.stack_tx.send(StackEvent::RemoteData {
-                    handle,
-                    generation,
-                    data: Bytes::copy_from_slice(&buffer[..read]),
-                }),
+                context.send_remote_data(handle, generation, Bytes::copy_from_slice(&buffer[..read])),
             ) => matches!(result, Ok(Ok(()))),
         };
         if !delivered {
@@ -1527,6 +1515,7 @@ struct RawDnsTcpHijackDeliveryTarget {
     handle: SocketHandle,
     generation: u64,
     stack_tx: mpsc::Sender<StackEvent>,
+    tcp_download_serial: Arc<tokio::sync::Mutex<()>>,
     shutdown: watch::Receiver<bool>,
     flow_cancel: watch::Receiver<bool>,
 }
@@ -1543,6 +1532,7 @@ impl RawDnsTcpHijackDeliveryTarget {
             handle,
             generation,
             stack_tx: context.stack_tx.clone(),
+            tcp_download_serial: context.tcp_download_serial.clone(),
             shutdown: shutdown.clone(),
             flow_cancel: flow_cancel.clone(),
         }
@@ -1591,6 +1581,7 @@ impl RawDnsTcpHijackLookups {
                 handle,
                 generation,
                 stack_tx,
+                tcp_download_serial,
                 mut shutdown,
                 mut flow_cancel,
             } = delivery_target;
@@ -1625,11 +1616,7 @@ impl RawDnsTcpHijackLookups {
                     () = wait_for_tun_shutdown(&mut flow_cancel) => RawDnsTcpIoResult::Shutdown,
                     result = timeout(
                         DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-                        stack_tx.send(StackEvent::RemoteData {
-                            handle,
-                            generation,
-                            data: response,
-                        }),
+                        send_remote_data(&stack_tx, &tcp_download_serial, handle, generation, response),
                     ) => match result {
                         Ok(Ok(())) => RawDnsTcpIoResult::Complete,
                         Ok(Err(_)) => RawDnsTcpIoResult::Failed,
@@ -3045,11 +3032,7 @@ async fn send_raw_dns_tcp_frame(
         () = wait_for_tun_shutdown(shutdown) => return RawDnsTcpIoResult::Shutdown,
         result = timeout(
             DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-            context.stack_tx.send(StackEvent::RemoteData {
-                handle,
-                generation,
-                data: frame,
-            }),
+            context.send_remote_data(handle, generation, frame),
         ) => result,
     };
     match result {
@@ -4588,6 +4571,7 @@ mod tests {
                 handle: SocketHandle::default(),
                 generation: 7,
                 stack_tx,
+                tcp_download_serial: Arc::new(tokio::sync::Mutex::new(())),
                 shutdown,
                 flow_cancel,
             },
@@ -5198,7 +5182,10 @@ mod tests {
             .unwrap()
             .unwrap();
         let StackEvent::RemoteData {
-            generation, data, ..
+            generation,
+            data,
+            delivery,
+            ..
         } = event
         else {
             panic!("hijack task must deliver DNS data directly");
@@ -5209,6 +5196,7 @@ mod tests {
             data.len() - 2
         );
         assert_eq!(&data[2..4], &0x400a_u16.to_be_bytes());
+        delivery.complete();
         assert_eq!(upload_state.pending_bytes(), frame.len());
 
         let completion = lookups.tasks.join_next().await.unwrap().unwrap();

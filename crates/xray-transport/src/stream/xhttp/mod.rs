@@ -33,7 +33,9 @@ pub mod test_only {
 /// pieces from this private module once its mode dispatch is wired.
 #[doc(hidden)]
 pub mod h2_test_only {
-    pub use super::h2::{connect_h2, connect_h2_with_keepalive, H2Client, H2Error};
+    pub use super::h2::{
+        connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, H2Client, H2Error,
+    };
 }
 
 /// HTTP/3 engine test surface. Production orchestration imports concrete

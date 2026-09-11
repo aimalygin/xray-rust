@@ -13,6 +13,17 @@ use thiserror::Error;
 
 use super::super::http_headers::HeaderMap;
 
+pub(crate) const DEFAULT_H2_STREAM_RECEIVE_WINDOW: u32 = 4 * 1024 * 1024;
+pub(crate) const H2_CONNECTION_RECEIVE_WINDOW: u32 = 16 * 1024 * 1024;
+
+pub(crate) fn h2_stream_receive_window(configured: Option<u32>) -> Result<u32, XhttpConfigError> {
+    let value = configured.unwrap_or(DEFAULT_H2_STREAM_RECEIVE_WINDOW);
+    if !(65_535..=H2_CONNECTION_RECEIVE_WINDOW).contains(&value) {
+        return Err(XhttpConfigError::InvalidH2StreamReceiveWindow(value));
+    }
+    Ok(value)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum XhttpScheme {
     Http,
@@ -192,6 +203,8 @@ impl Default for XhttpSessionIdConfig {
 /// resolve `mode: auto`.
 #[derive(Debug, Clone)]
 pub struct XhttpConfigInput {
+    /// Optional fixed H2 stream receive credit in bytes; None selects 4 MiB.
+    pub h2_stream_receive_window: Option<u32>,
     pub mode: XhttpModeSelection,
     pub is_reality: bool,
     pub path: String,
@@ -222,6 +235,7 @@ pub struct XhttpConfigInput {
 impl Default for XhttpConfigInput {
     fn default() -> Self {
         Self {
+            h2_stream_receive_window: None,
             mode: XhttpModeSelection::Auto,
             is_reality: false,
             path: String::new(),
@@ -253,6 +267,8 @@ impl Default for XhttpConfigInput {
 
 #[derive(Debug, Clone)]
 pub struct XhttpConfig {
+    /// Fixed H2 receive credit per stream. H1/H3 ignore this setting.
+    pub h2_stream_receive_window: u32,
     pub mode: XhttpMode,
     /// Decoded URL path with a leading slash. A trailing slash is added only
     /// when session or sequence metadata is placed in the path, matching
@@ -379,6 +395,7 @@ impl XhttpConfig {
         validate_generated_names(&padding, &session, &sequence, &uplink_data)?;
 
         Ok(Self {
+            h2_stream_receive_window: h2_stream_receive_window(input.h2_stream_receive_window)?,
             mode,
             path,
             raw_query: raw_query.to_owned(),
@@ -401,6 +418,8 @@ impl XhttpConfig {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum XhttpConfigError {
+    #[error("h2StreamReceiveWindow must be between 65535 and 16777216 bytes, got {0}")]
+    InvalidH2StreamReceiveWindow(u32),
     #[error("XHTTP authority must not be empty")]
     EmptyAuthority,
     #[error("XHTTP authority is not a valid host with an optional port")]

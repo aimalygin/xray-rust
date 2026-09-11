@@ -6378,6 +6378,7 @@ mod tests {
     #[test]
     fn every_xhttp_client_setting_reaches_the_dial_ready_policy() {
         let settings = XhttpSettings {
+            h2_stream_receive_window: Some(1024 * 1024),
             download: None,
             host: Some("cdn.example".to_owned()),
             path: "wire?existing=1#part".to_owned(),
@@ -6423,6 +6424,7 @@ mod tests {
         };
 
         let config = xhttp_config(&settings, false).unwrap();
+        assert_eq!(config.h2_stream_receive_window, 1024 * 1024);
         assert_eq!(config.mode, xray_transport::stream::XhttpMode::StreamUp);
         assert_eq!(config.path, "/wire");
         assert_eq!(config.raw_query, "existing=1");
