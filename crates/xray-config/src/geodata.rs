@@ -22,7 +22,7 @@ const MAX_GEODATA_DOMAINS: usize = 200_000;
 const MAX_GEODATA_DOMAIN_ATTRIBUTES: usize = 400_000;
 const MAX_GEODATA_DOMAIN_VALUE_SIZE: usize = 4 * 1024;
 const MAX_GEODATA_ATTRIBUTE_SIZE: usize = 1024;
-const MAX_GEODATA_CIDRS: usize = 250_000;
+const MAX_GEODATA_CIDRS: usize = 500_000;
 const MAX_GEODATA_CIDR_SIZE: usize = 128;
 
 #[derive(Debug)]
