@@ -44,6 +44,94 @@ fn ffi_reports_current_abi_version() {
 }
 
 #[test]
+fn ffi_wireguard_rebind_validates_outputs_and_keeps_idle_outbounds_lazy() {
+    use xray_ffi::xray_core_rebind_wireguard;
+    unsafe {
+        let mut error = std::ptr::null_mut();
+        let mut accepted = 99;
+        assert_eq!(
+            xray_core_rebind_wireguard(std::ptr::null_mut(), &mut accepted, &mut error),
+            XrayStatus::NullArgument
+        );
+        assert_eq!(accepted, 0);
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let handle = xray_core_new(&mut error);
+        assert_eq!(
+            xray_core_rebind_wireguard(handle, std::ptr::null_mut(), &mut error),
+            XrayStatus::NullArgument
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        assert_eq!(
+            xray_core_rebind_wireguard(handle, &mut accepted, &mut error),
+            XrayStatus::CoreNotLoaded
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let config = CString::new(
+            r#"{"inbounds":[{"protocol":"tun"}],"outbounds":[{"protocol":"freedom"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(
+            xray_core_rebind_wireguard(handle, &mut accepted, &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(accepted, 0);
+        assert!(error.is_null());
+        xray_core_free(handle);
+    }
+}
+
+#[test]
+fn ffi_hysteria_rebind_validates_outputs_and_keeps_idle_outbounds_lazy() {
+    use xray_ffi::xray_core_rebind_hysteria;
+    unsafe {
+        let mut error = std::ptr::null_mut();
+        let mut accepted = 99;
+        assert_eq!(
+            xray_core_rebind_hysteria(std::ptr::null_mut(), &mut accepted, &mut error),
+            XrayStatus::NullArgument
+        );
+        assert_eq!(accepted, 0);
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let handle = xray_core_new(&mut error);
+        assert_eq!(
+            xray_core_rebind_hysteria(handle, std::ptr::null_mut(), &mut error),
+            XrayStatus::NullArgument
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        assert_eq!(
+            xray_core_rebind_hysteria(handle, &mut accepted, &mut error),
+            XrayStatus::CoreNotLoaded
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let config = CString::new(
+            r#"{"inbounds":[{"protocol":"tun"}],"outbounds":[{"protocol":"freedom"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(
+            xray_core_rebind_hysteria(handle, &mut accepted, &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(accepted, 0);
+        assert!(error.is_null());
+        xray_core_free(handle);
+    }
+}
+
+#[test]
 fn ffi_reports_exact_current_capabilities() {
     let expected = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
         | XRAY_FFI_CAPABILITY_GEODATA_SEARCH

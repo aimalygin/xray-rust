@@ -14,30 +14,37 @@ use std::{
 };
 use tokio::{
     net::UdpSocket,
-    sync::{mpsc, Notify},
+    sync::{mpsc, watch, Notify},
 };
 use xray_transport::SocketProtector;
 fn closed() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "WireGuard closed")
 }
 
+#[derive(Clone)]
 pub(crate) struct Factory {
     pub(crate) ipv4: bool,
     pub(crate) ipv6: bool,
     pub(crate) protector: Option<Arc<dyn SocketProtector>>,
     pub(crate) protection_failed: Arc<AtomicBool>,
     pub(crate) stop: Stop,
+    pub(crate) carrier: watch::Sender<Option<Arc<Sockets>>>,
 }
+pub(crate) type Sockets = [Option<Arc<UdpSocket>>; 2];
+
 #[derive(Clone)]
 pub(crate) struct Udp {
-    sockets: [Option<Arc<UdpSocket>>; 2],
+    carrier: watch::Receiver<Option<Arc<Sockets>>>,
     next: usize,
+    // Populated only by the receive half; cloned send handles hold no retired sockets.
+    receiving: Option<Arc<Sockets>>,
+    previous: Option<(Arc<Sockets>, tokio::time::Instant)>,
     stop: Stop,
 }
-impl UdpTransportFactory for Factory {
-    type Send = Udp;
-    type Recv = Udp;
-    async fn bind(&mut self, _: &UdpTransportFactoryParams) -> io::Result<(Udp, Udp)> {
+impl Factory {
+    /// Publish a complete, protected socket set in one step. The engine and its
+    /// sessions keep running; the receive half drains one retired set briefly.
+    pub(crate) fn rebind(&self) -> io::Result<()> {
         if self.stop.is_closed() {
             return Err(closed());
         }
@@ -78,9 +85,20 @@ impl UdpTransportFactory for Factory {
             socket.set_nonblocking(true)?;
             sockets[index] = Some(Arc::new(UdpSocket::from_std(socket)?));
         }
+        self.carrier.send_replace(Some(Arc::new(sockets)));
+        Ok(())
+    }
+}
+impl UdpTransportFactory for Factory {
+    type Send = Udp;
+    type Recv = Udp;
+    async fn bind(&mut self, _: &UdpTransportFactoryParams) -> io::Result<(Udp, Udp)> {
+        self.rebind()?;
         let udp = Udp {
-            sockets,
+            carrier: self.carrier.subscribe(),
             next: 0,
+            receiving: None,
+            previous: None,
             stop: self.stop.clone(),
         };
         Ok((udp.clone(), udp))
@@ -89,7 +107,8 @@ impl UdpTransportFactory for Factory {
 impl UdpSend for Udp {
     type SendManyBuf = ();
     async fn send_to(&self, packet: Packet, destination: SocketAddr) -> io::Result<()> {
-        let socket = self.sockets[usize::from(destination.is_ipv6())]
+        let sockets = self.carrier.borrow().as_ref().ok_or_else(closed)?.clone();
+        let socket = sockets[usize::from(destination.is_ipv6())]
             .as_ref()
             .ok_or_else(|| {
                 io::Error::new(
@@ -110,23 +129,59 @@ impl UdpRecv for Udp {
     type RecvManyBuf = ();
     async fn recv_from(&mut self, pool: &mut PacketBufPool) -> io::Result<(Packet, SocketAddr)> {
         let mut packet = pool.get();
-        let (n, source) = tokio::select! { biased;
-            _ = self.stop.cancelled() => return Err(closed()),
-            result = std::future::poll_fn(|cx| {
-                // One shared packet buffer, with alternating family priority.
-                // Polling both sockets also registers both readiness wakers.
-                for offset in 0..2 {
-                    let index = (self.next + offset) % 2;
-                    if let Some(socket) = &self.sockets[index] {
-                        let mut buf = tokio::io::ReadBuf::new(&mut packet);
-                        if let std::task::Poll::Ready(result) = socket.poll_recv_from(cx, &mut buf) {
-                            self.next = 1 - index;
-                            return std::task::Poll::Ready(result.map(|source| (buf.filled().len(), source)));
+        let (n, source) = loop {
+            // Observe each published socket set even if replacement raced with
+            // the previous recv call. Keep at most one old set for a bounded
+            // drain: an authenticated reply can still be in flight to its port.
+            let sockets = self
+                .carrier
+                .borrow_and_update()
+                .as_ref()
+                .ok_or_else(closed)?
+                .clone();
+            if self
+                .receiving
+                .as_ref()
+                .is_some_and(|old| !Arc::ptr_eq(old, &sockets))
+            {
+                self.previous = self.receiving.take().map(|old| {
+                    (
+                        old,
+                        tokio::time::Instant::now() + std::time::Duration::from_secs(3),
+                    )
+                });
+            }
+            self.receiving = Some(sockets.clone());
+            let expires = self.previous.as_ref().map(|(_, expires)| *expires);
+            if expires.is_some_and(|expires| expires <= tokio::time::Instant::now()) {
+                self.previous = None;
+                continue;
+            }
+            tokio::select! { biased;
+                _ = self.stop.cancelled() => return Err(closed()),
+                result = self.carrier.changed() => { result.map_err(|_| closed())?; },
+                _ = async { match expires {
+                    Some(expires) => tokio::time::sleep_until(expires).await,
+                    None => std::future::pending().await,
+                }} => { self.previous = None; },
+                result = std::future::poll_fn(|cx| {
+                    // Prefer the new carrier; alternate family priority. Old
+                    // packets still pass the engine's authentication/replay checks.
+                    for sockets in std::iter::once(&sockets).chain(self.previous.as_ref().map(|(sockets, _)| sockets)) {
+                        for offset in 0..2 {
+                            let index = (self.next + offset) % 2;
+                            if let Some(socket) = &sockets[index] {
+                                let mut buf = tokio::io::ReadBuf::new(&mut packet);
+                                if let std::task::Poll::Ready(result) = socket.poll_recv_from(cx, &mut buf) {
+                                    self.next = 1 - index;
+                                    return std::task::Poll::Ready(result.map(|source| (buf.filled().len(), source)));
+                                }
+                            }
                         }
                     }
-                }
-                std::task::Poll::Pending
-            }) => result?,
+                    std::task::Poll::Pending
+                }) => break result?,
+            }
         };
         packet.truncate(n);
         Ok((packet, source))

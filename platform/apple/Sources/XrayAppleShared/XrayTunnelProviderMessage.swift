@@ -23,6 +23,11 @@ public enum XrayTunnelProviderMessage {
     public static let providerGeodataRelativeDirectoryKey = "geodataRelativeDirectory"
     public static let statsRequest = "stats"
     public static let closeConnectionsRequest = "close-connections"
+#if DEBUG
+    public static let protocolProbeNetworkEventsRequest = "v07-network-events"
+    public static let protocolProbeConnectionIDsRequest = "v07-connection-ids"
+    public static let protocolProbeCloseConnectionIDsRequest = "v07-close-connection-ids"
+#endif
 
     public static func encodeStatsResponse(_ stats: XrayClientRuntimeStats) throws -> Data {
         try JSONEncoder().encode(stats)

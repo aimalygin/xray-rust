@@ -637,9 +637,45 @@ and redacted errors. [Independent native Hysteria checks](v07-native-hysteria-in
 now pin the official v2.12.2 server and gate transport/core TCP, UDP and routed DNS,
 including its documented UDP reply-size limitation. [Direct official WireGuard
 checks](v07-native-wireguard-interop.md) now cover TCP/UDP, wrong keys/PSK,
-peer isolation, MTU boundaries and core/TUN/DNS paths without Xray. Broader
-roaming/rekey/replay coverage, application integration and physical-device
-acceptance remain release work.
+peer isolation, MTU boundaries and core/TUN/DNS paths without Xray. Direct lifecycle
+checks additionally cover authenticated server-port changes, replay/bad-tag
+rejection, persistent keepalive, real-time rekey and existing UDP flows across
+a server restart. Broader network transitions, key-expiry/PMTU and TCP crash
+cases, application integration and broader physical-device acceptance remain release work.
+A [bounded iPhone 13 check](device-results/2026-09-13-iphone13-v07/README.md)
+now covers both protocols over Wi-Fi: IPv4/IPv6 TCP/UDP, DNS, three start/stop
+cycles per protocol, connection closure and same-tunnel recovery. It found and
+fixed an iOS build guard and an unusable IPv6 `/128` interface prefix. This is
+short development evidence. A subsequent [iPhone 17 Pro Max campaign](device-results/2026-09-13-iphone17-v07/README.md)
+passed bounded Hysteria 2 Wi-Fi/cellular/Wi-Fi recovery and Wi-Fi lock/wake for
+both protocols, but WireGuard repeatedly failed to recover cellular traffic
+within 45 seconds. The [2026-09-14 carrier-rebind fix](device-results/2026-09-14-iphone17-wireguard-rebind/README.md)
+then passed WireGuard Wi-Fi/cellular/Wi-Fi and lock/wake on the same iPhone: full
+traffic checks completed in 12.13/6.25/5.28 seconds respectively. This resolves
+the reproduced blocker in that bounded scenario, not all carrier conditions.
+The [Hysteria carrier-migration fix](device-results/2026-09-14-iphone17-hysteria-rebind/README.md)
+then reduced the observed cellular traffic check from 34.07 seconds with three
+retries to 3.81/3.65 seconds without retries in two runs. The final
+repeat also verifies closure by connection ID, since aggregate UDP counts can
+include fresh background/DNS work. The final return to Wi-Fi needed one retry
+in the UDP check and 15.08 seconds overall, although TCP was already working;
+the remaining variability prompted further investigation. The [2026-09-15 Apple observer fix](device-results/2026-09-15-iphone17-hysteria-udp/README.md)
+filters duplicate physical-path updates and cancels pending work while offline.
+Two full Hysteria device sequences then passed with Wi-Fi return in
+2.79/2.78 seconds and no UDP retries; 167 Swift tests and Debug/Release builds pass.
+The [WireGuard regression on the same build](device-results/2026-09-15-iphone17-wireguard-observer/README.md)
+also passed Wi-Fi/cellular/Wi-Fi and lock/wake in two runs. The first run's full traffic checks took
+8.90/15.68/5.86 seconds respectively, with one TCP retry on return to Wi-Fi. The repeat's Wi-Fi
+return took 16.36 seconds with one retry. That reproduced delay led to the
+[WireGuard recovery fix](device-results/2026-09-15-iphone17-wireguard-recovery/README.md):
+retain sessions and briefly drain the previous socket, and keep the shared TUN
+TCP bridge responsive to download/cancellation during blocked upload. The final
+iPhone sequence passed with cellular/Wi-Fi/unlock checks in 6.38/4.48/5.51 seconds,
+no retries, and all seven requested connections closed in 2.05 seconds. Three
+Hysteria smoke cycles passed on the same build. Bounded host reproductions and
+regressions pass; the report preserves the failed intermediate trial. This is
+bounded device acceptance, not universal loss-free handover. Broader recovery-
+latency, load, carrier/fault and Android device coverage remain pending.
 
 Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
 matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed

@@ -74,9 +74,16 @@ struct Owner {
     stop: Stop,
     finished: watch::Receiver<bool>,
     wake: Arc<Notify>,
+    rebind: Arc<RebindRequest>,
     tcp: Arc<Semaphore>,
     udp: Arc<Semaphore>,
     next: AtomicU64,
+}
+
+#[derive(Default)]
+struct RebindRequest {
+    pending: AtomicBool,
+    wake: Notify,
 }
 impl Drop for Owner {
     fn drop(&mut self) {
@@ -125,19 +132,21 @@ impl Client {
             peer.keepalive = (settings.keepalive != 0).then_some(settings.keepalive);
             peer
         });
+        let carrier = transport::Factory {
+            ipv4: config.peers.iter().any(|p| p.endpoint.is_ipv4()),
+            ipv6: config.peers.iter().any(|p| p.endpoint.is_ipv6()),
+            protector,
+            stop: stop.clone(),
+            protection_failed: protection_failed.clone(),
+            carrier: watch::channel(None).0,
+        };
         let mut device = gotatun::device::DeviceBuilder::new()
             .with_limits(gotatun::device::DeviceLimits::mobile())
             .with_private_key(x25519_dalek::StaticSecret::from(
                 *config.secret_key.expose_bytes(),
             ))
             .with_peers(peers)
-            .with_udp(transport::Factory {
-                ipv4: config.peers.iter().any(|p| p.endpoint.is_ipv4()),
-                ipv6: config.peers.iter().any(|p| p.endpoint.is_ipv6()),
-                protector,
-                stop: stop.clone(),
-                protection_failed: protection_failed.clone(),
-            })
+            .with_udp(carrier.clone())
             .with_ip_pair(
                 transport::IpTx {
                     tx: ip_tx,
@@ -161,13 +170,27 @@ impl Client {
             })?;
         let (finished, done) = watch::channel(false);
         let task_stop = stop.clone();
+        let rebind = Arc::new(RebindRequest::default());
+        let rebind_request = rebind.clone();
         tokio::spawn(async move {
-            tokio::select! { biased;
-                _ = task_stop.cancelled() => {},
-                _ = stack.run(task_stop.clone()) => {},
-                _ = device.wait() => {},
+            // Keep both the inner stack and engine alive while replacing sockets.
+            // Notify coalesces repeated path updates instead of queueing work.
+            let mut stack_task = Box::pin(stack.run(task_stop.clone()));
+            loop {
+                tokio::select! { biased;
+                    _ = task_stop.cancelled() => break,
+                    _ = &mut stack_task => break,
+                    _ = device.wait() => break,
+                    _ = rebind_request.wake.notified() => {
+                        rebind_request.pending.store(false, Ordering::Release);
+                        if task_stop.is_closed() || carrier.rebind().is_err() {
+                            break;
+                        }
+                    },
+                }
             }
             task_stop.close();
+            drop(stack_task);
             device.stop().await;
             finished.send_replace(true);
         });
@@ -179,6 +202,7 @@ impl Client {
             stop,
             finished: done,
             wake,
+            rebind,
             tcp: Arc::new(Semaphore::new(TCP_LIMIT)),
             udp: Arc::new(Semaphore::new(UDP_LIMIT)),
             next: AtomicU64::new(1),
@@ -186,6 +210,19 @@ impl Client {
     }
     pub fn is_live(&self) -> bool {
         !self.0.stop.is_closed()
+    }
+    /// Requests fresh protected carrier sockets while retaining WireGuard
+    /// sessions, pending packets, the inner stack and its flows. This does not resolve endpoints.
+    /// A bind/protection failure closes the client; no old socket is reused.
+    /// Returns whether the live client accepted the coalesced request.
+    pub fn rebind(&self) -> bool {
+        if !self.is_live() {
+            return false;
+        }
+        if !self.0.rebind.pending.swap(true, Ordering::AcqRel) {
+            self.0.rebind.wake.notify_one();
+        }
+        true
     }
     pub fn close(&self) {
         self.0.stop.close();

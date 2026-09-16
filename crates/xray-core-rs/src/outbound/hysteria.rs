@@ -18,6 +18,7 @@ struct SessionOwner {
     session: Mutex<Option<CachedSession>>,
     connecting: AsyncMutex<()>,
     closed: AtomicBool,
+    network_generation: std::sync::atomic::AtomicU64,
     shutdown: tokio::sync::watch::Sender<bool>,
 }
 
@@ -93,6 +94,7 @@ impl HysteriaOutbound {
                 session: Mutex::new(None),
                 connecting: AsyncMutex::new(()),
                 closed: AtomicBool::new(false),
+                network_generation: std::sync::atomic::AtomicU64::new(0),
                 shutdown: tokio::sync::watch::channel(false).0,
             }),
         })
@@ -110,6 +112,14 @@ impl HysteriaOutbound {
         {
             client.client.close();
         }
+    }
+
+    pub(super) fn rebind(&self) -> bool {
+        let cached = self.inner.session.lock().unwrap_or_else(|e| e.into_inner());
+        self.inner.network_generation.fetch_add(1, Ordering::AcqRel);
+        cached
+            .as_ref()
+            .is_some_and(|session| session.client.rebind())
     }
 
     async fn client(
@@ -159,6 +169,7 @@ impl HysteriaOutbound {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());
             config.auth = self.inner.auth.auth.clone();
             // Give later DNS candidates a chance within the total operation deadline.
+            let generation = self.inner.network_generation.load(Ordering::Acquire);
             let attempt = tokio::time::timeout(
                 Duration::from_secs(3),
                 HysteriaClient::connect(config, dialer.tls_connector()),
@@ -170,6 +181,11 @@ impl HysteriaOutbound {
                     if self.inner.closed.load(Ordering::Acquire) {
                         client.close();
                         return Err(HysteriaError::Closed.into());
+                    }
+                    // A usable-path update during auth/socket creation must
+                    // also reach a client that was not cached at that instant.
+                    if self.inner.network_generation.load(Ordering::Acquire) != generation {
+                        client.rebind();
                     }
                     *cached = Some(CachedSession {
                         client: client.clone(),

@@ -307,6 +307,24 @@ XrayStatus xray_core_close_connection(
     XrayCoreHandle *handle,
     uint64_t connection_id,
     XrayError **error);
+/* ABI 1.6. Queue fresh protected WireGuard carrier sockets after an OS network
+ * change. Retains sessions, pending packets, endpoints and inner flows; no DNS
+ * refresh. accepted is required and counts coalesced requests, not completed
+ * socket replacements. Bind/protection failure closes the affected client. Concurrent
+ * with data-path calls, but not lifecycle/free calls. Lazy clients stay lazy. */
+XrayStatus xray_core_rebind_wireguard(
+    XrayCoreHandle *handle,
+    uint64_t *accepted,
+    XrayError **error);
+/* ABI 1.7. Queue a fresh protected Hysteria carrier socket after an OS network
+ * change. Retains current endpoints, QUIC connection and inner flows; no DNS
+ * refresh. accepted is required and counts accepted requests, not completed
+ * path validation. Bind/protection failure closes the affected client.
+ * Concurrent with data-path calls, but not lifecycle/free. Lazy clients stay lazy. */
+XrayStatus xray_core_rebind_hysteria(
+    XrayCoreHandle *handle,
+    uint64_t *accepted,
+    XrayError **error);
 XrayStatus xray_core_set_socket_protect_callback(
     XrayCoreHandle *handle,
     XraySocketProtectCallback callback,

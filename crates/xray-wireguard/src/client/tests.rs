@@ -132,3 +132,88 @@ fn reply_packet(
     tcp.fill_checksum(&source, &dest);
     Packet::from_bytes(bytes).try_into_ip().unwrap()
 }
+
+#[tokio::test]
+async fn idle_carrier_receive_follows_rebind_and_releases_old_sockets() {
+    use crate::io::Factory;
+    use gotatun::{
+        packet::PacketBufPool,
+        udp::{UdpRecv, UdpSend, UdpTransportFactory, UdpTransportFactoryParams},
+    };
+    use std::future::Future;
+    use tokio::{net::UdpSocket, time::timeout};
+    timeout(Duration::from_secs(10), async {
+        for ip in ["127.0.0.1", "::1"] {
+            let remote = UdpSocket::bind((ip, 0)).await.unwrap();
+            let mut factory = Factory {
+                ipv4: true,
+                ipv6: true,
+                protector: None,
+                protection_failed: Arc::new(AtomicBool::new(false)),
+                stop: Stop::new(),
+                carrier: watch::channel(None).0,
+            };
+            let (send, mut receive) = factory
+                .bind(&UdpTransportFactoryParams {
+                    addr: None,
+                    port: 0,
+                    #[cfg(target_os = "linux")]
+                    fwmark: None,
+                })
+                .await
+                .unwrap();
+            let old = Arc::downgrade(factory.carrier.borrow().as_ref().unwrap());
+            let mut bytes = [0; 32];
+            send.send_to(
+                Packet::from_bytes(bytes::BytesMut::from(&b"old request"[..])),
+                remote.local_addr().unwrap(),
+            )
+            .await
+            .unwrap();
+            let (_, old_address) = remote.recv_from(&mut bytes).await.unwrap();
+            let mut pool = PacketBufPool::new(1);
+            let mut pending = Box::pin(receive.recv_from(&mut pool));
+            std::future::poll_fn(|cx| {
+                assert!(
+                    pending.as_mut().poll(cx).is_pending(),
+                    "no old socket traffic"
+                );
+                Poll::Ready(())
+            })
+            .await;
+            factory.rebind().unwrap();
+            send.send_to(
+                Packet::from_bytes(bytes::BytesMut::from(&b"new socket"[..])),
+                remote.local_addr().unwrap(),
+            )
+            .await
+            .unwrap();
+            let mut bytes = [0; 32];
+            let (n, address) = remote.recv_from(&mut bytes).await.unwrap();
+            assert_eq!(&bytes[..n], b"new socket");
+            remote
+                .send_to(b"reply on new socket", address)
+                .await
+                .unwrap();
+            let (packet, _) = pending.await.unwrap();
+            assert_eq!(&packet[..], b"reply on new socket");
+            remote
+                .send_to(b"delayed old reply", old_address)
+                .await
+                .unwrap();
+            let (packet, _) = receive.recv_from(&mut pool).await.unwrap();
+            assert_eq!(&packet[..], b"delayed old reply");
+            assert!(
+                timeout(Duration::from_millis(3200), receive.recv_from(&mut pool))
+                    .await
+                    .is_err()
+            );
+            assert!(
+                old.upgrade().is_none(),
+                "retired socket set must expire even without traffic"
+            );
+        }
+    })
+    .await
+    .expect("idle receive must wake on carrier replacement");
+}

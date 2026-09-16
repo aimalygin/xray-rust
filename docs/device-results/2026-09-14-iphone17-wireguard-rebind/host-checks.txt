@@ -1,0 +1,35 @@
+Local verification on 2026-09-14 (macOS arm64, Rust 1.96.0, Xcode 27.0).
+
+bash scripts/check-native-wireguard-interop.sh
+PASS: source/module guards, official wireguard-go reference tests, 18 Rust live cases.
+  interop 4; multi-peer 2; native lifecycle 4; network change 2;
+  core runtime data path 2; WireGuard runtime 4.
+  Network change tests: existing TCP/UDP flows survive both rebind bursts in
+  each outer IP family; replacement protection failure closes client/flows.
+
+cargo test --locked -p xray-core-rs --lib outbound::wireguard::tests
+PASS: 4 tests, including notification during first-socket protection.
+
+cargo test --locked -p xray-ffi --test ffi_tests --test mobile_artifacts_tests
+FFI PASS: 85 tests. The first artifact run had 29 pass and 1 failure: an old
+source guard expected interface prefix /128, while the prior device fix uses
+/120. The separate outer-server /128 exclusion checks were left intact.
+
+cargo test --locked -p xray-ffi --test mobile_artifacts_tests
+FINAL PASS: 30 tests, including compiled C header and native staticlib exports.
+
+MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --locked -p xray-ffi --release --target aarch64-apple-darwin
+PASS. A local macOS-only XCFramework was assembled from this library and current
+headers for the following Swift run; no full multi-platform SDK build is claimed.
+
+swift test --disable-sandbox --package-path platform/apple --filter 'XrayPacketTunnelPumpTests|XrayPacketTunnelProviderTests|XrayPacketTunnelNetworkObserverTests'
+PASS: 29 pump + 133 provider + 2 observer = 164 selected tests; no build warnings.
+
+cargo fmt --all -- --check
+PASS.
+cargo clippy --locked -p xray-wireguard -p xray-core-rs -p xray-ffi --tests -- -D warnings
+PASS.
+git diff --check
+PASS.
+
+No Linux CI, Android device or complete workspace regression result is claimed.

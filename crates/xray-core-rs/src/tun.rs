@@ -3332,6 +3332,39 @@ where
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
     let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
+    // Upload must stay pollable beside download and cancellation. Awaiting a
+    // batch inside a select branch deadlocks bounded duplex transports when
+    // their receive buffers fill, and prevents host-close from being observed.
+    let upload_activity = tokio::sync::Notify::new();
+    let upload = async {
+        while let Some(data) = from_stack.recv().await {
+            if !client_upload_allowed {
+                return;
+            }
+            let write = await_with_optional_timeout(
+                operation_timeout,
+                write_stack_batch_to_remote(
+                    remote_writer,
+                    target,
+                    outbound_tag,
+                    data,
+                    &mut from_stack,
+                    context.tun.as_ref(),
+                    upload_policy,
+                    &mut upload_batch,
+                    &mut upload_reservations,
+                    Some(traffic.as_ref()),
+                ),
+            )
+            .await;
+            if !matches!(write, Some(Ok(()))) {
+                context.tun.record_tcp_remote_write_error();
+                return;
+            }
+            upload_activity.notify_one();
+        }
+    };
+    tokio::pin!(upload);
     let idle_sleep = tokio::time::sleep(idle_timeout);
     tokio::pin!(idle_sleep);
 
@@ -3355,36 +3388,9 @@ where
                 break TcpBridgeTermination::HostClosed;
             }
             () = &mut idle_sleep => break TcpBridgeTermination::Graceful,
-            data = from_stack.recv() => {
-                let Some(data) = data else {
-                    break TcpBridgeTermination::Graceful;
-                };
-                if !client_upload_allowed {
-                    break TcpBridgeTermination::Graceful;
-                }
-                let write = await_with_optional_timeout(
-                    operation_timeout,
-                    write_stack_batch_to_remote(
-                        remote_writer,
-                        target,
-                        outbound_tag,
-                        data,
-                        &mut from_stack,
-                        context.tun.as_ref(),
-                        upload_policy,
-                        &mut upload_batch,
-                        &mut upload_reservations,
-                        Some(traffic.as_ref()),
-                    ),
-                )
-                .await;
-                if !matches!(write, Some(Ok(()))) {
-                    context.tun.record_tcp_remote_write_error();
-                    break TcpBridgeTermination::Graceful;
-                }
-                idle_sleep
-                    .as_mut()
-                    .reset(TokioInstant::now() + idle_timeout);
+            () = &mut upload => break TcpBridgeTermination::Graceful,
+            () = upload_activity.notified() => {
+                idle_sleep.as_mut().reset(TokioInstant::now() + idle_timeout);
             }
             delivered = async { pending_download.as_mut().expect("pending download").await }, if pending_download.is_some() => {
                 pending_download = None;

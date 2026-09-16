@@ -11,6 +11,7 @@ struct Owner {
     session: Mutex<Option<Cached>>,
     connecting: tokio::sync::Mutex<()>,
     shutdown: tokio::sync::watch::Sender<bool>,
+    network_generation: std::sync::atomic::AtomicU64,
 }
 struct Cached {
     client: Client,
@@ -51,6 +52,7 @@ impl WireguardOutbound {
             session: Mutex::new(None),
             connecting: tokio::sync::Mutex::new(()),
             shutdown: tokio::sync::watch::channel(false).0,
+            network_generation: std::sync::atomic::AtomicU64::new(0),
         })))
     }
     pub(super) fn close(&self) {
@@ -60,6 +62,11 @@ impl WireguardOutbound {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
+    }
+    pub(super) fn rebind(&self) -> bool {
+        let slot = self.0.session.lock().unwrap_or_else(|e| e.into_inner());
+        self.0.network_generation.fetch_add(1, Ordering::AcqRel);
+        slot.as_ref().is_some_and(|cached| cached.client.rebind())
     }
     async fn bounded<T>(
         &self,
@@ -112,11 +119,17 @@ impl WireguardOutbound {
                 .next()
                 .ok_or(Error::NoRoute)?;
         }
+        let generation = self.0.network_generation.load(Ordering::Acquire);
         let client = Client::start(config, protector.clone()).await?;
         let mut slot = self.0.session.lock().unwrap_or_else(|e| e.into_inner());
         if *self.0.shutdown.borrow() {
             client.close();
             return Err(Error::Closed.into());
+        }
+        // A path notification may arrive while socket creation is in flight,
+        // before the candidate is visible to rebind(). Do not lose that update.
+        if self.0.network_generation.load(Ordering::Acquire) != generation {
+            client.rebind();
         }
         *slot = Some(Cached {
             client: client.clone(),

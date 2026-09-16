@@ -1,0 +1,27 @@
+macOS arm64, 2026-09-14; Rust 1.96.0, Go 1.26.5, Xcode 27.0 / 27A266a.
+
+PASS: cargo test --locked -p xray-transport --test hysteria_client_tests
+11 tests, including host-thread rebind and replacement protection failure.
+PASS: bash scripts/check-native-hysteria-interop.sh
+Official native Hysteria app/v2.12.2 clean-source guards; 9 live transport/core
+scenarios plus 4 core unit tests (including notification during authentication).
+PASS: bash scripts/check-hysteria-interop.sh
+Pinned Xray v26.7.28 source guard; 7 live transport/core scenarios plus 4 core
+unit tests. Both references run the lost-carrier test with two real QUIC peer
+address changes while preserving the same TCP stream and UDP session.
+PASS: cargo test --locked -p xray-ffi --test ffi_tests --test mobile_artifacts_tests
+86 FFI + 30 mobile artifact tests, including C compile and staticlib exports.
+PASS: cargo clippy --locked -p xray-transport -p xray-core-rs -p xray-ffi --tests -- -D warnings
+PASS: cargo fmt --all -- --check
+PASS: bash -n scripts/check-hysteria-interop.sh scripts/check-native-hysteria-interop.sh
+PASS: git diff --check
+PASS: IPHONEOS_DEPLOYMENT_TARGET=15.0 cargo build --locked -p xray-ffi --release --target aarch64-apple-ios
+PASS: MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --locked -p xray-ffi --release --target aarch64-apple-darwin
+PASS: local XCFramework (iOS arm64 + macOS arm64) assembled with current headers.
+PASS: swift test --disable-sandbox --package-path platform/apple --filter 'XrayPacketTunnelPumpTests|XrayPacketTunnelProviderTests|XrayPacketTunnelNetworkObserverTests'
+164 selected tests: 29 pump, 133 provider, 2 observer; no build warnings.
+PASS: signed Debug XrayClient/XrayClient.Tunnel device build and installation.
+Only AppIntents metadata extraction notices; no AppIntents dependency present.
+
+The physical run uses the hashed fresh iOS library and signed app/extension.
+No full multi-platform artifact, Linux CI or Android device acceptance claimed.

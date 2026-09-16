@@ -167,3 +167,6 @@ async fn pinned_reference_rejects_wrong_auth_and_closes_failed_tcp_destination()
     assert!(client.is_live());
     client.close();
 }
+
+#[path = "hysteria/network_change.rs"]
+mod network_change;

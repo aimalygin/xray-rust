@@ -2759,6 +2759,28 @@ impl OutboundFactory {
         }
     }
 
+    pub(crate) fn rebind_hysteria(&self) -> u64 {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return 0;
+        }
+        self.entries
+            .iter()
+            .filter(|entry| matches!(entry.hysteria.get(), Some(Ok(outbound)) if outbound.rebind()))
+            .count() as u64
+    }
+
+    pub(crate) fn rebind_wireguard(&self) -> u64 {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return 0;
+        }
+        self.entries
+            .iter()
+            .filter(
+                |entry| matches!(entry.wireguard.get(), Some(Ok(outbound)) if outbound.rebind()),
+            )
+            .count() as u64
+    }
+
     fn compile_tcp_outbound(
         &self,
         node: OutboundNodeId,

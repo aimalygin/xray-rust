@@ -7,18 +7,23 @@ SHA-256: `2a2745851b2989b6d388330b3b9ccfa180ecd12260014b708e01489abae02722`.
 
 The exact source is modified by
 `tools/wireguard-adapter-prototype/patches/gotatun-mobile-memory.patch`, then
-`tools/wireguard-adapter-prototype/patches/gotatun-psk-hygiene.patch`.
+`tools/wireguard-adapter-prototype/patches/gotatun-psk-hygiene.patch`, then
+`tools/wireguard-adapter-prototype/patches/gotatun-mobile-build.patch`.
 It adds opt-in bounded device resources; see that directory's README for the
 changed files and scope. The second patch replaces owned PSK arrays with a
 redacted `PresharedKey(Box<Zeroizing<[u8; 32]>>)` through peer, update and Noise
 state. Handshake KDF calls borrow it. It adds a direct dependency on the already
 locked zeroize 1.8.2 and one edge in the upstream lockfile; no package version is
 changed by the PSK patch. Cryptographic algorithms remain upstream's.
+The build patch compiles the batched-send size helper only on Linux, Android
+and Windows, where it is used. The generic iOS/tvOS implementation does not
+call it; the upstream macOS-only exclusion otherwise fails `-D warnings` on
+those targets. No socket or packet behavior changes.
 `tools/wireguard-adapter-prototype/prepare_vendor.py` copies the crate sources,
 README and license notices, expands workspace manifest fields/dependencies and
 removes benchmark declarations. It does not copy upstream's privileged TUN runner.
 
-`scripts/check-wireguard-runtime.sh` verifies the archive, applies both patches with
+`scripts/check-wireguard-runtime.sh` verifies the archive, applies all three patches with
 zero fuzz, regenerates this crate and compares every file except this note. It
 then runs engine tests, the IP adapter probe and TCP/UDP/core interoperability
 against a freshly built, verified Xray-core v26.7.28 checkout. The

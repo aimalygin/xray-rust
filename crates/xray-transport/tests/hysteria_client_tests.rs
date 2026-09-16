@@ -405,3 +405,73 @@ async fn config_validation_happens_before_opening_a_socket() {
     );
     assert!(!server.driver.is_finished());
 }
+
+#[tokio::test]
+async fn rebind_from_host_thread_preserves_connection_and_protects_each_socket() {
+    #[derive(Default)]
+    struct Count(AtomicUsize);
+    impl SocketProtector for Count {
+        fn protect(&self, _: SocketHandle) -> io::Result<()> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+    let (mut server, tls) = Mock::start(Mode::Good);
+    let count = Arc::new(Count::default());
+    let tls = tls.with_socket_protector(count.clone());
+    let client = HysteriaClient::connect(server.config(), &tls)
+        .await
+        .unwrap();
+    let connection = server.connection().await;
+    let old = client.local_addr().unwrap();
+    // A plain host thread has no Tokio context, as with the Swift/FFI caller.
+    let host = client.clone();
+    std::thread::spawn(move || {
+        for _ in 0..100 {
+            assert!(host.rebind());
+        }
+    })
+    .join()
+    .unwrap();
+    timeout(DEADLINE, async {
+        while client.local_addr().unwrap() == old {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(count.0.load(Ordering::SeqCst), 2);
+    assert!(client.is_live());
+    assert!(connection.close_reason().is_none());
+    client.close();
+    assert!(!client.rebind());
+    timeout(DEADLINE, connection.closed()).await.unwrap();
+}
+
+#[tokio::test]
+async fn rebind_protection_failure_closes_live_connection() {
+    #[derive(Default)]
+    struct RejectSecond(AtomicUsize);
+    impl SocketProtector for RejectSecond {
+        fn protect(&self, _: SocketHandle) -> io::Result<()> {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+        }
+    }
+    let (mut server, tls) = Mock::start(Mode::Good);
+    let protector = Arc::new(RejectSecond::default());
+    let tls = tls.with_socket_protector(protector.clone());
+    let client = HysteriaClient::connect(server.config(), &tls)
+        .await
+        .unwrap();
+    let connection = server.connection().await;
+    assert!(client.rebind());
+    timeout(DEADLINE, connection.closed()).await.unwrap();
+    assert!(!client.is_live());
+    assert!(client.local_addr().is_err());
+    assert!(!client.rebind());
+    assert_eq!(protector.0.load(Ordering::SeqCst), 2);
+}

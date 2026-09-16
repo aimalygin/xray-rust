@@ -25,6 +25,8 @@ patch --directory "$SOURCE" -p1 --fuzz=0 --batch --forward \
   < "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/patches/gotatun-mobile-memory.patch"
 patch --directory "$SOURCE" -p1 --fuzz=0 --batch --forward \
   < "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/patches/gotatun-psk-hygiene.patch"
+patch --directory "$SOURCE" -p1 --fuzz=0 --batch --forward \
+  < "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/patches/gotatun-mobile-build.patch"
 python3 "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/prepare_vendor.py" \
   "$SOURCE" "$TEST_ROOT/vendor"
 diff -ruN --exclude XRAY-PATCH.md "$TEST_ROOT/vendor" "$WORKSPACE_ROOT/vendor/gotatun"
@@ -71,7 +73,9 @@ XRAY_WIREGUARD_BINARY="$TEST_ROOT/xray" "$BUILD_TARGET/debug/examples/xray_adapt
 
 cd "$WORKSPACE_ROOT"
 XRAY_WIREGUARD_BINARY="$TEST_ROOT/xray" \
-  cargo +1.96.0 test --locked -p xray-wireguard -- --include-ignored --nocapture
+  cargo +1.96.0 test --locked -p xray-wireguard --lib \
+  --test lifecycle --test interop --test multi_peer_tests \
+  -- --include-ignored --nocapture
 XRAY_WIREGUARD_BINARY="$TEST_ROOT/xray" \
   cargo +1.96.0 test --locked -p xray-core-rs --test wireguard_runtime_tests \
   --test runtime_data_path_tests wireguard_runtime_ -- --ignored --nocapture

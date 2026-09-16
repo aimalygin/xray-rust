@@ -11,6 +11,8 @@ use x25519_dalek::{PublicKey, StaticSecret};
 const WAIT: Duration = Duration::from_secs(5);
 pub struct Reference {
     child: Child,
+    command: Command,
+    startup: &'static str,
     pub directory: PathBuf,
     pub address: SocketAddr,
 }
@@ -171,18 +173,40 @@ impl Reference {
             .unwrap();
         let mut reference = Self {
             child,
+            command,
+            startup,
             directory,
             address,
         };
+        reference.wait_ready().await;
+        reference
+    }
+
+    pub fn crash(&mut self) {
+        self.child.kill().unwrap();
+        self.child.wait().unwrap();
+    }
+
+    /// Reuse the exact config and UDP endpoint, but discard all server sessions.
+    pub async fn restart(&mut self) {
+        assert!(self.child.try_wait().unwrap().is_some(), "crash first");
+        let log = std::fs::File::create(self.directory.join("log")).unwrap();
+        self.child = self
+            .command
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap();
+        self.wait_ready().await;
+    }
+
+    async fn wait_ready(&mut self) {
         timeout(WAIT, async {
             loop {
-                assert!(
-                    reference.child.try_wait().unwrap().is_none(),
-                    "reference exited"
-                );
-                if std::fs::read_to_string(reference.directory.join("log"))
+                assert!(self.child.try_wait().unwrap().is_none(), "reference exited");
+                if std::fs::read_to_string(self.directory.join("log"))
                     .unwrap()
-                    .contains(startup)
+                    .contains(self.startup)
                 {
                     break;
                 }
@@ -191,6 +215,5 @@ impl Reference {
         })
         .await
         .unwrap();
-        reference
     }
 }

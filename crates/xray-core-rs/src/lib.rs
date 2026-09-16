@@ -726,6 +726,19 @@ impl Core {
         self.connection_registry.close(id)
     }
 
+    /// Queues fresh protected carrier sockets for live Hysteria connections.
+    /// Retains QUIC state and endpoints; count denotes acceptance, not recovery.
+    pub fn rebind_hysteria(&self) -> u64 {
+        self.outbound_factory().rebind_hysteria()
+    }
+
+    /// Rebinds live WireGuard carrier transports after an OS network change.
+    /// Returns accepted (coalesced) requests, not completed handshakes. Lazy
+    /// outbounds remain lazy; current endpoints and inner flows are retained.
+    pub fn rebind_wireguard(&self) -> u64 {
+        self.outbound_factory().rebind_wireguard()
+    }
+
     fn runtime_dns_resolvers(
         &self,
         config: &Arc<CoreConfig>,

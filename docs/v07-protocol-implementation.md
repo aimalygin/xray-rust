@@ -134,10 +134,12 @@ a bounded smoke run, not comprehensive fuzz coverage or a memory benchmark.
    outside this work.
 4. Swift/Kotlin configuration, capability discovery and profile import are
    implemented; application integration and device acceptance remain pending.
-5. Complete broader WireGuard roaming, replay, timed keepalive/rekey,
-   fragmentation/path-MTU, server-crash recovery and physical-device tests before
-   mobile artifact publication. Host checks for either protocol do not replace
-   device evidence.
+5. Direct WireGuard lifecycle checks now exercise authenticated server-port
+   changes, replay/bad-tag rejection, persistent keepalive, real-time rekey and
+   existing UDP flows across a server restart. Broader interface/NAT transitions,
+   cross-family roaming, key-expiry/replay-window boundaries, fragmentation/PMTU,
+   TCP crash recovery and physical-device tests remain before mobile artifact
+   publication. Host checks for either protocol do not replace device evidence.
 
 Release criteria remain in the [roadmap](roadmap.md#phase-4-v07-hysteria-2-and-wireguard-clients).
 
@@ -329,3 +331,141 @@ engine. Twelve live scenarios cover both IP families, TCP/UDP, wrong keys/PSK,
 peer routing/isolation, MTU bounds, recovery and core/TUN/DNS integration.
 The existing engine/Xray gate remains mandatory alongside the new CI gate.
 See [provenance, reproduction and remaining acceptance work](v07-native-wireguard-interop.md).
+
+## Direct WireGuard lifecycle increment
+
+Implemented 2026-09-13 without changing production protocol code, dependency
+pins or accepted configuration. Four additional native-reference tests cover
+authenticated server UDP-port changes and replay/bad-tag rejection in both outer
+families, existing IPv4/IPv6 UDP flows across a server process restart, one-second
+persistent keepalive and a real 120-second rekey. They retain the same client and
+protected socket and check flow-slot reclamation on shutdown.
+
+All sixteen direct-reference scenarios passed locally on macOS arm64. Server
+recovery took approximately 15.5 seconds in each outer family and timed rekey
+completed in 120.4 seconds. The engine/Xray baseline, strict Clippy and workflow
+guards also passed. The [native reference contract](v07-native-wireguard-interop.md)
+records exact coverage and remaining network/device limits. The existing CI gate
+runs the new tests; no remote CI or physical-device result is claimed.
+
+## First bounded iPhone check — 2026-09-13
+
+The [physical iPhone 13 report](device-results/2026-09-13-iphone13-v07/README.md)
+records two passing final runs against the unchanged Xray-core reference. Each
+run covers three VPN cycles per protocol, IPv4/IPv6 TCP/UDP, DNS, zero active
+flows after provider connection closure and successful traffic recovery in the
+same tunnel. ABI 1.5 import is exercised separately from the fixture runtime JSON.
+
+The device run exposed an unused GotaTun helper that broke strict iOS compilation
+and an Apple IPv6 interface prefix that produced ENETDOWN at `/128`. The helper
+now compiles only for its callers; the local virtual interface uses `/120`, with
+carrier exclusions still `/128`. Vendor provenance and 147 targeted Swift tests
+passed. The saved DEBUG probe and private LAN fixture make the check repeatable.
+This is a dirty development build with sparse resource samples, not an RC or
+release artifact. Network transitions, sleep/wake, load and Android device
+acceptance remain pending.
+
+## iPhone 17 Pro Max transitions — 2026-09-13
+
+The [public-VPS device campaign](device-results/2026-09-13-iphone17-v07/README.md)
+passed Hysteria 2 Wi-Fi → cellular → Wi-Fi recovery and Wi-Fi lock/wake for
+both protocols. Hysteria needed 34 seconds for cellular recovery, 2.7 seconds
+for the return to Wi-Fi and 4.1 seconds after unlocking, measured through the
+complete TCP/UDP/DNS sequence. No core restart occurred in those checks.
+
+WireGuard repeatedly failed the 45-second cellular recovery budget. Closing
+active connections and opening fresh flows did not restore traffic during a
+second 45-second window. Returning to Wi-Fi restored the traffic sequence in
+4.3 seconds with the same core identifier. Its independent 90-second lock
+check passed. Cellular reported IPv6-only support before the VPN; this does
+not establish the root cause, since Hysteria reached the same IPv4 VPS.
+
+The DEBUG harness now distinguishes interface availability from a payload-free
+carrier route observation, waits for stable initial Wi-Fi, records lock and
+application lifecycle events, and preserves per-stage failures while continuing
+independent checks. An explicit diagnostic mode closes connections after a
+cellular failure without changing the overall failed verdict. No production
+network-change recovery fix was included in that campaign. It identified the
+WireGuard cellular blocker addressed by the following increment; its historical
+failed verdicts remain unchanged.
+
+
+## WireGuard carrier rebind — 2026-09-14
+
+The Apple provider now observes network paths for the lifetime of its runtime.
+After a coalesced usable-path change it requests fresh protected WireGuard UDP
+sockets and a handshake, retaining the inner stack and existing flow objects.
+The observer stops before core teardown; a generation check retains notifications
+that race lazy client creation. Socket protection or bind failure closes the
+client rather than leaving an unprotected fallback.
+
+C/Swift expose this request through additive ABI 1.6. Its count means accepted
+requests, not completed recovery. Peer endpoints remain unchanged; this increment
+does not add DNS refresh, NAT64 synthesis or Android/JNI path notifications.
+
+The [iPhone 17 Pro Max retest](device-results/2026-09-14-iphone17-wireguard-rebind/README.md)
+passed Wi-Fi → cellular → Wi-Fi and lock/wake with one unchanged core identifier.
+The whole fresh-flow TCP/UDP/DNS check completed 12.13 seconds after the cellular
+path event, 6.25 seconds after return to Wi-Fi and 5.28 seconds after unlock.
+The phone was locked for 108.76 seconds. This is bounded development evidence,
+with the installed-build identity limitation recorded in the report, not a v0.7
+release qualification. Existing-flow continuity is exercised separately by the
+independent native rebind test; the device harness opens new application flows.
+
+
+## Hysteria carrier migration — 2026-09-14
+
+The previous iPhone run spent about 30 seconds in three failed TCP attempts
+before the full traffic sequence completed at 34.07 seconds. A cached QUIC
+connection remained live until its 30-second idle timeout; the provider did not
+notify Hysteria of a changed carrier path. The new bounded host reproduction
+blackholes the old client path, gives each new client socket a distinct server-
+visible NAT address, and verifies that existing TCP/UDP flows recover after a
+protected `Endpoint::rebind`, before the idle timeout.
+
+The Apple runtime now queues Hysteria rebinding alongside WireGuard. It retains
+the QUIC connection, authenticated state and flow objects; lazy outbounds remain
+lazy and a network generation protects connection-creation races. Rebinding
+runs on Tokio even when requested by a Swift/FFI host thread. A replacement bind
+or protection failure closes the client. C/Swift expose this as additive ABI
+1.7; the endpoint address and DNS pin are retained.
+
+See the [fresh iPhone build and retest](device-results/2026-09-14-iphone17-hysteria-rebind/README.md)
+for results, exact binary/source hashes and remaining limits. This increment
+adds neither Android path notifications nor endpoint DNS/NAT64 rebootstrap.
+
+### Apple carrier observation follow-up (2026-09-15)
+
+The [UDP return-path investigation](device-results/2026-09-15-iphone17-hysteria-udp/README.md)
+adds physical-interface/address deduplication, offline cancellation, and bounded
+DEBUG path/UDP diagnostics. It keeps the prior Rust library and ABI 1.7. The
+fixture uses a fresh synthetic DNS name to avoid cross-run negative name caching.
+Host checks and two complete physical sequences pass. Return to Wi-Fi took
+2.79/2.78 seconds without UDP retries; the original intermittent packet-loss
+cause is not proven and broader carrier coverage remains pending.
+
+### WireGuard regression on the shared observer (2026-09-15)
+
+The [same-build WireGuard device sequence](device-results/2026-09-15-iphone17-wireguard-observer/README.md)
+passes two Wi-Fi/cellular/Wi-Fi, lock/wake and exact-ID connection-closure sequences
+after the shared observer change. The first Wi-Fi return required one TCP retry
+and 15.68 seconds; the repeat took 16.36 seconds. This retest preserves the
+latency concern; no further production change or rebuild was made.
+The report retains the source/signed-code identity and bounded acceptance limits.
+
+
+### WireGuard TCP recovery fix (2026-09-15)
+
+The [recovery investigation and final build](device-results/2026-09-15-iphone17-wireguard-recovery/README.md)
+replaces protected carrier sockets without resetting WireGuard sessions or packet
+queues, drains at most one previous socket set for three seconds, and fixes a
+shared TUN bridge deadlock: a blocked upload no longer prevents download or host
+cancellation. Two deterministic bridge reproductions failed before and pass
+afterward. Delayed-packet/rebind tests, replay tests, core protocol integration,
+172 data-path tests, 73 TUN unit tests and strict Clippy pass.
+
+The final iPhone WireGuard sequence completes cellular/Wi-Fi/unlock traffic checks
+in 6.38/4.48/5.51 seconds without retries, preserves one core ID and closes all
+seven requested connections in 2.05 seconds. The same build passes three Hysteria
+smoke cycles. The report retains intermediate failures, source/signed-code
+identity, cleanup and the bounded acceptance limits; ABI stays 1.7.

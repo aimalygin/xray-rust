@@ -1207,14 +1207,14 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testNetworkSettingsInstallIPv6DefaultRoute() throws {
+    func testNetworkSettingsInstallUsableIPv6InterfaceAndDefaultRoute() throws {
         let settings = XrayPacketTunnelProvider.networkSettings(
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
         let ipv6Settings = try XCTUnwrap(settings.ipv6Settings)
         XCTAssertEqual(ipv6Settings.addresses, [XrayPacketTunnelProvider.tunnelLocalIPv6Address])
-        XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [128])
+        XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [120])
         XCTAssertEqual(ipv6Settings.includedRoutes?.count, 1)
         XCTAssertEqual(ipv6Settings.includedRoutes?.first?.destinationAddress, "::")
         XCTAssertEqual(

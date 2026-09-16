@@ -1,0 +1,353 @@
+{
+  "abi": "1.5",
+  "build_identity_limit": "Earlier diagnostic and first cellular-failure app binaries were overwritten during harness iteration. Final two harness builds are hashed; all use the same release Rust library. This is not exact-candidate release evidence.",
+  "builds": {
+    "independent-stages": {
+      "base_commit": "98c55e01765a7bcd964300130ff560c5bb06f4fa",
+      "dirty_worktree": true,
+      "final_app_code_sha256": {
+        "PlugIns/Tunnel.appex/Tunnel": "5ca4d9d4bcd3ab148aad71e729c314522472c97de6713e10e872e71beb1df9af",
+        "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "6bdbc18d3cbc514baa6e50986eb59d7c406efeb87227c5d9e7c840f8d14428b6",
+        "PlugIns/Tunnel.appex/__preview.dylib": "87ff5fdfcb866b854470b7531b19f8ea9b7698fd7a9d5d2633d6951a462616f9",
+        "XrayClient": "b62e21a25a6556c17dce47544f09a3d60971fbb9d5ced41ba99d599704c6cd89",
+        "XrayClient.debug.dylib": "ebbd67d354b86fe0ce15b99f1c0c25a81c6b0ba16706fa159c3693580bddd831",
+        "__preview.dylib": "64e982e508683fae2fd3f1776858fc32d5953836ac5f44bfcf77ec5f6bf9df7e"
+      },
+      "final_source_sha256": {
+        "Cargo.lock": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+        "platform/apple/Sources/XrayAppleClient/Debug/XrayDeviceProbeSignals.swift": "2e0d3360b4042380779df22b16d9840c8af32c1c2db4a43f0e193eaa218efc34",
+        "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "d4ee65e264b15a8b87f73b7d3f5ecc87d907836047b5205bcd6a02d26f49218c",
+        "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift": "2754a6f7e299e9f9111b8d1feca590999e2f1e67a134c69dcad373dc61b4bd07",
+        "platform/apple/XrayClient/XrayClient/XrayClientApp.swift": "75186b3fdaac6c764c6545c991457040dbbb1e6d8ff7a369b4035fae0a82ca31",
+        "scripts/run-v07-apple-protocol-fixture.py": "55d2810c4f91a76839dac3f84d13e713f5e905794ac71e6284ad6ec1ce97cb04",
+        "vendor/gotatun/src/udp/socket/mod.rs": "f40da9fd425983ed1a9e7139ec1db7a1ff93124cb54aac0179e97521b33aec44"
+      }
+    },
+    "reset-diagnostic": {
+      "base_commit": "98c55e01765a7bcd964300130ff560c5bb06f4fa",
+      "dirty_worktree": true,
+      "final_app_code_sha256": {
+        "PlugIns/Tunnel.appex/Tunnel": "5ca4d9d4bcd3ab148aad71e729c314522472c97de6713e10e872e71beb1df9af",
+        "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "6bdbc18d3cbc514baa6e50986eb59d7c406efeb87227c5d9e7c840f8d14428b6",
+        "PlugIns/Tunnel.appex/__preview.dylib": "87ff5fdfcb866b854470b7531b19f8ea9b7698fd7a9d5d2633d6951a462616f9",
+        "XrayClient": "b1ab73cf74a04bc9673e19523d4c4475f1b98fec157eedbbb6f067a5f0656d71",
+        "XrayClient.debug.dylib": "de82d4586139171d0240105a98b1003ca9d043e40cce0a892b257c19c8199a3c",
+        "__preview.dylib": "64e982e508683fae2fd3f1776858fc32d5953836ac5f44bfcf77ec5f6bf9df7e"
+      },
+      "final_source_sha256": {
+        "Cargo.lock": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+        "platform/apple/Sources/XrayAppleClient/Debug/XrayDeviceProbeSignals.swift": "2e0d3360b4042380779df22b16d9840c8af32c1c2db4a43f0e193eaa218efc34",
+        "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "fdbc19b2927dff3930935aeca782fbabaf410ea73b4c43ced54e9e83eb1166b6",
+        "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift": "2754a6f7e299e9f9111b8d1feca590999e2f1e67a134c69dcad373dc61b4bd07",
+        "platform/apple/XrayClient/XrayClient/XrayClientApp.swift": "75186b3fdaac6c764c6545c991457040dbbb1e6d8ff7a369b4035fae0a82ca31",
+        "scripts/run-v07-apple-protocol-fixture.py": "347fb4afaf0a42b4f4a69c4cbe0a741ede9c1e699785ee8a3bb933b2f47885b4",
+        "vendor/gotatun/src/udp/socket/mod.rs": "f40da9fd425983ed1a9e7139ec1db7a1ff93124cb54aac0179e97521b33aec44"
+      }
+    }
+  },
+  "cleanup": {
+    "device_probe_input_removed": true,
+    "ephemeral_credentials_removed": true,
+    "local_ephemeral_profiles_removed": true,
+    "normal_app_relaunched_without_probe_or_console": true,
+    "remaining_device_vpn_manager_count": 1,
+    "services": {
+      "xray-apple-device-probe-server.service": {
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "xray-xhttp-device-test.service": {
+        "ActiveState": "active",
+        "SubState": "running"
+      },
+      "xray-xhttp-memory-probe.service": {
+        "ActiveState": "active",
+        "SubState": "running"
+      }
+    },
+    "temporary_directory_removed": true,
+    "temporary_services_stopped": true,
+    "temporary_ssh_helpers_removed": true,
+    "temporary_unit_removed": true,
+    "udp_53053_listening": true,
+    "untouched_tcp_and_loopback_service_pids_unchanged": true
+  },
+  "development_scope": "0.7",
+  "device": {
+    "model": "iPhone 17 Pro Max",
+    "os": "26.6.2",
+    "os_build": "23G90",
+    "product_type": "iPhone18,2",
+    "udid_sha256": "94c248986857b0408763b8d6d6a4a52a02a6edd5c78dcc8daddedfaa5c4adbca"
+  },
+  "diagnostic_event_files_sha256": {
+    "diagnostic-cellular-before-vpn-events.jsonl": "5b56ba41248d943d3806c0766f58de20f17269a17b11026282073d056d9cc4f2",
+    "diagnostic-premature-switch-events.jsonl": "6c817d58d028679cae75aaf5872fcfa0c3de8fe53a8612d036bf2d3f53d29d7a",
+    "diagnostic-route-gating-events.jsonl": "174a59403e93c3e91fb58a60d0035d7745b6f2c1b32de7d93e3c2a4205eb975b",
+    "diagnostic-startup-events.jsonl": "7e9a462507064f8bc66805f4aed004cd952f8ec8f227f8c496d6e773b1bbb3dc"
+  },
+  "fixture": {
+    "carrier": "public IPv4 literal",
+    "deployed_script_sha256": "c8d07aa06d036f2a6dfe121eed9d50c0921745407ca7fe7f3bae568bb1694c8d",
+    "ephemeral_credentials_published": false,
+    "local_script_sha256": "347fb4afaf0a42b4f4a69c4cbe0a741ede9c1e699785ee8a3bb933b2f47885b4",
+    "port": 53053,
+    "transport": "UDP"
+  },
+  "ios_static_library_sha256": "baefd4ee8d84827ece0a9c3abfc87308d4257d81b11295fae40b3f994e8a1d90",
+  "limitations": [
+    "bounded manual transitions, no sustained throughput/energy/memory-pressure campaign",
+    "new application flows after transitions; existing-session continuity untested",
+    "same core identifier does not prove same cryptographic session",
+    "lock/unlock notifications do not prove hardware deep sleep",
+    "sparse memory samples, not continuous peaks",
+    "no Android device run",
+    "Xray reference, not native independent protocol servers",
+    "importer checked separately from fixture runtime JSON and application import UI",
+    "cellular failure root cause remains under investigation"
+  ],
+  "native_configuration": "release aarch64-apple-ios; deployment target 15.0",
+  "network": {
+    "active_recovery_budget_seconds": 45,
+    "cellular_before_vpn": "NWPath satisfied, supportsIPv4=false, supportsIPv6=true",
+    "cellular_internet_without_vpn": "Safari available, owner confirmed",
+    "nat64_prefix_measured": false,
+    "vps_global_ipv6": false,
+    "wifi": "IPv4/IPv6 supported before VPN"
+  },
+  "reference": {
+    "binary_sha256": "64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d",
+    "locally_rebuilt_binary_uploaded": false,
+    "matching_full_clean_vcs_stamp_verified": false,
+    "name": "existing owner VPS Xray-core",
+    "reported_toolchain": "go1.26.5 linux/amd64",
+    "reported_version": "26.7.28 5ca6f4b"
+  },
+  "release_acceptance": false,
+  "runs": [
+    {
+      "build": "settle; exact app hash not retained",
+      "end_utc": "2026-09-13T18:39:12Z",
+      "event_file": "wireguard-cellular-events.jsonl",
+      "event_file_sha256": "ef8f3ab54488434025ad4a0424e4ba8abd2786a4f6a2a0be67cbe7ad50453d96",
+      "name": "wireguard-cellular",
+      "result": "failed",
+      "start_utc": "2026-09-13T18:37:58Z",
+      "summary": {
+        "dns_anchor_queries": 1,
+        "failure_events": [
+          {
+            "code": 0,
+            "domain": "XrayProtocolDeviceProbe.Network",
+            "event": "failure",
+            "protocol": "wireguard",
+            "time": "2026-09-13T18:39:11Z"
+          }
+        ],
+        "lock_intervals_seconds": [],
+        "max_sampled_dropped_packets": 0,
+        "max_sampled_footprint_bytes": 4375304,
+        "max_sampled_rss_bytes": 28901376,
+        "max_sampled_tun_read_loop_exits": 0,
+        "max_sampled_tun_write_loop_exits": 0,
+        "recovery_stages": [
+          {
+            "activeRecoverySeconds": 5.531871583341854,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 9.014675750004244,
+            "stage": "wifi-baseline",
+            "time": "2026-09-13T18:38:07Z"
+          }
+        ],
+        "runtime_identifier_count": 1,
+        "tcp_echoes": 3,
+        "udp_echoes": 2
+      }
+    },
+    {
+      "build": "independent-stages",
+      "end_utc": "2026-09-13T18:45:54Z",
+      "event_file": "wireguard-lock-events.jsonl",
+      "event_file_sha256": "1e743072eef368eece5a45b22729302f8af1b627a626727d9b9f64954d34ebbb",
+      "name": "wireguard-lock",
+      "result": "passed",
+      "start_utc": "2026-09-13T18:43:48Z",
+      "summary": {
+        "dns_anchor_queries": 2,
+        "failure_events": [],
+        "lock_intervals_seconds": [
+          90.53769412499969
+        ],
+        "max_sampled_dropped_packets": 0,
+        "max_sampled_footprint_bytes": 4735728,
+        "max_sampled_rss_bytes": 29294592,
+        "max_sampled_tun_read_loop_exits": 0,
+        "max_sampled_tun_write_loop_exits": 0,
+        "recovery_stages": [
+          {
+            "activeRecoverySeconds": 4.704007666659891,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 8.24802912499581,
+            "stage": "wifi-baseline",
+            "time": "2026-09-13T18:44:13Z"
+          },
+          {
+            "activeRecoverySeconds": 4.420132916668081,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 5.325913083346677,
+            "stage": "after-unlock",
+            "time": "2026-09-13T18:45:52Z"
+          }
+        ],
+        "runtime_identifier_count": 1,
+        "tcp_echoes": 6,
+        "udp_echoes": 4
+      }
+    },
+    {
+      "build": "independent-stages",
+      "end_utc": "2026-09-13T18:49:32Z",
+      "event_file": "hysteria-transitions-events.jsonl",
+      "event_file_sha256": "14143bf9b4d98c6aedf87c0df1b2f46968016fb1afa5bab599efab9861d9f8d4",
+      "name": "hysteria-transitions",
+      "result": "passed",
+      "start_utc": "2026-09-13T18:47:26Z",
+      "summary": {
+        "dns_anchor_queries": 4,
+        "failure_events": [],
+        "lock_intervals_seconds": [
+          50.51327558333287
+        ],
+        "max_sampled_dropped_packets": 0,
+        "max_sampled_footprint_bytes": 4539144,
+        "max_sampled_rss_bytes": 28311552,
+        "max_sampled_tun_read_loop_exits": 0,
+        "max_sampled_tun_write_loop_exits": 0,
+        "recovery_stages": [
+          {
+            "activeRecoverySeconds": 2.699892249991535,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 6.075643000003765,
+            "stage": "wifi-baseline",
+            "time": "2026-09-13T18:47:32Z"
+          },
+          {
+            "activeRecoverySeconds": 34.02477695833659,
+            "result": "passed",
+            "retries": 3,
+            "secondsSincePathOrUnlock": 34.067073291676934,
+            "stage": "cellular",
+            "time": "2026-09-13T18:48:17Z"
+          },
+          {
+            "activeRecoverySeconds": 2.6726131250034086,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 2.7139508749969536,
+            "stage": "wifi",
+            "time": "2026-09-13T18:48:31Z"
+          },
+          {
+            "activeRecoverySeconds": 3.122747833331232,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 4.068476416665362,
+            "stage": "after-unlock",
+            "time": "2026-09-13T18:49:30Z"
+          }
+        ],
+        "runtime_identifier_count": 1,
+        "tcp_echoes": 12,
+        "udp_echoes": 8
+      }
+    },
+    {
+      "build": "reset-diagnostic",
+      "end_utc": "2026-09-13T18:56:46Z",
+      "event_file": "wireguard-reset-events.jsonl",
+      "event_file_sha256": "07165e6bb7d22cb4bd2837cdc1d3de5640549c9dbddd35320215db8a6e9ca1cc",
+      "name": "wireguard-reset",
+      "result": "failed",
+      "start_utc": "2026-09-13T18:53:06Z",
+      "summary": {
+        "dns_anchor_queries": 3,
+        "failure_events": [
+          {
+            "code": 0,
+            "domain": "XrayProtocolDeviceProbe.Network",
+            "event": "transition-failed",
+            "protocol": "wireguard",
+            "stage": "cellular",
+            "time": "2026-09-13T18:54:37Z"
+          },
+          {
+            "code": 0,
+            "domain": "XrayProtocolDeviceProbe.Network",
+            "event": "diagnostic-reset-failed",
+            "protocol": "wireguard",
+            "time": "2026-09-13T18:55:22Z"
+          },
+          {
+            "code": 5,
+            "domain": "XrayProtocolDeviceProbe",
+            "event": "failure",
+            "protocol": "wireguard",
+            "time": "2026-09-13T18:56:46Z"
+          }
+        ],
+        "lock_intervals_seconds": [
+          53.802680624998175
+        ],
+        "max_sampled_dropped_packets": 0,
+        "max_sampled_footprint_bytes": 4686600,
+        "max_sampled_rss_bytes": 28213248,
+        "max_sampled_tun_read_loop_exits": 0,
+        "max_sampled_tun_write_loop_exits": 0,
+        "recovery_stages": [
+          {
+            "activeRecoverySeconds": 4.823085624986561,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 8.329816458324785,
+            "stage": "wifi-baseline",
+            "time": "2026-09-13T18:53:20Z"
+          },
+          {
+            "activeRecoverySeconds": 4.241559541667812,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 4.2828795416717185,
+            "stage": "wifi",
+            "time": "2026-09-13T18:55:33Z"
+          },
+          {
+            "activeRecoverySeconds": 5.702888875006465,
+            "result": "passed",
+            "retries": 0,
+            "secondsSincePathOrUnlock": 6.59429187499336,
+            "stage": "after-unlock",
+            "time": "2026-09-13T18:56:43Z"
+          }
+        ],
+        "runtime_identifier_count": 1,
+        "tcp_echoes": 9,
+        "udp_echoes": 6
+      }
+    }
+  ],
+  "schema": "xray-v07-bounded-apple-transitions/1",
+  "swift_configuration": "Debug",
+  "toolchain": "Xcode 27.0 / 27A266a",
+  "verification": {
+    "appintents_warning": "metadata extraction skipped, no AppIntents.framework dependency",
+    "device_reports_match_console": true,
+    "independent_stages_device_build": "passed",
+    "production_network_recovery_fix_in_this_campaign": false,
+    "reset_diagnostic_device_build": "passed"
+  },
+  "workspace_package_version": "0.6.1"
+}

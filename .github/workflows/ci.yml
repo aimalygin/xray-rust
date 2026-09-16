@@ -349,7 +349,7 @@ jobs:
       - name: Verify bounded WireGuard engine and TCP UDP core runtime against pinned Xray-core
         run: bash scripts/check-wireguard-runtime.sh
 
-      - name: Verify WireGuard TCP UDP and authenticated peer isolation without Xray
+      - name: Verify WireGuard interop, roaming, replay and timed recovery without Xray
         run: |
           python3 scripts/tests/verify-wireguard-reference.test.py
           bash scripts/check-native-wireguard-interop.sh

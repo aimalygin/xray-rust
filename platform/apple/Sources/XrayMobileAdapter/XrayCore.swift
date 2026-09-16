@@ -1156,6 +1156,42 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
+    /// Requests fresh protected WireGuard sockets after an OS path change.
+    /// Retains current endpoint addresses and inner flows. The count denotes
+    /// accepted requests, not completed handshakes. Requires ABI 1.6.
+    @discardableResult
+    public func rebindWireGuard() throws -> UInt64 {
+        let version = Self.ffiInfo.version
+        guard version.minor >= 6 else {
+            throw XrayCoreError.incompatibleFFIMinorVersion(required: 6, actual: version.minor)
+        }
+        try requireCapability(.wireguardOutbound)
+        return try withSharedHandle { handle in
+            var error: OpaquePointer?
+            var accepted: UInt64 = 0
+            try check(xray_core_rebind_wireguard(handle, &accepted, &error), error: error)
+            return accepted
+        }
+    }
+
+    /// Requests fresh protected Hysteria sockets after an OS path change.
+    /// Retains current endpoints, QUIC connection and inner flows. The count denotes
+    /// accepted requests, not completed path validation. Requires ABI 1.7.
+    @discardableResult
+    public func rebindHysteria() throws -> UInt64 {
+        let version = Self.ffiInfo.version
+        guard version.minor >= 7 else {
+            throw XrayCoreError.incompatibleFFIMinorVersion(required: 7, actual: version.minor)
+        }
+        try requireCapability(.hysteria2Outbound)
+        return try withSharedHandle { handle in
+            var error: OpaquePointer?
+            var accepted: UInt64 = 0
+            try check(xray_core_rebind_hysteria(handle, &accepted, &error), error: error)
+            return accepted
+        }
+    }
+
     public func pushPacket(_ packet: Data) throws {
         try withDataPathHandle { handle in
             var error: OpaquePointer?

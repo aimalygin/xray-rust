@@ -17,6 +17,7 @@ async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
         let (udp_addr, _udp) = udp_echo().await;
         let (mut core, protector, bootstrap, _dialer) = core(&server);
         core.start().await.unwrap();
+        assert_eq!(core.rebind_hysteria(), 0, "idle outbounds must stay lazy");
         let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
         let (mut tcp, _) = socks(socks_addr, 1, "127.0.0.1", tcp_addr.port()).await;
         echo(&mut tcp, b"socks through hysteria").await;
@@ -61,6 +62,20 @@ async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
             "TCP and UDP must share protected QUIC"
         );
         assert_eq!(bootstrap.0.load(Ordering::SeqCst), 1);
+        for _ in 0..10 {
+            assert_eq!(core.rebind_hysteria(), 1);
+        }
+        while protector.0.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+        echo(&mut tcp, b"same core TCP after network change").await;
+        echo(&mut http, b"same HTTP tunnel after network change").await;
+        assert_eq!(protector.0.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            bootstrap.0.load(Ordering::SeqCst),
+            1,
+            "no endpoint re-resolution"
+        );
         let snapshot = core.connection_snapshot();
         assert_eq!(snapshot.connections.len(), 3);
         assert!(snapshot

@@ -174,10 +174,12 @@ listeners. No packets are sent to those addresses on the host network.
 [Direct official WireGuard](v07-native-wireguard-interop.md) and
 [native Hysteria](v07-native-hysteria-interop.md) reference gates and
 [mobile SDK profile import](v07-profile-import.md) are now implemented.
-Broader replay/rekey/roaming and fragmentation cases, application integration,
-cross-compilation and physical Apple/Android memory/network acceptance remain
-release work. No mobile binaries or stable v0.7 artifacts are published by this
-increment.
+Direct lifecycle checks cover server-port roaming, replay/bad-tag rejection,
+persistent keepalive, real-time rekey and existing UDP flows across a server
+restart. Broader interface/NAT, cross-family, replay-window/key-expiry,
+fragmentation and TCP crash cases, application integration, cross-compilation and
+physical Apple/Android memory/network acceptance remain release work. No mobile
+binaries or stable v0.7 artifacts are published by this increment.
 
 Initial runtime evidence on macOS arm64: all 678 core, 372 config and 26 CLI tests passed;
 WireGuard's 86 engine tests, IP probe, four native tests and five live scenarios
@@ -231,3 +233,45 @@ same ten adapter/core scenarios without Xray, plus both raw multi-peer isolation
 scenarios using official peers. Wrong client/server keys join the existing
 wrong/missing PSK matrix. All twelve live scenarios passed on macOS arm64;
 see the [reference contract and limits](v07-native-wireguard-interop.md).
+
+
+## Network-change increment
+
+`Client::rebind()` requests replacement of the outer protected UDP sockets while
+keeping the WireGuard sessions, pending packets, inner TCP/UDP stack, flow objects
+and budgets alive. A shared socket generation publishes a complete replacement
+only after every socket has passed the original protector. An idle receive
+wakes on that generation change. It drains at most one previous socket set for
+three seconds to accept in-flight replies, then releases it even without traffic.
+Only the current set sends packets; all received packets still pass the engine
+authentication and replay checks. The engine
+and its handshake/rekey timers keep running; a carrier change does not suspend
+the device or discard authenticated sessions. Requests in a burst coalesce; another
+notification during an in-flight replacement schedules a later replacement.
+Failure to bind or protect closes the client and releases its flows. Rebinding
+never falls back to an unprotected socket.
+
+The core only requests rebinding of initialized WireGuard outbounds and keeps
+idle outbounds lazy. Its network generation also covers a notification racing
+client construction. C ABI 1.6 and Swift expose the accepted-request count;
+completion remains asynchronous. The Apple packet-tunnel runtime owns an
+`NWPathMonitor` with a 500 ms debounce and fences callbacks before core stop.
+Peer endpoints are retained: DNS refresh, DNS64/NAT64 synthesis and Android
+network notifications are outside this increment.
+
+`network_change.rs` covers existing TCP and UDP flow objects across two rebind
+bursts against the independent official WireGuard reference in both outer IP
+families, plus protection-failure closure and budget reclamation. The core unit
+test injects a network notification inside first-socket protection to verify the
+creation race without making idle clients connect. The separate
+[iPhone retest](device-results/2026-09-14-iphone17-wireguard-rebind/README.md)
+records fresh-flow recovery across physical Wi-Fi/cellular transitions and
+lock/wake, with its limits and build provenance.
+
+
+The [2026-09-15 recovery follow-up](device-results/2026-09-15-iphone17-wireguard-recovery/README.md)
+records the replacement/drain behavior above and a shared TCP bridge fix for
+blocked-upload download/cancellation. The final physical Wi-Fi return passed
+in 4.48 seconds without a retry, with exact-ID closure and Hysteria smoke
+regression on the same build. Earlier failed/intermediate trials remain in the
+report; this is one final physical sequence, not broad carrier qualification.

@@ -1,0 +1,164 @@
+{
+  "abi": "1.5",
+  "after_fix_network_prefix_length": 120,
+  "app_code_sha256": {
+    "PlugIns/Tunnel.appex/Tunnel": "c7e125d5fe0bf75ba8dd2ab06fac404c8bd5a50dae75cde529ae803f0227d7db",
+    "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "ad1a81dc0c2e9523f5efbd8245792fbd0724b2cbcf3447d22e5b196fb4bc3a86",
+    "PlugIns/Tunnel.appex/__preview.dylib": "bf47cbc52321adf5ad2c90b5f258a1dabb2f4e767b8c253fc16fe83d10dd7734",
+    "XrayClient": "21304fa04f699847153121fb90d3805c21870a033349d9a099f2cd83a6535682",
+    "XrayClient.debug.dylib": "eca261eb76b10016c47bcfdcf9cf3b73c7246086baf2d8e54b067dd77e0a0ca7",
+    "__preview.dylib": "59da17a510bc58650a8226f0b1138531c2fda276c1b6f8922e676c33ddd6ecb6"
+  },
+  "base_commit": "98c55e01765a7bcd964300130ff560c5bb06f4fa",
+  "before_fix": {
+    "failed_ipv6_request_reached_reference": false,
+    "network_prefix_length": 128,
+    "wireguard_ipv4_tcp": "passed",
+    "wireguard_ipv6_tcp": "10-second timeout; NWConnection waiting ENETDOWN (POSIX 50)"
+  },
+  "development_scope": "0.7",
+  "device": {
+    "model": "iPhone 13",
+    "os": "18.6.2",
+    "os_build": "22G100",
+    "product_type": "iPhone14,5",
+    "udid_sha256": "74ee1cdc1e69f7244cb8afb75db0cb2e0fe1f7d74b936c5bfbd81d0140d3c538"
+  },
+  "dirty_worktree": true,
+  "host_regression": {
+    "failures": 0,
+    "log_sha256": "c535560686d3a423bf42fe0d8d9e2a32deb717c38d353c4201b0312d3ab76b9a",
+    "swift_dns_preflight_tests": 14,
+    "swift_provider_tests": 133
+  },
+  "ios_static_library_sha256": "baefd4ee8d84827ece0a9c3abfc87308d4257d81b11295fae40b3f994e8a1d90",
+  "limitations": [
+    "short low-concurrency LAN run",
+    "no cellular or Wi-Fi handover",
+    "no sleep/wake or background stress",
+    "no throughput or continuous memory/energy profiling",
+    "no Android device run",
+    "Xray reference on device; independent native servers covered only by separate host gates",
+    "SDK importer validated independently; runtime JSON adds test DNS port and TLS certificate pin",
+    "dirty development build; no RC or artifact publication"
+  ],
+  "native_configuration": "release aarch64-apple-ios, deployment target 15.0",
+  "network": "iPhone Wi-Fi to Mac LAN IPv4 carrier; inner IPv4 and IPv6; local controlled echo/DNS",
+  "reference": {
+    "binary_has_matching_clean_vcs_stamp": true,
+    "binary_sha256": "9c08a9b9dfbda11a394144afa1af1cea3d8f2b446d45a77ae90f90653d18436b",
+    "clean_checkout_verified": true,
+    "commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "name": "Xray-core",
+    "tag": "v26.7.28"
+  },
+  "release_acceptance": false,
+  "runs": [
+    {
+      "end_utc": "2026-09-13T15:47:58Z",
+      "event_file": "final-events.jsonl",
+      "event_file_sha256": "c0da873ed79135d1cb80125bcdeb417f552d6f7a7d0bfec3e5dc9f863c382115",
+      "name": "final",
+      "start_utc": "2026-09-13T15:47:33Z",
+      "summary": {
+        "hysteria2": {
+          "connect_cycles": 3,
+          "connect_status_seconds": [
+            0.2658059597015381,
+            0.25579309463500977,
+            0.2509760856628418
+          ],
+          "dns_anchor_queries": 6,
+          "max_sampled_physical_footprint_bytes": 4227432,
+          "max_sampled_rss_bytes": 22544384,
+          "same_tunnel_recoveries": 3,
+          "sample_count": 9,
+          "sampled_thread_range": [
+            10,
+            11
+          ],
+          "tcp_echoes_65536_bytes": 18,
+          "udp_echoes": 12
+        },
+        "wireguard": {
+          "connect_cycles": 3,
+          "connect_status_seconds": [
+            0.3261181116104126,
+            0.25718796253204346,
+            0.2592461109161377
+          ],
+          "dns_anchor_queries": 6,
+          "max_sampled_physical_footprint_bytes": 4391272,
+          "max_sampled_rss_bytes": 21397504,
+          "same_tunnel_recoveries": 3,
+          "sample_count": 9,
+          "sampled_thread_range": [
+            8,
+            11
+          ],
+          "tcp_echoes_65536_bytes": 18,
+          "udp_echoes": 12
+        }
+      }
+    },
+    {
+      "end_utc": "2026-09-13T15:52:09Z",
+      "event_file": "repro-events.jsonl",
+      "event_file_sha256": "81c2b74f87b3407ee9ddc2d3fef0a1591f144e04dfaa98b4accd3213eedc3ad4",
+      "name": "repro",
+      "start_utc": "2026-09-13T15:51:46Z",
+      "summary": {
+        "hysteria2": {
+          "connect_cycles": 3,
+          "connect_status_seconds": [
+            0.2696990966796875,
+            0.27256691455841064,
+            0.26711905002593994
+          ],
+          "dns_anchor_queries": 6,
+          "max_sampled_physical_footprint_bytes": 4292968,
+          "max_sampled_rss_bytes": 22593536,
+          "same_tunnel_recoveries": 3,
+          "sample_count": 9,
+          "sampled_thread_range": [
+            10,
+            11
+          ],
+          "tcp_echoes_65536_bytes": 18,
+          "udp_echoes": 12
+        },
+        "wireguard": {
+          "connect_cycles": 3,
+          "connect_status_seconds": [
+            0.29148197174072266,
+            0.27748095989227295,
+            0.26628100872039795
+          ],
+          "dns_anchor_queries": 6,
+          "max_sampled_physical_footprint_bytes": 4358504,
+          "max_sampled_rss_bytes": 20774912,
+          "same_tunnel_recoveries": 3,
+          "sample_count": 9,
+          "sampled_thread_range": [
+            11,
+            11
+          ],
+          "tcp_echoes_65536_bytes": 18,
+          "udp_echoes": 12
+        }
+      }
+    }
+  ],
+  "schema": "xray-v07-bounded-apple-protocol-check/1",
+  "source_sha256": {
+    "Cargo.lock": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+    "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "f37f74e4ec36b04c5cff64c9c3ecc102236aa7734973c02bebc561e4abe51a7d",
+    "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift": "2754a6f7e299e9f9111b8d1feca590999e2f1e67a134c69dcad373dc61b4bd07",
+    "platform/apple/XrayClient/XrayClient/XrayClientApp.swift": "75186b3fdaac6c764c6545c991457040dbbb1e6d8ff7a369b4035fae0a82ca31",
+    "scripts/run-v07-apple-protocol-fixture.py": "3511096135461e5facd5aff6d098b9dc3379d279b00bcea1a4735aefcca7b3b9",
+    "vendor/gotatun/src/udp/socket/mod.rs": "f40da9fd425983ed1a9e7139ec1db7a1ff93124cb54aac0179e97521b33aec44"
+  },
+  "swift_configuration": "Debug",
+  "toolchain": "Xcode 27.0\nBuild version 27A266a",
+  "workspace_package_version": "0.6.1"
+}

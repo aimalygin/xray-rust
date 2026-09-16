@@ -1,6 +1,6 @@
 use std::fmt;
 use std::future::poll_fn;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,7 +10,7 @@ use h3::client::SendRequest;
 use http::{HeaderValue, Method, Request};
 use quinn::{Connection, Endpoint, VarInt};
 use rand::{distributions::Alphanumeric, Rng};
-use tokio::sync::Semaphore;
+use tokio::sync::{Notify, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use zeroize::Zeroizing;
@@ -167,6 +167,12 @@ impl Drop for Connecting {
     }
 }
 
+#[derive(Default)]
+struct RebindRequest {
+    pending: AtomicBool,
+    wake: Notify,
+}
+
 pub(super) struct Shared {
     connection: Mutex<Option<Connection>>,
     endpoint: Mutex<Option<Endpoint>>,
@@ -175,6 +181,10 @@ pub(super) struct Shared {
     h3_driver: JoinHandle<()>,
     pub udp_driver: Mutex<Option<JoinHandle<()>>>,
     closed: AtomicBool,
+    rebind: Arc<RebindRequest>,
+    rebind_driver: Mutex<Option<JoinHandle<()>>>,
+    bind_addr: SocketAddr,
+    protector: Option<Arc<dyn crate::SocketProtector>>,
     pub limits: HysteriaLimits,
     pub tcp_slots: Arc<Semaphore>,
     pub udp: Arc<Registry>,
@@ -215,6 +225,14 @@ impl Shared {
         {
             endpoint.close(VarInt::from_u32(0x100), b"");
         }
+        if let Some(task) = self
+            .rebind_driver
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
+            task.abort();
+        }
         self.tcp_slots.close();
         self.h3_driver.abort();
         if let Some(task) = self
@@ -226,6 +244,29 @@ impl Shared {
             task.abort();
         }
         self.udp.close();
+    }
+
+    fn rebind_socket(&self) -> Result<(), HysteriaError> {
+        if !self.is_live() {
+            return Err(HysteriaError::Closed);
+        }
+        let socket = UdpSocket::bind(self.bind_addr).map_err(|_| HysteriaError::Connect)?;
+        crate::protect_std_udp_socket(&socket, self.protector.as_deref())
+            .map_err(|_| HysteriaError::SocketProtection)?;
+        socket
+            .set_nonblocking(true)
+            .map_err(|_| HysteriaError::Connect)?;
+        let endpoint = self.endpoint.lock().unwrap_or_else(|e| e.into_inner());
+        if self.closed.load(Ordering::Acquire) {
+            return Err(HysteriaError::Closed);
+        }
+        // Runs on the captured Tokio runtime, never on the host/FFI thread.
+        // Quinn retains the live QUIC connection and validates the new path.
+        endpoint
+            .as_ref()
+            .ok_or(HysteriaError::Closed)?
+            .rebind(socket)
+            .map_err(|_| HysteriaError::Connect)
     }
 
     pub fn connection(&self) -> Result<Connection, HysteriaError> {
@@ -360,6 +401,11 @@ impl HysteriaClient {
         stream.stop_sending(h3::error::Code::H3_REQUEST_CANCELLED);
         drop(stream);
         let registry = Arc::new(Registry::new(config.limits));
+        let bind_addr = match crate::canonicalize_socket_addr(config.remote_addr).ip() {
+            IpAddr::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
+            IpAddr::V6(_) => SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 0),
+        };
+        let rebind = Arc::new(RebindRequest::default());
         let shared = Arc::new(Shared {
             connection: Mutex::new(Some(pending.connection.clone())),
             endpoint: Mutex::new(pending.endpoint.take()),
@@ -367,11 +413,32 @@ impl HysteriaClient {
             h3_driver: pending.driver.take().expect("started H3 driver"),
             udp_driver: Mutex::new(None),
             closed: AtomicBool::new(false),
+            rebind: rebind.clone(),
+            rebind_driver: Mutex::new(None),
+            bind_addr,
+            protector: tls.socket_protector_arc(),
             limits: config.limits,
             tcp_slots: Arc::new(Semaphore::new(config.limits.max_tcp_streams)),
             udp: registry,
             udp_enabled,
         });
+        let owner = Arc::downgrade(&shared);
+        let task = tokio::spawn(async move {
+            loop {
+                rebind.wake.notified().await;
+                rebind.pending.store(false, Ordering::Release);
+                let Some(shared) = owner.upgrade() else { break };
+                if shared.rebind_socket().is_err() {
+                    // Do not retain a stale carrier after failed protection/bind.
+                    shared.close();
+                    break;
+                }
+            }
+        });
+        *shared
+            .rebind_driver
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(task);
         if udp_enabled {
             let task = super::udp::spawn_receiver(shared.connection()?, Arc::clone(&shared.udp));
             *shared.udp_driver.lock().unwrap_or_else(|e| e.into_inner()) = Some(task);
@@ -381,6 +448,18 @@ impl HysteriaClient {
 
     pub fn is_live(&self) -> bool {
         self.shared.is_live()
+    }
+    /// Queue a fresh protected carrier socket on the connection's runtime.
+    /// Preserves QUIC/TCP/UDP state and the remote address. A replacement
+    /// failure closes the client; true means accepted, not path validation.
+    pub fn rebind(&self) -> bool {
+        if !self.is_live() {
+            return false;
+        }
+        if !self.shared.rebind.pending.swap(true, Ordering::AcqRel) {
+            self.shared.rebind.wake.notify_one();
+        }
+        true
     }
     pub fn udp_enabled(&self) -> bool {
         self.shared.udp_enabled

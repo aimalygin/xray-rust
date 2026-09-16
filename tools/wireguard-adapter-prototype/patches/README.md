@@ -54,7 +54,14 @@ lifetime guarantee. Caller JSON/string buffers also remain caller-owned; the
 runtime guarantees redaction and cleanup for its decoded key owners, not removal
 of every compiler/crypto temporary or memory locking against swap/core dumps.
 
-The shared guard verifies both patches with zero fuzz, compares the vendor tree,
+The shared guard verifies all three patches with zero fuzz, compares the vendor tree,
 runs all 89 engine tests, and tests PSK TCP/UDP and failed authentication against
 Xray-core v26.7.28. Algorithm code and both upstream reference revisions remain
 unchanged.
+
+## Mobile build patch
+
+Apply [gotatun-mobile-build.patch](gotatun-mobile-build.patch) last. The send-batch
+limit helper is used only by the Linux, Android and Windows implementations.
+Restrict its compilation to those platforms so `-D warnings` does not fail an
+`aarch64-apple-ios` build on an unused helper. Socket behavior is unchanged.

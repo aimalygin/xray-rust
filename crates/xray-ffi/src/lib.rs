@@ -27,7 +27,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 5;
+pub const XRAY_FFI_ABI_MINOR: u32 = 7;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -1486,6 +1486,76 @@ unsafe fn xray_core_close_connection_inner(
             set_error(error, XrayStatus::InvalidArgument, source.to_string());
             XrayStatus::InvalidArgument
         },
+    }
+}
+
+/// Queues a carrier socket rebind for live WireGuard clients (ABI 1.6).
+/// Endpoint addresses and inner flows are retained. The returned count is
+/// accepted coalesced requests, not successful binds or handshakes.
+///
+/// # Safety
+/// `handle` must be null or live; `accepted` must be null or writable. May run
+/// with data-path/snapshot calls, but not lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_rebind_wireguard(
+    handle: *mut XrayCoreHandle,
+    accepted: *mut u64,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            if accepted.is_null() {
+                set_error(error, XrayStatus::NullArgument, "accepted count is null");
+                return XrayStatus::NullArgument;
+            }
+            *accepted = 0;
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            let core = match loaded_core(handle, error) {
+                Ok(core) => core,
+                Err(status) => return status,
+            };
+            *accepted = core.rebind_wireguard();
+            XrayStatus::Ok
+        })
+    }
+}
+
+/// Queues a carrier socket rebind for live Hysteria clients (ABI 1.7).
+/// Endpoint addresses and QUIC/inner flows are retained. The returned count is
+/// accepted coalesced requests, not successful binds or path validation.
+///
+/// # Safety
+/// `handle` must be null or live; `accepted` must be null or writable. May run
+/// with data-path/snapshot calls, but not lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_rebind_hysteria(
+    handle: *mut XrayCoreHandle,
+    accepted: *mut u64,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            if accepted.is_null() {
+                set_error(error, XrayStatus::NullArgument, "accepted count is null");
+                return XrayStatus::NullArgument;
+            }
+            *accepted = 0;
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            let core = match loaded_core(handle, error) {
+                Ok(core) => core,
+                Err(status) => return status,
+            };
+            *accepted = core.rebind_hysteria();
+            XrayStatus::Ok
+        })
     }
 }
 

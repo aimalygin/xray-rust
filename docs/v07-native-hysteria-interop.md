@@ -88,3 +88,24 @@ coverage](v07-native-wireguard-interop.md) is also implemented. Application
 integration, physical Apple/Android network transitions and measured resource
 recovery remain release work. Reconnecting a fresh client/core is not evidence
 of recovery from every server crash or mobile network transition.
+
+
+## Carrier migration increment — 2026-09-14
+
+The shared reference suite now includes an explicit lost-path relay. It discards
+packets on the previous carrier in both directions and uses a separate upstream
+UDP socket for each client source port, requiring the reference to recognize a
+new QUIC peer address. The same TCP stream and UDP session survive two bursts of
+20 rebind requests; each burst invokes protection once and completes exact
+payload exchange within an eight-second budget. The client remains live while
+the old path is lost, before its 30-second idle timeout.
+
+Both official Hysteria v2.12.2 and pinned Xray v26.7.28 pass this scenario. Core
+checks cover a burst through the public API without reconnecting application
+flows or resolving DNS again, plus an update during first-socket protection
+before authentication/caching completes. The gate now includes the latter core
+unit suite. Transport tests check calls from a plain host thread and closure on
+replacement protection failure. These loopback cases do not measure cellular
+latency or address-family/DNS64 changes; the separate
+[iPhone report](device-results/2026-09-14-iphone17-hysteria-rebind/README.md)
+records physical network observations.

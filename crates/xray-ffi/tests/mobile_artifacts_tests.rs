@@ -47,6 +47,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_connection_snapshot_json",
         "xray_core_outbound_accounting_snapshot_json",
         "xray_core_close_connection",
+        "xray_core_rebind_wireguard",
+        "xray_core_rebind_hysteria",
         "xray_core_start",
         "xray_core_stop",
         "xray_core_free",
@@ -305,7 +307,9 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
         "ipv4Settings.excludedRoutes = ipv4ExcludedRoutes",
         "settings.ipv4Settings = ipv4Settings",
         "let ipv6Settings = NEIPv6Settings(",
-        "networkPrefixLengths: [128]",
+        // Interface prefix must admit the tunnel DNS anchor on iOS; outer
+        // endpoint exclusions remain individual /128 routes below.
+        "networkPrefixLengths: [120]",
         "ipv6Settings.includedRoutes = [NEIPv6Route.default()]",
         "let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)",
         "ipv6Settings.excludedRoutes = ipv6ExcludedRoutes",
@@ -1129,6 +1133,8 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_connection_snapshot_json",
     "xray_core_outbound_accounting_snapshot_json",
     "xray_core_close_connection",
+    "xray_core_rebind_wireguard",
+    "xray_core_rebind_hysteria",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -1264,6 +1270,8 @@ static void use_xray_ffi_api(void) {
   (void)xray_core_outbound_accounting_snapshot_json(
       handle, message, sizeof(message), &message_written, &error);
   (void)xray_core_close_connection(handle, 1, &error);
+  (void)xray_core_rebind_wireguard(handle, &stats_probe, &error);
+  (void)xray_core_rebind_hysteria(handle, &stats_probe, &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);

@@ -141,3 +141,63 @@ async fn hysteria_total_deadline_and_caller_cancellation_release_single_flight()
         "cancelled owner must release the connection admission lock"
     );
 }
+
+#[path = "../../../../xray-transport/tests/hysteria/support.rs"]
+mod rebind_reference;
+
+#[tokio::test]
+#[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
+async fn hysteria_rebind_during_auth_is_not_lost_and_idle_clients_stay_lazy() {
+    struct DuringProtect {
+        owner: std::sync::Weak<SessionOwner>,
+        calls: AtomicUsize,
+    }
+    impl xray_transport::SocketProtector for DuringProtect {
+        fn protect(&self, _: xray_transport::SocketHandle) -> std::io::Result<()> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                let outbound = HysteriaOutbound {
+                    inner: self.owner.upgrade().unwrap(),
+                };
+                assert!(!outbound.rebind());
+            }
+            Ok(())
+        }
+    }
+    let server = rebind_reference::ReferenceServer::start().await;
+    let mut config = configured();
+    let OutboundSettings::Hysteria(settings) = &mut config.settings else {
+        panic!()
+    };
+    settings.server = TargetAddr::Ip(server.address.ip());
+    settings.port = server.address.port();
+    let StreamSecurity::Tls(tls) = &mut config.stream.security else {
+        panic!()
+    };
+    tls.server_name = Some("localhost".into());
+    let StreamTransport::Hysteria(auth) = &mut config.stream.transport else {
+        panic!()
+    };
+    auth.auth = zeroize::Zeroizing::new(rebind_reference::AUTH.into());
+    let outbound = HysteriaOutbound::new(&config).unwrap();
+    assert!(!outbound.rebind());
+    assert!(outbound.inner.session.lock().unwrap().is_none());
+    let protector = Arc::new(DuringProtect {
+        owner: Arc::downgrade(&outbound.inner),
+        calls: AtomicUsize::new(0),
+    });
+    let dialer = TransportDialer::with_tls_connector(server.connector.clone())
+        .with_socket_protector(protector.clone());
+    let dns = PendingDns::default();
+    let _flow = outbound.open_udp(&dns, &dialer).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while protector.calls.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(protector.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(dns.calls.load(Ordering::SeqCst), 0);
+    outbound.close();
+    assert!(!outbound.rebind());
+}

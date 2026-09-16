@@ -761,6 +761,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                     return
                 }
                 let didFinish = self.lifecycle.finishStart(for: lifecycleToken) {
+                    runtime.startNetworkObservation()
                     if resolvedConfig.debugLoggingEnabled {
                         runtime.startDebugStatsLogging(
                             queue: self.debugStatsQueue,
@@ -818,6 +819,26 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
         let core = runtime.core
+
+#if DEBUG
+        if request == XrayTunnelProviderMessage.protocolProbeNetworkEventsRequest {
+            completionHandler?(try? JSONSerialization.data(withJSONObject: runtime.networkDiagnosticEvents))
+            return
+        }
+        if request == XrayTunnelProviderMessage.protocolProbeConnectionIDsRequest
+            || request == XrayTunnelProviderMessage.protocolProbeCloseConnectionIDsRequest {
+            do {
+                // Only opaque lifecycle IDs leave the extension; never targets.
+                let ids = try core.connectionSnapshot().connections.map(\.id).sorted()
+                guard ids.count <= 256 else { completionHandler?(nil); return }
+                if request == XrayTunnelProviderMessage.protocolProbeCloseConnectionIDsRequest {
+                    for id in ids { try? core.closeConnection(id: id) }
+                }
+                completionHandler?(try JSONEncoder().encode(ids))
+            } catch { completionHandler?(nil) }
+            return
+        }
+#endif
 
         if request == XrayTunnelProviderMessage.closeConnectionsRequest {
             do {
@@ -2123,9 +2144,12 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
         // here silently bypasses the VPN for IPv6 literals and AAAA results.
         // The Rust TUN path understands IPv6 TCP/UDP, while the proxy server's
         // own bootstrap address is excluded below to avoid routing recursion.
+        // iOS can accept /128 but leave IPv6 unavailable (ENETDOWN). Use /120
+        // for the local interface, as WireGuardKit does; endpoint exclusions
+        // below must remain exact /128 routes.
         let ipv6Settings = NEIPv6Settings(
             addresses: [tunnelLocalIPv6Address],
-            networkPrefixLengths: [128]
+            networkPrefixLengths: [120]
         )
         ipv6Settings.includedRoutes = [NEIPv6Route.default()]
         let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)
@@ -2797,18 +2821,61 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
 }
 
 @available(iOSApplicationExtension 15.0, tvOSApplicationExtension 17.0, macOSApplicationExtension 13.0, *)
-private final class XrayPacketTunnelRuntime {
+private final class XrayPacketTunnelRuntime: @unchecked Sendable {
     let core: XrayCore
     let identifier = UUID().uuidString.lowercased()
 
     private let lock = NSLock()
     private var pump: XrayPacketTunnelPump?
     private var debugStatsTimer: DispatchSourceTimer?
+    private var networkObserver: XrayPacketTunnelNetworkObserver?
     private var isStopped = false
 
     init(core: XrayCore, pump: XrayPacketTunnelPump?) {
         self.core = core
         self.pump = pump
+    }
+
+#if DEBUG
+    private func recordNetworkRebind() {
+        lock.lock()
+        defer { lock.unlock() }
+        networkObserver?.recordApplied()
+    }
+
+    var networkDiagnosticEvents: [[String: String]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return networkObserver?.diagnosticEvents ?? []
+    }
+#endif
+
+    func startNetworkObservation() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isStopped, networkObserver == nil else { return }
+        networkObserver = XrayPacketTunnelNetworkObserver { [weak self] in
+            guard let core = self?.runningCore() else { return }
+#if DEBUG
+            self?.recordNetworkRebind()
+#endif
+            do {
+                let accepted = try core.rebindWireGuard()
+                if accepted > 0 {
+                    XrayAppleLog.info("PacketTunnelProvider", "Network change: requested WireGuard carrier rebind count=\(accepted)")
+                }
+            } catch {
+                XrayAppleLog.error("PacketTunnelProvider", "WireGuard carrier rebind request failed")
+            }
+            do {
+                let accepted = try core.rebindHysteria()
+                if accepted > 0 {
+                    XrayAppleLog.info("PacketTunnelProvider", "Network change: requested Hysteria carrier rebind count=\(accepted)")
+                }
+            } catch {
+                XrayAppleLog.error("PacketTunnelProvider", "Hysteria carrier rebind request failed")
+            }
+        }
     }
 
     func startDebugStatsLogging(
@@ -2837,6 +2904,7 @@ private final class XrayPacketTunnelRuntime {
     func stop() {
         let timer: DispatchSourceTimer?
         let pump: XrayPacketTunnelPump?
+        let observer: XrayPacketTunnelNetworkObserver?
         lock.lock()
         if isStopped {
             lock.unlock()
@@ -2847,8 +2915,11 @@ private final class XrayPacketTunnelRuntime {
         debugStatsTimer = nil
         pump = self.pump
         self.pump = nil
+        observer = networkObserver
+        networkObserver = nil
         lock.unlock()
 
+        observer?.stop()
         timer?.setEventHandler {}
         timer?.cancel()
         XrayAppleLog.info("PacketTunnelProvider", "Stopping packet pump")

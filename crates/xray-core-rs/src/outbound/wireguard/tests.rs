@@ -87,6 +87,65 @@ fn target() -> Target {
         RoutingNetwork::Udp,
     )
 }
+
+#[tokio::test]
+async fn wireguard_rebind_during_creation_is_not_lost_and_idle_clients_stay_lazy() {
+    struct RebindOnProtect {
+        owner: std::sync::Weak<Owner>,
+        calls: AtomicUsize,
+    }
+    impl xray_transport::SocketProtector for RebindOnProtect {
+        fn protect(&self, _: xray_transport::SocketHandle) -> std::io::Result<()> {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                assert!(!WireguardOutbound(self.owner.upgrade().unwrap()).rebind());
+            }
+            Ok(())
+        }
+    }
+    let mut config = configured();
+    let OutboundSettings::Wireguard(settings) = &mut config.settings else {
+        panic!()
+    };
+    for peer in &mut settings.peers {
+        peer.endpoint = TargetAddr::Ip("127.0.0.1".parse().unwrap());
+        peer.port = 9;
+    }
+    let outbound = WireguardOutbound::new(&config).unwrap();
+    assert!(!outbound.rebind());
+    assert!(outbound.0.session.lock().unwrap().is_none());
+    let protector = Arc::new(RebindOnProtect {
+        owner: Arc::downgrade(&outbound.0),
+        calls: AtomicUsize::new(0),
+    });
+    let dialer = TransportDialer::system()
+        .unwrap()
+        .with_socket_protector(protector.clone());
+    let dns = PendingDns::default();
+    let _flow = outbound
+        .open_udp(&target(), &dns, &dns, &dialer)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while protector.calls.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(protector.calls.load(Ordering::SeqCst), 2);
+    let client = outbound
+        .0
+        .session
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .client
+        .clone();
+    outbound.close();
+    client.shutdown().await;
+    assert!(!outbound.rebind());
+}
 #[tokio::test]
 async fn wireguard_close_cancels_bootstrap_and_waiting_callers() {
     let outbound = WireguardOutbound::new(&configured()).unwrap();

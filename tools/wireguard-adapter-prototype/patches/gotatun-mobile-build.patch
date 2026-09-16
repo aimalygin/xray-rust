@@ -1,0 +1,11 @@
+--- a/gotatun/src/udp/socket/mod.rs
++++ b/gotatun/src/udp/socket/mod.rs
+@@ -230,7 +230,7 @@
+     }
+ }
+ 
+-#[cfg(not(target_os = "macos"))]
++#[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+ fn check_send_max_number_of_packets(
+     max_number_of_packets: usize,
+     packets: &[(crate::packet::Packet, SocketAddr)],
