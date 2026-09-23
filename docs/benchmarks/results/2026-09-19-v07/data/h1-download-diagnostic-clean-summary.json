@@ -1,0 +1,140 @@
+{
+  "artifact_sha256": {
+    "xhttp-h1-tun-download-1-baseline-1/result.json": "879aa43bf9ee92eb6856cda19d2b21b96fe0351bca88743e8648b6d6781cf8b0",
+    "xhttp-h1-tun-download-1-baseline-2/result.json": "8d36c49cd24d305dfa2bb271c1072e3cc1d74cd37ba8860e5c08fbd5606caafa",
+    "xhttp-h1-tun-download-1-baseline-3/result.json": "b99e1540b7472f473ccc78f29a25f463ab6741e930ee28b516d15c1939f62fb1",
+    "xhttp-h1-tun-download-1-baseline-4/result.json": "d5dd90f6eaf95ca19709a0193bf513f02794a3f0fa3a7566ac4c7111677e8f7d",
+    "xhttp-h1-tun-download-1-baseline-5/result.json": "99c23cf27538b1f2e89da41798128450557be0de39f3af79b400750d73435800",
+    "xhttp-h1-tun-download-1-candidate-1/result.json": "b5973d69b829c8254f6028714e749abcca1c4594fbb5515984f66445cf9836fd",
+    "xhttp-h1-tun-download-1-candidate-2/result.json": "a7cf262a56c29e4e0854f3661c8727fbb1102176df6512f3bee341f3f8671e41",
+    "xhttp-h1-tun-download-1-candidate-3/result.json": "fecbdbc25dd13b11849d2e0a7676274af0606d790230c5ee2ce3c7250f546a01",
+    "xhttp-h1-tun-download-1-candidate-4/result.json": "cafa0f2aa6f7603128ac7b5a877e40b6e1b5029672304269977ddf097d6e67ec",
+    "xhttp-h1-tun-download-1-candidate-5/result.json": "29a8f7b777b9d8dd0d1fe7648c2c9bfa9674436ef3ed9f2900173cb6f3c47ea3"
+  },
+  "failures": [],
+  "manifest_sha256": "7c9dc811a9f65f1c3db26a038016d5254f71117f2154a2c8a791bbbb3c35fa78",
+  "rows": [
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.0508474576271187,
+        "cpu_ms_per_mib": 1.0508474576271187,
+        "rss_mib": 1.0683333333333334,
+        "throughput_mib_s": 0.9935812380661244
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 630,
+              "median": 590,
+              "min": 560,
+              "samples": [
+                560,
+                580,
+                590,
+                610,
+                630
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.4609375,
+              "median": 2.3046875,
+              "min": 2.1875,
+              "samples": [
+                2.1875,
+                2.265625,
+                2.3046875,
+                2.3828125,
+                2.4609375
+              ]
+            },
+            "rss_mib": {
+              "max": 9.484375,
+              "median": 9.375,
+              "min": 9.234375,
+              "samples": [
+                9.4375,
+                9.234375,
+                9.375,
+                9.484375,
+                9.359375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 554.991290322231,
+              "median": 534.0857823131025,
+              "min": 526.7195280053141,
+              "samples": [
+                554.991290322231,
+                534.0857823131025,
+                547.0443936120062,
+                527.2750702015264,
+                526.7195280053141
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 640,
+              "median": 620,
+              "min": 610,
+              "samples": [
+                620,
+                630,
+                640,
+                620,
+                610
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.5,
+              "median": 2.421875,
+              "min": 2.3828125,
+              "samples": [
+                2.421875,
+                2.4609375,
+                2.5,
+                2.421875,
+                2.3828125
+              ]
+            },
+            "rss_mib": {
+              "max": 10.234375,
+              "median": 10.015625,
+              "min": 9.90625,
+              "samples": [
+                9.9375,
+                10.1875,
+                9.90625,
+                10.234375,
+                10.015625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 549.3387374646077,
+              "median": 530.657612824167,
+              "min": 521.134666264576,
+              "samples": [
+                530.657612824167,
+                528.7638858198667,
+                535.3222965600875,
+                549.3387374646077,
+                521.134666264576
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "tun"
+}

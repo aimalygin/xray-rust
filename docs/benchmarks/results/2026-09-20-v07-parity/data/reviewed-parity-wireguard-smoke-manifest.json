@@ -1,0 +1,349 @@
+{
+  "binary_builds": {
+    "candidate": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+          "xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+        "canonical_vendor_basis": {
+          "log": "reviewed-canonical-vendor.log",
+          "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+          "unchanged": false,
+          "vendor_tree": "3fb4f61a8c5f4385c51be6efa44a60bc4ee69706"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+          "parent_commit": "107d71f776c68a359ec6f71234b2587ee8b781cb",
+          "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "patch_sha256": "395b56aae6abbba3585100568faf99d772684514e10e726f8756078c1890dbb3",
+          "purpose": "Hysteria-only empty local CID; actual Initial capture plus native/Xray interop, blackholed path recovery, protection, and H3 regression tests; benefit to be measured",
+          "source_commit": "a2d6c8f2d6a17f6ce023d9a59b8d48621130c641",
+          "source_tree": "ce6dce5b1e615c7782b6120d98d220920864e16b",
+          "validation": [
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--test",
+                "hysteria_native_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+              },
+              "name": "native",
+              "returncode": 0,
+              "seconds": 19.483339071273804
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+              },
+              "name": "xray",
+              "returncode": 0,
+              "seconds": 3.1275367736816406
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "stream_xhttp_h3_tests"
+              ],
+              "environment": {},
+              "name": "h3",
+              "returncode": 0,
+              "seconds": 18.900521993637085
+            },
+            {
+              "command": [
+                "cargo",
+                "fmt",
+                "--all",
+                "--",
+                "--check"
+              ],
+              "environment": {},
+              "name": "format",
+              "returncode": 0,
+              "seconds": 1.131680965423584
+            },
+            {
+              "command": [
+                "cargo",
+                "build",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-cli"
+              ],
+              "environment": {},
+              "name": "build",
+              "returncode": 0,
+              "seconds": 50.62861704826355
+            }
+          ]
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+        "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json",
+      "sha256": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch",
+        "sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c"
+      }
+    }
+  },
+  "candidate_workers": null,
+  "cases": [
+    {
+      "connections": 8,
+      "id": "wireguard-socks-full-duplex-8",
+      "iterations": 4,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "full-duplex"
+    }
+  ],
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-protocol-parity.py": "38d733a9023694a5432f68dba68b1b5c4a784cbf97e532d7e8751c2904da43ee"
+  },
+  "finished_unix": 1789993378.621718,
+  "idle_connections_by_version": {
+    "candidate": 0
+  },
+  "idle_settle_seconds": 0,
+  "link_mbps_per_direction": 100,
+  "one_way_delay_ms": 25.0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "process_accounting": "prepared real binary launched directly; one verified TCP echo before steady measurements; startup and lifetime CPU retained separately",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_go_workers": 2,
+  "repeats": 1,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 30.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 11.2,
+                "executable": "/usr/sbin/coreaudiod",
+                "pid": 428
+              },
+              {
+                "cpu": 73.1,
+                "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us",
+                "pid": 45956
+              },
+              {
+                "cpu": 13.0,
+                "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost",
+                "pid": 46037
+              },
+              {
+                "cpu": 15.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789993375.207583
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.3,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 11.7,
+                "executable": "/usr/sbin/coreaudiod",
+                "pid": 428
+              },
+              {
+                "cpu": 67.8,
+                "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us",
+                "pid": 45956
+              },
+              {
+                "cpu": 13.5,
+                "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost",
+                "pid": 46037
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 56748
+              },
+              {
+                "cpu": 10.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789993377.252874
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 10.1,
+                "executable": "/usr/sbin/coreaudiod",
+                "pid": 428
+              },
+              {
+                "cpu": 70.7,
+                "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us",
+                "pid": 45956
+              },
+              {
+                "cpu": 14.0,
+                "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost",
+                "pid": 46037
+              },
+              {
+                "cpu": 10.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789993378.540152
+          }
+        ]
+      },
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-smoke/wireguard-socks-full-duplex-8-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 5346,
+        "peak_queued_bytes": 1465360,
+        "receive_buffer_bytes": 2097152,
+        "received": 5346,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.2874209880828857,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": true,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "source_provenance_note": "source_commit/source.patch describe the collector workspace; each frozen executable is identified by SHA256 and its adjacent binary_builds metadata when available",
+  "started_unix": 1789993374.046838,
+  "status": "pass",
+  "suite": "new",
+  "target": "strictly lower RSS; no lower throughput, higher latency/CPU or additional failures; uncertainty is reported separately, never converted into a pass",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    }
+  },
+  "warmup": true
+}

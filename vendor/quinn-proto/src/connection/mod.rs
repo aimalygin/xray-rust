@@ -10,14 +10,11 @@ use std::{
 use bytes::{Bytes, BytesMut};
 use frame::StreamMetaVec;
 
-use rand::{RngExt, SeedableRng, rngs::StdRng};
+use rand::{rngs::StdRng, RngExt, SeedableRng};
 use thiserror::Error;
 use tracing::{debug, error, trace, trace_span, warn};
 
 use crate::{
-    Dir, Duration, EndpointConfig, Frame, INITIAL_MTU, Instant, MAX_CID_SIZE, MAX_STREAM_COUNT,
-    MIN_INITIAL_SIZE, Side, StreamId, TIMER_GRANULARITY, TokenStore, Transmit, TransportError,
-    TransportErrorCode, VarInt,
     cid_generator::ConnectionIdGenerator,
     cid_queue::CidQueue,
     coding::BufMutExt,
@@ -35,6 +32,9 @@ use crate::{
     },
     token::{ResetToken, Token, TokenPayload},
     transport_parameters::TransportParameters,
+    Dir, Duration, EndpointConfig, Frame, Instant, Side, StreamId, TokenStore, Transmit,
+    TransportError, TransportErrorCode, VarInt, INITIAL_MTU, MAX_CID_SIZE, MAX_STREAM_COUNT,
+    MIN_INITIAL_SIZE, TIMER_GRANULARITY,
 };
 
 mod ack_frequency;
@@ -549,6 +549,16 @@ impl Connection {
             }
 
             pad_datagram_to_mtu |= space_id == SpaceId::Data && self.config.pad_to_mtu;
+            // A ready ACK must not wait for our data's congestion or pacing
+            // budget: that can stall the peer's independent send direction.
+            // Only bypass with a standalone, unpadded 1-RTT ACK. Padded
+            // packets still consume congestion credit, even without data.
+            let can_send_unpaced_ack = can_send.acks
+                && space_id == SpaceId::Data
+                && num_datagrams == 0
+                && !pad_datagram_to_mtu
+                && !close;
+            let mut ack_only = false;
 
             // Can we append more data into the current buffer?
             // It is not safe to assume that `buf.len()` is the end of the data,
@@ -604,29 +614,45 @@ impl Connection {
 
                     let bytes_to_send = segment_size as u64 + untracked_bytes;
                     if self.path.in_flight.bytes + bytes_to_send >= self.path.congestion.window() {
-                        space_idx += 1;
                         congestion_blocked = true;
-                        // We continue instead of breaking here in order to avoid
-                        // blocking loss probes queued for higher spaces.
                         trace!("blocked by congestion control");
-                        continue;
+                        if can_send_unpaced_ack {
+                            ack_only = true;
+                        } else {
+                            space_idx += 1;
+                            // Higher spaces may have a loss probe to send.
+                            continue;
+                        }
                     }
 
                     // Check whether the next datagram is blocked by pacing
                     let smoothed_rtt = self.path.rtt.get();
-                    if let Some(delay) = self.path.pacing.delay(
-                        smoothed_rtt,
-                        bytes_to_send,
-                        self.path.current_mtu(),
-                        self.path.congestion.window(),
-                        now,
-                    ) {
+                    let pacing_delay = if ack_only {
+                        None
+                    } else {
+                        self.path.pacing.delay_with_rate(
+                            smoothed_rtt,
+                            bytes_to_send,
+                            self.path.current_mtu(),
+                            self.path.congestion.window(),
+                            self.path.congestion.pacing_rate(),
+                            now,
+                        )
+                    };
+                    if let Some(delay) = pacing_delay {
                         self.timers.set(Timer::Pacing, delay);
                         congestion_blocked = true;
                         // Loss probes should be subject to pacing, even though
                         // they are not congestion controlled.
                         trace!("blocked by pacing");
-                        break;
+                        if can_send_unpaced_ack {
+                            ack_only = true;
+                        } else {
+                            break;
+                        }
+                    }
+                    if ack_only {
+                        ack_eliciting = false;
                     }
                 }
 
@@ -847,7 +873,7 @@ impl Connection {
 
             // Send an off-path PATH_RESPONSE. Prioritized over on-path data to ensure that path
             // validation can occur while the link is saturated.
-            if space_id == SpaceId::Data && num_datagrams == 1 {
+            if space_id == SpaceId::Data && num_datagrams == 1 && !ack_only {
                 if let Some((token, remote)) = self.path_responses.pop_off_path(self.path.remote) {
                     // `unwrap` guaranteed to succeed because `builder_storage` was populated just
                     // above.
@@ -877,8 +903,20 @@ impl Connection {
                 }
             }
 
-            let sent =
-                self.populate_packet(now, space_id, buf, builder.max_size, builder.exact_number);
+            let sent = if ack_only {
+                let mut sent = SentFrames::default();
+                Self::populate_acks(
+                    now,
+                    self.receiving_ecn,
+                    &mut sent,
+                    &mut self.spaces[space_id],
+                    buf,
+                    &mut self.stats,
+                );
+                sent
+            } else {
+                self.populate_packet(now, space_id, buf, builder.max_size, builder.exact_number)
+            };
 
             // ACK-only packets should only be sent when explicitly allowed. If we write them due to
             // any other reason, there is a bug which leads to one component announcing write
@@ -923,11 +961,7 @@ impl Connection {
                 builder.pad_to(segment_size as u16);
             }
 
-            let last_packet_number = builder.exact_number;
             builder.finish_and_track(now, self, sent_frames, buf);
-            self.path
-                .congestion
-                .on_sent(now, buf.len() as u64, last_packet_number);
 
             self.config.qlog_sink.emit_recovery_metrics(
                 self.pto_count,
@@ -1495,13 +1529,6 @@ impl Connection {
             }
         }
 
-        self.path.congestion.on_end_acks(
-            now,
-            self.path.in_flight.bytes,
-            self.app_limited,
-            self.spaces[space].largest_acked_packet,
-        );
-
         if new_largest && ack_eliciting_acked {
             let ack_delay = if space != SpaceId::Data {
                 Duration::from_micros(0)
@@ -1513,11 +1540,25 @@ impl Connection {
             };
             let rtt = now.saturating_duration_since(self.spaces[space].largest_acked_packet_sent);
             self.path.rtt.update(ack_delay, rtt);
+            // Match delivery callbacks: old-path ACKs received during path
+            // validation must not change the new path's congestion model.
+            if self.path.challenge.is_none() {
+                self.path
+                    .congestion
+                    .on_rtt_sample(now, rtt, self.app_limited);
+            }
             if self.path.first_packet_after_rtt_sample.is_none() {
                 self.path.first_packet_after_rtt_sample =
                     Some((space, self.spaces[space].next_packet_number));
             }
         }
+
+        self.path.congestion.on_end_acks(
+            now,
+            self.path.in_flight.bytes,
+            self.app_limited,
+            self.spaces[space].largest_acked_packet,
+        );
 
         // Must be called before crypto/pto_count are clobbered
         self.detect_lost_packets(now, space, true);
@@ -1582,12 +1623,13 @@ impl Connection {
         if info.ack_eliciting && self.path.challenge.is_none() {
             // Only pass ACKs to the congestion controller if we are not validating the current
             // path, so as to ignore any ACKs from older paths still coming in.
-            self.path.congestion.on_ack(
+            self.path.congestion.on_ack_with_token(
                 now,
                 info.time_sent,
                 info.size.into(),
                 self.app_limited,
                 &self.path.rtt,
+                info.delivery_token,
             );
         }
 
@@ -1737,7 +1779,8 @@ impl Connection {
             self.stats.path.lost_bytes += size_of_lost_packets;
             trace!(
                 "packets lost: {:?}, bytes lost: {}",
-                lost_packets, size_of_lost_packets
+                lost_packets,
+                size_of_lost_packets
             );
 
             for &packet in &lost_packets {

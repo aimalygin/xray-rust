@@ -803,6 +803,12 @@ impl<T: DeviceTransports> DeviceState<T> {
                         continue;
                     }
 
+                    // A full inner receive queue may need outgoing traffic
+                    // (TCP ACKs in particular) before it can drain. Never keep
+                    // the encryption or device lock across that backpressure.
+                    // Authentication and allowed-IP ownership are checked above.
+                    drop(peer);
+                    drop(device_guard);
                     if let Err(e) = tun_tx.send(packet).await {
                         tracing::trace!("buffered_tun_send.send failed");
                         return Err(Error::IoError(e));

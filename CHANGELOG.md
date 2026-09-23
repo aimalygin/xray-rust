@@ -10,6 +10,32 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.7.0-rc.1 - 2026-09-22
+
+Release candidate preparation; publication and final device acceptance are pending.
+
+- Add Hysteria 2 and standard WireGuard client outbounds for SOCKS, HTTP,
+  TUN and routed DNS, with bounded TCP/UDP resources and independent native
+  server interoperability checks. WireGuard supports up to eight peers,
+  IPv4/IPv6, PSKs and authenticated peer isolation.
+- Add protected carrier rebinding and bounded mobile network-change recovery.
+  Preserve active WireGuard sessions and keep TUN download/cancellation
+  responsive while an upload is blocked.
+- Reduce shared async setup allocations, bound packet-protocol TUN upload
+  queues, reuse WireGuard TCP receive storage and improve QUIC ACK handling.
+  The CLI defaults to two Tokio workers and preserves the explicit override.
+  Improve XHTTP/H3 receive batching without waiting for future data.
+- Expose capability discovery, shared profile import and network-change
+  notifications through the additive C ABI 1.7 and matching Swift/Kotlin APIs.
+- Retain the pinned Xray-core v26.7.28 compatibility target. Supported options
+  and bounds are documented; this RC does not claim full upstream parity.
+- Defer the higher XHTTP/H2 TUN RSS to a future version by owner decision.
+  Separate Hysteria2 latency/short WAN duplex gaps remain documented; complete
+  performance parity has not been established. See [performance evidence](docs/v07-performance.md).
+- Require versioned exact-candidate Apple/Android evidence for 0.7 publication.
+  New checks include both protocols, both Android adapter paths, recovery and
+  legacy regression coverage; old v0.6 evidence remains independently validated.
+
 - Add shared Rust import for Hysteria2 links and WireGuard configuration files,
   exposed through C ABI 1.5 and equivalent Swift/Kotlin SDK APIs. Advertise
   protocol/import capabilities and validate bounded input with redacted errors.

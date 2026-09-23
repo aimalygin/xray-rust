@@ -1,0 +1,213 @@
+diff --git a/docs/roadmap.md b/docs/roadmap.md
+index f30eb56..7118bc2 100644
+--- a/docs/roadmap.md
++++ b/docs/roadmap.md
+@@ -692,8 +692,10 @@ remaining memory/throughput tradeoffs. These host results do not establish
+ physical-device or unrestricted network acceptance for the revised runtime.
+ The [competitor investigation](benchmarks/results/2026-09-20-v07-parity/README.md)
+ adds pinned Xray, sing-box, native Hysteria and official wireguard-go comparisons.
+-Its stricter target requires lower process RSS and no worse speed, latency, CPU
+-or reliability; the historical 15% review thresholds do not establish parity.
++Its user-approved Mac target requires strictly lower process RSS and allows up
++to 3% lower speed or higher latency/CPU/startup, with no reliability allowance.
++Quality flags and uncertain intervals remain visible; the historical 15%
++review thresholds do not establish parity.
+ Accepted changes, fresh regression checks and remaining deficits are recorded
+ separately from the earlier candidate's counts above.
+ See the [reproduction method](v07-performance.md).
+diff --git a/docs/v07-performance.md b/docs/v07-performance.md
+index fae3f21..17b4194 100644
+--- a/docs/v07-performance.md
++++ b/docs/v07-performance.md
+@@ -12,10 +12,12 @@ host evidence does not replace mobile-device/network acceptance.
+ 
+ Those historical counts apply to the previous candidate. They do not establish
+ Hysteria2/WireGuard parity with other implementations. The new comparison uses
+-a strict target: lower sampled process RSS and no worse throughput, CPU,
+-latency, startup or reliability. The 15% investigation thresholds used below
+-for old regressions are **not** a competitor-parity allowance. Failed runs and
+-uncertain intervals remain visible. See the dated report for accepted changes,
++the user-approved Mac target: strictly lower sampled process RSS, throughput
++at least 97% of each reference, and CPU/latency/startup at most 103%. This explicit
++3% performance allowance accounts for the imperfect host; reliability has no
++allowance. Original differences, failed runs, environmental quality flags and
++uncertain intervals remain visible. The 15% investigation thresholds below are
++separate historical review flags. See the dated report for accepted changes,
+ fresh checks, rejected experiments and remaining deficits.
+ 
+ ## Comparing native implementations and full clients
+@@ -36,7 +38,8 @@ python3 scripts/run-v07-protocol-parity.py --root /absolute/parity \
+ python3 scripts/run-v07-protocol-parity.py --root /absolute/parity \
+   --repeats 5 --one-way-ms 25 --rate-mbps 100 --bulk-mib 2 \
+   --echo-iterations 30 --output /absolute/parity/evidence/rtt50
+-python3 scripts/summarize-v07-protocol-parity.py /absolute/parity/evidence/local --check
++python3 scripts/summarize-v07-protocol-parity.py /absolute/parity/evidence/local \
++  --max-regression-pct 3 --output /absolute/parity/evidence/local/summary-mac-3pct.json --check
+ ```
+ 
+ The four clients use a fresh common Xray server and the same validated SOCKS
+@@ -54,7 +57,11 @@ Kernel UDP loss is separate and must not be mistaken for a zero-loss path.
+ RSS sampling is every 100 ms and excludes kernel socket memory and the common
+ server. Both queue bounds and kernel buffer requests should be reported.
+ Three-to-five repetitions and coarse CPU counters cannot prove exact equality;
+-the strict checker reports `not_met` or `unproven` instead of inventing parity.
++the checker reports `not_met` or `unproven` when the requested target lacks
++supporting evidence. Its default allowance remains zero for reproducibility;
++`--max-regression-pct 3` explicitly enables the Mac policy. `--output` preserves
++the original strict summary alongside the new assessment. The allowance never
++waives strictly lower external RSS, failed trials or environmental interference.
+ `binary_builds` records adjacent frozen-build metadata; the collector workspace
+ patch alone must never be presented as the measured binary's exact source.
+ Worker overrides from the parent shell are cleared. Use `--candidate-workers`
+diff --git a/scripts/summarize-v07-protocol-parity.py b/scripts/summarize-v07-protocol-parity.py
+index 1e17015..7bfac10 100644
+--- a/scripts/summarize-v07-protocol-parity.py
++++ b/scripts/summarize-v07-protocol-parity.py
+@@ -1,12 +1,13 @@
+ #!/usr/bin/env python3
+-"""Report every reference comparison against strict per-metric targets.
++"""Report every reference comparison against explicit per-metric targets.
+ 
+-A point-estimate loss is never relabeled as a pass because of a broad tolerance.
+-Paired bootstrap intervals describe uncertainty; they do not prove equality.
++Defaults are strict. An explicit performance allowance keeps RSS strictly lower
++and preserves the original point differences and uncertainty intervals.
+ """
+ import argparse
+ import importlib.util
+ import json
++import math
+ from pathlib import Path
+ import random
+ import statistics
+@@ -24,7 +25,17 @@ def ratio_interval(candidate,reference):
+     return [values[int(.025*len(values))],values[min(len(values)-1,int(.975*len(values)))]] if values else None
+ 
+ 
+-def summarize(root):
++def point_target(metric, candidate, reference, max_regression_pct=0):
++    if metric == 'rss_mib':
++        return candidate < reference
++    allowance = max_regression_pct / 100
++    return (candidate >= reference * (1 - allowance) if metric == 'throughput_mib_s'
++            else candidate <= reference * (1 + allowance))
++
++
++def summarize(root, max_regression_pct=0):
++    if not math.isfinite(max_regression_pct) or not 0 <= max_regression_pct < 100:
++        raise ValueError('performance allowance must be finite and in [0, 100) percent')
+     summary=base.summarize(root);manifest=json.loads((root/'manifest.json').read_text());extra={}
+     quality_path=root/'measurement-quality.json'
+     quality=json.loads(quality_path.read_text()) if quality_path.exists() else {}
+@@ -65,28 +76,36 @@ def summarize(root):
+             if not compare['complete']:continue
+             for metric in sorted(current['metrics'].keys() & ref['metrics'].keys()):
+                 a=current['metrics'][metric];b=ref['metrics'][metric];den=b['median'];ratio=a['median']/den if den else None
+-                lower=metric!='throughput_mib_s';strict=metric=='rss_mib'
+-                meets=(a['median']<den if strict else a['median']<=den if lower else a['median']>=den)
+-                compare['metrics'][metric]={'candidate':a['median'],'reference':den,'ratio':ratio,'meets_point_target':meets,'paired_bootstrap_95pct':ratio_interval(a['samples'],b['samples'])}
++                meets=point_target(metric,a['median'],den,max_regression_pct)
++                compare['metrics'][metric]={'candidate':a['median'],'reference':den,'ratio':ratio,
++                    'meets_point_target':meets,'meets_strict_point_target':point_target(metric,a['median'],den),
++                    'allowed_regression_pct':0 if metric=='rss_mib' else max_regression_pct,
++                    'paired_bootstrap_95pct':ratio_interval(a['samples'],b['samples'])}
+     comparisons=[c for row in summary['rows'] for c in row['comparisons'].values() if c['role']=='external_reference']
+     metrics=[(name, metric) for c in comparisons if c['complete'] for name,metric in c['metrics'].items()]
+     deficits=sum(not metric['meets_point_target'] for _,metric in metrics)
+     uncertain=0
+     for name,metric in metrics:
+         interval=metric['paired_bootstrap_95pct']
+-        supported=interval is not None and (interval[0]>=1 if name=='throughput_mib_s' else interval[1]<1 if name=='rss_mib' else interval[1]<=1)
++        supported=interval is not None and (interval[0]>=1-max_regression_pct/100 if name=='throughput_mib_s' else interval[1]<1 if name=='rss_mib' else interval[1]<=1+max_regression_pct/100)
+         uncertain+=not supported
+     complete=bool(comparisons) and all(c['complete'] for c in comparisons)
+     summary['parity']={'status':'invalid_measurements' if contaminated else 'not_met' if deficits or not complete else 'unproven' if uncertain else 'observed_targets_met',
+                        'environmental_interference_detected':contaminated, 'reference_comparisons':len(comparisons),
+                        'complete':complete,'point_deficit_metrics':deficits,'metrics_without_supporting_interval':uncertain,
+-                       'scope':'observed workload and host only; no practical regression allowance'}
++                       'max_regression_pct':max_regression_pct,'memory_target':'strictly lower RSS',
++                       'strict_point_deficit_metrics':sum(not metric['meets_strict_point_target'] for _,metric in metrics),
++                       'scope':'observed workload and host only; explicit performance allowance does not waive memory, failed trials, environmental interference or uncertainty'}
+     return summary
+ 
+ 
+ if __name__=='__main__':
+-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('root',type=Path);p.add_argument('--check',action='store_true',help='fail unless every target has supporting measured evidence');a=p.parse_args();summary=summarize(a.root)
+-    (a.root/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
++    p=argparse.ArgumentParser(description=__doc__);p.add_argument('root',type=Path)
++    p.add_argument('--max-regression-pct',type=float,default=0,help='explicit allowed throughput decrease or CPU/latency/startup increase; RSS remains strictly lower')
++    p.add_argument('--output',type=Path,help='write a separate derived summary instead of ROOT/summary.json')
++    p.add_argument('--check',action='store_true',help='fail unless every requested target has supporting measured evidence')
++    a=p.parse_args();summary=summarize(a.root,a.max_regression_pct)
++    (a.output or a.root/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+     print(json.dumps({'parity':summary['parity'],'cases':len(summary['rows']),'failures':summary['failures'],'comparisons_with_point_deficits':sum(any(not m['meets_point_target'] for m in c['metrics'].values()) for row in summary['rows'] for c in row['comparisons'].values())},indent=2))
+ 
+     if a.check and summary['parity']['status']!='observed_targets_met':raise SystemExit(1)
+diff --git a/scripts/tests/test_v07_protocol_parity.py b/scripts/tests/test_v07_protocol_parity.py
+index cdc71ee..4a35f65 100644
+--- a/scripts/tests/test_v07_protocol_parity.py
++++ b/scripts/tests/test_v07_protocol_parity.py
+@@ -78,6 +78,63 @@ class ParityTests(unittest.TestCase):
+             with self.assertRaisesRegex(ValueError, 'comparison roles missing'):
+                 summary.summarize(root)
+ 
++    def test_explicit_three_percent_allowance_preserves_strict_differences(self):
++        with tempfile.TemporaryDirectory() as temp:
++            root=Path(temp);self.evidence(root)
++            for path in root.glob('*/result.json'):
++                data=json.loads(path.read_text());candidate=path.parent.name.startswith('candidate')
++                data.update(throughput_mib_s=97 if candidate else 100,
++                            cpu_millis=103 if candidate else 100,
++                            latency_us={'median':103 if candidate else 100,'p95':103 if candidate else 100,'p99':103 if candidate else 100})
++                path.write_text(json.dumps(data))
++            self.assertEqual(summary.summarize(root)['parity']['status'], 'not_met')
++            allowed=summary.summarize(root,3)
++            self.assertEqual(allowed['parity']['status'], 'observed_targets_met')
++            self.assertGreater(allowed['parity']['strict_point_deficit_metrics'],0)
++            metric=allowed['rows'][0]['comparisons']['reference']['metrics']['throughput_mib_s']
++            self.assertFalse(metric['meets_strict_point_target'])
++            self.assertEqual(metric['ratio'],.97)
++            # All three repeats must move beyond the boundary; one sample does
++            # not change the median and should remain an uncertainty question.
++            for path in root.glob('candidate*/result.json'):
++                data=json.loads(path.read_text());data['throughput_mib_s']=96.99;path.write_text(json.dumps(data))
++            self.assertEqual(summary.summarize(root,3)['parity']['status'],'not_met')
++
++    def test_allowance_boundaries_for_each_metric(self):
++        for metric in ['cpu_ms','latency_us','latency_p95_us','latency_p99_us','client_startup_seconds']:
++            with self.subTest(metric=metric):
++                self.assertTrue(summary.point_target(metric,103,100,3))
++                self.assertFalse(summary.point_target(metric,103.01,100,3))
++        self.assertTrue(summary.point_target('throughput_mib_s',97,100,3))
++        self.assertFalse(summary.point_target('throughput_mib_s',96.99,100,3))
++        self.assertFalse(summary.point_target('rss_mib',100,100,3))
++        self.assertFalse(summary.point_target('rss_mib',101,100,3))
++
++    def test_allowance_cannot_waive_memory_failure_or_interference(self):
++        for equal_memory,fail in [(True,False),(False,True)]:
++            with tempfile.TemporaryDirectory() as temp:
++                root=Path(temp);self.evidence(root,equal_memory,fail)
++                self.assertEqual(summary.summarize(root,3)['parity']['status'],'not_met')
++        with tempfile.TemporaryDirectory() as temp:
++            root=Path(temp);self.evidence(root)
++            (root/'measurement-quality.json').write_text(json.dumps({'compiler_load_detected':True}))
++            self.assertEqual(summary.summarize(root,3)['parity']['status'],'invalid_measurements')
++
++    def test_allowance_does_not_turn_wide_intervals_into_evidence(self):
++        with tempfile.TemporaryDirectory() as temp:
++            root=Path(temp);self.evidence(root)
++            for version in ['candidate','reference']:
++                for repeat in range(1,4):
++                    path=root/(version+str(repeat))/'result.json';data=json.loads(path.read_text())
++                    data['throughput_mib_s']=[9,10,11][repeat-1] if version=='candidate' else 10
++                    path.write_text(json.dumps(data))
++            self.assertEqual(summary.summarize(root,3)['parity']['status'],'unproven')
++
++    def test_invalid_allowance_is_rejected_before_reading_measurements(self):
++        for value in [-1,100,float('nan'),float('inf')]:
++            with self.assertRaisesRegex(ValueError,'allowance'):
++                summary.summarize(Path('/unused'),value)
++
+     def test_reference_requires_loopback_socks(self):
+         for inbound in [{'protocol': 'tun'}, {'protocol': 'socks', 'listen': '0.0.0.0'}]:
+             with self.assertRaises(ValueError):

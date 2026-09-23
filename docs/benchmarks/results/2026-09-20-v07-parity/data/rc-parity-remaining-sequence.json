@@ -1,0 +1,67 @@
+{
+  "reason": "Continuation after a complete primary echo group with one native Hysteria timeout; initial sequence and failure preserved.",
+  "prior_sequence": "rc-parity-sequence.json",
+  "followup_series": "rc-parity-hysteria2-local-echo-followup",
+  "followup_comparison_failures": [
+    {
+      "case": "hysteria2-socks-udp-8",
+      "version": "native",
+      "repeat": 1,
+      "returncode": 1
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "version": "native",
+      "repeat": 3,
+      "returncode": 1
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "version": "native",
+      "repeat": 4,
+      "returncode": 1
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "version": "xray",
+      "repeat": 4,
+      "returncode": 1
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "version": "native",
+      "repeat": 5,
+      "returncode": 1
+    }
+  ],
+  "planned_groups": 15,
+  "groups": [
+    {
+      "series": "rc-parity-wireguard-local-echo",
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-campaign.py",
+        "rc-parity-wireguard-local-echo"
+      ],
+      "returncode": 0,
+      "seconds": 185.8343698978424,
+      "comparison_failures": []
+    },
+    {
+      "series": "rc-parity-hysteria2-wan-bulk-1",
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-campaign.py",
+        "rc-parity-hysteria2-wan-bulk-1"
+      ],
+      "returncode": 0,
+      "seconds": 374.8303508758545,
+      "comparison_failures": []
+    }
+  ],
+  "all_planned_groups_collected": false,
+  "all_comparators_passed": false,
+  "checkpoint_requested": true
+}

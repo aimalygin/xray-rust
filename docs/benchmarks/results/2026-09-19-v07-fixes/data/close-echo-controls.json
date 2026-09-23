@@ -1,0 +1,118 @@
+{
+  "close": {
+    "64": {
+      "baseline": {
+        "avg_ns_samples": [
+          396,
+          646,
+          1891,
+          582,
+          322
+        ],
+        "median_ns": 582
+      },
+      "candidate": {
+        "avg_ns_samples": [
+          555,
+          506,
+          615,
+          517,
+          610
+        ],
+        "median_ns": 555
+      }
+    },
+    "256": {
+      "baseline": {
+        "avg_ns_samples": [
+          4579,
+          2661,
+          980,
+          4280,
+          4315
+        ],
+        "median_ns": 4280
+      },
+      "candidate": {
+        "avg_ns_samples": [
+          2790,
+          6166,
+          4808,
+          3247,
+          5153
+        ],
+        "median_ns": 4808
+      }
+    }
+  },
+  "echo": {
+    "baseline": {
+      "cpu_millis": {
+        "samples": [
+          370,
+          360,
+          390,
+          380,
+          380
+        ],
+        "median": 380
+      },
+      "peak_rss_kib": {
+        "samples": [
+          5952,
+          5856,
+          5840,
+          5936,
+          5888
+        ],
+        "median": 5888
+      },
+      "duration_ms": {
+        "samples": [
+          4687,
+          4709,
+          4805,
+          4731,
+          4763
+        ],
+        "median": 4731
+      }
+    },
+    "candidate": {
+      "cpu_millis": {
+        "samples": [
+          300,
+          280,
+          420,
+          380,
+          370
+        ],
+        "median": 370
+      },
+      "peak_rss_kib": {
+        "samples": [
+          6400,
+          6400,
+          6272,
+          6288,
+          6272
+        ],
+        "median": 6288
+      },
+      "duration_ms": {
+        "samples": [
+          4524,
+          4406,
+          4788,
+          4735,
+          4725
+        ],
+        "median": 4725
+      }
+    }
+  },
+  "notes": [
+    "1000-connection close invocation rejected before measurement by the unchanged historical driver. The 64-connection group is complete; 256 replaces the unsupported larger diagnostic.",
+    "Historical harness Git provenance is runtime cwd metadata. Frozen binary hashes in the manifests identify the measured version."
+  ]
+}

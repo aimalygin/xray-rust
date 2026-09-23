@@ -5,13 +5,13 @@ use std::sync::Arc;
 use rand::{RngExt, SeedableRng};
 use rand_pcg::Pcg32;
 
-use crate::congestion::ControllerMetrics;
 use crate::congestion::bbr::bw_estimation::BandwidthEstimation;
 use crate::congestion::bbr::min_max::MinMax;
+use crate::congestion::ControllerMetrics;
 use crate::connection::RttEstimator;
 use crate::{Duration, Instant};
 
-use super::{BASE_DATAGRAM_SIZE, Controller, ControllerFactory};
+use super::{Controller, ControllerFactory, BASE_DATAGRAM_SIZE};
 
 mod bw_estimation;
 mod min_max;
@@ -44,7 +44,10 @@ pub struct Bbr {
     min_cwnd: u64,
     prev_in_flight_count: u64,
     exit_probe_rtt_at: Option<Instant>,
-    probe_rtt_last_started_at: Option<Instant>,
+    // Keep deliberately sparse probing out of the path-capacity filter.
+    probe_limited_until: Option<u64>,
+    // Epoch of the current minimum sample or periodic RTT probe.
+    min_rtt_sample_epoch: Option<Instant>,
     min_rtt: Duration,
     exiting_quiescence: bool,
     pacing_rate: u64,
@@ -77,15 +80,16 @@ impl Bbr {
             pacing_gain: K_DEFAULT_HIGH_GAIN,
             high_gain: K_DEFAULT_HIGH_GAIN,
             drain_gain: 1.0 / K_DEFAULT_HIGH_GAIN,
-            cwnd_gain: K_DEFAULT_HIGH_GAIN,
-            high_cwnd_gain: K_DEFAULT_HIGH_GAIN,
+            cwnd_gain: K_DERIVED_HIGH_CWNDGAIN,
+            high_cwnd_gain: K_DERIVED_HIGH_CWNDGAIN,
             last_cycle_start: None,
             current_cycle_offset: 0,
             init_cwnd: initial_window,
             min_cwnd: calculate_min_window(current_mtu as u64),
             prev_in_flight_count: 0,
             exit_probe_rtt_at: None,
-            probe_rtt_last_started_at: None,
+            probe_limited_until: None,
+            min_rtt_sample_epoch: None,
             min_rtt: Default::default(),
             exiting_quiescence: false,
             pacing_rate: 0,
@@ -99,6 +103,24 @@ impl Bbr {
             round_wo_bw_gain: 0,
             ack_aggregation: AckAggregationState::default(),
             random_number_generator: Pcg32::from_rng(&mut rand::rng()),
+        }
+    }
+
+    fn update_min_rtt(&mut self, now: Instant, sample: Duration, app_limited: bool) {
+        if sample.is_zero() {
+            return;
+        }
+        let expired = self.is_min_rtt_expired(now, app_limited);
+        let lower = self.min_rtt.is_zero() || sample < self.min_rtt;
+        if lower || expired {
+            // Only a fresh measurement can refresh this window: the path's
+            // all-time minimum cannot track increases after a route change.
+            self.min_rtt = sample;
+            // Preserve expiry until the end-of-ACKs probe decision. Refreshing
+            // the epoch here would silently cancel the required probe.
+            if lower && !expired {
+                self.min_rtt_sample_epoch = Some(now);
+            }
         }
     }
 
@@ -213,9 +235,9 @@ impl Bbr {
     fn is_min_rtt_expired(&self, now: Instant, app_limited: bool) -> bool {
         !app_limited
             && self
-                .probe_rtt_last_started_at
+                .min_rtt_sample_epoch
                 .map(|last| now.saturating_duration_since(last) > Duration::from_secs(10))
-                .unwrap_or(true)
+                .unwrap_or(false)
     }
 
     fn maybe_enter_or_exit_probe_rtt(
@@ -225,6 +247,9 @@ impl Bbr {
         bytes_in_flight: u64,
         app_limited: bool,
     ) {
+        // An unset clock means a new connection, not an expired RTT sample.
+        // Start the ordinary ten-second probe interval at the first ACK batch.
+        self.min_rtt_sample_epoch.get_or_insert(now);
         let min_rtt_expired = self.is_min_rtt_expired(now, app_limited);
         if min_rtt_expired && !self.exiting_quiescence && self.mode != Mode::ProbeRtt {
             self.mode = Mode::ProbeRtt;
@@ -232,10 +257,13 @@ impl Bbr {
             // Do not decide on the time to exit ProbeRtt until the
             // |bytes_in_flight| is at the target small value.
             self.exit_probe_rtt_at = None;
-            self.probe_rtt_last_started_at = Some(now);
+            self.min_rtt_sample_epoch = Some(now);
         }
 
         if self.mode == Mode::ProbeRtt {
+            // The sender chooses to suppress traffic for this measurement.
+            // Keep the mark through the first ACK of post-probe flight.
+            self.probe_limited_until = Some(self.max_sent_packet_number);
             match self.exit_probe_rtt_at {
                 None => {
                     // If the window has reached the appropriate size, schedule exiting
@@ -248,6 +276,7 @@ impl Bbr {
                     }
                 }
                 Some(exit_time) if is_round_start && now >= exit_time => {
+                    self.min_rtt_sample_epoch = Some(now);
                     if !self.is_at_full_bandwidth {
                         self.enter_startup_mode();
                     } else {
@@ -283,7 +312,8 @@ impl Bbr {
 
     fn calculate_pacing_rate(&mut self) {
         let bw = self.max_bandwidth.get_estimate();
-        if bw == 0 {
+        // Do not initialize pacing from the configured, unmeasured RTT prior.
+        if bw == 0 || self.min_rtt.is_zero() {
             return;
         }
         let target_rate = (bw as f64 * self.pacing_gain as f64) as u64;
@@ -324,7 +354,7 @@ impl Bbr {
         // time.
         if self.is_at_full_bandwidth {
             self.cwnd = target_window.min(self.cwnd + bytes_acked);
-        } else if (self.cwnd_gain < target_window as f32) || (self.acked_bytes < self.init_cwnd) {
+        } else if (self.cwnd < target_window) || (self.acked_bytes < self.init_cwnd) {
             // If the connection is not yet out of startup phase, do not decrease
             // the window.
             self.cwnd += bytes_acked;
@@ -394,7 +424,11 @@ impl Bbr {
 impl Controller for Bbr {
     fn on_sent(&mut self, now: Instant, bytes: u64, last_packet_number: u64) {
         self.max_sent_packet_number = last_packet_number;
-        self.max_bandwidth.on_sent(now, bytes);
+        if self.mode == Mode::ProbeRtt || self.probe_limited_until.is_some() {
+            self.max_bandwidth.record_sent(now, bytes, 1, true);
+        } else {
+            self.max_bandwidth.on_sent(now, bytes);
+        }
     }
 
     fn on_ack(
@@ -403,14 +437,46 @@ impl Controller for Bbr {
         sent: Instant,
         bytes: u64,
         app_limited: bool,
-        rtt: &RttEstimator,
+        _rtt: &RttEstimator,
     ) {
         self.max_bandwidth
             .on_ack(now, sent, bytes, self.round_count, app_limited);
         self.acked_bytes += bytes;
-        if self.is_min_rtt_expired(now, app_limited) || self.min_rtt > rtt.min() {
-            self.min_rtt = rtt.min();
-        }
+    }
+
+    fn on_sent_with_in_flight(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        last_packet_number: u64,
+        in_flight: u64,
+        app_limited: bool,
+    ) -> u64 {
+        self.max_sent_packet_number = last_packet_number;
+        self.max_bandwidth.record_sent(
+            now,
+            bytes,
+            in_flight,
+            app_limited || self.mode == Mode::ProbeRtt || self.probe_limited_until.is_some(),
+        )
+    }
+
+    fn on_ack_with_token(
+        &mut self,
+        now: Instant,
+        sent: Instant,
+        bytes: u64,
+        _app_limited: bool,
+        _rtt: &RttEstimator,
+        token: u64,
+    ) {
+        self.max_bandwidth
+            .ack_packet(now, sent, bytes, self.round_count, token);
+        self.acked_bytes += bytes;
+    }
+
+    fn on_rtt_sample(&mut self, now: Instant, rtt: Duration, app_limited: bool) {
+        self.update_min_rtt(now, rtt, app_limited);
     }
 
     fn on_end_acks(
@@ -427,9 +493,16 @@ impl Controller for Bbr {
             self.round_count,
             self.max_bandwidth.get_estimate(),
         );
+        let sample_app_limited = self.max_bandwidth.app_limited_this_window();
         self.max_bandwidth.end_acks(self.round_count, app_limited);
         if let Some(largest_acked_packet) = largest_packet_num_acked {
             self.max_acked_packet_number = largest_acked_packet;
+            if self
+                .probe_limited_until
+                .is_some_and(|end| largest_acked_packet > end)
+            {
+                self.probe_limited_until = None;
+            }
         }
 
         let mut is_round_start = false;
@@ -449,7 +522,7 @@ impl Controller for Bbr {
         }
 
         if is_round_start && !self.is_at_full_bandwidth {
-            self.check_if_full_bw_reached(app_limited);
+            self.check_if_full_bw_reached(sample_app_limited);
         }
 
         self.maybe_exit_startup_or_drain(now, in_flight);
@@ -489,6 +562,10 @@ impl Controller for Bbr {
             return self.cwnd.min(self.recovery_window);
         }
         self.cwnd
+    }
+
+    fn pacing_rate(&self) -> Option<u64> {
+        (self.pacing_rate != 0).then_some(self.pacing_rate)
     }
 
     fn metrics(&self) -> ControllerMetrics {
@@ -647,5 +724,331 @@ const K_ROUND_TRIPS_WITHOUT_GROWTH_BEFORE_EXITING_STARTUP: u8 = 3;
 // Do not allow initial congestion window to be greater than 200 packets.
 const K_MAX_INITIAL_CONGESTION_WINDOW: u64 = 200;
 
-const PROBE_RTT_BASED_ON_BDP: bool = true;
-const DRAIN_TO_TARGET: bool = true;
+// Four datagrams drain a queued path before measuring its propagation RTT.
+const PROBE_RTT_BASED_ON_BDP: bool = false;
+// Standard quiche/sing-quic profile: bound the low-gain phase to an RTT
+// even when reverse-path ACK delay keeps flight above the minimum-RTT BDP.
+const DRAIN_TO_TARGET: bool = false;
+
+#[cfg(test)]
+mod startup_probe_tests {
+    use super::*;
+
+    #[test]
+    fn fresh_bbr_does_not_enter_probe_rtt_on_first_ack_batch() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        bbr.on_end_acks(now, 0, false, None);
+        assert_eq!(bbr.mode, Mode::Startup);
+        assert_eq!(bbr.window(), bbr.init_cwnd);
+        assert!(!bbr.is_min_rtt_expired(now + Duration::from_secs(1), false));
+    }
+
+    #[test]
+    fn periodic_probe_still_runs_after_ten_seconds_for_two_hundred_millis() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        bbr.on_end_acks(now, 0, false, None);
+        let later = now + Duration::from_millis(10_001);
+        bbr.maybe_enter_or_exit_probe_rtt(later, true, 0, false);
+        assert_eq!(bbr.mode, Mode::ProbeRtt);
+        bbr.maybe_enter_or_exit_probe_rtt(later + Duration::from_millis(199), true, 0, false);
+        assert_eq!(bbr.mode, Mode::ProbeRtt);
+        bbr.maybe_enter_or_exit_probe_rtt(later + Duration::from_millis(200), true, 0, false);
+        assert_eq!(bbr.mode, Mode::Startup);
+        assert!(!bbr.is_min_rtt_expired(later + Duration::from_secs(1), false));
+    }
+
+    #[test]
+    fn application_limited_period_defers_periodic_probe() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        bbr.on_end_acks(now, 0, true, None);
+        let later = now + Duration::from_secs(11);
+        bbr.maybe_enter_or_exit_probe_rtt(later, true, 0, true);
+        assert_eq!(bbr.mode, Mode::Startup);
+        bbr.maybe_enter_or_exit_probe_rtt(later, true, 0, false);
+        assert_eq!(bbr.mode, Mode::ProbeRtt);
+    }
+}
+
+#[cfg(test)]
+mod startup_target_regression {
+    use super::*;
+
+    #[test]
+    fn startup_growth_respects_model_target_after_initial_window_acknowledged() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        bbr.max_bandwidth.on_sent(now, 1200);
+        bbr.max_bandwidth
+            .on_ack(now + Duration::from_millis(10), now, 1200, 0, false);
+        bbr.max_bandwidth
+            .on_sent(now + Duration::from_millis(10), 1200);
+        bbr.max_bandwidth.on_ack(
+            now + Duration::from_millis(20),
+            now + Duration::from_millis(10),
+            1200,
+            1,
+            false,
+        );
+        bbr.min_rtt = Duration::from_millis(50);
+        bbr.cwnd = 64 * 1024;
+        bbr.acked_bytes = bbr.init_cwnd;
+        assert!(bbr.get_target_cwnd(bbr.cwnd_gain) < bbr.cwnd);
+        let before = bbr.cwnd;
+        bbr.calculate_cwnd(1200, 0);
+        assert_eq!(
+            bbr.cwnd, before,
+            "startup must not grow a window already above its bandwidth/RTT target"
+        );
+        // A new aggregation allowance above the current window still permits
+        // gradual growth, preserving progress when ACKs arrive in bursts.
+        bbr.calculate_cwnd(1200, 128 * 1024);
+        assert_eq!(bbr.cwnd, before + 1200);
+    }
+}
+
+#[cfg(test)]
+mod controller_pacing_tests {
+    use super::*;
+    #[test]
+    fn bbr_exposes_the_rate_it_computes_for_the_packet_pacer() {
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        assert_eq!(Controller::pacing_rate(&bbr), None);
+        bbr.pacing_rate = 123_456;
+        assert_eq!(Controller::pacing_rate(&bbr), Some(123_456));
+    }
+}
+
+#[cfg(test)]
+mod standard_profile_tests {
+    use super::*;
+    fn measured_link() -> (Bbr, Instant) {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        bbr.max_bandwidth.on_sent(now, 20_000);
+        bbr.max_bandwidth
+            .on_ack(now + Duration::from_millis(20), now, 20_000, 0, false);
+        bbr.min_rtt = Duration::from_millis(50);
+        bbr.acked_bytes = bbr.init_cwnd;
+        (bbr, now)
+    }
+    #[test]
+    fn normal_probe_cycle_does_not_extend_low_gain_for_reverse_path_delay() {
+        let (mut bbr, now) = measured_link();
+        bbr.mode = Mode::ProbeBw;
+        bbr.current_cycle_offset = 1;
+        bbr.pacing_gain = 0.75;
+        bbr.last_cycle_start = Some(now);
+        bbr.update_gain_cycle_phase(now + Duration::from_millis(51), 60_000);
+        assert_eq!(
+            bbr.pacing_gain, 1.0,
+            "standard BBR returns to estimated bandwidth after a low-gain RTT"
+        );
+    }
+    #[test]
+    fn startup_bounds_queued_data_near_two_bandwidth_delay_products() {
+        let (mut bbr, _) = measured_link();
+        bbr.cwnd = 40_000;
+        for _ in 0..200 {
+            bbr.calculate_cwnd(1000, 0);
+        }
+        assert!(
+            bbr.cwnd <= 101_000,
+            "standard startup should not queue nearly three BDP: {}",
+            bbr.cwnd
+        );
+        assert!(bbr.cwnd >= 100_000);
+    }
+}
+
+#[cfg(test)]
+mod measured_rtt_regressions {
+    use super::*;
+
+    fn initialized() -> (Bbr, RttEstimator, Instant) {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        let mut rtt = RttEstimator::test_initial(Duration::from_millis(333));
+        rtt.update(Duration::ZERO, Duration::from_millis(50));
+        bbr.on_ack(now, now, 1200, false, &rtt);
+        bbr.on_rtt_sample(now, Duration::from_millis(50), false);
+        bbr.on_end_acks(now, 0, false, None);
+        (bbr, rtt, now)
+    }
+
+    #[test]
+    fn initial_rtt_prior_cannot_lock_in_a_slow_startup_pacing_rate() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        let mut rtt = RttEstimator::test_initial(Duration::from_millis(333));
+        // Connection updates its RTT estimator after notifying the controller
+        // of the first ACK batch, so this still contains an unmeasured prior.
+        bbr.on_sent(now, 1200, 1);
+        let first_ack = now + Duration::from_millis(50);
+        bbr.on_ack(first_ack, now, 1200, false, &rtt);
+        rtt.update(Duration::ZERO, Duration::from_millis(50));
+        bbr.on_rtt_sample(first_ack, Duration::from_millis(50), false);
+        bbr.on_end_acks(first_ack, 0, false, Some(1));
+        bbr.on_sent(first_ack, 1200, 2);
+        bbr.on_ack(
+            first_ack + Duration::from_millis(50),
+            first_ack,
+            1200,
+            false,
+            &rtt,
+        );
+        bbr.on_end_acks(first_ack + Duration::from_millis(50), 0, false, Some(2));
+        let initial_rate =
+            BandwidthEstimation::bw_from_delta(bbr.init_cwnd, Duration::from_millis(50)).unwrap();
+        assert!(
+            bbr.pacing_rate >= initial_rate,
+            "measured RTT must initialize startup pacing: {} < {}",
+            bbr.pacing_rate,
+            initial_rate
+        );
+    }
+
+    #[test]
+    fn fresh_lower_sample_defers_the_periodic_rtt_probe() {
+        let (mut bbr, mut rtt, now) = initialized();
+        rtt.update(Duration::ZERO, Duration::from_millis(40));
+        bbr.on_rtt_sample(
+            now + Duration::from_secs(9),
+            Duration::from_millis(40),
+            false,
+        );
+        assert!(
+            !bbr.is_min_rtt_expired(now + Duration::from_secs(11), false),
+            "fresh lower RTT must refresh the minimum sample epoch"
+        );
+    }
+
+    #[test]
+    fn expired_minimum_can_rise_when_the_path_rtt_increases() {
+        let (mut bbr, mut rtt, now) = initialized();
+        rtt.update(Duration::ZERO, Duration::from_millis(100));
+        assert_eq!(rtt.min(), Duration::from_millis(50));
+        let later = now + Duration::from_secs(11);
+        bbr.on_rtt_sample(later, rtt.conservative(), false);
+        assert_eq!(
+            bbr.min_rtt,
+            Duration::from_millis(100),
+            "expired BBR minimum must use a recent measurement"
+        );
+        bbr.on_end_acks(later, 0, false, None);
+        assert_eq!(bbr.mode, Mode::ProbeRtt);
+    }
+
+    #[test]
+    fn a_lower_sample_after_expiry_does_not_cancel_the_required_probe() {
+        let (mut bbr, mut rtt, now) = initialized();
+        rtt.update(Duration::ZERO, Duration::from_millis(40));
+        let later = now + Duration::from_secs(11);
+        bbr.on_rtt_sample(later, Duration::from_millis(40), false);
+        bbr.on_end_acks(later, 0, false, None);
+        assert_eq!(bbr.mode, Mode::ProbeRtt);
+    }
+}
+
+#[cfg(test)]
+mod probe_rtt_drain_regression {
+    use super::*;
+    #[test]
+    fn probe_waits_for_queued_flight_to_drain_before_timing_the_measurement() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        bbr.max_bandwidth.on_sent(now, 20_000);
+        bbr.max_bandwidth
+            .on_ack(now + Duration::from_millis(20), now, 20_000, 0, false);
+        // A fresh but queue-inflated sample can replace an expired minimum.
+        // It cannot itself prove that the bottleneck queue has drained.
+        bbr.min_rtt = Duration::from_millis(200);
+        bbr.mode = Mode::ProbeRtt;
+        bbr.maybe_enter_or_exit_probe_rtt(now, true, 100_000, false);
+        assert!(
+            bbr.exit_probe_rtt_at.is_none(),
+            "RTT measurement must wait for a drained flight, not an inflated BDP target"
+        );
+        assert_eq!(bbr.window(), 4 * 1200);
+        let drained = now + Duration::from_millis(50);
+        bbr.maybe_enter_or_exit_probe_rtt(drained, true, 0, false);
+        assert_eq!(
+            bbr.exit_probe_rtt_at,
+            Some(drained + Duration::from_millis(200))
+        );
+    }
+}
+
+#[cfg(test)]
+mod probe_limited_regression {
+    use super::*;
+
+    fn deliver(bbr: &mut Bbr, sent: Instant, delay_ms: u64, packet: u64) {
+        let token = bbr.on_sent_with_in_flight(sent, 1200, packet, 0, false);
+        bbr.on_ack_with_token(
+            sent + Duration::from_millis(delay_ms),
+            sent,
+            1200,
+            false,
+            &RttEstimator::test_initial(Duration::from_millis(1)),
+            token,
+        );
+    }
+
+    #[test]
+    fn periodic_rtt_measurement_does_not_age_bandwidth_down_to_four_packets() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        deliver(&mut bbr, now, 1, 1);
+        assert_eq!(bbr.max_bandwidth.get_estimate(), 1_200_000);
+        bbr.mode = Mode::ProbeRtt;
+        for round in 1..=25 {
+            bbr.round_count = round;
+            bbr.max_bandwidth.end_acks(round, false);
+            deliver(
+                &mut bbr,
+                now + Duration::from_millis(round * 10),
+                10,
+                round + 1,
+            );
+        }
+        assert_eq!(
+            bbr.max_bandwidth.get_estimate(),
+            1_200_000,
+            "the four-packet ProbeRTT limit is not reduced path capacity"
+        );
+    }
+
+    #[test]
+    fn probe_limited_marking_survives_exit_until_new_flight_is_acked() {
+        let now = Instant::now();
+        let mut bbr = Bbr::new(Arc::new(BbrConfig::default()), 1200);
+        deliver(&mut bbr, now, 1, 1);
+        bbr.mode = Mode::ProbeRtt;
+        bbr.maybe_enter_or_exit_probe_rtt(now, true, 0, false);
+        // Exit exactly as the timed controller would, without waiting in a test.
+        bbr.maybe_enter_or_exit_probe_rtt(now + Duration::from_millis(200), true, 0, false);
+        assert_ne!(bbr.mode, Mode::ProbeRtt);
+        bbr.max_bandwidth.end_acks(0, false);
+        let sent = now + Duration::from_millis(210);
+        deliver(&mut bbr, sent, 10, 2);
+        assert!(
+            bbr.max_bandwidth.app_limited_this_window(),
+            "the first post-probe flight still spans deliberately limited delivery"
+        );
+        bbr.on_end_acks(sent + Duration::from_millis(10), 0, false, Some(2));
+        bbr.round_count = 20;
+        deliver(&mut bbr, now + Duration::from_millis(230), 10, 3);
+        assert!(
+            !bbr.max_bandwidth.app_limited_this_window(),
+            "acknowledging new flight must restore normal bandwidth sampling"
+        );
+        assert_eq!(
+            bbr.max_bandwidth.get_estimate(),
+            120_000,
+            "a real later bandwidth decrease must still expire the old peak"
+        );
+    }
+}

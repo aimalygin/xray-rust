@@ -193,7 +193,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, codex/v06-candidate]
+    branches: [main, codex/v06-candidate, codex/v0.7.0-rc.1]
     tags: ["v*"]
   workflow_dispatch:
   schedule:
@@ -377,7 +377,7 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
-          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion
+          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28

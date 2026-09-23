@@ -1,0 +1,579 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "freedom-tun-full-duplex-1",
+      "iterations": 512,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "freedom",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "vless-tls-tun-download-1",
+      "iterations": 512,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "vless-tls",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "xhttp-h3-tun-upload-1",
+      "iterations": 512,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "xhttp-h3",
+      "traffic": "upload"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+    "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance.py": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d"
+  },
+  "finished_unix": 1789888272.2092202,
+  "harness_sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 5,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-1",
+      "output_relative": "freedom-tun-full-duplex-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3589158058166504,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-1",
+      "output_relative": "freedom-tun-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2990460395812988,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-2",
+      "output_relative": "freedom-tun-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3102951049804688,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-2",
+      "output_relative": "freedom-tun-full-duplex-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.312345027923584,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-3",
+      "output_relative": "freedom-tun-full-duplex-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3479790687561035,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-3",
+      "output_relative": "freedom-tun-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3509838581085205,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-4",
+      "output_relative": "freedom-tun-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3057608604431152,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-4",
+      "output_relative": "freedom-tun-full-duplex-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3570570945739746,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-baseline-5",
+      "output_relative": "freedom-tun-full-duplex-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3368809223175049,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/freedom-tun-full-duplex-1-candidate-5",
+      "output_relative": "freedom-tun-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3492820262908936,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-1",
+      "output_relative": "vless-tls-tun-download-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.309067726135254,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-1",
+      "output_relative": "vless-tls-tun-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3243958950042725,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-2",
+      "output_relative": "vless-tls-tun-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.35396409034729,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-2",
+      "output_relative": "vless-tls-tun-download-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.336986780166626,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-3",
+      "output_relative": "vless-tls-tun-download-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3463728427886963,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-3",
+      "output_relative": "vless-tls-tun-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3366341590881348,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-4",
+      "output_relative": "vless-tls-tun-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3225271701812744,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-4",
+      "output_relative": "vless-tls-tun-download-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3037681579589844,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-baseline-5",
+      "output_relative": "vless-tls-tun-download-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3126978874206543,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/vless-tls-tun-download-1-candidate-5",
+      "output_relative": "vless-tls-tun-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3201889991760254,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-1",
+      "output_relative": "xhttp-h3-tun-upload-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.3618743419647217,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-1",
+      "output_relative": "xhttp-h3-tun-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.4479799270629883,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-2",
+      "output_relative": "xhttp-h3-tun-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.5147552490234375,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-2",
+      "output_relative": "xhttp-h3-tun-upload-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.3793249130249023,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-3",
+      "output_relative": "xhttp-h3-tun-upload-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.417555809020996,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-3",
+      "output_relative": "xhttp-h3-tun-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.409541130065918,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-4",
+      "output_relative": "xhttp-h3-tun-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.4546418190002441,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-4",
+      "output_relative": "xhttp-h3-tun-upload-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.3448498249053955,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-baseline-5",
+      "output_relative": "xhttp-h3-tun-upload-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.411979913711548,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-tun-screen/xhttp-h3-tun-upload-1-candidate-5",
+      "output_relative": "xhttp-h3-tun-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.4587078094482422,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "61373052dc8b6784162c81650faa6bd92f0604aa",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_unix": 1789888190.9264991,
+  "status": "pass",
+  "suite": "tun",
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+      "engine_sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+    }
+  }
+}

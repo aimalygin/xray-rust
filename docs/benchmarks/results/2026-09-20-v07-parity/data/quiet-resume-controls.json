@@ -1,0 +1,43 @@
+{
+  "complete": true,
+  "finished_unix": 1790006533.135215,
+  "groups": [
+    {
+      "series": "reviewed-parity-wireguard-long-echo-ambient-confirmation",
+      "runs": 80,
+      "compiler_load_detected": false,
+      "manifest_sha256": "63c67bf4fb6f535dc3f639cd4116592b04f9fb72fde659178a2ea0d473500a2a",
+      "failures": []
+    },
+    {
+      "series": "reviewed-parity-regression-quiet-confirmation-legacy",
+      "runs": 15,
+      "compiler_load_detected": true,
+      "manifest_sha256": "0ee3a7bdef4e3fc747026591880e63637ffc5973518d2e9b47993f5ae0172bd0",
+      "failures": []
+    },
+    {
+      "series": "reviewed-parity-regression-quiet-confirmation-tun",
+      "runs": 36,
+      "compiler_load_detected": false,
+      "manifest_sha256": "b090532acc14780e0cd4752466d2136ae89c234dfbba72f4eba9ab694ef98a88",
+      "failures": []
+    }
+  ],
+  "quality_passed": false,
+  "original_driver_record": "quiet-final-controls.json",
+  "original_driver_record_sha256": "ba3fb9b6fa4a82194d6d90372584aed3aa67075dcc3276d876960605797a09e0",
+  "wireguard_resume": {
+    "started_unix": 1790005064.5739148,
+    "completed_prefix_runs": 34,
+    "threshold_changed": false,
+    "helper_sha256": "4973164ff9cbdd9d6d1de7cf23150e922b1562c6ccc32fd249600f4f3f1438c4",
+    "resume_driver_sha256": "5bfa44c82ed082d947d64da07ca4805e5095bc27a6f8b352959f8a80e7948484",
+    "original_timeout": "quiet-guard-timeout-1790004847702818000.json",
+    "finished_unix": 1790005652.952548,
+    "total_retained_runs": 80,
+    "complete": true
+  },
+  "steady_driver_log": "quiet-steady-resume-driver.log",
+  "scope": "Completed collection after an observed pre-run quiet timeout. All 34 prefix runs and original timeout retained; quiet threshold unchanged. Quality flags remain independent of the user-approved 3% performance allowance."
+}

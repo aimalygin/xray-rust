@@ -8,7 +8,8 @@ SHA-256: `2a2745851b2989b6d388330b3b9ccfa180ecd12260014b708e01489abae02722`.
 The exact source is modified by
 `tools/wireguard-adapter-prototype/patches/gotatun-mobile-memory.patch`, then
 `tools/wireguard-adapter-prototype/patches/gotatun-psk-hygiene.patch`, then
-`tools/wireguard-adapter-prototype/patches/gotatun-mobile-build.patch`.
+`tools/wireguard-adapter-prototype/patches/gotatun-mobile-build.patch`, then
+`tools/wireguard-adapter-prototype/patches/gotatun-mobile-progress.patch`.
 It adds opt-in bounded device resources; see that directory's README for the
 changed files and scope. The second patch replaces owned PSK arrays with a
 redacted `PresharedKey(Box<Zeroizing<[u8; 32]>>)` through peer, update and Noise
@@ -19,11 +20,15 @@ The build patch compiles the batched-send size helper only on Linux, Android
 and Windows, where it is used. The generic iOS/tvOS implementation does not
 call it; the upstream macOS-only exclusion otherwise fails `-D warnings` on
 those targets. No socket or packet behavior changes.
+The progress patch releases the peer/device locks after authenticated source
+validation and before waiting for inner IP receive capacity. This prevents a
+stalled receiver from blocking outgoing encryption for the same peer. Its
+bounded-queue regression test also runs in the upstream adapter gate.
 `tools/wireguard-adapter-prototype/prepare_vendor.py` copies the crate sources,
 README and license notices, expands workspace manifest fields/dependencies and
 removes benchmark declarations. It does not copy upstream's privileged TUN runner.
 
-`scripts/check-wireguard-runtime.sh` verifies the archive, applies all three patches with
+`scripts/check-wireguard-runtime.sh` verifies the archive, applies all four patches with
 zero fuzz, regenerates this crate and compares every file except this note. It
 then runs engine tests, the IP adapter probe and TCP/UDP/core interoperability
 against a freshly built, verified Xray-core v26.7.28 checkout. The

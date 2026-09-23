@@ -1,0 +1,140 @@
+{
+  "artifact_sha256": {
+    "vless-tls-tun-full-duplex-1-baseline-1/result.json": "2b323faa873d6778393d688ba76701c11023e797e65d5528772abda4558eb323",
+    "vless-tls-tun-full-duplex-1-baseline-2/result.json": "371545a6107b332fd331fb1dceaf0162af52259c925aaa4a766ed446e204cdb2",
+    "vless-tls-tun-full-duplex-1-baseline-3/result.json": "59e8ef6b02adf0b03990d66111250856f80db5169b00e57d8fa4d32bed8e1b86",
+    "vless-tls-tun-full-duplex-1-baseline-4/result.json": "b0e249638c562607ffa79bb1afa5969c4d3fc1d9e9cd0cbdf898ac8fab05376d",
+    "vless-tls-tun-full-duplex-1-baseline-5/result.json": "a9a5b1d610ea33505bae2e18bfc0954840fc21019f85001095616b28436c92c6",
+    "vless-tls-tun-full-duplex-1-candidate-1/result.json": "32bdb75d365ee115c55b04c4de5a1797470a77033fc65dea2628bb0d3d14ade9",
+    "vless-tls-tun-full-duplex-1-candidate-2/result.json": "f4c0f34be9b19e3cb9a9e07c6f7478119ade8f3473c1c01e12a2108402065b18",
+    "vless-tls-tun-full-duplex-1-candidate-3/result.json": "9146bc0e49ce7beb5991b41c20ebea9ebadf297b4b9e9512cadaac56b2f9b132",
+    "vless-tls-tun-full-duplex-1-candidate-4/result.json": "88e235a34616d959879999b2aee4005032672b70cf07bba0bcd88358e5c0958e",
+    "vless-tls-tun-full-duplex-1-candidate-5/result.json": "48eac51c681d1983630ee5503274e611f15a513976c10426f63ae84a0903f0a6"
+  },
+  "failures": [],
+  "manifest_sha256": "b9465089328022c2da9338d6c1c7916d8403314052ca2487ad48fff32d257ca9",
+  "rows": [
+    {
+      "case": "vless-tls-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0654205607476634,
+        "cpu_ms_per_mib": 1.0654205607476634,
+        "rss_mib": 1.0246305418719213,
+        "throughput_mib_s": 0.994750990306659
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1100,
+              "median": 1070,
+              "min": 1060,
+              "samples": [
+                1070,
+                1090,
+                1100,
+                1060,
+                1060
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.1484375,
+              "median": 2.08984375,
+              "min": 2.0703125,
+              "samples": [
+                2.08984375,
+                2.12890625,
+                2.1484375,
+                2.0703125,
+                2.0703125
+              ]
+            },
+            "rss_mib": {
+              "max": 11.09375,
+              "median": 9.515625,
+              "min": 9.1875,
+              "samples": [
+                9.734375,
+                9.1875,
+                9.515625,
+                11.09375,
+                9.4375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 685.7828640006858,
+              "median": 680.7796589154295,
+              "min": 675.4277321236781,
+              "samples": [
+                679.0417534657535,
+                685.7828640006858,
+                675.4277321236781,
+                680.7796589154295,
+                684.0797099244431
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1180,
+              "median": 1140,
+              "min": 1130,
+              "samples": [
+                1140,
+                1140,
+                1180,
+                1130,
+                1130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.3046875,
+              "median": 2.2265625,
+              "min": 2.20703125,
+              "samples": [
+                2.2265625,
+                2.2265625,
+                2.3046875,
+                2.20703125,
+                2.20703125
+              ]
+            },
+            "rss_mib": {
+              "max": 11.1875,
+              "median": 9.75,
+              "min": 9.6875,
+              "samples": [
+                9.71875,
+                11.1875,
+                9.78125,
+                9.6875,
+                9.75
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 684.0252548269622,
+              "median": 677.2062398867531,
+              "min": 665.157756296508,
+              "samples": [
+                665.157756296508,
+                677.2062398867531,
+                670.91587303707,
+                684.0252548269622,
+                683.5556681808457
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "tun"
+}

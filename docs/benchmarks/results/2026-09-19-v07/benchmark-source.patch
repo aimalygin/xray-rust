@@ -1,0 +1,1528 @@
+diff --git a/crates/xray-bench/src/lib.rs b/crates/xray-bench/src/lib.rs
+index d5415fc..c6dc246 100644
+--- a/crates/xray-bench/src/lib.rs
++++ b/crates/xray-bench/src/lib.rs
+@@ -75,6 +75,8 @@ use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FI
+ 
+ pub mod chart;
+ mod process_metrics;
++#[cfg(unix)]
++pub mod protocol_bench;
+ mod stream_transport;
+ 
+ use process_metrics::current_peak_rss_kib;
+@@ -2452,7 +2454,15 @@ pub async fn run_tcp_freedom_workload(
+     socks_addr: SocketAddr,
+     options: &BenchOptions,
+ ) -> Result<WorkloadOutcome, BenchError> {
+-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
++    run_tcp_freedom_workload_on(socks_addr, options, Ipv4Addr::LOCALHOST).await
++}
++
++async fn run_tcp_freedom_workload_on(
++    socks_addr: SocketAddr,
++    options: &BenchOptions,
++    origin_ip: Ipv4Addr,
++) -> Result<WorkloadOutcome, BenchError> {
++    let listener = TcpListener::bind((origin_ip, 0))
+         .await
+         .map_err(|source| BenchError::Io {
+             action: "binding TCP echo server".to_owned(),
+@@ -2868,7 +2878,15 @@ pub async fn run_udp_freedom_workload(
+     socks_addr: SocketAddr,
+     options: &BenchOptions,
+ ) -> Result<WorkloadOutcome, BenchError> {
+-    let echo_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
++    run_udp_freedom_workload_on(socks_addr, options, Ipv4Addr::LOCALHOST).await
++}
++
++async fn run_udp_freedom_workload_on(
++    socks_addr: SocketAddr,
++    options: &BenchOptions,
++    origin_ip: Ipv4Addr,
++) -> Result<WorkloadOutcome, BenchError> {
++    let echo_socket = UdpSocket::bind((origin_ip, 0))
+         .await
+         .map_err(|source| BenchError::Io {
+             action: "binding UDP echo server".to_owned(),
+diff --git a/crates/xray-bench/src/main.rs b/crates/xray-bench/src/main.rs
+index 056bf8d..6829438 100644
+--- a/crates/xray-bench/src/main.rs
++++ b/crates/xray-bench/src/main.rs
+@@ -1,5 +1,14 @@
+ #[tokio::main]
+ async fn main() {
++    #[cfg(unix)]
++    if std::env::args().nth(1).as_deref() == Some("protocol-run") {
++        let result = xray_bench::protocol_bench::run(std::env::args().skip(2).collect()).await;
++        if let Err(error) = result {
++            eprintln!("{error}");
++            std::process::exit(1);
++        }
++        return;
++    }
+     if let Err(error) = xray_bench::run_cli(std::env::args()).await {
+         eprintln!("{error}");
+         std::process::exit(1);
+diff --git a/crates/xray-bench/src/protocol_bench.rs b/crates/xray-bench/src/protocol_bench.rs
+new file mode 100644
+index 0000000..2ce84fc
+--- /dev/null
++++ b/crates/xray-bench/src/protocol_bench.rs
+@@ -0,0 +1,562 @@
++//! Process benchmarks using an explicit synthetic outbound configuration.
++//! The frozen engine is external; this module changes only the traffic driver.
++use super::*;
++use serde::Deserialize;
++use serde_json::{json, Value};
++
++#[derive(Deserialize)]
++#[serde(deny_unknown_fields)]
++struct Request {
++    binary: PathBuf,
++    config: Value,
++    path: String,
++    traffic: String,
++    connections: usize,
++    iterations: usize,
++    payload_size: usize,
++    output: PathBuf,
++}
++
++// Unlike a bare fixture handle, every measured process must be reaped on all
++// exit paths, including startup errors and cancelled/failed workloads.
++struct MeasuredProcess {
++    child: Child,
++}
++
++impl Drop for MeasuredProcess {
++    fn drop(&mut self) {
++        let _ = self.child.kill();
++        let _ = self.child.wait();
++    }
++}
++
++fn invalid(message: impl Into<String>) -> BenchError {
++    BenchError::InvalidArguments(message.into())
++}
++
++fn io_error(source: io::Error) -> BenchError {
++    BenchError::Io {
++        action: "protocol benchmark I/O".into(),
++        source,
++    }
++}
++
++fn validate(r: &Request) -> Result<(), BenchError> {
++    if !matches!(r.path.as_str(), "socks" | "tun")
++        || !matches!(
++            r.traffic.as_str(),
++            "upload" | "download" | "full-duplex" | "tcp-latency" | "udp"
++        )
++        || !(1..=16).contains(&r.connections)
++        || !(1..=16384).contains(&r.iterations)
++        || !(1..=65536).contains(&r.payload_size)
++        || (r.traffic == "udp" && r.payload_size > 1372)
++        || r.config.as_object().is_none()
++    {
++        return Err(invalid("invalid bounded protocol benchmark request"));
++    }
++    Ok(())
++}
++
++/// Keep the synthetic link from being limited by Darwin's 4 KiB default queue.
++/// This changes only the new driver; historical benchmark socketpairs stay intact.
++fn configure_link_buffers(pair: &TunSocketPair) -> Result<Value, BenchError> {
++    let mut buffers = Vec::new();
++    for fd in [pair.engine_fd.raw(), pair.workload_fd.raw()] {
++        let mut sizes = Vec::new();
++        for option in [libc::SO_SNDBUF, libc::SO_RCVBUF] {
++            let requested: libc::c_int = 1024 * 1024;
++            let mut actual: libc::c_int = 0;
++            let mut len = std::mem::size_of_val(&actual) as libc::socklen_t;
++            // Both descriptors are live, and each pointer covers an initialized c_int.
++            let set = unsafe {
++                libc::setsockopt(
++                    fd,
++                    libc::SOL_SOCKET,
++                    option,
++                    std::ptr::from_ref(&requested).cast(),
++                    len,
++                )
++            };
++            if set != 0 {
++                return Err(io_error(io::Error::last_os_error()));
++            }
++            let get = unsafe {
++                libc::getsockopt(
++                    fd,
++                    libc::SOL_SOCKET,
++                    option,
++                    std::ptr::from_mut(&mut actual).cast(),
++                    &mut len,
++                )
++            };
++            if get != 0 {
++                return Err(io_error(io::Error::last_os_error()));
++            }
++            sizes.push(actual);
++        }
++        buffers.push(json!({"send_bytes":sizes[0], "receive_bytes":sizes[1]}));
++    }
++    Ok(json!(buffers))
++}
++
++/// Run one fresh child, retain validated payload counts and raw resource samples.
++pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
++    if args.len() != 1 {
++        return Err(invalid("usage: xray-bench protocol-run REQUEST.json"));
++    }
++    let bytes = fs::read(&args[0]).map_err(io_error)?;
++    if bytes.len() > 262144 {
++        return Err(invalid("benchmark request exceeds 256 KiB"));
++    }
++    let r: Request = serde_json::from_slice(&bytes).map_err(|e| invalid(e.to_string()))?;
++    validate(&r)?;
++    fs::create_dir(&r.output).map_err(io_error)?;
++    let port = allocate_loopback_port()?;
++    let socks = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
++    let mut config = r.config.clone();
++    config["inbounds"] = if r.path == "tun" {
++        json!([{"protocol":"tun"}])
++    } else {
++        json!([{"protocol":"socks","listen":"127.0.0.1","port":port,"settings":{"auth":"noauth","udp":true}}])
++    };
++    let config_path = r.output.join("config.json");
++    fs::write(
++        &config_path,
++        serde_json::to_vec_pretty(&config).map_err(|e| invalid(e.to_string()))?,
++    )
++    .map_err(io_error)?;
++    let pair = if r.path == "tun" {
++        Some(create_tun_socket_pair()?)
++    } else {
++        None
++    };
++    let link_buffers = pair.as_ref().map(configure_link_buffers).transpose()?;
++    let stdout = r.output.join("stdout.log");
++    let stderr = r.output.join("stderr.log");
++    let mut command = Command::new(&r.binary);
++    command
++        .args(["run", "-config"])
++        .arg(&config_path)
++        .stdout(fs::File::create(&stdout).map_err(io_error)?)
++        .stderr(fs::File::create(&stderr).map_err(io_error)?);
++    if let Some(pair) = &pair {
++        configure_tun_fd_env(&mut command, pair);
++    }
++    let mut child = MeasuredProcess {
++        child: command.spawn().map_err(io_error)?,
++    };
++    let fd = pair.and_then(into_tun_workload_fd);
++    if fd.is_some() {
++        wait_for_process_started(&mut child.child, &stdout, &stderr).await?;
++    } else {
++        wait_for_tcp_listener(&mut child.child, socks, &stdout, &stderr).await?;
++    }
++    let options = BenchOptions {
++        connections: r.connections,
++        iterations: r.iterations,
++        payload_size: r.payload_size,
++        settle: Duration::from_millis(500),
++        ..BenchOptions::default()
++    };
++    let phase = BenchmarkPhaseTracker::default();
++    let measured = async {
++        sleep(Duration::from_millis(500)).await;
++        phase.set(BenchmarkPhase::Traffic);
++        let started = Instant::now();
++        let outcome = match (fd.as_ref(), r.traffic.as_str()) {
++            (Some(fd), "udp") => run_tun_udp(fd.raw(), &options).await?,
++            (Some(fd), "tcp-latency") => run_tun_tcp_freedom_workload(fd.raw(), &options).await?,
++            (None, "udp") => {
++                run_udp_freedom_workload_on(socks, &options, local_non_loopback_ipv4()?).await?
++            }
++            (None, "tcp-latency") => {
++                run_tcp_freedom_workload_on(socks, &options, local_non_loopback_ipv4()?).await?
++            }
++            (Some(fd), traffic) => {
++                run_tun_bulk(fd.raw(), &options, StreamBenchTraffic::parse(traffic)?).await?
++            }
++            (None, traffic) => {
++                stream_transport::run_workload_on(
++                    socks,
++                    &options,
++                    StreamBenchScenario {
++                        transport: StreamBenchTransport::WebSocket,
++                        traffic: StreamBenchTraffic::parse(traffic)?,
++                        xhttp_mode: None,
++                        xhttp_profile: None,
++                    },
++                    phase.clone(),
++                    local_non_loopback_ipv4()?,
++                )
++                .await?
++            }
++        };
++        let elapsed = started.elapsed();
++        phase.set(BenchmarkPhase::Settle);
++        sleep(Duration::from_millis(500)).await;
++        Ok((outcome, elapsed))
++    };
++    let result = sample_while_phased(
++        child.child.id(),
++        Duration::from_millis(100),
++        phase.clone(),
++        async {
++            tokio::time::timeout(Duration::from_secs(120), measured)
++                .await
++                .map_err(|_| invalid("protocol benchmark exceeded 120 seconds"))?
++        },
++    )
++    .await;
++    let report = match result {
++        Ok(((outcome, elapsed), samples)) => {
++            let seconds = outcome
++                .transfer_window
++                .map(|(a, b)| (b - a).as_secs_f64())
++                .unwrap_or(elapsed.as_secs_f64());
++            let summary = summarize_samples(&samples);
++            let cpu_ms = samples
++                .last()
++                .unwrap()
++                .cpu_millis
++                .saturating_sub(samples.first().unwrap().cpu_millis);
++            json!({"status":"pass", "path":r.path,"traffic":r.traffic,
++                "connections":r.connections,"iterations":r.iterations,"payload_size":r.payload_size,
++                "concurrent_flows":if r.path=="tun" && r.traffic=="tcp-latency" {1}else{r.connections},
++                "bytes_sent":outcome.bytes_sent,"bytes_received":outcome.bytes_received,
++                "transfer_seconds":seconds,"wall_seconds":elapsed.as_secs_f64(),
++                "throughput_mib_s":(outcome.bytes_sent+outcome.bytes_received) as f64/1048576.0/seconds,
++                "peak_rss_kib":summary.peak_rss_kib,"cpu_millis":cpu_ms,
++                "tun_fd_buffers":link_buffers,
++                "latency_us":if matches!(r.traffic.as_str(), "udp" | "tcp-latency") {summarize_latency_us(outcome.latencies_us.clone())} else {None},
++                "ready_latency_us":if r.path=="tun" && !matches!(r.traffic.as_str(), "udp" | "tcp-latency") {summarize_latency_us(outcome.latencies_us)} else {None},
++                "setup":summarize_flow_setup_us(outcome.setup_samples),"samples":samples})
++        }
++        Err(error) => {
++            fs::write(
++                r.output.join("result.json"),
++                json!({"status":"fail","error":error.to_string()}).to_string(),
++            )
++            .map_err(io_error)?;
++            return Err(error);
++        }
++    };
++    fs::write(
++        r.output.join("result.json"),
++        serde_json::to_vec_pretty(&report).map_err(|e| invalid(e.to_string()))?,
++    )
++    .map_err(io_error)?;
++    println!("{}", report);
++    Ok(())
++}
++
++struct Flow {
++    client: TunTcpBenchmarkClient,
++    ready: bool,
++    sent: usize,
++    received: usize,
++    complete: bool,
++}
++
++async fn run_tun_udp(fd: RawFd, options: &BenchOptions) -> Result<WorkloadOutcome, BenchError> {
++    let ip = local_non_loopback_ipv4()?;
++    let origin = UdpSocket::bind((ip, 0)).await.map_err(io_error)?;
++    let port = origin.local_addr().map_err(io_error)?.port();
++    let echo = tokio::spawn(async move {
++        let mut buffer = [0; 65536];
++        while let Ok((n, peer)) = origin.recv_from(&mut buffer).await {
++            if origin.send_to(&buffer[..n], peer).await.is_err() {
++                break;
++            }
++        }
++    });
++    struct Abort(tokio::task::AbortHandle);
++    impl Drop for Abort {
++        fn drop(&mut self) {
++            self.0.abort();
++        }
++    }
++    let _guard = Abort(echo.abort_handle());
++    let source = Ipv4Addr::new(10, 10, 0, 2);
++    let mut counts = vec![0; options.connections];
++    let mut pending = vec![None; options.connections];
++    let mut buffer = vec![0; 65536];
++    let mut outcome = WorkloadOutcome::default();
++    let start = Instant::now();
++    while counts.iter().any(|n| *n < options.iterations) {
++        for i in 0..counts.len() {
++            if counts[i] == options.iterations || pending[i].is_some() {
++                continue;
++            }
++            let mut payload = vec![0x5a; options.payload_size];
++            if payload.len() >= 8 {
++                payload[..4].copy_from_slice(&(i as u32).to_be_bytes());
++                payload[4..8].copy_from_slice(&(counts[i] as u32).to_be_bytes());
++            }
++            let packet = ipv4_udp_packet(source, 40000 + i as u16, ip, port, &payload)?;
++            match write_tun_frame(fd, &encode_darwin_utun_frame(&packet)) {
++                Ok(()) => {
++                    pending[i] = Some(Instant::now());
++                    outcome.bytes_sent += payload.len() as u64;
++                }
++                Err(BenchError::Io { source, .. })
++                    if source.kind() == io::ErrorKind::WouldBlock
++                        || source.raw_os_error() == Some(libc::ENOBUFS) =>
++                {
++                    break
++                }
++                Err(e) => return Err(e),
++            }
++        }
++        while let Some(n) = read_tun_frame(fd, &mut buffer)? {
++            let packet = decode_darwin_utun_frame(&buffer[..n])?;
++            let Some(datagram) = parse_ipv4_udp_datagram(packet) else {
++                continue;
++            };
++            if datagram.source != ip
++                || datagram.source_port != port
++                || datagram.destination != source
++            {
++                continue;
++            }
++            let Some(i) = datagram
++                .destination_port
++                .checked_sub(40000)
++                .map(usize::from)
++                .filter(|i| *i < counts.len())
++            else {
++                continue;
++            };
++            let Some(sent) = pending[i].take() else {
++                return Err(invalid("duplicate TUN UDP reply"));
++            };
++            let mut expected = vec![0x5a; options.payload_size];
++            if expected.len() >= 8 {
++                expected[..4].copy_from_slice(&(i as u32).to_be_bytes());
++                expected[4..8].copy_from_slice(&(counts[i] as u32).to_be_bytes());
++            }
++            if datagram.payload != expected {
++                return Err(invalid("TUN UDP payload/sequence mismatch"));
++            }
++            outcome.latencies_us.push(sent.elapsed().as_micros());
++            outcome.bytes_received += expected.len() as u64;
++            counts[i] += 1;
++        }
++        if pending
++            .iter()
++            .flatten()
++            .any(|t| t.elapsed() > Duration::from_secs(5))
++        {
++            return Err(invalid("TUN UDP response exceeded five seconds"));
++        }
++        tokio::task::yield_now().await;
++    }
++    outcome.transfer_window = Some((start, Instant::now()));
++    Ok(outcome)
++}
++
++/// Concurrent inner TCP flows over the same fd-backed production TUN path.
++/// Uses the existing validated stream fixture, including its completion marker.
++async fn run_tun_bulk(
++    fd: RawFd,
++    options: &BenchOptions,
++    traffic: StreamBenchTraffic,
++) -> Result<WorkloadOutcome, BenchError> {
++    let listener = TcpListener::bind((local_non_loopback_ipv4()?, 0))
++        .await
++        .map_err(io_error)?;
++    let target = listener.local_addr().map_err(io_error)?;
++    let template = Arc::new(bulk_pattern_template(options.payload_size));
++    let server_template = Arc::clone(&template);
++    let iterations = options.iterations;
++    let count = options.connections;
++    let server = tokio::spawn(async move {
++        stream_transport::run_target_server(listener, traffic, server_template, iterations, count)
++            .await
++    });
++    // Abort the local fixture on error/timeout; its JoinSet cancels child flows.
++    struct Abort(tokio::task::AbortHandle);
++    impl Drop for Abort {
++        fn drop(&mut self) {
++            self.0.abort();
++        }
++    }
++    let _guard = Abort(server.abort_handle());
++    let total = options.payload_size * options.iterations;
++    let upload = traffic != StreamBenchTraffic::Download;
++    let download = traffic != StreamBenchTraffic::Upload;
++    let mut flows = Vec::new();
++    for i in 0..count {
++        let mut client = TunTcpBenchmarkClient::new(49152 + i as u16);
++        client.connect(target)?;
++        flows.push(Flow {
++            client,
++            ready: false,
++            sent: 0,
++            received: 0,
++            complete: false,
++        });
++    }
++    let mut pending = VecDeque::new();
++    let mut buffer = vec![0; 65536];
++    let opening = Instant::now();
++    let mut transfer_start = None;
++    let mut setups = Vec::new();
++    loop {
++        while let Some(n) = read_tun_frame(fd, &mut buffer)? {
++            let packet = decode_darwin_utun_frame(&buffer[..n])?;
++            if let Some(flow) = flows.iter_mut().find(|f| f.client.accepts_packet(packet)) {
++                flow.client
++                    .device
++                    .push_inbound(Bytes::copy_from_slice(packet));
++            }
++        }
++        for flow in &mut flows {
++            flow.client.poll();
++            let received = flow.client.recv_available();
++            for byte in received {
++                if !flow.ready {
++                    if byte != 0x52 {
++                        return Err(invalid("TUN ready marker mismatch"));
++                    }
++                    flow.ready = true;
++                    transfer_start.get_or_insert_with(Instant::now);
++                    setups.push(opening.elapsed().as_micros());
++                } else if download && flow.received < total {
++                    if byte != template[flow.received % template.len()] {
++                        return Err(invalid("TUN download payload mismatch"));
++                    }
++                    flow.received += 1;
++                } else if upload && !flow.complete {
++                    if byte != 0x43 {
++                        return Err(invalid("TUN completion marker mismatch"));
++                    }
++                    flow.complete = true;
++                } else {
++                    return Err(invalid("unexpected extra TUN response bytes"));
++                }
++            }
++            if flow.ready && upload && flow.sent < total {
++                let socket = flow
++                    .client
++                    .sockets
++                    .get_mut::<smol_tcp::Socket>(flow.client.tcp);
++                if socket.can_send() {
++                    let offset = flow.sent % template.len();
++                    let end = template.len().min(offset + total - flow.sent);
++                    let n = socket
++                        .send_slice(&template[offset..end])
++                        .map_err(|e| invalid(e.to_string()))?;
++                    flow.sent += n;
++                }
++            }
++            flow.client.poll();
++            while let Some(packet) = flow.client.device.pop_outbound() {
++                if pending.len() == 2048 {
++                    return Err(invalid("TUN driver packet queue budget exceeded"));
++                }
++                pending.push_back(encode_darwin_utun_frame(&packet));
++            }
++        }
++        while let Some(packet) = pending.front() {
++            match write_tun_frame(fd, packet) {
++                Ok(()) => {
++                    pending.pop_front();
++                }
++                Err(BenchError::Io { source, .. })
++                    if source.kind() == io::ErrorKind::WouldBlock
++                        || source.raw_os_error() == Some(libc::ENOBUFS) =>
++                {
++                    break
++                }
++                Err(e) => return Err(e),
++            }
++        }
++        if flows.iter().all(|f| {
++            f.ready
++                && (!upload || f.sent == total && f.complete)
++                && (!download || f.received == total)
++        }) {
++            break;
++        }
++        tokio::task::yield_now().await;
++    }
++    let end = Instant::now();
++    server.await.map_err(|e| invalid(e.to_string()))??;
++    for flow in &mut flows {
++        flow.client.abort();
++        flow.client.poll();
++        while let Some(packet) = flow.client.device.pop_outbound() {
++            pending.push_back(encode_darwin_utun_frame(&packet));
++        }
++    }
++    let closing_deadline = Instant::now() + Duration::from_secs(2);
++    while let Some(packet) = pending.front() {
++        match write_tun_frame(fd, packet) {
++            Ok(()) => {
++                pending.pop_front();
++            }
++            Err(BenchError::Io { source, .. })
++                if source.kind() == io::ErrorKind::WouldBlock
++                    || source.raw_os_error() == Some(libc::ENOBUFS) =>
++            {
++                while read_tun_frame(fd, &mut buffer)?.is_some() {}
++                if Instant::now() >= closing_deadline {
++                    return Err(invalid("TUN driver close timed out"));
++                }
++                tokio::task::yield_now().await;
++            }
++            Err(e) => return Err(e),
++        }
++    }
++    Ok(WorkloadOutcome {
++        bytes_sent: if upload { (total * count) as u64 } else { 0 },
++        bytes_received: if download { (total * count) as u64 } else { 0 },
++        transfer_window: Some((transfer_start.unwrap(), end)),
++        latencies_us: setups,
++        ..WorkloadOutcome::default()
++    })
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn measured_process_is_terminated_and_reaped_on_error() {
++        let pid = std::cell::Cell::new(0);
++        let run = || -> Result<(), BenchError> {
++            let process = MeasuredProcess {
++                child: Command::new("/bin/sleep").arg("30").spawn().unwrap(),
++            };
++            pid.set(process.child.id() as libc::pid_t);
++            Err(invalid("simulated workload failure"))
++        };
++        assert!(run().is_err());
++        // The guard waited for the killed child, so even a zombie cannot remain.
++        assert_eq!(unsafe { libc::kill(pid.get(), 0) }, -1);
++        assert_eq!(io::Error::last_os_error().raw_os_error(), Some(libc::ESRCH));
++    }
++
++    #[test]
++    fn rejects_unbounded_and_unknown_requests() {
++        let mut r = Request {
++            binary: PathBuf::new(),
++            config: json!({}),
++            path: "tun".into(),
++            traffic: "udp".into(),
++            connections: 8,
++            iterations: 100,
++            payload_size: 1200,
++            output: PathBuf::new(),
++        };
++        assert!(validate(&r).is_ok());
++        r.payload_size = 1500;
++        assert!(validate(&r).is_err());
++        r.payload_size = 1200;
++        r.connections = 17;
++        assert!(validate(&r).is_err());
++        r.connections = 8;
++        r.path = "unknown".into();
++        assert!(validate(&r).is_err());
++    }
++}
+diff --git a/crates/xray-bench/src/stream_transport.rs b/crates/xray-bench/src/stream_transport.rs
+index 9ccf854..5853f29 100644
+--- a/crates/xray-bench/src/stream_transport.rs
++++ b/crates/xray-bench/src/stream_transport.rs
+@@ -480,10 +480,20 @@ pub(super) async fn run_workload(
+     options: &BenchOptions,
+     scenario: StreamBenchScenario,
+     phase: BenchmarkPhaseTracker,
++) -> Result<WorkloadOutcome, BenchError> {
++    run_workload_on(socks_addr, options, scenario, phase, Ipv4Addr::LOCALHOST).await
++}
++
++pub(super) async fn run_workload_on(
++    socks_addr: SocketAddr,
++    options: &BenchOptions,
++    scenario: StreamBenchScenario,
++    phase: BenchmarkPhaseTracker,
++    origin_ip: Ipv4Addr,
+ ) -> Result<WorkloadOutcome, BenchError> {
+     scenario.validate_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)?;
+     let template = Arc::new(bulk_pattern_template(options.payload_size));
+-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
++    let listener = TcpListener::bind((origin_ip, 0))
+         .await
+         .map_err(|source| BenchError::Io {
+             action: "binding stream-transport target server".to_owned(),
+@@ -587,7 +597,7 @@ async fn settle(options: &BenchOptions, phase: &BenchmarkPhaseTracker) {
+     phase.set(BenchmarkPhase::Complete);
+ }
+ 
+-async fn run_target_server(
++pub(super) async fn run_target_server(
+     listener: TcpListener,
+     traffic: StreamBenchTraffic,
+     template: Arc<Vec<u8>>,
+diff --git a/docs/roadmap.md b/docs/roadmap.md
+index 0f356e8..f101b62 100644
+--- a/docs/roadmap.md
++++ b/docs/roadmap.md
+@@ -677,6 +677,22 @@ regressions pass; the report preserves the failed intermediate trial. This is
+ bounded device acceptance, not universal loss-free handover. Broader recovery-
+ latency, load, carrier/fault and Android device coverage remain pending.
+ 
++The [2026-09-19 performance campaign](benchmarks/results/2026-09-19-v07/README.md)
++compares frozen `v0.6.1` and v0.7 development binaries on one M3 Pro host, with
++five repetitions and unchanged historical gates. The candidate passes the v0.6
++feature gate but exceeds the old RSS budgets at 100 and 1000 flows; TUN echo CPU
++and connection-close cost also increased. Hysteria2 completed all 100 local
++TCP/UDP measurements. WireGuard completed 83/100: eight-flow upload/full-duplex
++cases time out through both SOCKS and TUN. An additional REALITY/Vision eight-flow
++SOCKS full-duplex run ended early in the candidate but passed an independent
++five-pair repeat. Go WireGuard client controls passed 10/10 corresponding SOCKS
++upload/full-duplex runs. H1 TUN full-duplex on one flow also showed a repeatable
++throughput drop of about 85% in a larger-volume diagnostic. The report retains all failures,
++transport comparisons and reference-client controls; it does not establish
++regression-free RC readiness. Resolve the memory failures, load-completion issues and H1 TUN slowdown,
++investigate the remaining comparison findings, and rerun the affected
++measurements and original gates against fixes. See the [reproduction method](v07-performance.md).
++
+ Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
+ matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed
+ configuration, routing, diagnostics, and cancellation. This owner decision
+diff --git a/docs/v07-performance.md b/docs/v07-performance.md
+new file mode 100644
+index 0000000..5a50373
+--- /dev/null
++++ b/docs/v07-performance.md
+@@ -0,0 +1,161 @@
++# v0.7 performance verification
++
++Current evidence: [2026-09-19 comparison and protocol campaign](benchmarks/results/2026-09-19-v07/README.md).
++
++The campaign compares immutable release binaries of v0.6.1 and the v0.7
++development candidate on the same host, with the same Rust compiler and release
++profile. The Hysteria2/WireGuard workloads are new measurements of the candidate;
++v0.6.1 does not implement those protocols. Functional interoperability results
++and phone recovery timings are separate from these process measurements.
++
++## Preparing the frozen binaries
++
++Create clean baseline/candidate checkouts at the exact commits named in the dated
++report, plus a separate checkout containing this driver. Build each engine and
++its original `xray-bench` from its own checkout, using `cargo build --locked --release -p xray-cli --bin xray-rust`
++and `cargo build --locked --release -p xray-bench --bin xray-bench`.
++Copy them immediately to
++`CAMPAIGN/bin/{baseline,candidate}/`; later builds must not replace these copies.
++Build the modified driver separately as `CAMPAIGN/bin/protocol-bench`.
++
++Use distinct Cargo target directories for these three checkouts, or explicitly
++clean the `xray-bench` package before switching source trees. Cargo can otherwise
++reuse a same-package fingerprint across shared target directories when source
++mtimes precede the previous build. In this campaign that was detected during
++harness verification, corrected with a package clean, and the final driver's
++command, tests and hash were verified before measurements. The original frozen
++engine copies remained unchanged.
++
++Build `CAMPAIGN/bin/xray-core` from the exact clean reference checkout with
++`GOTOOLCHAIN=go1.26.5 GOENV=off GOWORK=off go build -o /absolute/campaign/bin/xray-core ./main`.
++The collector verifies its embedded Git build identity. Preserve compiler/build
++logs and each binary's SHA-256 alongside the manifests. Never build or run
++another workload concurrently with measurements.
++
++## Existing regression gates
++
++Run the original scripts from each clean source checkout, with the same toolchain:
++
++```sh
++GOTOOLCHAIN=go1.26.5 bash scripts/run-v05-pre-device-benchmarks.sh /absolute/output/regression
++GOTOOLCHAIN=go1.26.5 python3 scripts/run-v06-feature-benchmarks.py /absolute/output/features
++```
++
++The existing thresholds remain unchanged. Keep the five raw repetitions and all
++failures. A failing validator does not invalidate completed raw measurements, and
++its first reported failure does not mean subsequent budgets passed.
++
++## Additional transport and protocol measurements
++
++`scripts/run-v07-performance.py` consumes a campaign directory containing clean
++`baseline` and `candidate` source checkouts and their matching release binaries
++under `bin/{baseline,candidate}/{xray-rust,xray-bench}`. `bin/xray-core` must be built
++from exact clean Xray-core v26.7.28. The new `xray-bench protocol-run REQUEST.json`
++driver is built separately, leaving both measured engines unchanged.
++
++```sh
++python3 scripts/run-v07-performance.py --root /absolute/campaign \
++  --harness /absolute/campaign/bin/protocol-bench --suite legacy \
++  --output /absolute/campaign/evidence/legacy
++python3 scripts/run-v07-performance.py --root /absolute/campaign \
++  --harness /absolute/campaign/bin/protocol-bench --suite tun \
++  --output /absolute/campaign/evidence/tun
++python3 scripts/run-v07-performance.py --root /absolute/campaign \
++  --harness /absolute/campaign/bin/protocol-bench --suite new \
++  --output /absolute/campaign/evidence/new
++python3 scripts/summarize-v07-performance.py /absolute/campaign/evidence/new
++```
++
++`--smoke` uses smaller workloads and one repetition for harness verification.
++`--case` selects an explicit diagnostic case; `--iterations` changes its work size.
++All overrides are recorded, and those
++results cannot substitute for the original full campaign.
++
++- **Legacy:** the existing per-version harness runs VLESS/REALITY bulk download
++  plus WebSocket, HTTPUpgrade, gRPC and XHTTP H1/H2/H3 upload/download/full-duplex
++  with one/eight flows. Clean H1 runs transfer 32 MiB per direction/flow; the other
++  legacy streams transfer 64 MiB. The H1 volume was fixed before the clean rerun
++  to keep its paced uploads near 16 seconds while retaining five repetitions.
++  XHTTP modes are packet-up/stream-up/stream-one respectively.
++- **TUN:** one common new driver runs Freedom, VLESS/TLS and XHTTP H1/H2/H3
++  through each immutable engine's fd-backed TUN. One/eight TCP flows upload,
++  download and transfer simultaneously in both directions. No host TUN interface
++  or OS route is created: datagrams carry Darwin-utun framing over a socketpair.
++- **Additional REALITY/Vision:** `--suite reality` covers SOCKS and TUN with
++  one/eight flows and upload/download/full-duplex. It uses one fresh shared
++  reference server after eight seconds of warmup, and fresh client processes.
++  Its raw byte-pattern workload is separate from the original REALITY bulk test.
++- **New protocols:** Hysteria2 and standard WireGuard against the same pinned
++  Xray server, through SOCKS and TUN, one/eight flows, all three bulk directions,
++  1024-byte TCP echo latency and 1200-byte UDP request/reply traffic. UDP has one
++  outstanding request per concurrent flow; its throughput is validated echo
++  throughput, not a maximum unidirectional packet-rate claim. TUN TCP latency
++  retains the old sequential driver and reports `concurrent_flows: 1`; bulk TCP
++  and UDP use concurrent flows.
++
++There are five fresh-process repetitions per case and version. Apart from the
++additional REALITY suite described above, generic runs also start a fresh reference server with fresh synthetic keys, avoiding shared peer
++state across WireGuard client restarts; paired version
++order alternates. The generic bulk driver sends 32 MiB per SOCKS flow and 4 MiB
++per TUN flow in 64 KiB chunks. Every payload byte is validated. TUN UDP also
++checks per-flow sequence numbers and rejects duplicate or mismatched replies.
++The synthetic socketpair requests 1 MiB send/receive queues at both ends and
++records the kernel-accepted sizes. Darwin defaults (2/4 KiB) caused the initial
++smoke download to measure socket backpressure, about 0.6 MiB/s even for Freedom;
++those preliminary values are excluded from capacity comparisons. The historical
++regression driver remains unchanged.
++The inner TUN TCP driver has 64 KiB per-direction socket buffers and a bounded
++2048-packet output queue. These driver limits can constrain observed throughput.
++
++Only the client engine's process RSS and cumulative CPU time are sampled, at
++100 ms intervals in the generic driver. It retains a 500 ms pre-work interval
++and a post-work interval; samples are not guaranteed continuous RSS peaks. CPU
++time includes setup/settle work within the sampled interval. Generic throughput
++counts upload plus download application bytes over the recorded transfer window;
++thus full-duplex counts both directions. Only echo workloads contribute round-trip latency to the comparison summary;
++the TUN bulk driver records time-to-ready samples separately from echo latency.
++Echo latency includes the first request
++and may include lazy protocol setup. Fixture and driver CPU are excluded from the
++reported engine CPU but share the same host, so this is not device/WAN capacity.
++The old REALITY fixture may contact its cover destination during warmup;
++application benchmark payload remains on the measurement host.
++
++The manifest records versions, source trees, lockfile/binary/harness hashes,
++scheduled axes and every command/exit status. The summarizer requires all
++scheduled repetitions exactly once and checks payload counts and axes. A failed
++group gets no passing median. More than 15% throughput loss or more than 15%
++latency/CPU/RSS growth marks a case for investigation; it is not proof of a
++regression without considering raw spread, duration and repeatability. Preserve
++the original group when collecting a separate diagnostic repeat.
++
++## WireGuard reference-client control
++
++When the Rust client's eight-flow SOCKS upload/full-duplex cases fail, run the
++same workloads through the pinned Go client to help isolate the failure:
++
++```sh
++python3 scripts/run-v07-wireguard-control.py --root /absolute/campaign \
++  --harness /absolute/campaign/bin/protocol-bench \
++  --output /absolute/campaign/evidence/wireguard-control
++python3 scripts/summarize-v07-performance.py /absolute/campaign/evidence/wireguard-control
++```
++
++This diagnostic uses five fresh server/client repetitions per case, the same
++payload volumes and driver, and `noKernelTun: true` to keep the Go client in
++userspace. It is an isolation control, not a v0.6.1 protocol comparison. Complete
++the primary campaign before running it; do not overlap competing workloads.
++
++## Process lifetime and evidence validity
++
++The first generic-driver collections were invalidated after discovering that a
++fixture handle did not automatically kill/wait for its child. Leftover engines
++could contaminate subsequent measurements. The original release gates ran before
++this error and remain separate. Every affected collection has `quality.json`
++with `usable_for_performance: false`; the summarizer rejects it.
++
++The corrected driver owns a kill/wait guard on success, failure and timeout. The
++collector also refuses to start over existing campaign processes, checks the
++isolated process group after each run and records an empty engine inventory.
++Leaked descendants make the run fail and stop the campaign. Tests exercise
++normal completion, a deliberately leaked child, interruption and Rust error-path
++cleanup. Only the subsequent clean collections support the dated conclusions.
+diff --git a/scripts/run-v07-performance.py b/scripts/run-v07-performance.py
+new file mode 100644
+index 0000000..f0cddc9
+--- /dev/null
++++ b/scripts/run-v07-performance.py
+@@ -0,0 +1,314 @@
++#!/usr/bin/env python3
++"""Paired local v0.6.1/v0.7 benchmarks. Fresh processes; failures are retained.
++
++Run the original v0.5/v0.6 gates separately. This collector adds old transport
++coverage and same-driver SOCKS/TUN measurements for Hysteria2 and WireGuard.
++It never changes host routes or invokes production VPNs.
++"""
++from __future__ import annotations
++
++import argparse
++import contextlib
++import copy
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import platform
++import signal
++import socket
++import subprocess
++import time
++
++ROOT = Path(__file__).resolve().parents[1]
++REFERENCE = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
++UUID = "00010203-0405-0607-0809-0a0b0c0d0e0f"
++
++
++def sha(path):
++    with Path(path).open("rb") as stream:
++        return hashlib.file_digest(stream, "sha256").hexdigest()
++
++
++def save(path, value):
++    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
++
++
++def command(args, cwd=None):
++    return subprocess.check_output([str(a) for a in args], cwd=cwd, text=True).strip()
++
++
++def env():
++    result = {k: v for k, v in os.environ.items() if not k.startswith(("XRAY_", "CARGO_PROFILE_"))}
++    result.update(GOTOOLCHAIN="go1.26.5", GOENV="off", GOWORK="off")
++    return result
++
++
++def port():
++    with socket.socket() as s:
++        s.bind(("127.0.0.1", 0))
++        return s.getsockname()[1]
++
++
++def load_module(path):
++    spec = importlib.util.spec_from_file_location("fixture", path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++@contextlib.contextmanager
++def fixture(reference, output, reality=False):
++    root = output / "fixture"
++    root.mkdir(mode=0o700, parents=True)
++    device = load_module(ROOT / "scripts/run-v07-apple-protocol-fixture.py")
++    device.verify_reference(reference)
++    device.write_fixtures(root, "127.0.0.1", 1, 2, 3)
++    server = json.loads((root / "server.json").read_text())
++    # The driver binds its synthetic origin to this host's own IPv4 interface.
++    # No production credentials, DNS names or remote application targets.
++    server.pop("routing")
++    server["outbounds"] = [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]
++    configs = {}
++    for case in json.loads((root / "v07-probe.json").read_text())["cases"]:
++        config = json.loads(case["configJSON"])
++        config.pop("inbounds")
++        config.pop("dns")
++        config.pop("routing")
++        if case["format"] == "wireguard":
++            config["outbounds"][0]["settings"]["peers"][0]["allowedIPs"] = ["0.0.0.0/0"]
++        configs[case["format"]] = config
++    cert = str(root / "tls.crt")
++    key = str(root / "tls.key")
++    pin = configs["hysteria2"]["outbounds"][0]["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"]
++    configs["freedom"] = {"outbounds": [{"protocol": "freedom"}]}
++    for name, network, alpn, mode in [("vless-tls", "raw", "http/1.1", None),
++            ("xhttp-h1", "xhttp", "http/1.1", "packet-up"),
++            ("xhttp-h2", "xhttp", "h2", "stream-up"),
++            ("xhttp-h3", "xhttp", "h3", "stream-one")]:
++        listen = port()
++        stream = {"network": network, "security": "tls", "tlsSettings": {
++            "alpn": [alpn], "certificates": [{"certificateFile": cert, "keyFile": key}]}}
++        if network == "xhttp":
++            stream["xhttpSettings"] = {"path": "/bench", "mode": "auto"}
++        server["inbounds"].append({"protocol": "vless", "listen": "127.0.0.1", "port": listen,
++            "settings": {"clients": [{"id": UUID}], "decryption": "none"}, "streamSettings": stream})
++        client_stream = copy.deepcopy(stream)
++        client_stream["tlsSettings"] = {"serverName": "v07-probe.test", "alpn": [alpn], "pinnedPeerCertSha256": pin}
++        if mode:
++            client_stream["xhttpSettings"]["mode"] = mode
++        if alpn == "h3":
++            client_stream["finalmask"] = {"quicParams": {}}
++        configs[name] = {"outbounds": [{"protocol": "vless", "settings": {"vnext": [{
++            "address": "127.0.0.1", "port": listen,"users": [{"id": UUID,"encryption": "none"}]}]},
++            "streamSettings": client_stream}]}
++    if reality:
++        listen=port()
++        settings={"serverName":"www.google.com","fingerprint":"chrome",
++            "publicKey":"E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM",
++            "shortId":"0123456789abcdef","spiderX":"/"}
++        configs["reality-vision"]={"outbounds":[{"protocol":"vless","settings":{
++            "vnext":[{"address":"127.0.0.1","port":listen,"users":[{
++                "id":UUID,"encryption":"none","flow":"xtls-rprx-vision"}]}]},
++            "streamSettings":{"network":"tcp","security":"reality","realitySettings":settings}}]}
++        server["inbounds"].append({"protocol":"vless","listen":"127.0.0.1","port":listen,
++            "settings":{"clients":[{"id":UUID,"flow":"xtls-rprx-vision"}],"decryption":"none"},
++            "streamSettings":{"network":"tcp","security":"reality","realitySettings":{
++                "dest":"www.google.com:443","serverNames":["www.google.com"],
++                "privateKey":"aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks",
++                "shortIds":["0123456789abcdef"],"type":"tcp"}}})
++    save(root / "server.json", server)
++    with (root / "server.log").open("w") as log:
++        child = subprocess.Popen([str(reference), "run", "-config", str(root / "server.json")],
++                                 stdout=log, stderr=log, env=env())
++        try:
++            time.sleep(8 if reality else 1)
++            if child.poll() is not None:
++                raise RuntimeError("reference failed to start; see fixture/server.log")
++            yield configs
++        finally:
++            child.terminate()
++            try:
++                child.wait(5)
++            except subprocess.TimeoutExpired:
++                child.kill()
++                child.wait()
++
++
++def protocol_cases(suite, smoke):
++    protocols = ["hysteria2", "wireguard"] if suite == "new" else ["freedom", "vless-tls", "xhttp-h1", "xhttp-h2", "xhttp-h3"]
++    if suite == "reality": protocols = ["reality-vision"]
++    paths = ["socks", "tun"] if suite in ("new", "reality") else ["tun"]
++    cases = []
++    for protocol in protocols:
++        for path in paths:
++            for connections in [1, 8]:
++                traffic_types = ["upload", "download", "full-duplex", "tcp-latency", "udp"] if suite == "new" else ["upload", "download", "full-duplex"]
++                for traffic in traffic_types:
++                    latency = traffic in ("tcp-latency", "udp")
++                    cases.append({"id": f"{protocol}-{path}-{traffic}-{connections}",
++                        "protocol": protocol,"path": path,"traffic": traffic,"connections": connections,
++                        "payload_size": 1200 if traffic == "udp" else 1024 if latency else 65536,
++                        "iterations": (10 if latency else 4) if smoke else (1000 if latency else 64 if path == "tun" else 512)})
++    return cases
++
++
++def legacy_cases(smoke):
++    iterations = "8" if smoke else "1024"
++    cases = [{"id": "reality-vision-bulk-1", "args": ["--workload", "reality-vision-bulk-throughput", "--connections", "1", "--iterations", "4" if smoke else "256", "--payload-size", "4194304"]}]
++    for transport in ["ws", "httpupgrade", "grpc", "xhttp-h1", "xhttp-h2", "xhttp-h3"]:
++        for connections in [1, 8]:
++            for traffic in ["upload", "download", "full-duplex"]:
++                args = ["--workload", "stream-transport", "--stream-transport", transport,
++                    "--traffic", traffic,"--connections",str(connections),"--iterations","512" if transport=="xhttp-h1" and not smoke else iterations,"--payload-size","65536"]
++                if transport.startswith("xhttp"):
++                    args += ["--xhttp-mode", {"xhttp-h1":"packet-up","xhttp-h2":"stream-up","xhttp-h3":"stream-one"}[transport]]
++                cases.append({"id": f"{transport}-{traffic}-{connections}", "args": args})
++    return cases
++
++
++def campaign_processes(root, engines_only=False):
++    prefixes=[str(root/"bin"/version/"xray-rust")+" " for version in ("baseline","candidate")]
++    if not engines_only:
++        prefixes += [str(root/"bin"/name)+" " for name in ("protocol-bench","xray-core")]
++    found=[]
++    output=command(["ps","-axo","pid=,command="])
++    for line in output.splitlines():
++        fields=line.strip().split(None,1)
++        if len(fields)==2 and any(fields[1].startswith(prefix) for prefix in prefixes):
++            found.append({"pid":int(fields[0]),"command":fields[1]})
++    return found
++
++
++def group_exists(pid):
++    try:
++        os.killpg(pid,0)
++        return True
++    except ProcessLookupError:
++        return False
++
++
++def kill_group(child):
++    try:os.killpg(child.pid,signal.SIGKILL)
++    except ProcessLookupError:pass
++    child.wait()
++    for _ in range(20):
++        if not group_exists(child.pid):return
++        time.sleep(0.05)
++    raise RuntimeError("benchmark process group survived cleanup")
++
++
++def execute(args, log, cwd=None):
++    started = time.time()
++    with log.open("w") as stream:
++        child = subprocess.Popen(args, cwd=cwd, env=env(), stdout=stream,
++                                 stderr=subprocess.STDOUT, start_new_session=True)
++        try:
++            code = child.wait(timeout=180)
++            result={"returncode":code,"seconds":time.time()-started,"command":args}
++        except subprocess.TimeoutExpired:
++            kill_group(child)
++            result={"returncode":124,"seconds":time.time()-started,"command":args,"error":"collector timeout"}
++        except BaseException:
++            kill_group(child)
++            raise
++        result["surviving_process_group"]=group_exists(child.pid)
++        if result["surviving_process_group"]:
++            kill_group(child)
++            result.update(returncode=125,error="benchmark left live descendants")
++        result["process_group_empty_after_run"]=not group_exists(child.pid)
++        return result
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--root",type=Path,required=True,help="campaign directory with bin/{baseline,candidate} and clean source checkouts")
++    parser.add_argument("--harness",type=Path,required=True)
++    parser.add_argument("--suite",choices=["legacy","tun","new","reality"],required=True)
++    parser.add_argument("--output",type=Path,required=True)
++    parser.add_argument("--smoke",action="store_true")
++    parser.add_argument("--case",help="optional exact case ID for diagnosis; never replaces original evidence")
++    parser.add_argument("--iterations",type=int,help="diagnostic work-size override; preserves original full campaign")
++    args = parser.parse_args()
++    args.root=args.root.resolve(); args.harness=args.harness.resolve(); args.output=args.output.resolve()
++    existing=campaign_processes(args.root)
++    if existing:raise RuntimeError(f"campaign processes already running: {existing}")
++    args.output.mkdir(parents=True,exist_ok=False)
++    repeats = 1 if args.smoke else 5
++    cases = legacy_cases(args.smoke) if args.suite == "legacy" else protocol_cases(args.suite,args.smoke)
++    if args.case:
++        cases=[c for c in cases if c["id"]==args.case]
++        if not cases: raise ValueError("unknown case")
++    if args.iterations is not None:
++        if args.suite=="legacy" or not 1<=args.iterations<=16384:raise ValueError("iterations override requires a generic suite and 1..16384")
++        for case in cases:case["iterations"]=args.iterations
++    versions = ["candidate"] if args.suite == "new" else ["baseline","candidate"]
++    manifest={"schema_version":1,"suite":args.suite,"smoke":args.smoke,"diagnostic":bool(args.case or args.iterations is not None),
++        "repeats":repeats,"cases":cases,"started_unix":time.time(),"platform":platform.platform(),
++        "harness_sha256":sha(args.harness),"collector_sha256":sha(__file__),
++        "fixture_policy":"shared suite reference after 8 second warmup; fresh client processes" if args.suite=="reality" else "fresh reference server and keys per run",
++        "harness_source_sha256":{str(p.relative_to(ROOT)):sha(p) for p in sorted((ROOT/"crates/xray-bench/src").glob("*.rs"))},
++        "cleanup_policy":"RAII kill/wait; per-run process-group and engine inventory verification",
++        "preflight_campaign_processes":existing,
++        "reference_sha256":sha(args.root/"bin/xray-core"),"reference_commit":REFERENCE,
++        "review_thresholds":{"throughput_ratio_min":0.85,"latency_cpu_rss_ratio_max":1.15},
++        "versions":{},"runs":[]}
++    for version in versions:
++        source=args.root/version
++        if command(["git","status","--porcelain"],source):raise ValueError("source is dirty")
++        manifest["versions"][version]={"commit":command(["git","rev-parse","HEAD"],source),
++            "tree":command(["git","rev-parse","HEAD^{tree}"],source),"dirty":False,
++            "engine_sha256":sha(args.root/"bin"/version/"xray-rust"),
++            "original_harness_sha256":sha(args.root/"bin"/version/"xray-bench"),
++            "cargo_lock_sha256":sha(source/"Cargo.lock")}
++    save(args.output/"manifest.json",manifest)
++    with contextlib.ExitStack() as fixtures:
++        shared = fixtures.enter_context(fixture(args.root/"bin/xray-core",args.output,True)) if args.suite=="reality" else None
++        for case in cases:
++            for repeat in range(repeats):
++                # Alternate first/second engine to reduce systematic thermal/order bias.
++                order=versions if repeat%2==0 else list(reversed(versions))
++                for version in order:
++                    identifier=f"{case['id']}-{version}-{repeat+1}"
++                    output=args.output/identifier
++                    print(identifier,flush=True)
++                    context=contextlib.nullcontext(shared) if shared is not None else contextlib.nullcontext({}) if args.suite=="legacy" else fixture(args.root/"bin/xray-core",args.output/f"{identifier}-server")
++                    with context as configs:
++                        if args.suite=="legacy":
++                            invocation=[str(args.root/"bin"/version/"xray-bench"),"run","--engine","xray-rust",
++                                "--xray-rust-bin",str(args.root/"bin"/version/"xray-rust"),
++                                "--xray-core-bin",str(args.root/"bin/xray-core"),"--no-auto-build","--runs","1",
++                                "--run-timeout-ms","150000","--out-dir",str(output),*case["args"]]
++                        else:
++                            request={k:case[k] for k in ["path","traffic","connections","iterations","payload_size"]}
++                            request.update(binary=str(args.root/"bin"/version/"xray-rust"),
++                                config=configs[case["protocol"]],output=str(output))
++                            request_path=args.output/f"{identifier}.json"
++                            save(request_path,request)
++                            invocation=[str(args.harness),"protocol-run",str(request_path)]
++                        result=execute(invocation,args.output/f"{identifier}.log",args.root/version)
++                    result["remaining_engine_processes"]=campaign_processes(args.root,True)
++                    if result["remaining_engine_processes"]:raise RuntimeError("engine process survived benchmark cleanup")
++                    result.update(case=case["id"],version=version,repeat=repeat+1,output=str(output),output_relative=identifier)
++                    manifest["runs"].append(result)
++                    save(args.output/"manifest.json",manifest)
++                    print(f"  rc={result['returncode']} elapsed={result['seconds']:.1f}s",flush=True)
++                    if result["surviving_process_group"]:raise RuntimeError("stopping after benchmark child leak")
++    manifest["finished_unix"]=time.time()
++    if sha(__file__)!=manifest["collector_sha256"]:
++        raise RuntimeError("collector changed during measurement")
++    for relative,digest in manifest["harness_source_sha256"].items():
++        if sha(ROOT/relative)!=digest:raise RuntimeError("harness source changed during measurement")
++    if sha(args.harness)!=manifest["harness_sha256"]:
++        raise RuntimeError("harness changed during measurement")
++    for version in versions:
++        if sha(args.root/"bin"/version/"xray-rust")!=manifest["versions"][version]["engine_sha256"]:
++            raise RuntimeError("engine changed during measurement")
++    manifest["status"]="pass" if all(r["returncode"]==0 for r in manifest["runs"]) else "fail"
++    save(args.output/"manifest.json",manifest)
++    if manifest["status"]!="pass":raise SystemExit(1)
++
++
++if __name__=="__main__":
++    main()
+diff --git a/scripts/run-v07-wireguard-control.py b/scripts/run-v07-wireguard-control.py
+new file mode 100644
+index 0000000..63e2a7d
+--- /dev/null
++++ b/scripts/run-v07-wireguard-control.py
+@@ -0,0 +1,68 @@
++#!/usr/bin/env python3
++"""Use the pinned Go client to isolate eight-flow WireGuard upload/full-duplex failures.
++
++Same generic driver, fresh pinned reference server, same payload and repetitions.
++The control uses a userspace stack and never creates host TUN interfaces/routes.
++"""
++import argparse
++import importlib.util
++import json
++import platform
++from pathlib import Path
++import time
++
++SOURCE=Path(__file__).resolve().with_name('run-v07-performance.py')
++spec=importlib.util.spec_from_file_location('performance',SOURCE)
++bench=importlib.util.module_from_spec(spec)
++spec.loader.exec_module(bench)
++
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--root',type=Path,required=True)
++    parser.add_argument('--harness',type=Path,required=True)
++    parser.add_argument('--output',type=Path,required=True)
++    args=parser.parse_args()
++    root=args.root.resolve();harness=args.harness.resolve();output=args.output.resolve()
++    if bench.campaign_processes(root):raise RuntimeError('campaign processes already running')
++    output.mkdir(parents=True,exist_ok=False)
++    binary=root/'bin/xray-core'
++    cases=[c for c in bench.protocol_cases('new',False) if c['id'] in ('wireguard-socks-upload-8','wireguard-socks-full-duplex-8')]
++    manifest={'schema_version':1,'suite':'new','smoke':False,'diagnostic':True,'repeats':5,
++        'purpose':'Reference client isolation control for the same eight-flow upload and full-duplex workloads',
++        'cases':cases,'started_unix':time.time(),'platform':platform.platform(),
++        'harness_sha256':bench.sha(harness),'collector_sha256':bench.sha(__file__),
++        'shared_collector_sha256':bench.sha(SOURCE),'reference_sha256':bench.sha(binary),
++        'reference_commit':bench.REFERENCE,'fixture_policy':'fresh reference and client per run; userspace only',
++        'cleanup_policy':'RAII kill/wait and process-group/global inventory verification',
++        'preflight_campaign_processes':[],
++        'versions':{'reference-client':{'commit':bench.REFERENCE,'engine_sha256':bench.sha(binary)}},'runs':[]}
++    bench.save(output/'manifest.json',manifest)
++    for case in cases:
++        for repeat in range(1,6):
++            identifier=f"{case['id']}-reference-client-{repeat}"
++            target=output/identifier
++            with bench.fixture(binary,output/f'{identifier}-server') as configs:
++                config=configs['wireguard']
++                config['outbounds'][0]['settings']['noKernelTun']=True
++                request={k:case[k] for k in ['path','traffic','connections','iterations','payload_size']}
++                request.update(binary=str(binary),config=config,output=str(target))
++                request_path=output/f'{identifier}.json';bench.save(request_path,request)
++                result=bench.execute([str(harness),'protocol-run',str(request_path)],output/f'{identifier}.log',root/'candidate')
++            remaining=bench.campaign_processes(root)
++            result.update(case=case['id'],version='reference-client',repeat=repeat,output=str(target),
++                          output_relative=identifier,remaining_engine_processes=remaining)
++            manifest['runs'].append(result);bench.save(output/'manifest.json',manifest)
++            print(identifier,result['returncode'],f"{result['seconds']:.1f}s",flush=True)
++            if remaining or result['surviving_process_group']:raise RuntimeError('control process cleanup failed')
++    assert bench.sha(harness)==manifest['harness_sha256']
++    assert bench.sha(binary)==manifest['reference_sha256']
++    assert bench.sha(SOURCE)==manifest['shared_collector_sha256']
++    assert bench.sha(__file__)==manifest['collector_sha256']
++    manifest['finished_unix']=time.time()
++    manifest['status']='pass' if all(r['returncode']==0 for r in manifest['runs']) else 'fail'
++    bench.save(output/'manifest.json',manifest)
++    if manifest['status']!='pass':raise SystemExit(1)
++
++
++if __name__=='__main__':main()
+diff --git a/scripts/summarize-v07-performance.py b/scripts/summarize-v07-performance.py
+new file mode 100644
+index 0000000..d74162a
+--- /dev/null
++++ b/scripts/summarize-v07-performance.py
+@@ -0,0 +1,123 @@
++#!/usr/bin/env python3
++"""Verify a completed v0.7 performance collection and aggregate every repetition.
++
++Threshold crossings mean investigation is required, not an automatically proven
++regression. Incomplete/failed groups never receive a passing median.
++"""
++from __future__ import annotations
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import statistics
++
++
++def sha(path):
++    with path.open("rb") as f:
++        return hashlib.file_digest(f,"sha256").hexdigest()
++
++
++def summarize(root):
++    quality=root/"quality.json"
++    if quality.exists() and not json.loads(quality.read_text()).get("usable_for_performance",True):
++        raise ValueError("evidence invalidated: "+json.loads(quality.read_text())["reason"])
++    manifest=json.loads((root/"manifest.json").read_text())
++    expected={(c["id"],v,i) for c in manifest["cases"] for v in manifest["versions"] for i in range(1,manifest["repeats"]+1)}
++    actual=[(r["case"],r["version"],r["repeat"]) for r in manifest["runs"]]
++    if len(actual)!=len(set(actual)) or set(actual)!=expected:
++        raise ValueError("missing or duplicate scheduled runs")
++    cases={c["id"]:c for c in manifest["cases"]}
++    groups={}
++    failures=[]
++    artifact_hashes={}
++    for run in manifest["runs"]:
++        key=(run["case"],run["version"])
++        group=groups.setdefault(key,[])
++        directory=root/run["output_relative"] if "output_relative" in run else Path(run["output"])
++        paths=list(directory.rglob("result.json"))
++        for path in paths:
++            artifact_hashes[str(path.relative_to(root))]=sha(path)
++        if run["returncode"]:
++            error = run.get("error")
++            if len(paths)==1:
++                error=json.loads(paths[0].read_text()).get("error",error)
++            failures.append({"case":key[0],"version":key[1],"repeat":run["repeat"],"returncode":run["returncode"],"error":error})
++            continue
++        if len(paths)!=1:
++            raise ValueError(f"expected one raw result: {directory}")
++        result=json.loads(paths[0].read_text())
++        artifact_hashes[str(paths[0].relative_to(root))]=sha(paths[0])
++        if result.get("status") not in ["pass","ok"]:
++            raise ValueError("successful command contains failed measurement")
++        case=cases[run["case"]]
++        if manifest["suite"]!="legacy":
++            for k in ["connections","iterations","payload_size","traffic","path"]:
++                if result[k]!=case[k]: raise ValueError(f"result axis mismatch: {k}")
++            n=case["connections"]*case["iterations"]*case["payload_size"]
++            sent=0 if case["traffic"]=="download" else n
++            received=0 if case["traffic"]=="upload" else n
++            if (result["bytes_sent"],result["bytes_received"])!=(sent,received):
++                raise ValueError("validated byte counts differ from scheduled work")
++            if len(result["samples"])<2:raise ValueError("missing process resource samples")
++            throughput=result["throughput_mib_s"]
++        else:
++            arguments=case["args"]
++            values={arguments[i]:arguments[i+1] for i in range(0,len(arguments),2)}
++            for field in ["connections","iterations","payload_size"]:
++                if result[field]!=int(values["--"+field.replace("_","-")]):
++                    raise ValueError(f"legacy result axis mismatch: {field}")
++            if result["workload"]!=values["--workload"]:
++                raise ValueError("legacy workload mismatch")
++            traffic=values.get("--traffic","download")
++            n=result["connections"]*result["iterations"]*result["payload_size"]
++            expected=(0 if traffic=="download" else n,0 if traffic=="upload" else n)
++            if (result["bytes_sent"],result["bytes_received"])!=expected:
++                raise ValueError("legacy validated byte counts differ from scheduled work")
++            # Retain the original harness's integer Mbps metric and unit conversion.
++            mbps=result.get("throughput_mbps")
++            throughput=None if mbps is None else mbps/8/1.048576
++            if result["provenance"]["engine_binary_sha256"]!=manifest["versions"][run["version"]]["engine_sha256"]:
++                raise ValueError("legacy result engine hash mismatch")
++        latency=(result.get("latency_us") or {}) if manifest["suite"]=="legacy" or case["traffic"] in ("tcp-latency","udp") else {}
++        group.append({"throughput_mib_s":throughput,"rss_mib":result["peak_rss_kib"]/1024,
++            "cpu_ms":result["cpu_millis"],"latency_us":latency.get("median"),
++            "cpu_ms_per_mib":result["cpu_millis"]*1048576/(result["bytes_sent"]+result["bytes_received"])})
++    rows=[]
++    for case in manifest["cases"]:
++        row={"case":case["id"],"versions":{},"review":[]}
++        for version in manifest["versions"]:
++            group=groups.get((case["id"],version),[])
++            complete=len(group)==manifest["repeats"]
++            metrics={}
++            if complete:
++                for metric in ["throughput_mib_s","rss_mib","cpu_ms","cpu_ms_per_mib","latency_us"]:
++                    values=[r[metric] for r in group if r[metric] is not None]
++                    if len(values)==len(group):metrics[metric]={"median":statistics.median(values),"min":min(values),"max":max(values),"samples":values}
++            row["versions"][version]={"complete":complete,"passed_repeats":len(group),"metrics":metrics}
++        if all(v["complete"] for v in row["versions"].values()) and "baseline" in row["versions"]:
++            baseline=row["versions"]["baseline"]["metrics"]
++            candidate=row["versions"]["candidate"]["metrics"]
++            row["ratios"]={}
++            for metric in baseline.keys() & candidate.keys():
++                b=baseline[metric]["median"]
++                if b==0:continue
++                ratio=candidate[metric]["median"]/b
++                row["ratios"][metric]=ratio
++                lower=metric=="throughput_mib_s"
++                if (lower and ratio<0.85) or (not lower and ratio>1.15):row["review"].append(metric)
++        rows.append(row)
++    return {"manifest_sha256":sha(root/"manifest.json"),"smoke":manifest["smoke"],
++        "suite":manifest["suite"],"failures":failures,"rows":rows,"artifact_sha256":artifact_hashes}
++
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("root",type=Path)
++    args=parser.parse_args()
++    result=summarize(args.root.resolve())
++    (args.root/"summary.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
++    print(json.dumps({"rows":len(result["rows"]),"failures":len(result["failures"]),
++        "review_cases":[r["case"] for r in result["rows"] if r["review"]]},indent=2))
++
++
++if __name__=="__main__":main()
+diff --git a/scripts/tests/test_v07_performance_processes.py b/scripts/tests/test_v07_performance_processes.py
+new file mode 100644
+index 0000000..0bdae80
+--- /dev/null
++++ b/scripts/tests/test_v07_performance_processes.py
+@@ -0,0 +1,50 @@
++#!/usr/bin/env python3
++"""Process lifetime regressions: normal completion, orphan child and interruption."""
++import importlib.util
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import unittest
++from unittest import mock
++
++spec=importlib.util.spec_from_file_location("collector",Path(__file__).resolve().parents[1]/"run-v07-performance.py")
++collector=importlib.util.module_from_spec(spec)
++spec.loader.exec_module(collector)
++
++
++class ProcessLifetimeTests(unittest.TestCase):
++    def setUp(self):
++        self.directory=tempfile.TemporaryDirectory()
++        self.log=Path(self.directory.name)/"run.log"
++
++    def tearDown(self):
++        self.directory.cleanup()
++
++    def test_normal_exit_has_no_surviving_group(self):
++        result=collector.execute([sys.executable,"-c","pass"],self.log)
++        self.assertEqual(result["returncode"],0)
++        self.assertFalse(result["surviving_process_group"])
++        self.assertTrue(result["process_group_empty_after_run"])
++
++    def test_leaked_child_is_killed_and_fails_the_run(self):
++        result=collector.execute([sys.executable,"-c","import subprocess; subprocess.Popen(['/bin/sleep','30'])"],self.log)
++        self.assertEqual(result["returncode"],125)
++        self.assertTrue(result["surviving_process_group"])
++        self.assertTrue(result["process_group_empty_after_run"])
++
++    def test_interruption_also_kills_the_process_group(self):
++        original=subprocess.Popen.wait
++        pids=[]
++        def interrupt_once(child,*args,**kwargs):
++            if not pids:
++                pids.append(child.pid)
++                raise KeyboardInterrupt
++            return original(child,*args,**kwargs)
++        with mock.patch.object(subprocess.Popen,"wait",interrupt_once):
++            with self.assertRaises(KeyboardInterrupt):
++                collector.execute(["/bin/sleep","30"],self.log)
++        self.assertFalse(collector.group_exists(pids[0]))
++
++
++if __name__=="__main__":unittest.main()
+diff --git a/scripts/tests/test_v07_performance_summary.py b/scripts/tests/test_v07_performance_summary.py
+new file mode 100644
+index 0000000..4908da3
+--- /dev/null
++++ b/scripts/tests/test_v07_performance_summary.py
+@@ -0,0 +1,80 @@
++#!/usr/bin/env python3
++"""Evidence integrity tests; never make failed/incomplete repetitions pass."""
++import importlib.util
++import json
++from pathlib import Path
++import tempfile
++import unittest
++
++spec=importlib.util.spec_from_file_location("summary",Path(__file__).resolve().parents[1]/"summarize-v07-performance.py")
++module=importlib.util.module_from_spec(spec)
++spec.loader.exec_module(module)
++
++
++class EvidenceTests(unittest.TestCase):
++    def setUp(self):
++        self.temp=tempfile.TemporaryDirectory()
++        self.root=Path(self.temp.name)
++        case={"id":"test","path":"socks","traffic":"udp","connections":1,"iterations":10,"payload_size":1200}
++        self.manifest={"cases":[case],"versions":{"candidate":{}},"repeats":5,"suite":"new","smoke":False,"runs":[]}
++        for i in range(1,6):
++            output=self.root/str(i);output.mkdir()
++            result={**case,"status":"pass","bytes_sent":12000,"bytes_received":12000,
++                "samples":[{},{}],"throughput_mib_s":10,"peak_rss_kib":4096,"cpu_millis":1,"latency_us":{"median":100}}
++            (output/"result.json").write_text(json.dumps(result))
++            self.manifest["runs"].append({"case":"test","version":"candidate","repeat":i,"output":str(output),"returncode":0})
++        self.save()
++
++    def tearDown(self):self.temp.cleanup()
++    def save(self):(self.root/"manifest.json").write_text(json.dumps(self.manifest))
++
++    def test_invalidated_campaign_is_rejected(self):
++        (self.root/"quality.json").write_text(json.dumps({"usable_for_performance":False,"reason":"child leak"}))
++        with self.assertRaises(ValueError):module.summarize(self.root)
++
++    def test_complete_group(self):
++        result=module.summarize(self.root)
++        self.assertTrue(result["rows"][0]["versions"]["candidate"]["complete"])
++        self.assertEqual(len(result["artifact_sha256"]),5)
++
++    def test_missing_or_duplicate_run(self):
++        self.manifest["runs"].pop();self.save()
++        with self.assertRaises(ValueError):module.summarize(self.root)
++        self.manifest["runs"].append(self.manifest["runs"][0]);self.save()
++        with self.assertRaises(ValueError):module.summarize(self.root)
++
++    def test_failure_does_not_receive_passing_median(self):
++        self.manifest["runs"][1]["returncode"]=1;self.save()
++        result=module.summarize(self.root)
++        self.assertEqual(len(result["failures"]),1)
++        group=result["rows"][0]["versions"]["candidate"]
++        self.assertFalse(group["complete"])
++        self.assertEqual(group["metrics"],{})
++
++    def test_legacy_sub_millisecond_run_has_no_invented_throughput(self):
++        self.manifest["suite"]="legacy"
++        self.manifest["versions"]["candidate"]["engine_sha256"]="engine"
++        self.manifest["cases"][0]["args"]=["--workload","stream-transport","--traffic","full-duplex","--connections","1","--iterations","10","--payload-size","1200"]
++        for run in self.manifest["runs"]:
++            path=Path(run["output"])/"result.json"
++            result=json.loads(path.read_text())
++            result.update(workload="stream-transport",throughput_mbps=None,provenance={"engine_binary_sha256":"engine"})
++            path.write_text(json.dumps(result))
++        self.save()
++        metrics=module.summarize(self.root)["rows"][0]["versions"]["candidate"]["metrics"]
++        self.assertNotIn("throughput_mib_s",metrics)
++        result["bytes_received"]-=1
++        path.write_text(json.dumps(result))
++        with self.assertRaises(ValueError):module.summarize(self.root)
++
++    def test_truncated_bytes_and_changed_axes_rejected(self):
++        path=self.root/"1/result.json"
++        result=json.loads(path.read_text());result["bytes_received"]-=1
++        path.write_text(json.dumps(result))
++        with self.assertRaises(ValueError):module.summarize(self.root)
++        result["bytes_received"]+=1;result["connections"]=2
++        path.write_text(json.dumps(result))
++        with self.assertRaises(ValueError):module.summarize(self.root)
++
++
++if __name__=="__main__":unittest.main()

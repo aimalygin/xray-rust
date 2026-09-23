@@ -1,0 +1,2760 @@
+{
+  "binary_builds": {
+    "candidate": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+          "xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+        "canonical_vendor_basis": {
+          "log": "reviewed-canonical-vendor.log",
+          "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+          "unchanged": false,
+          "vendor_tree": "3fb4f61a8c5f4385c51be6efa44a60bc4ee69706"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+          "parent_commit": "107d71f776c68a359ec6f71234b2587ee8b781cb",
+          "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "patch_sha256": "395b56aae6abbba3585100568faf99d772684514e10e726f8756078c1890dbb3",
+          "purpose": "Hysteria-only empty local CID; actual Initial capture plus native/Xray interop, blackholed path recovery, protection, and H3 regression tests; benefit to be measured",
+          "source_commit": "a2d6c8f2d6a17f6ce023d9a59b8d48621130c641",
+          "source_tree": "ce6dce5b1e615c7782b6120d98d220920864e16b",
+          "validation": [
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--test",
+                "hysteria_native_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+              },
+              "name": "native",
+              "returncode": 0,
+              "seconds": 19.483339071273804
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+              },
+              "name": "xray",
+              "returncode": 0,
+              "seconds": 3.1275367736816406
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "stream_xhttp_h3_tests"
+              ],
+              "environment": {},
+              "name": "h3",
+              "returncode": 0,
+              "seconds": 18.900521993637085
+            },
+            {
+              "command": [
+                "cargo",
+                "fmt",
+                "--all",
+                "--",
+                "--check"
+              ],
+              "environment": {},
+              "name": "format",
+              "returncode": 0,
+              "seconds": 1.131680965423584
+            },
+            {
+              "command": [
+                "cargo",
+                "build",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-cli"
+              ],
+              "environment": {},
+              "name": "build",
+              "returncode": 0,
+              "seconds": 50.62861704826355
+            }
+          ]
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+        "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json",
+      "sha256": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch",
+        "sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c"
+      }
+    },
+    "previous": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "76a325733bf82ca92dc5a8e77ed2799c0cd2ef232c45e56b290e93fcd861d569",
+          "xray-rust": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4"
+        },
+        "binary_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+        "canonical_vendor_basis": {
+          "log": "accepted-canonical-vendor.log",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "unchanged": true,
+          "vendor_tree": "7d2f5c2636b9d97b1179c868f69efb8a500ee9f3"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+          "change": "Coalesce immediately ready H3 response fragments into at most 16 KiB per one-slot channel handoff, without awaiting future data or changing QUIC flow-control windows",
+          "clean": true,
+          "experimental": true,
+          "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/h3-read-batch-build",
+          "patch_base": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "patch_sha256": "1fc7ff3984feb4bee7fbd89e3a7874b8e544c6663f105583d9da262e3806ae3e",
+          "performance_acceptance": "pending",
+          "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "source_tree": "0296e27d7dc2fb30683c80f8a0801557f84bc2eb"
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/h3-read-batch-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+        "source_tree": "0296e27d7dc2fb30683c80f8a0801557f84bc2eb"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/build.json",
+      "sha256": "ed981258fb1861b2bccd0dfad18b2f45d6d2d64410ad800ea3731add95c11507",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/source.patch",
+        "sha256": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe"
+      }
+    }
+  },
+  "candidate_workers": null,
+  "cases": [
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-tcp-latency-8",
+      "iterations": 5000,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    }
+  ],
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native": "304d19e4518352ac823b46f2b6ebcfa1c284157debabea70f3ba4eaaa1802356",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/build.json": "ed981258fb1861b2bccd0dfad18b2f45d6d2d64410ad800ea3731add95c11507",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/source.patch": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client.json": "6dbb95fa30dd82af6e4de68a4cd4bc4a1dc4a0ee949286dea273f23f3fbca86b",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client": "b342adec5d2c217bbffca675243b2ee7cf2c21ef044d242c740e6244b816129e",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/bin/sing-box": "b2b34ea4948148b36d4fe5a2759c9cb8a0f5356c6908b697ba2118eebe8a06b3",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client.json": "204cc4ac5b15cad2382846da1ce58d032a151850151114165fefad4cac688468",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client.json": "da8b0e01f9f11549b674beddb27afbe7a60c31324960d11a9da213e370f44067",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-protocol-parity.py": "38d733a9023694a5432f68dba68b1b5c4a784cbf97e532d7e8751c2904da43ee"
+  },
+  "finished_unix": 1790003485.854961,
+  "idle_connections_by_version": {
+    "candidate": 0,
+    "native": 0,
+    "previous": 0,
+    "singbox": 0,
+    "xray": 0
+  },
+  "idle_settle_seconds": 0,
+  "link_mbps_per_direction": null,
+  "one_way_delay_ms": 0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "process_accounting": "prepared real binary launched directly; one verified TCP echo before steady measurements; startup and lifetime CPU retained separately",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_go_workers": 2,
+  "repeats": 5,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 96.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              }
+            ],
+            "time_unix": 1790003375.032892
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.5,
+                "executable": "node",
+                "pid": 12585
+              },
+              {
+                "cpu": 174.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 21511
+              },
+              {
+                "cpu": 78.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 21515
+              },
+              {
+                "cpu": 95.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 21516
+              }
+            ],
+            "time_unix": 1790003377.0580878
+          },
+          {
+            "processes": [
+              {
+                "cpu": 46.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 21511
+              },
+              {
+                "cpu": 12.0,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003377.97929
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.916433095932007,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 13.8,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003379.126399
+          },
+          {
+            "processes": [
+              {
+                "cpu": 149.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 21671
+              },
+              {
+                "cpu": 68.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 21673
+              },
+              {
+                "cpu": 91.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 21678
+              },
+              {
+                "cpu": 24.1,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003381.151802
+          },
+          {
+            "processes": [
+              {
+                "cpu": 30.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 21671
+              },
+              {
+                "cpu": 11.0,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003382.2633018
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.1002540588378906,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 12.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 12.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 21835
+              },
+              {
+                "cpu": 10.6,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003383.4226592
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.8,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 147.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 21834
+              },
+              {
+                "cpu": 62.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 21837
+              },
+              {
+                "cpu": 94.9,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 21839
+              },
+              {
+                "cpu": 16.2,
+                "executable": "/System/Volumes/Preboot/Cryptexes/App/System/Applications/Safari.app/Contents/PlugIns/CacheDeleteExtension.appex/Contents/MacOS/CacheDeleteExtension",
+                "pid": 21871
+              },
+              {
+                "cpu": 19.2,
+                "executable": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking",
+                "pid": 21886
+              },
+              {
+                "cpu": 15.2,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              },
+              {
+                "cpu": 23.1,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003385.449396
+          },
+          {
+            "processes": [
+              {
+                "cpu": 14.1,
+                "executable": "/usr/libexec/triald_system",
+                "pid": 20188
+              },
+              {
+                "cpu": 32.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 21834
+              },
+              {
+                "cpu": 19.1,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              },
+              {
+                "cpu": 23.1,
+                "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+                "pid": 66297
+              },
+              {
+                "cpu": 30.0,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003386.610869
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.140141010284424,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 25.2,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 53.6,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 20150
+              },
+              {
+                "cpu": 22.8,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 10.8,
+                "executable": "/usr/libexec/containermanagerd",
+                "pid": 43032
+              },
+              {
+                "cpu": 23.1,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              },
+              {
+                "cpu": 18.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 21.4,
+                "executable": "/usr/libexec/pkd",
+                "pid": 63630
+              }
+            ],
+            "time_unix": 1790003387.79678
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 23.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 26.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 47.7,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003389.857585
+          },
+          {
+            "processes": [
+              {
+                "cpu": 42.9,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 71.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22006
+              },
+              {
+                "cpu": 31.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 22008
+              },
+              {
+                "cpu": 46.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22010
+              },
+              {
+                "cpu": 28.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 36.7,
+                "executable": "/usr/libexec/triald",
+                "pid": 26315
+              },
+              {
+                "cpu": 20.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 10.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 26.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 23.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 21.7,
+                "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+                "pid": 66297
+              },
+              {
+                "cpu": 20.3,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003391.913137
+          },
+          {
+            "processes": [
+              {
+                "cpu": 36.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 44.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22006
+              },
+              {
+                "cpu": 22.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 45.3,
+                "executable": "/usr/libexec/triald",
+                "pid": 26315
+              },
+              {
+                "cpu": 28.6,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 27.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 24.8,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 41.5,
+                "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+                "pid": 66297
+              },
+              {
+                "cpu": 11.3,
+                "executable": "/System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd",
+                "pid": 79283
+              }
+            ],
+            "time_unix": 1790003392.1395872
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.309750080108643,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 46.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 32.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 88.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 22.7,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 22.9,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 13.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 10.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61718
+              },
+              {
+                "cpu": 28.5,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003393.312106
+          },
+          {
+            "processes": [
+              {
+                "cpu": 20.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 43.1,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 20150
+              },
+              {
+                "cpu": 16.4,
+                "executable": "/usr/libexec/triald_system",
+                "pid": 20188
+              },
+              {
+                "cpu": 14.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 159.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22194
+              },
+              {
+                "cpu": 47.1,
+                "executable": "/System/Library/PrivateFrameworks/AMPLibrary.framework/Versions/A/Support/AMPLibraryAgent",
+                "pid": 22196
+              },
+              {
+                "cpu": 68.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 22198
+              },
+              {
+                "cpu": 79.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 22199
+              },
+              {
+                "cpu": 23.0,
+                "executable": "/System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod",
+                "pid": 22208
+              },
+              {
+                "cpu": 25.3,
+                "executable": "/System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod",
+                "pid": 22209
+              },
+              {
+                "cpu": 10.8,
+                "executable": "/usr/libexec/trustd",
+                "pid": 22228
+              },
+              {
+                "cpu": 22.0,
+                "executable": "/usr/libexec/containermanagerd",
+                "pid": 22259
+              },
+              {
+                "cpu": 12.1,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 10.6,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003395.343272
+          },
+          {
+            "processes": [
+              {
+                "cpu": 21.8,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 20150
+              },
+              {
+                "cpu": 39.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22194
+              },
+              {
+                "cpu": 29.5,
+                "executable": "/usr/libexec/pkd",
+                "pid": 63630
+              },
+              {
+                "cpu": 29.6,
+                "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+                "pid": 66297
+              }
+            ],
+            "time_unix": 1790003396.447055
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-previous-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-previous-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.0929501056671143,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 35.8,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 16.9,
+                "executable": "/usr/libexec/triald_system",
+                "pid": 20188
+              },
+              {
+                "cpu": 20.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 11.4,
+                "executable": "/usr/libexec/triald",
+                "pid": 26315
+              },
+              {
+                "cpu": 10.3,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 14.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 21.5,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003397.592452
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.1,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 11.0,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 20150
+              },
+              {
+                "cpu": 163.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22380
+              },
+              {
+                "cpu": 72.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 22383
+              },
+              {
+                "cpu": 91.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 22384
+              },
+              {
+                "cpu": 36.1,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1790003399.621355
+          },
+          {
+            "processes": [
+              {
+                "cpu": 11.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 22.6,
+                "executable": "/System/Library/PrivateFrameworks/FileProvider.framework/Support/fileproviderd",
+                "pid": 711
+              },
+              {
+                "cpu": 31.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22380
+              }
+            ],
+            "time_unix": 1790003400.574922
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.9336631298065186,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 11.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 10.8,
+                "executable": "/System/Library/PrivateFrameworks/FileProvider.framework/Support/fileproviderd",
+                "pid": 711
+              }
+            ],
+            "time_unix": 1790003401.766585
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 11.8,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 178.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22539
+              },
+              {
+                "cpu": 80.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 22541
+              },
+              {
+                "cpu": 100.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 22542
+              }
+            ],
+            "time_unix": 1790003403.793854
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 19.6,
+                "executable": "/usr/libexec/airportd",
+                "pid": 431
+              },
+              {
+                "cpu": 25.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 31.3,
+                "executable": "/System/Library/PrivateFrameworks/AMPLibrary.framework/Versions/A/Support/AMPLibraryAgent",
+                "pid": 22196
+              },
+              {
+                "cpu": 43.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22539
+              }
+            ],
+            "time_unix": 1790003404.757345
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-previous-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-previous-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.9426848888397217,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 25.3,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 14.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 15.4,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003405.9277592
+          },
+          {
+            "processes": [
+              {
+                "cpu": 39.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 15.7,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 12.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1790003407.989504
+          },
+          {
+            "processes": [
+              {
+                "cpu": 69.3,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 30.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 54.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22702
+              },
+              {
+                "cpu": 23.8,
+                "executable": "(xray-bench)",
+                "pid": 22713
+              },
+              {
+                "cpu": 34.5,
+                "executable": "(xray-core)",
+                "pid": 22715
+              }
+            ],
+            "time_unix": 1790003410.0484962
+          },
+          {
+            "processes": [
+              {
+                "cpu": 69.3,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 30.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 33.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22702
+              }
+            ],
+            "time_unix": 1790003410.081231
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.120638132095337,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 77.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 14.8,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              }
+            ],
+            "time_unix": 1790003411.2515311
+          },
+          {
+            "processes": [
+              {
+                "cpu": 163.2,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 14.0,
+                "executable": "/usr/libexec/opendirectoryd",
+                "pid": 381
+              },
+              {
+                "cpu": 31.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 127.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22871
+              },
+              {
+                "cpu": 52.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 22873
+              },
+              {
+                "cpu": 83.8,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 22875
+              },
+              {
+                "cpu": 18.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 17.3,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003413.282023
+          },
+          {
+            "processes": [
+              {
+                "cpu": 94.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 10.3,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 27.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 22871
+              },
+              {
+                "cpu": 35.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              }
+            ],
+            "time_unix": 1790003414.436552
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.135279893875122,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 19.9,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              }
+            ],
+            "time_unix": 1790003415.592159
+          },
+          {
+            "processes": [
+              {
+                "cpu": 42.1,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 139.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23039
+              },
+              {
+                "cpu": 60.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 23041
+              },
+              {
+                "cpu": 82.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 23046
+              },
+              {
+                "cpu": 27.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 17.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1790003417.618369
+          },
+          {
+            "processes": [
+              {
+                "cpu": 49.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23039
+              }
+            ],
+            "time_unix": 1790003418.681351
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.0414631366729736,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 29.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 13.0,
+                "executable": "/Applications/Telegram.app/Contents/MacOS/Telegram",
+                "pid": 16260
+              }
+            ],
+            "time_unix": 1790003419.841892
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 33.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 153.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23201
+              },
+              {
+                "cpu": 65.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 23203
+              },
+              {
+                "cpu": 99.9,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 23205
+              }
+            ],
+            "time_unix": 1790003421.8673868
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.8,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 18.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 31.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23201
+              },
+              {
+                "cpu": 35.6,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 21.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 13.0,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003422.998155
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.099508047103882,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 21.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              }
+            ],
+            "time_unix": 1790003424.163539
+          },
+          {
+            "processes": [
+              {
+                "cpu": 32.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 63.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 70.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 40.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 10.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 24.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61718
+              },
+              {
+                "cpu": 27.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 95937
+              },
+              {
+                "cpu": 17.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790003426.1937542
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.1,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 70.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23360
+              },
+              {
+                "cpu": 31.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 23362
+              },
+              {
+                "cpu": 44.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23364
+              },
+              {
+                "cpu": 17.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 17.4,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003428.256899
+          },
+          {
+            "processes": [
+              {
+                "cpu": 15.9,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 43.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23360
+              },
+              {
+                "cpu": 11.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 10.8,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003428.4348931
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.226678133010864,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1790003429.610364
+          },
+          {
+            "processes": [
+              {
+                "cpu": 177.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23537
+              },
+              {
+                "cpu": 77.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 23539
+              },
+              {
+                "cpu": 97.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 23540
+              }
+            ],
+            "time_unix": 1790003431.63648
+          },
+          {
+            "processes": [
+              {
+                "cpu": 21.8,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 30.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23537
+              },
+              {
+                "cpu": 14.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003432.6018
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-previous-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-previous-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.947744131088257,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 21.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 34.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 22085
+              },
+              {
+                "cpu": 10.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003433.7584891
+          },
+          {
+            "processes": [
+              {
+                "cpu": 11.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 170.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23695
+              },
+              {
+                "cpu": 75.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 23697
+              },
+              {
+                "cpu": 94.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 23698
+              }
+            ],
+            "time_unix": 1790003435.783925
+          },
+          {
+            "processes": [
+              {
+                "cpu": 40.2,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 32.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23695
+              },
+              {
+                "cpu": 18.8,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 19.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1790003436.7961211
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.985440969467163,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 37.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 15.7,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003437.9912698
+          },
+          {
+            "processes": [
+              {
+                "cpu": 145.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23855
+              },
+              {
+                "cpu": 66.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 23859
+              },
+              {
+                "cpu": 90.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 23864
+              }
+            ],
+            "time_unix": 1790003440.0180988
+          },
+          {
+            "processes": [
+              {
+                "cpu": 47.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 23855
+              }
+            ],
+            "time_unix": 1790003441.126957
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.0838518142700195,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1790003442.295722
+          },
+          {
+            "processes": [
+              {
+                "cpu": 154.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24020
+              },
+              {
+                "cpu": 66.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24022
+              },
+              {
+                "cpu": 95.3,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 24024
+              }
+            ],
+            "time_unix": 1790003444.321882
+          },
+          {
+            "processes": [
+              {
+                "cpu": 51.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24020
+              }
+            ],
+            "time_unix": 1790003445.3915641
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-native-4.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.0541961193084717,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1790003446.554435
+          },
+          {
+            "processes": [
+              {
+                "cpu": 154.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24182
+              },
+              {
+                "cpu": 67.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24184
+              },
+              {
+                "cpu": 91.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 24189
+              }
+            ],
+            "time_unix": 1790003448.580408
+          },
+          {
+            "processes": [
+              {
+                "cpu": 40.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24182
+              }
+            ],
+            "time_unix": 1790003449.626339
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-singbox-4.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.0348989963531494,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1790003450.77335
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.2,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 171.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24344
+              },
+              {
+                "cpu": 76.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24346
+              },
+              {
+                "cpu": 96.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 24347
+              }
+            ],
+            "time_unix": 1790003452.799018
+          },
+          {
+            "processes": [
+              {
+                "cpu": 30.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24344
+              }
+            ],
+            "time_unix": 1790003453.770208
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-candidate-4.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.946439027786255,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 28.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 13.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 33929
+              },
+              {
+                "cpu": 12.6,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 12.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1790003454.924087
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 13.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 163.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24502
+              },
+              {
+                "cpu": 74.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24504
+              },
+              {
+                "cpu": 93.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 24505
+              },
+              {
+                "cpu": 18.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 16.0,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003456.953099
+          },
+          {
+            "processes": [
+              {
+                "cpu": 28.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 29.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 32.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24502
+              },
+              {
+                "cpu": 10.8,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003457.9496498
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-previous-4.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-previous-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.9729599952697754,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 26.9,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 110.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 14.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 24663
+              },
+              {
+                "cpu": 11.7,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1790003459.1223738
+          },
+          {
+            "processes": [
+              {
+                "cpu": 33.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 41.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 24668
+              },
+              {
+                "cpu": 18.4,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 33.0,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 22.8,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1790003461.1802082
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.3,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 68.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24662
+              },
+              {
+                "cpu": 30.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24665
+              },
+              {
+                "cpu": 42.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24667
+              },
+              {
+                "cpu": 101.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 24668
+              },
+              {
+                "cpu": 93.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 40.6,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 20.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61718
+              }
+            ],
+            "time_unix": 1790003463.2417111
+          },
+          {
+            "processes": [
+              {
+                "cpu": 14.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 42.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24662
+              },
+              {
+                "cpu": 101.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 24668
+              },
+              {
+                "cpu": 96.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 32.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 13.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61718
+              }
+            ],
+            "time_unix": 1790003463.339966
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-xray-4.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.173539876937866,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 96.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 24668
+              }
+            ],
+            "time_unix": 1790003464.517984
+          },
+          {
+            "processes": [
+              {
+                "cpu": 36.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 24668
+              },
+              {
+                "cpu": 177.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24831
+              },
+              {
+                "cpu": 80.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24833
+              },
+              {
+                "cpu": 102.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 24834
+              }
+            ],
+            "time_unix": 1790003466.54407
+          },
+          {
+            "processes": [
+              {
+                "cpu": 76.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              },
+              {
+                "cpu": 44.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24831
+              }
+            ],
+            "time_unix": 1790003467.5147269
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-previous-5.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-previous-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.9460816383361816,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 24.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 23365
+              }
+            ],
+            "time_unix": 1790003468.675314
+          },
+          {
+            "processes": [
+              {
+                "cpu": 181.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24989
+              },
+              {
+                "cpu": 81.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 24991
+              },
+              {
+                "cpu": 101.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 24992
+              }
+            ],
+            "time_unix": 1790003470.701314
+          },
+          {
+            "processes": [
+              {
+                "cpu": 31.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 24989
+              },
+              {
+                "cpu": 150.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790003471.756004
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-candidate-5.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.055917978286743,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 23.5,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 10.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790003472.9139252
+          },
+          {
+            "processes": [
+              {
+                "cpu": 158.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 25157
+              },
+              {
+                "cpu": 70.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 25160
+              },
+              {
+                "cpu": 94.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 25165
+              }
+            ],
+            "time_unix": 1790003474.966558
+          },
+          {
+            "processes": [
+              {
+                "cpu": 24.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 11.5,
+                "executable": "/Applications/Telegram.app/Contents/MacOS/Telegram",
+                "pid": 16260
+              },
+              {
+                "cpu": 27.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 25157
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 13.8,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1790003476.101483
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-singbox-5.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.1103498935699463,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 37.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 33.3,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003477.272976
+          },
+          {
+            "processes": [
+              {
+                "cpu": 134.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 25321
+              },
+              {
+                "cpu": 57.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 25324
+              },
+              {
+                "cpu": 87.8,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 25326
+              }
+            ],
+            "time_unix": 1790003479.300906
+          },
+          {
+            "processes": [
+              {
+                "cpu": 39.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 25321
+              },
+              {
+                "cpu": 14.4,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003480.44652
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-native-5.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.1224679946899414,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 12.1,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 17.7,
+                "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)",
+                "pid": 52849
+              }
+            ],
+            "time_unix": 1790003481.616102
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790003483.673934
+          },
+          {
+            "processes": [
+              {
+                "cpu": 45.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 25481
+              }
+            ],
+            "time_unix": 1790003485.722773
+          },
+          {
+            "processes": [
+              {
+                "cpu": 28.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 25481
+              }
+            ],
+            "time_unix": 1790003485.750092
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-long-tcp-8/hysteria2-socks-tcp-latency-8-xray-5.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 4.081239223480225,
+      "surviving_process_group": false,
+      "version": "xray"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "source_provenance_note": "source_commit/source.patch describe the collector workspace; each frozen executable is identified by SHA256 and its adjacent binary_builds metadata when available",
+  "started_unix": 1790003373.8828568,
+  "status": "pass",
+  "suite": "new",
+  "target": "strictly lower RSS; no lower throughput, higher latency/CPU or additional failures; uncertainty is reported separately, never converted into a pass",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "native": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/native-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "previous": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+      "engine_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4"
+    },
+    "singbox": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/singbox-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "xray": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/xray-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    }
+  },
+  "warmup": true
+}

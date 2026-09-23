@@ -1,0 +1,92 @@
+{
+  "manifest_sha256": "c206fa86c2be1857757ffbafc28ddcbc81269355013e713bb802fabba05b6a4a",
+  "smoke": true,
+  "suite": "new",
+  "failures": [],
+  "rows": [
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "passed_repeats": 1,
+          "metrics": {
+            "throughput_mib_s": {
+              "median": 9.625890766094276,
+              "min": 9.625890766094276,
+              "max": 9.625890766094276,
+              "samples": [
+                9.625890766094276
+              ]
+            },
+            "rss_mib": {
+              "median": 11.1875,
+              "min": 11.1875,
+              "max": 11.1875,
+              "samples": [
+                11.1875
+              ]
+            },
+            "cpu_ms": {
+              "median": 120,
+              "min": 120,
+              "max": 120,
+              "samples": [
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "median": 30.0,
+              "min": 30.0,
+              "max": 30.0,
+              "samples": [
+                30.0
+              ]
+            },
+            "client_startup_seconds": {
+              "median": 1.524909625,
+              "min": 1.524909625,
+              "max": 1.524909625,
+              "samples": [
+                1.524909625
+              ]
+            },
+            "client_startup_cpu_millis": {
+              "median": 20,
+              "min": 20,
+              "max": 20,
+              "samples": [
+                20
+              ]
+            },
+            "client_cpu_total_millis": {
+              "median": 140,
+              "min": 140,
+              "max": 140,
+              "samples": [
+                140
+              ]
+            }
+          }
+        }
+      },
+      "review": [],
+      "comparisons": {}
+    }
+  ],
+  "artifact_sha256": {
+    "hysteria2-socks-full-duplex-8-candidate-1/result.json": "57aeeeaeb3befcd5f5def9e9c2c5ef9852a62d1d81c14ce92190557b026fac36"
+  },
+  "parity": {
+    "status": "not_met",
+    "environmental_interference_detected": false,
+    "reference_comparisons": 0,
+    "complete": false,
+    "point_deficit_metrics": 0,
+    "metrics_without_supporting_interval": 0,
+    "max_regression_pct": 3.0,
+    "memory_target": "strictly lower RSS",
+    "strict_point_deficit_metrics": 0,
+    "scope": "observed workload and host only; explicit performance allowance does not waive memory, failed trials, environmental interference or uncertainty"
+  }
+}

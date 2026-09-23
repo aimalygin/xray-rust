@@ -1,5 +1,15 @@
-#[tokio::main]
-async fn main() {
+fn main() {
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    // Multiplexed transports share connection state. Extra workers add lock
+    // handoffs; keep a bounded default while preserving Tokio's explicit override.
+    if std::env::var_os("TOKIO_WORKER_THREADS").is_none() {
+        builder.worker_threads(2);
+    }
+    let runtime = builder.enable_all().build().expect("create Tokio runtime");
+    runtime.block_on(run());
+}
+
+async fn run() {
     if let Err(error) = xray_cli::run_cli_with_shutdown(std::env::args(), async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             eprintln!("failed to wait for shutdown signal: {error}");

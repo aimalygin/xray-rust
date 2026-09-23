@@ -481,9 +481,19 @@ pub(super) async fn run_workload(
     scenario: StreamBenchScenario,
     phase: BenchmarkPhaseTracker,
 ) -> Result<WorkloadOutcome, BenchError> {
+    run_workload_on(socks_addr, options, scenario, phase, Ipv4Addr::LOCALHOST).await
+}
+
+pub(super) async fn run_workload_on(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+    scenario: StreamBenchScenario,
+    phase: BenchmarkPhaseTracker,
+    origin_ip: Ipv4Addr,
+) -> Result<WorkloadOutcome, BenchError> {
     scenario.validate_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)?;
     let template = Arc::new(bulk_pattern_template(options.payload_size));
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+    let listener = TcpListener::bind((origin_ip, 0))
         .await
         .map_err(|source| BenchError::Io {
             action: "binding stream-transport target server".to_owned(),
@@ -587,7 +597,7 @@ async fn settle(options: &BenchOptions, phase: &BenchmarkPhaseTracker) {
     phase.set(BenchmarkPhase::Complete);
 }
 
-async fn run_target_server(
+pub(super) async fn run_target_server(
     listener: TcpListener,
     traffic: StreamBenchTraffic,
     template: Arc<Vec<u8>>,

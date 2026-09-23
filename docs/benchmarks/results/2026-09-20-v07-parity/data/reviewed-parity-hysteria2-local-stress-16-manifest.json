@@ -1,0 +1,2409 @@
+{
+  "binary_builds": {
+    "candidate": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+          "xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+        "canonical_vendor_basis": {
+          "log": "reviewed-canonical-vendor.log",
+          "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+          "unchanged": false,
+          "vendor_tree": "3fb4f61a8c5f4385c51be6efa44a60bc4ee69706"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+          "parent_commit": "107d71f776c68a359ec6f71234b2587ee8b781cb",
+          "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "patch_sha256": "395b56aae6abbba3585100568faf99d772684514e10e726f8756078c1890dbb3",
+          "purpose": "Hysteria-only empty local CID; actual Initial capture plus native/Xray interop, blackholed path recovery, protection, and H3 regression tests; benefit to be measured",
+          "source_commit": "a2d6c8f2d6a17f6ce023d9a59b8d48621130c641",
+          "source_tree": "ce6dce5b1e615c7782b6120d98d220920864e16b",
+          "validation": [
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--test",
+                "hysteria_native_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+              },
+              "name": "native",
+              "returncode": 0,
+              "seconds": 19.483339071273804
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+              },
+              "name": "xray",
+              "returncode": 0,
+              "seconds": 3.1275367736816406
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "stream_xhttp_h3_tests"
+              ],
+              "environment": {},
+              "name": "h3",
+              "returncode": 0,
+              "seconds": 18.900521993637085
+            },
+            {
+              "command": [
+                "cargo",
+                "fmt",
+                "--all",
+                "--",
+                "--check"
+              ],
+              "environment": {},
+              "name": "format",
+              "returncode": 0,
+              "seconds": 1.131680965423584
+            },
+            {
+              "command": [
+                "cargo",
+                "build",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-cli"
+              ],
+              "environment": {},
+              "name": "build",
+              "returncode": 0,
+              "seconds": 50.62861704826355
+            }
+          ]
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+        "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json",
+      "sha256": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch",
+        "sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c"
+      }
+    }
+  },
+  "candidate_workers": null,
+  "cases": [
+    {
+      "connections": 16,
+      "id": "hysteria2-socks-upload-16",
+      "iterations": 256,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "upload"
+    },
+    {
+      "connections": 16,
+      "id": "hysteria2-socks-download-16",
+      "iterations": 256,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    },
+    {
+      "connections": 16,
+      "id": "hysteria2-socks-full-duplex-16",
+      "iterations": 256,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    }
+  ],
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native": "304d19e4518352ac823b46f2b6ebcfa1c284157debabea70f3ba4eaaa1802356",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client.json": "6dbb95fa30dd82af6e4de68a4cd4bc4a1dc4a0ee949286dea273f23f3fbca86b",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client": "b342adec5d2c217bbffca675243b2ee7cf2c21ef044d242c740e6244b816129e",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/bin/sing-box": "b2b34ea4948148b36d4fe5a2759c9cb8a0f5356c6908b697ba2118eebe8a06b3",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client.json": "204cc4ac5b15cad2382846da1ce58d032a151850151114165fefad4cac688468",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client.json": "da8b0e01f9f11549b674beddb27afbe7a60c31324960d11a9da213e370f44067",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-protocol-parity.py": "38d733a9023694a5432f68dba68b1b5c4a784cbf97e532d7e8751c2904da43ee"
+  },
+  "finished_unix": 1789998032.7297752,
+  "idle_connections_by_version": {
+    "candidate": 0,
+    "native": 0,
+    "singbox": 0,
+    "xray": 0
+  },
+  "idle_settle_seconds": 0,
+  "link_mbps_per_direction": null,
+  "one_way_delay_ms": 0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "process_accounting": "prepared real binary launched directly; one verified TCP echo before steady measurements; startup and lifetime CPU retained separately",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_go_workers": 2,
+  "repeats": 3,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997845.232266
+          },
+          {
+            "processes": [
+              {
+                "cpu": 358.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 80870
+              },
+              {
+                "cpu": 111.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 80872
+              },
+              {
+                "cpu": 81.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 80873
+              }
+            ],
+            "time_unix": 1789997847.2597911
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 80870
+              }
+            ],
+            "time_unix": 1789997848.484998
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.2075841426849365,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997849.64899
+          },
+          {
+            "processes": [
+              {
+                "cpu": 229.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81042
+              },
+              {
+                "cpu": 89.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 81044
+              },
+              {
+                "cpu": 94.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 81049
+              }
+            ],
+            "time_unix": 1789997851.6772008
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997853.200951
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-singbox-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.5076076984405518,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 11.6,
+                "executable": "/usr/libexec/ContinuityCaptureAgent",
+                "pid": 649
+              }
+            ],
+            "time_unix": 1789997854.3675761
+          },
+          {
+            "processes": [
+              {
+                "cpu": 174.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81232
+              },
+              {
+                "cpu": 65.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 81234
+              },
+              {
+                "cpu": 99.2,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 81236
+              }
+            ],
+            "time_unix": 1789997856.393594
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997858.1927328
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-native-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.781006097793579,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997859.3459048
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997861.411996
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.1,
+                "executable": "/System/Library/Frameworks/Security.framework/Versions/A/XPCServices/authd.xpc/Contents/MacOS/authd",
+                "pid": 452
+              },
+              {
+                "cpu": 116.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81440
+              },
+              {
+                "cpu": 43.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 81442
+              },
+              {
+                "cpu": 67.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81444
+              }
+            ],
+            "time_unix": 1789997863.46947
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.4,
+                "executable": "/usr/libexec/ContinuityCaptureAgent",
+                "pid": 649
+              }
+            ],
+            "time_unix": 1789997864.2815921
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.8893702030181885,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997865.4348412
+          },
+          {
+            "processes": [
+              {
+                "cpu": 378.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81651
+              },
+              {
+                "cpu": 111.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 81653
+              },
+              {
+                "cpu": 84.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 81654
+              },
+              {
+                "cpu": 92.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997867.467316
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997868.8065789
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.325517177581787,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997869.972411
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 13018
+              },
+              {
+                "cpu": 24.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 52076
+              },
+              {
+                "cpu": 11.8,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 21.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 90248
+              },
+              {
+                "cpu": 48.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997872.030467
+          },
+          {
+            "processes": [
+              {
+                "cpu": 127.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81832
+              },
+              {
+                "cpu": 47.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 81834
+              },
+              {
+                "cpu": 74.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 81836
+              }
+            ],
+            "time_unix": 1789997874.094471
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997874.865139
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.848399877548218,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997876.027033
+          },
+          {
+            "processes": [
+              {
+                "cpu": 190.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 82042
+              },
+              {
+                "cpu": 70.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 82044
+              },
+              {
+                "cpu": 109.3,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 82046
+              }
+            ],
+            "time_unix": 1789997878.0538409
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997879.863044
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-native-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.7930312156677246,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 19.9,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997881.019982
+          },
+          {
+            "processes": [
+              {
+                "cpu": 187.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 82250
+              },
+              {
+                "cpu": 72.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 82252
+              },
+              {
+                "cpu": 77.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 82257
+              }
+            ],
+            "time_unix": 1789997883.049341
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997884.62912
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-singbox-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.5564022064208984,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997885.796164
+          },
+          {
+            "processes": [
+              {
+                "cpu": 178.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 82440
+              },
+              {
+                "cpu": 66.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 82442
+              },
+              {
+                "cpu": 101.7,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 82444
+              }
+            ],
+            "time_unix": 1789997887.823672
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997889.6051478
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-native-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.7645456790924072,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997890.767355
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997892.836931
+          },
+          {
+            "processes": [
+              {
+                "cpu": 101.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 82648
+              },
+              {
+                "cpu": 39.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 82652
+              },
+              {
+                "cpu": 57.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 82654
+              }
+            ],
+            "time_unix": 1789997894.8947158
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997895.6995041
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.880291700363159,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997896.865885
+          },
+          {
+            "processes": [
+              {
+                "cpu": 321.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 82859
+              },
+              {
+                "cpu": 100.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 82861
+              },
+              {
+                "cpu": 76.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 82862
+              }
+            ],
+            "time_unix": 1789997898.893138
+          },
+          {
+            "processes": [
+              {
+                "cpu": 33.0,
+                "executable": "/System/Applications/Stocks.app/Contents/PlugIns/StocksWidget.appex/Contents/MacOS/StocksWidget",
+                "pid": 834
+              },
+              {
+                "cpu": 32.1,
+                "executable": "/usr/libexec/networkserviceproxy",
+                "pid": 66963
+              },
+              {
+                "cpu": 17.6,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 83004
+              }
+            ],
+            "time_unix": 1789997900.114125
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.2103941440582275,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 18.2,
+                "executable": "/System/Library/CoreServices/NotificationCenter.app/Contents/MacOS/NotificationCenter",
+                "pid": 758
+              }
+            ],
+            "time_unix": 1789997901.2926478
+          },
+          {
+            "processes": [
+              {
+                "cpu": 160.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83033
+              },
+              {
+                "cpu": 62.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 83036
+              },
+              {
+                "cpu": 68.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 83042
+              }
+            ],
+            "time_unix": 1789997903.319463
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83033
+              }
+            ],
+            "time_unix": 1789997904.8542268
+          }
+        ]
+      },
+      "case": "hysteria2-socks-upload-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-upload-16-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-upload-16-singbox-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.515307903289795,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997906.016889
+          },
+          {
+            "processes": [
+              {
+                "cpu": 179.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83228
+              },
+              {
+                "cpu": 80.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 83230
+              },
+              {
+                "cpu": 117.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 83231
+              }
+            ],
+            "time_unix": 1789997908.044317
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997909.4503942
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.386101007461548,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997910.608317
+          },
+          {
+            "processes": [
+              {
+                "cpu": 155.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83408
+              },
+              {
+                "cpu": 83.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 83410
+              },
+              {
+                "cpu": 101.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 83415
+              }
+            ],
+            "time_unix": 1789997912.639494
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997914.280299
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-singbox-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.6277806758880615,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997915.433137
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.2,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 25.6,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 83012
+              },
+              {
+                "cpu": 153.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83605
+              },
+              {
+                "cpu": 82.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 83607
+              },
+              {
+                "cpu": 113.5,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 83609
+              },
+              {
+                "cpu": 24.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 90248
+              }
+            ],
+            "time_unix": 1789997917.4667299
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.9,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              }
+            ],
+            "time_unix": 1789997919.1134279
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-native-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.627906084060669,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997920.283765
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997922.340836
+          },
+          {
+            "processes": [
+              {
+                "cpu": 67.1,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 50.6,
+                "executable": "/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/Versions/A/Support/photolibraryd",
+                "pid": 63742
+              },
+              {
+                "cpu": 46.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83799
+              },
+              {
+                "cpu": 26.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 83801
+              },
+              {
+                "cpu": 33.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83803
+              }
+            ],
+            "time_unix": 1789997924.404269
+          },
+          {
+            "processes": [
+              {
+                "cpu": 117.8,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 10.4,
+                "executable": "/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/Versions/A/Support/photolibraryd",
+                "pid": 63742
+              }
+            ],
+            "time_unix": 1789997924.989584
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.651682138442993,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 130.1,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              }
+            ],
+            "time_unix": 1789997926.157071
+          },
+          {
+            "processes": [
+              {
+                "cpu": 127.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 158.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 83994
+              },
+              {
+                "cpu": 78.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 83996
+              },
+              {
+                "cpu": 104.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 83997
+              },
+              {
+                "cpu": 92.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997928.1852548
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997929.6763499
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.47428822517395,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997930.834531
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.2,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              }
+            ],
+            "time_unix": 1789997932.894327
+          },
+          {
+            "processes": [
+              {
+                "cpu": 48.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84205
+              },
+              {
+                "cpu": 27.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 84207
+              },
+              {
+                "cpu": 34.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84209
+              }
+            ],
+            "time_unix": 1789997934.956792
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997935.577779
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.691432952880859,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997936.7424881
+          },
+          {
+            "processes": [
+              {
+                "cpu": 157.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84401
+              },
+              {
+                "cpu": 85.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 84403
+              },
+              {
+                "cpu": 114.6,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 84405
+              }
+            ],
+            "time_unix": 1789997938.769418
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.6,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997940.408533
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-native-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.612639904022217,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 13.1,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997941.5796962
+          },
+          {
+            "processes": [
+              {
+                "cpu": 115.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84595
+              },
+              {
+                "cpu": 62.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 84597
+              },
+              {
+                "cpu": 75.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 84602
+              }
+            ],
+            "time_unix": 1789997943.6060958
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997945.273118
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-singbox-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.642958164215088,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997946.436318
+          },
+          {
+            "processes": [
+              {
+                "cpu": 172.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84794
+              },
+              {
+                "cpu": 93.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 84796
+              },
+              {
+                "cpu": 124.7,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 84798
+              }
+            ],
+            "time_unix": 1789997948.466551
+          },
+          {
+            "processes": [
+              {
+                "cpu": 79.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997950.0264928
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-native-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.5662779808044434,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 20.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997951.191814
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997953.249773
+          },
+          {
+            "processes": [
+              {
+                "cpu": 43.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84990
+              },
+              {
+                "cpu": 25.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 84992
+              },
+              {
+                "cpu": 32.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 84994
+              }
+            ],
+            "time_unix": 1789997955.304723
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997955.888292
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.64851713180542,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997957.040957
+          },
+          {
+            "processes": [
+              {
+                "cpu": 182.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 85185
+              },
+              {
+                "cpu": 82.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 85187
+              },
+              {
+                "cpu": 120.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 85188
+              }
+            ],
+            "time_unix": 1789997959.0676649
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997960.4544792
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.366727113723755,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997961.6222851
+          },
+          {
+            "processes": [
+              {
+                "cpu": 169.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 85364
+              },
+              {
+                "cpu": 91.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 85366
+              },
+              {
+                "cpu": 110.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 85371
+              }
+            ],
+            "time_unix": 1789997963.649714
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997965.334243
+          }
+        ]
+      },
+      "case": "hysteria2-socks-download-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-download-16-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-download-16-singbox-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.658600091934204,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997966.49767
+          },
+          {
+            "processes": [
+              {
+                "cpu": 265.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 85562
+              },
+              {
+                "cpu": 80.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 85564
+              },
+              {
+                "cpu": 87.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 85565
+              }
+            ],
+            "time_unix": 1789997968.524829
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997970.427593
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.878340005874634,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997971.589182
+          },
+          {
+            "processes": [
+              {
+                "cpu": 173.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 85776
+              },
+              {
+                "cpu": 65.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 85778
+              },
+              {
+                "cpu": 82.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 85783
+              }
+            ],
+            "time_unix": 1789997973.6159291
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997975.683697
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997975.741872
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-singbox-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.122035980224609,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997976.901919
+          },
+          {
+            "processes": [
+              {
+                "cpu": 201.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86002
+              },
+              {
+                "cpu": 65.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 86004
+              },
+              {
+                "cpu": 104.4,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 86006
+              }
+            ],
+            "time_unix": 1789997978.929465
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86002
+              }
+            ],
+            "time_unix": 1789997980.9929159
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997981.155002
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-native-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.212747812271118,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997982.3145769
+          },
+          {
+            "processes": [
+              {
+                "cpu": 11.0,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 10.5,
+                "executable": "/usr/libexec/dasd",
+                "pid": 392
+              },
+              {
+                "cpu": 13.2,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 86252
+              },
+              {
+                "cpu": 11.4,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 86253
+              }
+            ],
+            "time_unix": 1789997984.376081
+          },
+          {
+            "processes": [
+              {
+                "cpu": 342.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86239
+              },
+              {
+                "cpu": 106.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 86241
+              },
+              {
+                "cpu": 178.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86243
+              }
+            ],
+            "time_unix": 1789997986.402696
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997987.6565871
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.300034761428833,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997988.822655
+          },
+          {
+            "processes": [
+              {
+                "cpu": 47.9,
+                "executable": "/usr/libexec/PerfPowerServices",
+                "pid": 50124
+              },
+              {
+                "cpu": 276.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86493
+              },
+              {
+                "cpu": 85.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 86495
+              },
+              {
+                "cpu": 97.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 86496
+              }
+            ],
+            "time_unix": 1789997990.8594282
+          },
+          {
+            "processes": [
+              {
+                "cpu": 15.8,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              }
+            ],
+            "time_unix": 1789997992.864562
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.987949848175049,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997994.0245628
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997996.081624
+          },
+          {
+            "processes": [
+              {
+                "cpu": 327.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86715
+              },
+              {
+                "cpu": 105.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 86717
+              },
+              {
+                "cpu": 171.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86719
+              }
+            ],
+            "time_unix": 1789997998.108076
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997999.340339
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.271039962768555,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 30.8,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789998000.4992058
+          },
+          {
+            "processes": [
+              {
+                "cpu": 229.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86952
+              },
+              {
+                "cpu": 70.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 86960
+              },
+              {
+                "cpu": 116.8,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 86964
+              }
+            ],
+            "time_unix": 1789998002.530405
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86952
+              }
+            ],
+            "time_unix": 1789998004.586946
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 86952
+              }
+            ],
+            "time_unix": 1789998004.73755
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-native-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.19952392578125,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789998005.8765519
+          },
+          {
+            "processes": [
+              {
+                "cpu": 224.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87199
+              },
+              {
+                "cpu": 79.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 87210
+              },
+              {
+                "cpu": 105.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 87215
+              }
+            ],
+            "time_unix": 1789998007.910454
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87199
+              }
+            ],
+            "time_unix": 1789998009.978501
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998010.0611641
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-singbox-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.150634050369263,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789998011.2228491
+          },
+          {
+            "processes": [
+              {
+                "cpu": 199.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87443
+              },
+              {
+                "cpu": 72.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 87445
+              },
+              {
+                "cpu": 115.3,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 87447
+              }
+            ],
+            "time_unix": 1789998013.249983
+          },
+          {
+            "processes": [
+              {
+                "cpu": 22.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87443
+              },
+              {
+                "cpu": 12.8,
+                "executable": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+                "pid": 87447
+              }
+            ],
+            "time_unix": 1789998015.313178
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998015.618208
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-native-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.341094970703125,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789998016.778861
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998018.83695
+          },
+          {
+            "processes": [
+              {
+                "cpu": 325.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87689
+              },
+              {
+                "cpu": 106.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 87691
+              },
+              {
+                "cpu": 169.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87693
+              }
+            ],
+            "time_unix": 1789998020.871491
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998022.1239989
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.299676895141602,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789998023.283045
+          },
+          {
+            "processes": [
+              {
+                "cpu": 245.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 87929
+              },
+              {
+                "cpu": 73.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 87931
+              },
+              {
+                "cpu": 82.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+                "pid": 87932
+              }
+            ],
+            "time_unix": 1789998025.312602
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998027.3200672
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.983350992202759,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789998028.4834309
+          },
+          {
+            "processes": [
+              {
+                "cpu": 157.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 88153
+              },
+              {
+                "cpu": 59.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+                "pid": 88155
+              },
+              {
+                "cpu": 75.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 88160
+              }
+            ],
+            "time_unix": 1789998030.5105228
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998032.574798
+          },
+          {
+            "processes": [],
+            "time_unix": 1789998032.6322
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-local-stress-16/hysteria2-socks-full-duplex-16-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-full-duplex-16-singbox-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.118536949157715,
+      "surviving_process_group": false,
+      "version": "singbox"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "source_provenance_note": "source_commit/source.patch describe the collector workspace; each frozen executable is identified by SHA256 and its adjacent binary_builds metadata when available",
+  "started_unix": 1789997844.082609,
+  "status": "pass",
+  "suite": "new",
+  "target": "strictly lower RSS; no lower throughput, higher latency/CPU or additional failures; uncertainty is reported separately, never converted into a pass",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "native": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/native-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "singbox": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/singbox-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "xray": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/xray-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    }
+  },
+  "warmup": true
+}

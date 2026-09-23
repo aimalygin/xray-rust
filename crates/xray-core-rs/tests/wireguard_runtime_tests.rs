@@ -22,15 +22,18 @@ async fn wireguard_runtime_psk_socks_http_udp_share_session_account_and_stop() {
     sharing_accounting_and_stop(Some([0x64; 32])).await;
 }
 async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
-    timeout(DEADLINE, async {
+    let mut phase = "reference startup";
+    let result = timeout(DEADLINE, async {
         let server = ReferenceServer::start_with_psk(psk).await;
         let (tcp_addr, _tcp) = tcp_echo().await;
         let (udp_addr, _udp) = udp_echo().await;
         let (mut core, protector, bootstrap, _dialer) = core(&server);
         core.start().await.unwrap();
         let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+        phase = "initial SOCKS TCP";
         let (mut tcp, _) = socks(socks_addr, 1, "198.51.100.7", tcp_addr.port()).await;
         echo(&mut tcp, b"socks through wireguard").await;
+        phase = "HTTP CONNECT";
         let mut http = TcpStream::connect(core.inbound_addr(Some("http-in")).unwrap())
             .await
             .unwrap();
@@ -51,6 +54,7 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
         }
         assert!(response.starts_with(b"HTTP/1.1 200"));
         echo(&mut http, b"http through wireguard").await;
+        phase = "SOCKS UDP";
         let (_control, relay) = socks(socks_addr, 3, "0.0.0.0", 0).await;
         let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let target = Target::new(
@@ -88,6 +92,7 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
             .find(|c| c.inbound_tag.as_deref() == Some("socks-in") && c.network == Network::Tcp)
             .unwrap()
             .id;
+        phase = "TCP host close";
         core.close_connection(tcp_id).unwrap();
         assert!(tcp.read_u8().await.is_err());
         echo(&mut http, b"other flow survives host close").await;
@@ -97,6 +102,7 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
             .find(|c| c.network == Network::Udp)
             .unwrap()
             .id;
+        phase = "UDP host close";
         core.close_connection(udp_id).unwrap();
         while core
             .connection_snapshot()
@@ -114,12 +120,14 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
             .unwrap();
         assert!(proxy.uplink_bytes >= 1200 && proxy.downlink_bytes >= 1200);
         assert_eq!(proxy.host_closed_connections, 2);
+        phase = "core stop";
         core.stop().await.unwrap();
         while !core.connection_snapshot().connections.is_empty() {
             tokio::task::yield_now().await;
         }
         assert!(http.read_u8().await.is_err());
         // A new core owns a fresh connection and freshly invokes protection.
+        phase = "fresh core startup and SOCKS TCP";
         let (mut fresh, fresh_protector, _, _) = support::core(&server);
         fresh.start().await.unwrap();
         let (mut tcp, _) = socks(
@@ -131,10 +139,13 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
         .await;
         echo(&mut tcp, b"fresh core").await;
         assert_eq!(fresh_protector.0.load(Ordering::SeqCst), 1);
+        phase = "fresh core stop";
         fresh.stop().await.unwrap();
     })
-    .await
-    .unwrap();
+    .await;
+    result.unwrap_or_else(|error| {
+        panic!("WireGuard sharing/accounting/stop: {error} during {phase}")
+    });
 }
 
 #[tokio::test]

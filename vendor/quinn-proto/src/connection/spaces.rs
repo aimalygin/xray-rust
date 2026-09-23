@@ -11,8 +11,8 @@ use tracing::trace;
 
 use super::assembler::Assembler;
 use crate::{
-    Dir, Duration, Instant, SocketAddr, StreamId, TransportError, VarInt, connection::StreamsState,
-    crypto::Keys, frame, packet::SpaceId, range_set::ArrayRangeSet, shared::IssuedCid,
+    connection::StreamsState, crypto::Keys, frame, packet::SpaceId, range_set::ArrayRangeSet,
+    shared::IssuedCid, Dir, Duration, Instant, SocketAddr, StreamId, TransportError, VarInt,
 };
 
 pub(super) struct PacketSpace {
@@ -280,6 +280,8 @@ impl IndexMut<SpaceId> for [PacketSpace; 3] {
 /// Represents one or more packets subject to retransmission
 #[derive(Debug, Clone)]
 pub(super) struct SentPacket {
+    /// Opaque congestion-controller delivery state, shared per send batch by BBR.
+    pub(super) delivery_token: u64,
     /// [`PathData::generation`](super::PathData::generation) of the path on which this packet was sent
     pub(super) path_generation: u64,
     /// The time the packet was sent.

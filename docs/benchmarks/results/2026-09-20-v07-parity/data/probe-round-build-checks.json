@@ -1,0 +1,158 @@
+[
+  {
+    "name": "probe-round-red-format",
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "/private/tmp/xray-v07-parity-20260920/quinn-probe-round/Cargo.toml",
+      "--all"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 0.45539379119873047
+  },
+  {
+    "name": "probe-round-red",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "/private/tmp/xray-v07-parity-20260920/quinn-probe-round/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "rustls-ring",
+      "--lib",
+      "probe_rtt_round_regression",
+      "--",
+      "--nocapture"
+    ],
+    "returncode": 101,
+    "expected_returncode": 101,
+    "seconds": 21.76253581047058
+  },
+  {
+    "name": "probe-round-green-format",
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "/private/tmp/xray-v07-parity-20260920/quinn-probe-round/Cargo.toml",
+      "--all"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 0.17235589027404785
+  },
+  {
+    "name": "probe-round-green",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "/private/tmp/xray-v07-parity-20260920/quinn-probe-round/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "rustls-ring",
+      "--lib"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 5.412963151931763
+  },
+  {
+    "name": "probe-round-reset-mutation",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "/private/tmp/xray-v07-parity-20260920/quinn-probe-round/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "rustls-ring",
+      "--lib",
+      "probe_rtt_round_regression::a_previous_probe_round_does_not_complete_the_next_probe",
+      "--",
+      "--nocapture"
+    ],
+    "returncode": 101,
+    "expected_returncode": 101,
+    "seconds": 6.797070264816284
+  },
+  {
+    "name": "probe-round-clone",
+    "command": [
+      "git",
+      "clone",
+      "--no-local",
+      "/private/tmp/xray-v07-parity-20260920/protocol-followup-source",
+      "/private/tmp/xray-v07-parity-20260920/probe-round-source"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 0.6668088436126709
+  },
+  {
+    "name": "probe-round-branch",
+    "command": [
+      "git",
+      "switch",
+      "-c",
+      "codex/bbr-probe-round"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 0.013762950897216797
+  },
+  {
+    "name": "probe-round-add",
+    "command": [
+      "git",
+      "add",
+      "vendor/quinn-proto/src/congestion/bbr/mod.rs"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 0.09757685661315918
+  },
+  {
+    "name": "probe-round-commit",
+    "command": [
+      "git",
+      "-c",
+      "user.name=Codex",
+      "-c",
+      "user.email=codex@local",
+      "commit",
+      "-m",
+      "Complete BBR RTT probes after elapsed time and a completed round"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 0.100982666015625
+  },
+  {
+    "name": "probe-round-build",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-cli"
+    ],
+    "returncode": 0,
+    "expected_returncode": 0,
+    "seconds": 102.69443678855896
+  }
+]

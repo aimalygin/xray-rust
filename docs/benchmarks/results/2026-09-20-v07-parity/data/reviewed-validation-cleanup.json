@@ -1,0 +1,17 @@
+{
+  "time_unix": 1789992838.791726,
+  "all_20_groups_passed": true,
+  "source_identity": {
+    "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+    "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f",
+    "source": "/private/tmp/xray-v07-parity-20260920/protocol-followup-source",
+    "target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build"
+  },
+  "generated_file": "vendor/gotatun/Cargo.lock",
+  "retained_artifact": "reviewed-gotatun-Cargo.lock",
+  "sha256": "9b1b29e0e351f8184405869c0035bc1269fc41a59b29515bbbd22cae6e08f77d",
+  "tracked_source_changed": false,
+  "clean_after_relocation": true,
+  "original_driver_exit": 1,
+  "reason": "The standalone gotatun test generated an untracked lockfile. Postcondition correctly stopped; preserve the dependency resolution artifact outside the source checkout and verify unchanged tracked source. No test failed."
+}

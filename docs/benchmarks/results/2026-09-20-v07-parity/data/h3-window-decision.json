@@ -1,0 +1,324 @@
+{
+  "decision": "rejected",
+  "source_build": {
+    "source_commit": "ce028cf7f5f2b5c11609a3b1fefcab73a62f24bd",
+    "source_tree": "c50949e5289d8baff76aef8473de713144387432",
+    "clean": true,
+    "binary_sha256": "9dc34fb3390af016f2eeeec15c911c96a5b1120ca5b85e3882df082700085985",
+    "patch_base": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+    "patch_sha256": "ae29eb9094de93896ea3efd93bf8edcc4ccf13c4f1a9c5fc3d747c79aba9f6b0",
+    "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/h3-window-build",
+    "experimental": true,
+    "performance_acceptance": "pending",
+    "change": "H3 send budget starts at 2 MiB and grows monotonically toward twice cwnd, capped at the previous 10,000,000 bytes"
+  },
+  "evidence": "evidence/h3-window-focus",
+  "runs": 18,
+  "failures": 0,
+  "compiler_interference": false,
+  "reason": "Adaptive initial send credit failed its memory objective: duplex8 median RSS 76.016 MiB versus preceding runtime 58.906 MiB and v0.6.1 29.703 MiB. Throughput also did not improve. High-BDP follow-up is not necessary for a rejected variant.",
+  "rows": [
+    {
+      "case": "xhttp-h3-upload-8",
+      "ratios": {
+        "cpu_ms": 0.41336542021473527,
+        "cpu_ms_per_mib": 0.41336542021473527,
+        "rss_mib": 1.0424008810572687,
+        "throughput_mib_s": 1.209866220735786
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 54770,
+              "median": 54020,
+              "min": 53990,
+              "samples": [
+                54770,
+                53990,
+                54020
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 13.37158203125,
+              "median": 13.1884765625,
+              "min": 13.18115234375,
+              "samples": [
+                13.37158203125,
+                13.18115234375,
+                13.1884765625
+              ]
+            },
+            "rss_mib": {
+              "max": 28.59375,
+              "median": 28.375,
+              "min": 28.234375,
+              "samples": [
+                28.234375,
+                28.375,
+                28.59375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 285.5062484741211,
+              "median": 285.14862060546875,
+              "min": 284.55257415771484,
+              "samples": [
+                284.55257415771484,
+                285.14862060546875,
+                285.5062484741211
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 22230,
+              "median": 22000,
+              "min": 21920,
+              "samples": [
+                22000,
+                21920,
+                22230
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.42724609375,
+              "median": 5.37109375,
+              "min": 5.3515625,
+              "samples": [
+                5.37109375,
+                5.3515625,
+                5.42724609375
+              ]
+            },
+            "rss_mib": {
+              "max": 35.4375,
+              "median": 27.84375,
+              "min": 27.484375,
+              "samples": [
+                27.484375,
+                35.4375,
+                27.84375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 355.00526428222656,
+              "median": 353.09791564941406,
+              "min": 350.9521484375,
+              "samples": [
+                353.09791564941406,
+                355.00526428222656,
+                350.9521484375
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 22680,
+              "median": 22330,
+              "min": 22080,
+              "samples": [
+                22330,
+                22680,
+                22080
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.537109375,
+              "median": 5.45166015625,
+              "min": 5.390625,
+              "samples": [
+                5.45166015625,
+                5.537109375,
+                5.390625
+              ]
+            },
+            "rss_mib": {
+              "max": 32.421875,
+              "median": 29.578125,
+              "min": 28.078125,
+              "samples": [
+                32.421875,
+                29.578125,
+                28.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 353.4555435180664,
+              "median": 344.99168395996094,
+              "min": 343.4419631958008,
+              "samples": [
+                344.99168395996094,
+                343.4419631958008,
+                353.4555435180664
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 0.49850924269528923,
+        "cpu_ms_per_mib": 0.49850924269528923,
+        "rss_mib": 2.5591793792740662,
+        "throughput_mib_s": 1.017755950132225
+      },
+      "review": [
+        "rss_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 84210,
+              "median": 83850,
+              "min": 83610,
+              "samples": [
+                83610,
+                83850,
+                84210
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.279541015625,
+              "median": 10.235595703125,
+              "min": 10.206298828125,
+              "samples": [
+                10.206298828125,
+                10.235595703125,
+                10.279541015625
+              ]
+            },
+            "rss_mib": {
+              "max": 29.921875,
+              "median": 29.703125,
+              "min": 29.34375,
+              "samples": [
+                29.921875,
+                29.703125,
+                29.34375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 316.97750091552734,
+              "median": 315.54698944091797,
+              "min": 314.8317337036133,
+              "samples": [
+                316.97750091552734,
+                315.54698944091797,
+                314.8317337036133
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 41300,
+              "median": 41230,
+              "min": 40550,
+              "samples": [
+                40550,
+                41230,
+                41300
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.04150390625,
+              "median": 5.032958984375,
+              "min": 4.949951171875,
+              "samples": [
+                4.949951171875,
+                5.032958984375,
+                5.04150390625
+              ]
+            },
+            "rss_mib": {
+              "max": 63.375,
+              "median": 58.90625,
+              "min": 54.03125,
+              "samples": [
+                58.90625,
+                54.03125,
+                63.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 326.51424407958984,
+              "median": 324.7261047363281,
+              "min": 324.249267578125,
+              "samples": [
+                326.51424407958984,
+                324.7261047363281,
+                324.249267578125
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 42650,
+              "median": 41800,
+              "min": 41320,
+              "samples": [
+                41800,
+                42650,
+                41320
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.206298828125,
+              "median": 5.1025390625,
+              "min": 5.0439453125,
+              "samples": [
+                5.1025390625,
+                5.206298828125,
+                5.0439453125
+              ]
+            },
+            "rss_mib": {
+              "max": 80.59375,
+              "median": 76.015625,
+              "min": 52.96875,
+              "samples": [
+                80.59375,
+                76.015625,
+                52.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 325.6797790527344,
+              "median": 321.1498260498047,
+              "min": 318.0503845214844,
+              "samples": [
+                321.1498260498047,
+                318.0503845214844,
+                325.6797790527344
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    }
+  ]
+}

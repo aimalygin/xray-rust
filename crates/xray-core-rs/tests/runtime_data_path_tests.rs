@@ -9333,10 +9333,13 @@ impl TunTcpClient {
             .add_default_ipv4_route(SmolIpv4Address::new(10, 10, 0, 1))
             .unwrap();
 
-        let tcp_socket = smol_tcp::Socket::new(
+        let mut tcp_socket = smol_tcp::Socket::new(
             smol_tcp::SocketBuffer::new(vec![0; 8192]),
             smol_tcp::SocketBuffer::new(vec![0; 8192]),
         );
+        // Keep the synthetic local link independent of Cargo's unified
+        // congestion-control features enabled for the WireGuard Internet path.
+        tcp_socket.set_congestion_control(smol_tcp::CongestionControl::None);
         let mut sockets = SocketSet::new(Vec::new());
         let tcp = sockets.add(tcp_socket);
 
@@ -9419,10 +9422,12 @@ impl TunTcpMultiClient {
         let mut sockets = SocketSet::new(Vec::new());
         let tcp = (0..flow_count)
             .map(|_| {
-                sockets.add(smol_tcp::Socket::new(
+                let mut socket = smol_tcp::Socket::new(
                     smol_tcp::SocketBuffer::new(vec![0; 8192]),
                     smol_tcp::SocketBuffer::new(vec![0; 8192]),
-                ))
+                );
+                socket.set_congestion_control(smol_tcp::CongestionControl::None);
+                sockets.add(socket)
             })
             .collect();
 

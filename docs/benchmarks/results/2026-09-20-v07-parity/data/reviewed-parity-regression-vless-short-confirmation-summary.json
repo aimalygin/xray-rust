@@ -1,0 +1,274 @@
+{
+  "artifact_sha256": {
+    "vless-tls-tun-full-duplex-1-baseline-1/result.json": "726ab4209e6072ba904168dc6ef4fa8d19ca53a4f6ae632dcce2fbe13599d1d8",
+    "vless-tls-tun-full-duplex-1-baseline-10/result.json": "5619ec356efc5646251b443d2971b51d3f5f1e01053211c01408bc0efb8adb52",
+    "vless-tls-tun-full-duplex-1-baseline-2/result.json": "f93da29096a7e84e9c62fed9589b86b8f857d60010ffc5ec033e9725834fa9fc",
+    "vless-tls-tun-full-duplex-1-baseline-3/result.json": "e8344576c85bafca7b8289da71b84895831775dc1ba78e53121d5e1358fc0ebf",
+    "vless-tls-tun-full-duplex-1-baseline-4/result.json": "f7f1b4f1f0a23328fed2a6d87b2da38eb5d9e5bec610edccd0e4ea63c297b42a",
+    "vless-tls-tun-full-duplex-1-baseline-5/result.json": "52b9df1fed145ebebbc7347fb9fc9235ab123eda2d440139bc7b93911f51f67c",
+    "vless-tls-tun-full-duplex-1-baseline-6/result.json": "a0c084353e88e1ad6bfe07f7293679a1182e19ad8150c00e23f5d8182bf6d526",
+    "vless-tls-tun-full-duplex-1-baseline-7/result.json": "0405812203d4426e48e313fa9c6fcc38ac3c812cae54d5bfc3aacfe150382548",
+    "vless-tls-tun-full-duplex-1-baseline-8/result.json": "dd95805f4a7eb1c3f44d32f12a7948c19d80a464ba15cd89534a434094151299",
+    "vless-tls-tun-full-duplex-1-baseline-9/result.json": "86e963f044c977efc7bae7341acb9793c83862f53907450014518159d111f8da",
+    "vless-tls-tun-full-duplex-1-candidate-1/result.json": "975e102c687d6f6b0797105d12164c7735717a72f3b42e88334bd6f97baf894d",
+    "vless-tls-tun-full-duplex-1-candidate-10/result.json": "c795ea510a7b5804fa43690d60c7796257f08c0d86f38f03ce338c900b958a23",
+    "vless-tls-tun-full-duplex-1-candidate-2/result.json": "3603904ea522790a4a3552f5c130db66fea485d6f095d0a06112aa84fbbd958f",
+    "vless-tls-tun-full-duplex-1-candidate-3/result.json": "cbf0229828d986e89cce98eacdc8727f7e480a645a47b82806b0ee8955e6c737",
+    "vless-tls-tun-full-duplex-1-candidate-4/result.json": "3488cbb45166684b185b3c0bf25c9afd95936bfe0082ed639a991f25d8ed5b91",
+    "vless-tls-tun-full-duplex-1-candidate-5/result.json": "0817219a23dd4893f015df2c56340ef4332de4469bed9b1b75c9ec0a3dbe9265",
+    "vless-tls-tun-full-duplex-1-candidate-6/result.json": "6c00488ba744549c10f55b12e803971543c3674ac0c84177aba11df24f73a5de",
+    "vless-tls-tun-full-duplex-1-candidate-7/result.json": "fcd31c6355ede2251dc0d052876f9b0db9ffc39bbda8131dbcda338771bf0b14",
+    "vless-tls-tun-full-duplex-1-candidate-8/result.json": "ff0dd15cf2622a56a9117095fcb7022935147799dfd814387cb689743096e963",
+    "vless-tls-tun-full-duplex-1-candidate-9/result.json": "533adfa884f7e8dc214b6b66a95897496995416be27c7a082a4b0cae3eefb5e5",
+    "vless-tls-tun-full-duplex-1-workers12-1/result.json": "e332855609621bdf03cee5f06df492921ccf4e87d0b5a951f7c650541e8cd7b9",
+    "vless-tls-tun-full-duplex-1-workers12-10/result.json": "3f19d3999d810e66868d1d9f2cabf9a38272c283288a9fdf7f53c123a5c8fbc7",
+    "vless-tls-tun-full-duplex-1-workers12-2/result.json": "6991019557486ed38e7332ed49b042640760939d19797741e1101c0314004e7c",
+    "vless-tls-tun-full-duplex-1-workers12-3/result.json": "4e58c6b6b5c3946969b40e560e91303d1905b4a77f396a917ebdb25ddbf05d77",
+    "vless-tls-tun-full-duplex-1-workers12-4/result.json": "58d0cf91b5522085b4a1b479057d35375de22a78bc89fd7acb106f85658026b2",
+    "vless-tls-tun-full-duplex-1-workers12-5/result.json": "a0b8a988f0916b458cde5a526093c08ed35ada33dc4f3bf795cfbd4a6ffbd8e5",
+    "vless-tls-tun-full-duplex-1-workers12-6/result.json": "76d808230f6d12f0cc7df1cd78fb33930ca7f84f4c4e2e2400d59b3f40dc29e5",
+    "vless-tls-tun-full-duplex-1-workers12-7/result.json": "e21b786194aa00d16c438180dfe1cd0f913e5742e4adece720f3540fd10219c1",
+    "vless-tls-tun-full-duplex-1-workers12-8/result.json": "1800a6e0e8ecf606e410094c804d2a7b7860bea246401b8909dcc984365dfcba",
+    "vless-tls-tun-full-duplex-1-workers12-9/result.json": "a6e91927ff620dc5bd9dd789bf1aceb32f673171dbc06fe81750fd89baccde5f"
+  },
+  "failures": [],
+  "manifest_sha256": "ac9824ca3247d7c5a7eb4f6ce27aa30e473104ac715435650eec8038ac7ff5b5",
+  "rows": [
+    {
+      "case": "vless-tls-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 0.8571428571428571,
+        "cpu_ms_per_mib": 0.8571428571428571,
+        "rss_mib": 0.9669565217391304,
+        "throughput_mib_s": 1.0946563253228851
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 70.0,
+              "min": 60,
+              "samples": [
+                70,
+                70,
+                70,
+                60,
+                60,
+                60,
+                70,
+                70,
+                70,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 8.75,
+              "min": 7.5,
+              "samples": [
+                8.75,
+                8.75,
+                8.75,
+                7.5,
+                7.5,
+                7.5,
+                8.75,
+                8.75,
+                8.75,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 9.109375,
+              "median": 8.984375,
+              "min": 8.828125,
+              "samples": [
+                8.90625,
+                9.0625,
+                8.859375,
+                8.9375,
+                8.84375,
+                9.03125,
+                8.828125,
+                9.109375,
+                9.078125,
+                9.03125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 627.9558076100395,
+              "median": 528.6548543198606,
+              "min": 306.10537501524306,
+              "samples": [
+                517.6946410515673,
+                306.10537501524306,
+                518.0689833459602,
+                529.3178925128713,
+                627.9558076100395,
+                519.1027205654483,
+                605.4509353157412,
+                598.5988895092702,
+                527.99181612685,
+                615.0376868186584
+              ]
+            }
+          },
+          "passed_repeats": 10
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 60.0,
+              "min": 50,
+              "samples": [
+                70,
+                70,
+                60,
+                60,
+                60,
+                70,
+                50,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 7.5,
+              "min": 6.25,
+              "samples": [
+                8.75,
+                8.75,
+                7.5,
+                7.5,
+                7.5,
+                8.75,
+                6.25,
+                7.5,
+                7.5,
+                7.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.890625,
+              "median": 8.6875,
+              "min": 8.515625,
+              "samples": [
+                8.890625,
+                8.6875,
+                8.671875,
+                8.734375,
+                8.859375,
+                8.59375,
+                8.546875,
+                8.515625,
+                8.6875,
+                8.796875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 653.2633895109908,
+              "median": 578.6953801938838,
+              "min": 305.23671355140743,
+              "samples": [
+                631.9801716221153,
+                513.2907661300982,
+                636.1723798127236,
+                632.9865094750168,
+                305.23671355140743,
+                527.3247838166134,
+                653.2633895109908,
+                630.0659765711542,
+                515.0090371210789,
+                519.3596503255346
+              ]
+            }
+          },
+          "passed_repeats": 10
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 70.0,
+              "min": 40,
+              "samples": [
+                80,
+                70,
+                70,
+                70,
+                70,
+                70,
+                60,
+                40,
+                60,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.0,
+              "median": 8.75,
+              "min": 5.0,
+              "samples": [
+                10.0,
+                8.75,
+                8.75,
+                8.75,
+                8.75,
+                8.75,
+                7.5,
+                5.0,
+                7.5,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 9.28125,
+              "median": 9.09375,
+              "min": 8.96875,
+              "samples": [
+                9.28125,
+                9.28125,
+                8.984375,
+                9.03125,
+                9.203125,
+                9.078125,
+                9.109375,
+                8.96875,
+                9.21875,
+                9.046875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 778.0019936301087,
+              "median": 533.0269663525839,
+              "min": 506.184947325129,
+              "samples": [
+                613.5459597308312,
+                597.9017385861492,
+                510.0793594219372,
+                521.5067084993273,
+                529.3558242506901,
+                630.2706878671868,
+                506.184947325129,
+                778.0019936301087,
+                536.6981084544778,
+                515.6244853825937
+              ]
+            }
+          },
+          "passed_repeats": 10
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "tun"
+}

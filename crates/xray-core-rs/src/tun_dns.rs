@@ -1029,7 +1029,7 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
     let opened = tokio::select! {
         biased;
         () = wait_for_tun_shutdown(&mut shutdown) => false,
-        result = context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }) => {
+        result = context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }) => {
             result.is_ok()
         }
     };
@@ -1119,7 +1119,7 @@ pub(super) async fn bridge_dns_outbound_tcp_flow(
             () = wait_for_tun_shutdown(&mut shutdown) => false,
             result = timeout(
                 DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-                context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+                context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }),
             ) => matches!(result, Ok(Ok(()))),
         }
     };
@@ -2151,7 +2151,7 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
         () = wait_for_tun_shutdown(&mut shutdown) => false,
         result = timeout(
             DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-            context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+            context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }),
         ) => matches!(result, Ok(Ok(()))),
     };
     if !opened {

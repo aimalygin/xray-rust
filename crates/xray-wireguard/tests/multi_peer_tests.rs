@@ -125,67 +125,76 @@ async fn overlapping_peers_route_and_reject_authenticated_source_spoofing_in_bot
 
 #[tokio::test]
 async fn unavailable_specific_peer_never_falls_back_to_broader_peer_and_budgets_stay_shared() {
-    timeout(Duration::from_secs(10), async {
-        let mut healthy = RawPeer::start(0x53, false, &["0.0.0.0/0"]).await;
-        let blackhole = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let dead = xray_wireguard::PeerConfig {
-            public_key: key(
-                x25519_dalek::PublicKey::from(&x25519_dalek::StaticSecret::from([0x63; 32]))
-                    .as_bytes(),
-            ),
-            endpoint: blackhole.local_addr().unwrap(),
-            allowed_ips: vec!["198.51.100.7/32".parse().unwrap()],
-            preshared_key: None,
-            keepalive: 0,
-        };
-        let client = Client::start(
-            Config {
-                secret_key: key(&[0x42; 32]),
-                peers: vec![healthy.config.clone(), dead],
-                addresses: vec!["10.44.0.2".parse().unwrap()],
-                mtu: 1420,
-            },
-            None,
-        )
-        .await
-        .unwrap();
-        let mut sessions = Vec::new();
-        for _ in 0..15 {
-            let session = client
-                .open_udp("198.51.100.7:443".parse().unwrap())
+    for dead_peer_count in [1u8, 2, 7] {
+        timeout(Duration::from_secs(10), async {
+            let mut healthy = RawPeer::start(0x53, false, &["0.0.0.0/0"]).await;
+            let blackhole = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            let mut peers = vec![healthy.config.clone()];
+            for i in 0..dead_peer_count {
+                peers.push(xray_wireguard::PeerConfig {
+                    public_key: key(x25519_dalek::PublicKey::from(
+                        &x25519_dalek::StaticSecret::from([0x63 + i; 32]),
+                    )
+                    .as_bytes()),
+                    endpoint: blackhole.local_addr().unwrap(),
+                    allowed_ips: vec![format!("198.51.100.{}/32", 7 + i).parse().unwrap()],
+                    preshared_key: None,
+                    keepalive: 0,
+                });
+            }
+            let client = Client::start(
+                Config {
+                    secret_key: key(&[0x42; 32]),
+                    peers,
+                    addresses: vec!["10.44.0.2".parse().unwrap()],
+                    mtu: 1420,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+            let mut sessions = Vec::new();
+            for i in 0..15 {
+                let session = client
+                    .open_udp(
+                        format!("198.51.100.{}:443", 7 + i % dead_peer_count)
+                            .parse()
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                for _ in 0..32 {
+                    session.send(b"private!").await.unwrap();
+                }
+                sessions.push(session);
+            }
+            let good = client
+                .open_udp("192.0.2.10:443".parse().unwrap())
                 .await
                 .unwrap();
-            for _ in 0..32 {
-                session.send(b"private!").await.unwrap();
-            }
-            sessions.push(session);
-        }
-        let good = client
-            .open_udp("192.0.2.10:443".parse().unwrap())
-            .await
-            .unwrap();
-        good.send(b"healthy!").await.unwrap();
-        let request = healthy.received.recv().await.unwrap().into_bytes();
-        healthy
-            .inject
-            .send(reply(&request, b"healthy!"))
-            .await
-            .unwrap();
-        assert_eq!(&good.recv().await.unwrap()[..], b"healthy!");
-        assert!(
-            timeout(Duration::from_millis(200), healthy.received.recv())
+            good.send(b"healthy!").await.unwrap();
+            let request = healthy.received.recv().await.unwrap().into_bytes();
+            healthy
+                .inject
+                .send(reply(&request, b"healthy!"))
                 .await
-                .is_err(),
-            "private traffic escaped via default peer"
-        );
-        assert!(matches!(
-            client.open_udp("192.0.2.11:443".parse().unwrap()).await,
-            Err(xray_wireguard::Error::Busy)
-        ));
-        client.shutdown().await;
-        assert_eq!(client.available_udp_slots(), 16);
-        healthy.shutdown().await;
-    })
-    .await
-    .unwrap();
+                .unwrap();
+            assert_eq!(&good.recv().await.unwrap()[..], b"healthy!");
+            assert!(
+                timeout(Duration::from_millis(200), healthy.received.recv())
+                    .await
+                    .is_err(),
+                "private traffic escaped via default peer"
+            );
+            assert!(matches!(
+                client.open_udp("192.0.2.11:443".parse().unwrap()).await,
+                Err(xray_wireguard::Error::Busy)
+            ));
+            client.shutdown().await;
+            assert_eq!(client.available_udp_slots(), 16);
+            healthy.shutdown().await;
+        })
+        .await
+        .unwrap();
+    }
 }

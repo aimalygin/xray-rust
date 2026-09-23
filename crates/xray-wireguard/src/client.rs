@@ -21,8 +21,9 @@ use xray_transport::{SocketProtector, TransportStream};
 pub(crate) const TCP_LIMIT: usize = 16;
 pub(crate) const UDP_LIMIT: usize = 16;
 pub(crate) const PACKET_QUEUE: usize = 8;
+pub(crate) const IP_PACKET_QUEUE: usize = 32;
 pub(crate) const COMMAND_QUEUE: usize = 32;
-pub(crate) const STREAM_BUFFER: usize = 8192;
+pub(crate) const STREAM_BUFFER: usize = 64 * 1024;
 pub(crate) const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, thiserror::Error)]
@@ -48,23 +49,39 @@ pub enum Error {
 }
 
 #[derive(Clone)]
-pub(crate) struct Stop(watch::Sender<bool>);
+pub(crate) struct Stop(Arc<StopState>);
+struct StopState {
+    closed: AtomicBool,
+    wake: Notify,
+}
 impl Stop {
     pub(crate) fn new() -> Self {
-        Self(watch::channel(false).0)
+        Self(Arc::new(StopState {
+            closed: AtomicBool::new(false),
+            wake: Notify::new(),
+        }))
     }
     pub(crate) fn close(&self) {
-        self.0.send_replace(true);
+        if !self.0.closed.swap(true, Ordering::AcqRel) {
+            self.0.wake.notify_waiters();
+        }
     }
     pub(crate) fn is_closed(&self) -> bool {
-        *self.0.borrow()
+        self.0.closed.load(Ordering::Acquire)
     }
     pub(crate) async fn cancelled(&self) {
-        let mut rx = self.0.subscribe();
-        if *rx.borrow() {
+        if self.is_closed() {
             return;
         }
-        let _ = rx.changed().await;
+        let notified = self.0.wake.notified();
+        tokio::pin!(notified);
+        // Register before the second state check: close may race with waiter
+        // creation. The monotonic flag also covers all future subscribers.
+        notified.as_mut().enable();
+        if self.is_closed() {
+            return;
+        }
+        notified.await;
     }
 }
 
@@ -110,8 +127,8 @@ impl Client {
         // If creation is cancelled or fails, every injected I/O boundary is cancelled.
         let mut guard = StartGuard(Some(stop.clone()));
         let wake = Arc::new(Notify::new());
-        let (to_engine, ip_rx) = mpsc::channel(PACKET_QUEUE);
-        let (ip_tx, from_engine) = mpsc::channel(PACKET_QUEUE);
+        let (to_engine, ip_rx) = mpsc::channel(IP_PACKET_QUEUE);
+        let (ip_tx, from_engine) = mpsc::channel(IP_PACKET_QUEUE);
         let (commands, requests) = mpsc::channel(COMMAND_QUEUE);
         let stack = stack::Stack::new(&config, to_engine, from_engine, requests, wake.clone());
         let protection_failed = Arc::new(AtomicBool::new(false));
@@ -140,8 +157,19 @@ impl Client {
             protection_failed: protection_failed.clone(),
             carrier: watch::channel(None).0,
         };
+        let mut limits = gotatun::device::DeviceLimits::mobile();
+        // Keep queue storage bounded while allowing larger batches to cross
+        // the TCP/encryption boundary without waking the actor for each 8 KiB.
+        // 248 data reservations cover five sixteen-packet engine queues, both
+        // 32-packet inner queues, one IP batch, the handshake backlog and I/O.
+        limits.packet_reservations = 256;
+        limits.io_queue_packets = 16;
+        // Let one peer retain all 16 SYNs, while reserving an equal share for
+        // every configured peer. An unreachable peer must not consume the
+        // entire global handshake backlog and starve healthy peers' first UDP.
+        limits.pending_packets_per_peer = limits.pending_packets / config.peers.len();
         let mut device = gotatun::device::DeviceBuilder::new()
-            .with_limits(gotatun::device::DeviceLimits::mobile())
+            .with_limits(limits)
             .with_private_key(x25519_dalek::StaticSecret::from(
                 *config.secret_key.expose_bytes(),
             ))
@@ -153,6 +181,7 @@ impl Client {
                     stop: stop.clone(),
                 },
                 transport::IpRx {
+                    batch: Vec::with_capacity(IP_PACKET_QUEUE),
                     rx: ip_rx,
                     mtu: config.mtu,
                     stop: stop.clone(),
@@ -459,3 +488,62 @@ impl UdpSession {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod stop_tests {
+    use super::*;
+    #[tokio::test]
+    async fn close_wakes_all_live_waiters_and_is_sticky_for_late_waiters() {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let stop = Stop::new();
+            let mut waiting = tokio::task::JoinSet::new();
+            let cancelled = tokio::spawn({
+                let stop = stop.clone();
+                async move { stop.cancelled().await }
+            });
+            for _ in 0..64 {
+                waiting.spawn({
+                    let stop = stop.clone();
+                    async move { stop.cancelled().await }
+                });
+            }
+            tokio::task::yield_now().await;
+            cancelled.abort();
+            assert!(cancelled.await.unwrap_err().is_cancelled());
+            stop.close();
+            stop.close();
+            while let Some(result) = waiting.join_next().await {
+                result.unwrap();
+            }
+            for _ in 0..4 {
+                stop.cancelled().await;
+            }
+            assert!(stop.is_closed());
+        })
+        .await
+        .unwrap();
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn waiter_registration_can_race_close_without_losing_wakeup() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for _ in 0..128 {
+                let stop = Stop::new();
+                let barrier = Arc::new(tokio::sync::Barrier::new(2));
+                let waiter = tokio::spawn({
+                    let stop = stop.clone();
+                    let barrier = barrier.clone();
+                    async move {
+                        barrier.wait().await;
+                        stop.cancelled().await;
+                    }
+                });
+                barrier.wait().await;
+                stop.close();
+                waiter.await.unwrap();
+                stop.cancelled().await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}

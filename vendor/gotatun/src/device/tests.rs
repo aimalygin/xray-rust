@@ -552,3 +552,30 @@ async fn test_device_pair(eavesdrop: impl AsyncFnOnce(MockEavesdropper) + Send) 
         eavesdrop
     };
 }
+
+/// Backpressure at the inner IP reader must not retain the peer encryption lock.
+#[tokio::test]
+async fn stalled_tun_does_not_block_peer_send() {
+    let mut limits = crate::device::DeviceLimits::mobile();
+    limits.io_queue_packets = 1;
+    let (mut alice, bob, _eve) = mock::device_pair_with_limits(Some(limits)).await;
+    alice.app_tx.send(mock::packet(b"establish")).await;
+    let mut bob = bob;
+    timeout(Duration::from_secs(2), bob.app_rx.recv())
+        .await
+        .unwrap();
+
+    // Leave the application receive queue full, including its bounded adapter.
+    for _ in 0..8 {
+        alice.app_tx.send(mock::packet(b"blocked download")).await;
+    }
+    sleep(Duration::from_millis(50)).await;
+    let reverse = mock::packet(b"upload must remain live");
+    bob.app_tx.send(reverse.clone()).await;
+    let received = timeout(Duration::from_secs(1), alice.app_rx.recv())
+        .await
+        .expect("stalled receive held the peer lock and blocked outgoing traffic");
+    assert_eq!(received.as_bytes(), reverse.as_bytes());
+    alice.device.stop().await;
+    bob.device.stop().await;
+}

@@ -1,0 +1,674 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "wireguard-socks-upload-1",
+      "iterations": 32,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-download-1",
+      "iterations": 32,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-upload-8",
+      "iterations": 32,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-download-8",
+      "iterations": 32,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "download"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/candidate/xray-rust": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564",
+    "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance.py": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d"
+  },
+  "finished_unix": 1789887885.6935282,
+  "link_mbps_per_direction": 100,
+  "one_way_delay_ms": 25,
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "relay_policy": "one endpoint per run, 32 MiB userspace cap, no intentional loss; kernel UDP loss is not counted",
+  "repeats": 3,
+  "runs": [
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-1-baseline-1.json"
+      ],
+      "output_relative": "wireguard-socks-upload-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2443,
+        "peak_queued_bytes": 17252,
+        "receive_buffer_bytes": 2097152,
+        "received": 2443,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 8.673988819122314,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-1-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2769,
+        "peak_queued_bytes": 277004,
+        "receive_buffer_bytes": 2097152,
+        "received": 2769,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.7264978885650635,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-1-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2774,
+        "peak_queued_bytes": 276900,
+        "receive_buffer_bytes": 2097152,
+        "received": 2774,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.645508289337158,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-1-baseline-2.json"
+      ],
+      "output_relative": "wireguard-socks-upload-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2399,
+        "peak_queued_bytes": 17252,
+        "receive_buffer_bytes": 2097152,
+        "received": 2399,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 8.646947860717773,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-1-baseline-3.json"
+      ],
+      "output_relative": "wireguard-socks-upload-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2418,
+        "peak_queued_bytes": 17252,
+        "receive_buffer_bytes": 2097152,
+        "received": 2418,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 8.6376371383667,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-1-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2759,
+        "peak_queued_bytes": 276828,
+        "receive_buffer_bytes": 2097152,
+        "received": 2759,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.6781508922576904,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-1-baseline-1.json"
+      ],
+      "output_relative": "wireguard-socks-download-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2843,
+        "peak_queued_bytes": 11808,
+        "receive_buffer_bytes": 2097152,
+        "received": 2843,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 12.215811014175415,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-1-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2702,
+        "peak_queued_bytes": 278720,
+        "receive_buffer_bytes": 2097152,
+        "received": 2703,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.3385088443756104,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-1-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2706,
+        "peak_queued_bytes": 278640,
+        "receive_buffer_bytes": 2097152,
+        "received": 2706,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.356998920440674,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-1-baseline-2.json"
+      ],
+      "output_relative": "wireguard-socks-download-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2834,
+        "peak_queued_bytes": 11808,
+        "receive_buffer_bytes": 2097152,
+        "received": 2835,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 12.168012857437134,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-1-baseline-3.json"
+      ],
+      "output_relative": "wireguard-socks-download-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2826,
+        "peak_queued_bytes": 11680,
+        "receive_buffer_bytes": 2097152,
+        "received": 2826,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 12.366559743881226,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-1-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 2704,
+        "peak_queued_bytes": 278640,
+        "receive_buffer_bytes": 2097152,
+        "received": 2704,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.340038776397705,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-8-baseline-1.json"
+      ],
+      "output_relative": "wireguard-socks-upload-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 23672,
+        "peak_queued_bytes": 138016,
+        "receive_buffer_bytes": 2097152,
+        "received": 23672,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 8.702070951461792,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-8-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 22974,
+        "peak_queued_bytes": 1915880,
+        "receive_buffer_bytes": 2097152,
+        "received": 22974,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.524027109146118,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-8-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 23168,
+        "peak_queued_bytes": 1916912,
+        "receive_buffer_bytes": 2097152,
+        "received": 23168,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.5058560371398926,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-8-baseline-2.json"
+      ],
+      "output_relative": "wireguard-socks-upload-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 23445,
+        "peak_queued_bytes": 138016,
+        "receive_buffer_bytes": 2097152,
+        "received": 23445,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 8.692836284637451,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-8-baseline-3.json"
+      ],
+      "output_relative": "wireguard-socks-upload-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 23643,
+        "peak_queued_bytes": 138016,
+        "receive_buffer_bytes": 2097152,
+        "received": 23643,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 8.723815202713013,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-upload-8-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 22918,
+        "peak_queued_bytes": 1915704,
+        "receive_buffer_bytes": 2097152,
+        "received": 22918,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.495522975921631,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-8-baseline-1.json"
+      ],
+      "output_relative": "wireguard-socks-download-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 22295,
+        "peak_queued_bytes": 94464,
+        "receive_buffer_bytes": 2097152,
+        "received": 22295,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 12.366127014160156,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-8-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 21622,
+        "peak_queued_bytes": 1929152,
+        "receive_buffer_bytes": 2097152,
+        "received": 21622,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.2939817905426025,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-8-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 21620,
+        "peak_queued_bytes": 1929664,
+        "receive_buffer_bytes": 2097152,
+        "received": 21620,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.2909281253814697,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-8-baseline-2.json"
+      ],
+      "output_relative": "wireguard-socks-download-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 22180,
+        "peak_queued_bytes": 94464,
+        "receive_buffer_bytes": 2097152,
+        "received": 22180,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 12.238337993621826,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-8-baseline-3.json"
+      ],
+      "output_relative": "wireguard-socks-download-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 22181,
+        "peak_queued_bytes": 94464,
+        "receive_buffer_bytes": 2097152,
+        "received": 22181,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 12.262257099151611,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-wireguard-original-delay/wireguard-socks-download-8-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 21622,
+        "peak_queued_bytes": 1929536,
+        "receive_buffer_bytes": 2097152,
+        "received": 21622,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.317889928817749,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "started_unix": 1789887696.704793,
+  "status": "pass",
+  "suite": "new",
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/candidate/xray-rust",
+      "engine_sha256": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+      "engine_sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+    }
+  }
+}

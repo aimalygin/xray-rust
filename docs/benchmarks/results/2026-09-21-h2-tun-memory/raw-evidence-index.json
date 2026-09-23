@@ -1,0 +1,4130 @@
+{
+  "JOURNAL.md": {
+    "bytes": 10787,
+    "sha256": "65c25644f12e42d9a42f35b2962f58d4ddcbf61d904ed35dbbb8ff9632cc57b6"
+  },
+  "allocator-control-driver.log": {
+    "bytes": 1273,
+    "sha256": "1c1f205b242fc1d808cada1c615c6df1d2d45edcf04dd30f6752caa08c7144ff"
+  },
+  "allocator-relief-build.json": {
+    "bytes": 601,
+    "sha256": "4136ac56e54d5e9e63d28489bb591686d5915d81b69fc7c3e4f4ebc6f58ea1b0"
+  },
+  "allocator-relief.c": {
+    "bytes": 1050,
+    "sha256": "9d040f117b6fb8e5498cf6264d31f4e773e0adb7b421caa200c866ec34763e5c"
+  },
+  "allocator-relief.dylib": {
+    "bytes": 33816,
+    "sha256": "967353ca1e737debb3af1fb74af5060743717a08a3e4ccdf43090ae829bfedcf"
+  },
+  "analysis.json": {
+    "bytes": 73857,
+    "sha256": "80489631adcc083b694113ac0ec43a89e327601ef60afecdb0f75f4584a1a700"
+  },
+  "analyze-memory.py": {
+    "bytes": 5178,
+    "sha256": "49f7ee97aed1d7c81b120ff188e0007b1ef19093868a0a2eea88d279bd5b8169"
+  },
+  "build-diagnostic-harness.py": {
+    "bytes": 3997,
+    "sha256": "b3fd2ef5f37b3ee9a0a1e5c58682d706dd43af3eee7dd167e5b32ffea6c5f3bd"
+  },
+  "build-report.py": {
+    "bytes": 16082,
+    "sha256": "08721328c75ae5e9a1ca76484e32443ad6e2e4fed27fb80caebebb0b84cbf4aa"
+  },
+  "collector-source/run-v07-apple-protocol-fixture.py": {
+    "bytes": 13188,
+    "sha256": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7"
+  },
+  "collector-source/run-v07-performance-followup.py": {
+    "bytes": 7422,
+    "sha256": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309"
+  },
+  "collector-source/run-v07-performance.py": {
+    "bytes": 17399,
+    "sha256": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4"
+  },
+  "collector-source/summarize-v07-performance.py": {
+    "bytes": 6714,
+    "sha256": "540138c66fc9a2d26c727adbc1ff880d95bf98cda83a4f7a7ae160ab1b05c0ea"
+  },
+  "collector-source/summarize-v07-protocol-parity.py": {
+    "bytes": 7433,
+    "sha256": "5c694e04e07bf7df6f8360b4c4a4726465e53a55f9a169ffc988f8fe2aa0443b"
+  },
+  "diagnostic-build-driver.log": {
+    "bytes": 814,
+    "sha256": "98e85103732c1b9ce4f7818e194c2b023392afe39d7dad9ebf6cbdb14b4f04a0"
+  },
+  "diagnostic-harness-build.json": {
+    "bytes": 658,
+    "sha256": "af8fea662f1914bcde06101078ebbc8a0a638db76d301f415f7524ed991e4cde"
+  },
+  "diagnostic-harness-build.log": {
+    "bytes": 9312,
+    "sha256": "d871c85d4bd8c10af932022799fce0b3bc9f89301c5beea88e982ba87cc0c6c2"
+  },
+  "diagnostic-harness.patch": {
+    "bytes": 3108,
+    "sha256": "b8186cdfafd2ae6e5960716d782c910955cf8e82cd0fd797723afa66c96592c1"
+  },
+  "evidence/h2-tun-allocator-control/control.json": {
+    "bytes": 6126,
+    "sha256": "cebba3c9e082447fcab84f56abee2ace0d4afc478f858b24bf3a9fb50587449b"
+  },
+  "evidence/h2-tun-allocator-control/manifest.json": {
+    "bytes": 561038,
+    "sha256": "7de44edd379e6f3e565d8a7a187b4745f14d9cb9d89373161fe72aa518f448a9"
+  },
+  "evidence/h2-tun-allocator-control/measurement-quality.json": {
+    "bytes": 333,
+    "sha256": "8a25708440bcb04a6ef7098e753ca3415d248410ad02a5113d6068ce69f25319"
+  },
+  "evidence/h2-tun-allocator-control/source.patch": {
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "evidence/h2-tun-allocator-control/summary.json": {
+    "bytes": 8737,
+    "sha256": "414e8acd929d4b75b0e8240bc1b67f89cfb104a27e9c86a4f401435344f0c015"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1/config.json": {
+    "bytes": 846,
+    "sha256": "e86d467db89121c095f7750c7a5ba7b2e4caaaf176b0b57c781b74a99843061e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1/result.json": {
+    "bytes": 10387,
+    "sha256": "0623164c8a20513faf4db8fe5fa0eb84b61791164699da759df39dac00706427"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "648fc82cc3d612fbc494872eb5e782a388812fdf7df3c34dda4d860aa0a3f7bf"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "35b295096d46c258d5528635c06058886113feb7b951b72bd8d7e627fb38bd07"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/server.json": {
+    "bytes": 5332,
+    "sha256": "254b015b9189a8ab45e74e6fe5b66b0d022db32bc9cf2dc9542c0295cce74d3a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/server.log": {
+    "bytes": 1052,
+    "sha256": "b332a94dbfd15f75d0b700348e52de90bc8ae01b5673644a64fe11972e10e920"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "dd84d260e633717ddbcb135a2ff8dc74b4f2e8f0b9024614f1863e55c9986266"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "c766f509b6ce5775e3bd23ed1d537397a7ddb4ab86d3f61489a1a7ebade7d484"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "9cce1a63e5c6d798f9a0a1d055b1f32f328457b38486ba0f5e58d88607af0495"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1.json": {
+    "bytes": 1237,
+    "sha256": "bfe24dbdc155284441e463479e24d99c5d55133cc31075d3f22347ee829fa89e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-1.log": {
+    "bytes": 6781,
+    "sha256": "a64dd3e33ef4a12f98e25cabb30f7238152bdc1a4c9f9926493c97585caae96d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2/config.json": {
+    "bytes": 846,
+    "sha256": "c337636656a0142b786f041953ad797e2538fcd4751cd394637b71d8ebbdd295"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2/result.json": {
+    "bytes": 10256,
+    "sha256": "f57ec4647275695bd5d01df5718c1053910fd17876e5f01f7a284c100b0082b4"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "a2c39d441e6d5b54db2e7dce2edb99448f49acb1355085346561b63ae86776ae"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "6c925904005b866965026f4db04bc48e605363e9ce8037597c3b53f4725f63fe"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/server.json": {
+    "bytes": 5332,
+    "sha256": "2400727cd2aa5a79ab95d6ba15ddeab289e3eb8ca22e67cceb9356c7759e6de1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/server.log": {
+    "bytes": 1052,
+    "sha256": "321f325d7772e43609fc27ca1979735c87ac023cbec1934f58890189026e1b30"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "dfc20ada341d7d286ab00927ef89ade43eec8dca95a38474d2defe22639f42b2"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "4a814214f3d5fe33b2c446c3e0e621208de848e07cf6c925a781bb8cb4fd8794"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "f5cc507922d87408155ec58e1c35958de40fe55ab7b2832dc593cf8f0d37103c"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2.json": {
+    "bytes": 1237,
+    "sha256": "049036d9330277c80f052c6a129257716dc007229a9ce20249dc96138db57dde"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-2.log": {
+    "bytes": 6700,
+    "sha256": "26495cd79abf96f5732d362c5df85665b99576394715a055dcb915c632fe85af"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3/config.json": {
+    "bytes": 846,
+    "sha256": "40fb68bf4057d6440349e69ec8adaef151ff25f4a680f00a77da881bf7db8c2a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3/result.json": {
+    "bytes": 10389,
+    "sha256": "5f532d32b69d9ef6f713576fb1ce86ee0dfa64ee6181210f71ffa10450921b94"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "4c10143841c72314d09139a1b683882280675ed59f67fbc45155b26e5f6ecd3d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "48cf2374fbe36de48d588d72eb23aa192e737a7462b1c247882828cc042f4dbc"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/server.json": {
+    "bytes": 5332,
+    "sha256": "a29ac9c22b505d1b8759239ccaf3de8aefc8c36d0be1dfe5ec6bb3bcd279daef"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/server.log": {
+    "bytes": 1052,
+    "sha256": "d84beab894e7c03776a748ae7fdae090a4b89e91940106bd85d13294e99dc363"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "e4a519d0720e2be3819a543757690ea8b7e94417979070c75517d2d99b819669"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "04905579d1473d93f37abf7b8236de928242704ece09fcd2561f62fbc780d735"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "71a75e0695ee6bd383de46bf46e9b362149bfb97ab869dd87c14377210835e97"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3.json": {
+    "bytes": 1237,
+    "sha256": "7930a4b5be2050a31240888ebf81f2523e3543cfb0d84cbc2c2b5e60a02e3a50"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-3.log": {
+    "bytes": 6783,
+    "sha256": "fb84ee21e63d4b91197d2f1e050af14f09d625c9b4db3137fdfc6bd1f84b636a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4/config.json": {
+    "bytes": 846,
+    "sha256": "3f09b2846a0b2d2d65643c6ad9ae8feaa4117b814f4ba4aa768d184d1f20ef70"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4/result.json": {
+    "bytes": 10250,
+    "sha256": "c155257924bab86567c065f92177ed4cf69d8a174b66e8829fae676c5be265ce"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "5963dc0d79441aa25a1331d04fcb7618c8f37eaa5992e3ad19e7c37f6f0e22a3"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "6012f9c0894eb3d16e86cd99c08b9176c72b18184b6d466dece5d256ed112147"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/server.json": {
+    "bytes": 5332,
+    "sha256": "314250c1eb1ec68f45c8127ec3bd72f052dda6a461b0219c419e2bd5e9960497"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/server.log": {
+    "bytes": 1052,
+    "sha256": "255c026539a4c0085c5bd6b8432b20dac9cc1d4e81113a3403cf4936f74e5628"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "c3d80ec414a8e6a525a44c1e16613bab338a1a86ff49282b22e30e0cab95f08c"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "fa770db6c43bf7a658aa0f94674db156e5bc7857644ba91745f46a9e9071ecf7"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "ffff020e29b2ee9af73ede6f15efa819dc6c32d82b7815ce122e0ec1750bc365"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4.json": {
+    "bytes": 1237,
+    "sha256": "90356b80b94a6c9e1c6035d3aa914b4e39a425dad8570d528d1011078f6b59d4"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-4.log": {
+    "bytes": 6694,
+    "sha256": "c72cf6f81c2736a1ee4cef0e33afd6eec66159b857ac9ff8431e30775929c7ff"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5/config.json": {
+    "bytes": 846,
+    "sha256": "932198a2d944a02f59961262e63cea31935bea92c7c93b153f9c2787dec8a86b"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5/result.json": {
+    "bytes": 10114,
+    "sha256": "2ef063fd21a17bc83c830bc8f53d42f992d182c2632921ee7c10f4a56dbd5cbc"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "625bbfde3f0412b8470a73691a9d4adcc46f0d24c7e00980a52e7704934893d5"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "08d3461a4856c3d9969194906dafab304262526f6b71a5540d13b94520f880c7"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/server.json": {
+    "bytes": 5332,
+    "sha256": "65f510f6246bf408792ce6a699563f649d88ece7d1608f47e10545bf018d91d5"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/server.log": {
+    "bytes": 1052,
+    "sha256": "d97fee3c9dfe226a9022b3a77312df27eaca4f444225cfb301c7ad6f0f97db4a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "4c63c5c88bbf03d91fa05128af97b00b50d2f5a2a4db72411612747015565883"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "0193f3c03c9590672f0211964f0b0eba8681dc50d147b4216b8b34100d3b5b61"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "4a343114051d4ffcfbf304629414e17578be1afcb4f26d98bd5f3a2ae47bcff7"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5.json": {
+    "bytes": 1237,
+    "sha256": "9cce9a757ae898b3b5f8c8d3822eb772500f8aa2f879e9e5fe133064b8eba767"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline-5.log": {
+    "bytes": 6608,
+    "sha256": "bc989fb454427b10c745d9f50fa2203e21f9a16edf4c960d9c3e43ab133f962e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1/config.json": {
+    "bytes": 846,
+    "sha256": "0248aa7d654a2fd7e278ef0258c070973ada2357c07cba63ae01e26735d7da93"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1/result.json": {
+    "bytes": 9683,
+    "sha256": "ffaa847a926b2dbececcc4aaba9fca49f23752ff7cc1e8f98d89f8509bce2a33"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "f928b9d5d28d8bdc0064717f103016b02d9cb975595718658f22fdbd841ff69b"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "2c52504b806a468f693be629f17abbff4c7a2b46d1ed39028c480b4e7c7c9547"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "1bf9d2ce809889b03b32bfa55e91d2fbd42df1b134cd01c20176d48816fe4dca"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "4180c48b1fe11ac882979082eb197ff36f3ef7704b1b180afec5715c9d1f42df"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "27e97d3b4f288b24b917a1495aac6ad18364cd354bfa67ee8593b0de22ee1837"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "2238f58772e20dc41a49f41a9cf683f80d8f84b4d3ac4cdff84645a083689cd6"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "09e0a6146b75ddf8da9f76a147922b8fc2488b8090bcc59ab0a26ff7a595a4a3"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1.json": {
+    "bytes": 1242,
+    "sha256": "f87143459c0d8e4f879ed7f6633a4a0d93ac84b78bd69d1224d353f14c4d55e5"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-1.log": {
+    "bytes": 6327,
+    "sha256": "ea860db1b12d747bc2eb3a028c363705b701b3755361e53729cbc7f6b4e5f953"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2/config.json": {
+    "bytes": 846,
+    "sha256": "62d18a141e55039154ed987f50071db173d0b97158cd3522db2f2c62d76b65c7"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2/result.json": {
+    "bytes": 9551,
+    "sha256": "be3e8836bde9a6aa5c34e1fc8fac4cb1c562074373c699fabcd9925d063c0371"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "f6ed84ca210ffcb5e0f3534edb81f48b80aee4f61f8ac6338c3bada912ebb71f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "ac808437e0f627ada203709f54461fa94f8272fc6ed44e27f9ed80c16f3b858d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "5a5985313c393409d73119c0c3778e0613ac3f178bac36ae969eeb4dece3c911"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "692b3a3b33d4c807e328d1b093a9fd2a5d40a093f55e292e1a1b748e4b7d19aa"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "934f33ba96319080a7b6687374b2052c26a1c0fb9676e8f5fd5aac1be944c83b"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "0a058e374d57df2504226c1513255ca481e2930407ad0585a769c9260f6fcc0f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "9e4782e0b89176dba4031c77f0e4d75ad08c2f6f20c377cfc4adcc21243aa207"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2.json": {
+    "bytes": 1242,
+    "sha256": "2ffa90a2fbb203ca0e1f35512e1987487ddff3cbde9f060189f1c37ee0aad474"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-2.log": {
+    "bytes": 6245,
+    "sha256": "5ad3115b87aeac8b2dfdf85b734a0e6bf03ca006fc5bdb7135dcf61e09e7e155"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3/config.json": {
+    "bytes": 846,
+    "sha256": "84ca58056907bbdebd3a3dbbeed8cd23ef599ecd54a1a439ad83ef1fb844d206"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3/result.json": {
+    "bytes": 10372,
+    "sha256": "4268fde2febbf96a44a80c141cbf85015a53c0681867b9dbc233c5f874b4b4a2"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "63328433bfb13023f04f830fd9500acc5e35099b1f32e206ea1adf91ced60e66"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "89e9469d3d10bb989626b46c576e2d72acd5b34a8973d3e473db19a484ad423b"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "d05981b58e6f05b2d12332b0049da2e5dd551796e229ee5e39f1b9cb27912153"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "89fc04f0f16a86a75b743e4fba8d1939805da1fea0436e4e7320980e8be81765"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "9fa89f28e278c26b1c4db55be33090cafd365acb29ed10db4f0bb5665479e47c"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "7dc9e80aaafe28c61d8bb8f3f7bb2627a54e3254056acdad453615bb03d73acb"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "a17efd8af6853b280c12d658483c047537a47cc9948f768d015ef8837d425905"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3.json": {
+    "bytes": 1242,
+    "sha256": "af5bd8c4842e4036cef68ab107c8d47f3aa71c54b173f944c06e87c251cc7ae8"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-3.log": {
+    "bytes": 6766,
+    "sha256": "7d48cb7333a6d3aea86f3ecafecb26244abca5ce077b758b7fd5d994e992ce21"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4/config.json": {
+    "bytes": 846,
+    "sha256": "836b01a21180b6456ded17f82e39ab504f6943d7df2a8e3c8448a14340a5b78e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4/result.json": {
+    "bytes": 9824,
+    "sha256": "d1569583c9f353777ecba1d129d6dbdac573a19d96526999344c1c5b2bca047c"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "48e4b07ccd1a426fa9e9741e50d429b194b3e6afa8f486596e1b27fc2860f85f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "8278d956a0d243e1c64c7f70dffc11b1f65612114803b379cee994b5e4320228"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "3f86ee5d7ec367f293b95df716476838f0c720db2db6db9b7135a480904a90ef"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "172480e5506e067bae69118dca75dfb07313c132e18690bf18407b1a8a6bdf73"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "b5456531da7bf63c5b03dc29b98712bff43bc9b08ed541c4cb75ae6ae2966948"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "1157f3e4676506f6784b9b20c89ca01444c3adf166c054db3b8d8b285a10de14"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "86ceae117877520336f82aea4659d32113d648ac2ea0d8af137ae067eb449a9d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4.json": {
+    "bytes": 1242,
+    "sha256": "57311809e65aa047e1b480fb81cc23b7601b561c6061ead4256b02977d678e2a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-4.log": {
+    "bytes": 6418,
+    "sha256": "e193eba55d655fbf19183b29b41dda636bb8cde64b736bbc2df6affe282cdc50"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5/config.json": {
+    "bytes": 846,
+    "sha256": "c8d4d070c9c8452efb0eca7a01e54c90caacfeaa21fb008b5a70cc5c2b384f79"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5/result.json": {
+    "bytes": 9686,
+    "sha256": "a68e74371c7a6833bac607cd7baf46db267e86a675ca15228ea9b1617e54bca9"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "5563aea5860340c7eb854377fdfcd8cb1df95dc15a22d7bc08c1e94f88a7affd"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "24c3efc1b037bc161ec2f1be2b6e22e18dfa633e83eed9562bcb4af3adbf3d6e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "7399589565265a41786e981c3fcdb33a0721dffa684859e0b8c8152fbc0f4079"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "9dc0c780f509abd31084c71e7e8b222d28b145c975bc02f0838aede5936f8c08"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "0fd84c3d5ab1d1564094299aa13c07cb2b14855e5100f005e4509862872aab23"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "4c04af726ee70fb6337a3aff4e45a1cd6c6789671e3716216a9f495e40923a80"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "74779b47cf4bd81e0fec3b33715cfe4a3e60e9c8d7ae759798a76f02c15489c2"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5.json": {
+    "bytes": 1242,
+    "sha256": "512607f62217cecf5c98331cc67249b97cf56d13e007db658bcbd9f35ae1de15"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-baseline2-5.log": {
+    "bytes": 6330,
+    "sha256": "7a9adf172775253062a979e105d2b88fe078adfbe402bfa4fab61063331e92d5"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1/config.json": {
+    "bytes": 846,
+    "sha256": "6edd9483350aa9c77c4014984c74e1f65bea757fcd64f2df5bbeb01117d3cdf1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1/result.json": {
+    "bytes": 9143,
+    "sha256": "f24baf68f9fdaedd8873e3d852f0fc07c27e6182f6b239addf8009ae1c794ea8"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "c383d38e94d016f1aec454fa0b171d23ed7bf638a6d5f0b9ee25088e8edc354d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "805218f94c389325f17b5f79628e9184b6b4209f3babd8206e0e869464e67255"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "f61f8d4e5b8ac0f06d73e32d44783831f191bd2e4629c349cb48f85531e779b6"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "017f471bae04ba64886c75fdda98258dadec7ceec166b8f50091a756bfae449d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "85970edc5db3a2b37856cfd48c40f20bd961d3878fed69963ef7de346c4a87ac"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "a94045cd13485acc4063b23e595d41c10f549fce5a44a1b400c5de929355a404"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "185ab2c661268a84a6cb61b5c8ea653d0e74a1c2858211963e5c507901f79b33"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1.json": {
+    "bytes": 1245,
+    "sha256": "89760ff29013ed08ffdbe1e46661ce7d3301491d10bd4926717721ae157be83f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-1.log": {
+    "bytes": 5987,
+    "sha256": "588d1af906ee9295805e668c09458f7b0f53537988bbb52011ef3714d6699319"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2/config.json": {
+    "bytes": 846,
+    "sha256": "f15a52778e587cad9bd659007637117dc642cd02e6d9675ebe00b2cff6bc6977"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2/result.json": {
+    "bytes": 9278,
+    "sha256": "c9de804ea0468e9ccc6d3cd4210aa6fdc0114006de9d5fc516cb82f8b62b7e78"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "8aff8bfce4d35eee1dd9e778b623727e0b36f9d08b6069b686c85e7592bce419"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "ae61b29bcb8cf5adb45441c5daa71c16944c80b5e324d7e8288d5d411a6bc2e6"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "3a8f34cd637abe0520580faf4badce6838015637a82178a02bed6c3f222a21db"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "f5a61c678c5ed9d3cbdf451c0ca1e8746f106e8a2a57250980c814f7582bf007"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "c744afcb9022de41122221cfde3f546ecd0d715d09952b05621368ad1b1d203d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "4671133045d41437266ee2a22dd75d471794ebc1094c454bed21cf0bea52cbc1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "85a1dafd11abeca2f5d46c333838c88b016d5b791bfbf297861967cd5598dfae"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2.json": {
+    "bytes": 1245,
+    "sha256": "bf003bcace20425b8d9b468e6091d1333719e9752cbdfca060ef0a4df53d4c96"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-2.log": {
+    "bytes": 6072,
+    "sha256": "6c330b6bdb72d9f7e90c28d0f3c8ea71fb81a9d362d4ffa708b551319b93deb0"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3/config.json": {
+    "bytes": 846,
+    "sha256": "3c2908750f724277dc2a7786c872631546407f36638e675be6edf398af7a49be"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3/result.json": {
+    "bytes": 9142,
+    "sha256": "fe8bacca71e6c4ca44a100cf6b77e4fa29bf2c87fab3a497dc8bf1db9be40db1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "cd3552ae955cc32529d7adc6385cb9e2350fc9e906f45c9a878f4b5aceaf68aa"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "32eba9429d076acc9301ecbd081eb0a463f25e3a7d50a8fb340c075abf4c4219"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "1f1916096b14674879bb712cbd359f98f5b679aae0592c980e3ddb5113b2f448"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "174e811662f9df4c96c55746d93c9924dc428ef9a6cd6e5003723cd7047a27ab"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "c69b9e08a3004c031621f47fcbb0b769980347755439ed5a50be6ac352ee9a48"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "a04b5b9bbab06e288da68437e4f90be7fdd882b8821d8f947952dc06249e2bba"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "67b28ca2d5df34012710a91684f0b563c13758dc75dac96750f1fd8f9e30272f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3.json": {
+    "bytes": 1245,
+    "sha256": "877d15845f1e894224f8fa507a50c8094f86e1d8b3fedbc650dcab5867dfd8fe"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-3.log": {
+    "bytes": 5986,
+    "sha256": "32f8bcf17e787e15a43b5e815ba4a9d157a91570ba2823dd5a182b7573f39033"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4/config.json": {
+    "bytes": 846,
+    "sha256": "406caa72cd3050ea71cacaba1ed64d2fc9c97df4bc15c66e3f599743e80e0385"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4/result.json": {
+    "bytes": 9278,
+    "sha256": "de4cb43b6f3eac0f6b54d5870ac70fbb2a117f3a209b1e56c80605f5ba29e623"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "133d3cc8d089e462c95aab2fe23fc7b6587f175271c49e909aa4c6ca064273da"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "307d0b7c4f5e91473cc0bb688e71528009359ec240c1c45200196b25cd6a28a4"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "67bcca5e104a5f9bed77870d7208feb85996b82e15bde07384bd7c692d77cdd5"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "9f7727f897a0539c14bf1c42db00f0d168a2f0e26d83ccbf40f977c83313b6e8"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "67419e529d1943ff9d7d0cd43499079159f515b38af6f99cea4dcd529003ed5a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e74becebae4287b87c9e5f5cfc2110c26446b5dac3a2e67a9dd3a0888dd422a3"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "9f4d61e799bc2a8ec23f9f8e6aca622b945197a22c622130ae58e5be846b853e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4.json": {
+    "bytes": 1245,
+    "sha256": "8c82042d0ac7db4e35bb41dc60b7a5a0954f9aa86863dc772f88aa52fa6114e9"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-4.log": {
+    "bytes": 6072,
+    "sha256": "392911a642063ab6751c77460fb5d324648d9141402ba61b74a36c4d15e27e70"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5/config.json": {
+    "bytes": 846,
+    "sha256": "63fd7a33290da704b8569cce2420a692bb6fb5fafbdd77aae2e48e6474706fdb"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5/result.json": {
+    "bytes": 9006,
+    "sha256": "f1042ea55ea2a346dfe3257e1b293b6b3b40d51b90671b3ff0ca74dc833e13aa"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "0b691253f2ede307d23e921c3599e1a8eae3f7c5fc3aad3282cf61f17d0f69da"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "5b389799b9b62ad2f74fcbef45a87dc2f629b8d8991f6cf21f8f534621326ba7"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/server.json": {
+    "bytes": 5342,
+    "sha256": "49e8835f5b099aa0f1dcdb52f8a6a3eca7fb3956cf93d29680711c83f03ff10d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/server.log": {
+    "bytes": 1053,
+    "sha256": "57dbd264de200c5ea875ba8e1648fe8fb95c41713c452b59d88f5c54642d3dd2"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "c7bc94fa89d249be0d74f1f2479338cc39d0969d39183a6bec0b95d57fa5953b"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "36711609876c6e7085f194698328f06a1290b5224b513c1d8cdb6613a96f144f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "0655a90dba1d177ab19053589ba479bd1915a3fd7841c4135a83e1ff62f33bf4"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5.json": {
+    "bytes": 1245,
+    "sha256": "4781c1083bde616cc30096367330d0ed07876cbe584066f3f2ee4749246a39bf"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate-5.log": {
+    "bytes": 5900,
+    "sha256": "4a9db648735fd3cec4b9676178aa83aa899861ff9405f0ca8a3996192737f50a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1/config.json": {
+    "bytes": 846,
+    "sha256": "033858df64978758ac7f2371c8773d29de33944e166db03d77f34bc11b189164"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1/result.json": {
+    "bytes": 9443,
+    "sha256": "dd9c4fa9e8af23dc6813f6fcc172705a2bc345ce2f970f70c4c57088361e5aad"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "fdf8b08ecfc708f7ff7a5a395b3404d54a5b4a0bbb7126132eef6387616943df"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "66a1821cc8842aaf3143623c96d344226b5ea92293cecf78dab0839dc5571d25"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/server.json": {
+    "bytes": 5392,
+    "sha256": "87e7d94e7e958faffb6ad7617947720da25bdfbdc9e416812ba4d5a3d610390c"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/server.log": {
+    "bytes": 1058,
+    "sha256": "14e71a1c834fbc50b977cc8afa8558468c863bcf69c225a1b94829f977bc97d2"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "d97eb353b1de80eec0db6e005739d690ddd0a06ed7554930f086899a2be68a3c"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "ab9274f679191f03d5d306de1956a667e7765f4c5f8b9567e27a6fb637257267"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "c6f6f962e187f8a23b77277e4f1539c29e75475d886756de0d29ff222be42ec1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1.json": {
+    "bytes": 1283,
+    "sha256": "964af6308a1a0fa2caaede696ce292a8bbd88b3c67f4f6298ec6166b01bfa9b8"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-1.log": {
+    "bytes": 6181,
+    "sha256": "b11ee784e29790184c2cd331dd22ef55cc46f0bb3b0f764b80ebe00ac0329844"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2/config.json": {
+    "bytes": 846,
+    "sha256": "200b6a89a54d7d6c1bf3364cdd1a1e933d5e54e66b7987d7a0ba2144705f70c1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2/result.json": {
+    "bytes": 9174,
+    "sha256": "6eb39b70b6c72d9e0985487c8190c38406d1b09e405f40d0917a76d2c76baf3e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "58271c242daf8af788d78bdb4533097fb2fe794e8f846ec9ed49a75bfcf275d3"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "a798a8ffd56fbf000364116c22b3e7c0b5d9046750c7fe5aece0eccb809790bb"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/server.json": {
+    "bytes": 5392,
+    "sha256": "213ca4570594c4138606206bf1164fcc5fffd49f9bd479a1ee124dc9742ba93e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/server.log": {
+    "bytes": 1058,
+    "sha256": "91f541026e09aa75112698de6b20c15d6e1b2e44cc62014ee3a006411e08965d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "fd230da97ce652c24e110e6277ea239b0ea6f495e7ba3ef663b2bb0dc23d5c22"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "a4fce58c773a710c148b69f1c907fb83237dac6268b237b21cf0b1de1c4c7749"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "4e06c3b59098b80f96794fdd51767afe0e10cb42d6054dc2bebc0401ac415c80"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2.json": {
+    "bytes": 1283,
+    "sha256": "8f84ef72ba337a14608774cf7665b06a3c831c6d7e09878cb9c4ab88d3159635"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-2.log": {
+    "bytes": 6012,
+    "sha256": "e2282a741ebed637035536337d6cd2fb4884706615d3a4e7d42c7cf30ff4448f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3/config.json": {
+    "bytes": 846,
+    "sha256": "8275f0b416f91577e5ab66fb79274d42a8a35db638ec88bc4dc22eb06a32b31a"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3/result.json": {
+    "bytes": 9309,
+    "sha256": "f9fb594d48d011c57f17fb5e09ff5b9d1032f466b35260da6c50108fcb4b9df1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "6be062ba3592bae2da2c7ced00b5c7bdbc1d5fd9ce0928d918b37a34ae139901"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "67735f0e8bcc0cc509a9b89c3b65ec26db5de803637586ba8eccb57223aa1dd6"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/server.json": {
+    "bytes": 5392,
+    "sha256": "cd03a349ec6b289c6de8b2254e6cb9c4ade9d3d2f11e3207be13458fc82bfa33"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/server.log": {
+    "bytes": 1058,
+    "sha256": "74be6aeb2f2c567707ff18cde05fd7ab1a0187416f3c80f6332b1c2b805bcca0"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "1a49f561705d4247be38a2d4644cff9cd4c512bb3dbb14379fe2614d3c5dec2d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "95e763cfe74b0145ef900b324c9fec1c20a6c49b7e942d029eb76f4ef6f0f9d3"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "ff5acf2634f230ccdf240338486ddce8882e174697e555da115a64997c4ad0a9"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3.json": {
+    "bytes": 1283,
+    "sha256": "232a17114fde003a47b3c5999733cf5d99f3257ccd597b3f6ebe8bce1822eae8"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-3.log": {
+    "bytes": 6097,
+    "sha256": "e87255b71bd3489b036077d2068a84fc7d5334ecc5525a5ccc3e951c74f19f88"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4/config.json": {
+    "bytes": 846,
+    "sha256": "644a778bdc644bce39339384ab0568963c948d68458b2a5d652c324d8697f0c4"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4/result.json": {
+    "bytes": 9176,
+    "sha256": "dd777fc090614bd52740fb6caa51f554dc0f8ec5dc5cfb969adc92bc1c6639de"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "3242c4d5cd4fbbdf351ce4eebeb1db1d8384458e88e5d451addc5d79058a40a5"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "e61744e55d07d99bac5df37c6dcf6a885e071ae1e6282370110f0e543ac749c9"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/server.json": {
+    "bytes": 5392,
+    "sha256": "e724faf25af8e0771e22c14bf59bc19be639a3eba9d007b44652995070700bd6"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/server.log": {
+    "bytes": 1058,
+    "sha256": "107543455efa2fc142577ce4d2ce2cabe6d71ddc5dccc68d572e2f7832c72a3d"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "600a8600aa2b480f1bb63f7a26aa220421f01c4c68750905bfa48737b074c7e1"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "79041bef5793999497eea01164dddd3d8d8b12b1c6e04528f1a76ce1da7e81b2"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "d8969db78252d5aed5d57a99444cb85dda9656f5aa2c24cfc2732196fb19d182"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4.json": {
+    "bytes": 1283,
+    "sha256": "f25735d95c78516a6f08d66ae83e44d4ef2d667a1c63864ccc7990bd4170c512"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-4.log": {
+    "bytes": 6014,
+    "sha256": "834b1e4132c68adda774b37ef37ad9743ab3baea98b83d660311b4dfb5391214"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5/config.json": {
+    "bytes": 846,
+    "sha256": "937f186663dc995888b940a31034be9e4fb8a9c4412f73db09def8ec51956653"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5/result.json": {
+    "bytes": 9312,
+    "sha256": "612124542fbd7b807fdd097e3fd1821d63dbcb38306efd3fdf3e840a9106b37f"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "f32854d0a4c87d8aadbbbd4ff9f4eddd78d1d69d2a00d64db9e860d37e05d89b"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "5007b74237f78fe83d5b78c81f47324d71e71c575966affe5f714e5386c005de"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/server.json": {
+    "bytes": 5392,
+    "sha256": "d475a09775dbbfe320ac814f0c38651077a683f7a5982947631398d8df937a9e"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/server.log": {
+    "bytes": 1058,
+    "sha256": "1875dcf7c4703485f047561645741fa5fefc0b533f56e0a5276709f7cc6e69f8"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "01e3260705ddb6afdbfa25dba5b2d03ace49bfdfb261ec714b724afc0d56b8e6"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "9cb6688c94d87762841902b392fa4d6a66baad335c5d0febd12abcd7a7842fb7"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "d8315106450f80c447c4c57c4ebee6e82ca41939585a059dce2423d3c9533d06"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5.json": {
+    "bytes": 1283,
+    "sha256": "fa395d01913bb03ba1c45cece072681e967653eaa1dfd799cb8a62ed147d0060"
+  },
+  "evidence/h2-tun-allocator-control/xhttp-h2-tun-upload-8-candidate_mag1-5.log": {
+    "bytes": 6100,
+    "sha256": "1e4bf3545be8d3dfc7f735511398a1f34e2ad6ef186f56bf656056b6c1736143"
+  },
+  "evidence/h2-tun-memory-reproduction/control.json": {
+    "bytes": 6097,
+    "sha256": "6abb21b10738a7b4927f8de114cbcb9a7ffdf451bd78643cdc688abd21398dec"
+  },
+  "evidence/h2-tun-memory-reproduction/manifest.json": {
+    "bytes": 269532,
+    "sha256": "ab5609d58b4c910565bbda5b79f31134c1c2bf5f6ee04a98b0c0d4137e403faf"
+  },
+  "evidence/h2-tun-memory-reproduction/measurement-quality.json": {
+    "bytes": 333,
+    "sha256": "8f12cdfec92eb714a65e3b7ca9297995eeb145f0c4c7b768f8abf097afe94db5"
+  },
+  "evidence/h2-tun-memory-reproduction/source.patch": {
+    "bytes": 1,
+    "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+  },
+  "evidence/h2-tun-memory-reproduction/summary.json": {
+    "bytes": 13141,
+    "sha256": "0f76470c0eb4ffe6ab9eb93b3ad2cbe53521647d7164cacc83ac1f35e527e9a3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1/config.json": {
+    "bytes": 846,
+    "sha256": "f17f95b30e1ed6f30d4d455412dddd34909625b7068b131347044b570babeee2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1/result.json": {
+    "bytes": 4871,
+    "sha256": "b802f4147bb120b889d16b3f1f44888fe768e58d2129ea8c46977e7b9a637f7d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "baa2a42758d1098612291ab4ea88d68c3df11a9839cec052b8b38e6de1719556"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "af8874595a1c01505985b5c4f2946507f1fdf509e039f94fcd55315b3170d428"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/server.json": {
+    "bytes": 5402,
+    "sha256": "9d3efc94e998a6f73222694af0b07bc6d7f2b65bc94aae926f42b44c48c93fcf"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/server.log": {
+    "bytes": 492,
+    "sha256": "003fce21923c42a746cefa42fd6bded723e474570905e41f635958b64af34931"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "1d7581aac500182611f5c85a3dd77bb1a6c5b1ab81073eedd1415756cfa7b941"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "106ef021c752285ea07eae344d8788da5446a9e181fad84bda04137f722a1472"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "52be54273ad1771e57aa1702188b03afef88ca78a45c7cbe518b1e59af2b89ef"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1.json": {
+    "bytes": 1193,
+    "sha256": "a45e17a3c1d74369340cbc44171de1f39b99568124040466683dc6c4ad94abb9"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-1.log": {
+    "bytes": 3274,
+    "sha256": "94d3ace8187f82d60977ee4b0d4a2a4cc0eca7313b54c5897cc98a75673f3fd0"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2/config.json": {
+    "bytes": 846,
+    "sha256": "f1663035eccb088f2d5e74ad5b410e99e5021f3b75e8082ddbbcddd67fbbc73b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2/result.json": {
+    "bytes": 4740,
+    "sha256": "69368d9be48403df255e50a29c4682b05f31c4830f56d7672cad062ae7ab4e09"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "4621712f2c9824ef3b7b848fe04592760b0a8b5245bf0122d113f6f045833b70"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "1ede52eb4c328d6d492525c877010b42fb13093fa85525400729cd354cd68f06"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/server.json": {
+    "bytes": 5402,
+    "sha256": "7e49fcc724a7656ace3a4efe5b4e818b68ddfd24b4521e9d23955c26b0e10458"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/server.log": {
+    "bytes": 492,
+    "sha256": "ac643bbf14e435bc8e8cfaaa9c0d5402db0a7dd459f9b9e1e60d847d4a219deb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "2a0ed8747ed690b324fa07dbf747a6f034d838e8d20204f4e1f6c88628a64b02"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "2531dbe0b43b75df3b5b3f1bb6a037a254491ff6e044ebcc0629a54a75b78d62"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "82915e12ac179e3c265e5a76ded4cb0baba8b7042aac1dea16d80d3580f4a9d2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2.json": {
+    "bytes": 1193,
+    "sha256": "656638cc32fa71fdcfb53302cbccd572c3976b3275aff42b0dcffade432dffeb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-2.log": {
+    "bytes": 3193,
+    "sha256": "0a4aa25c3787b12804204523adfec2995ee5b92ea412a3973502a7120b26cbb6"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3/config.json": {
+    "bytes": 846,
+    "sha256": "909398fcf606f0e81cd52d23e2931bd7e8a7c6060de8a1e3e8523c1a4b349b5f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3/result.json": {
+    "bytes": 4735,
+    "sha256": "c45b01a627792843aeff3769e6aaf3675f106e8edec30615b8212d30c86ba22b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "75b346c05fce1b69558d360a5ad7bd2e2418d0bc869b018bd6b4f28c9d12758e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "7a040e27656386ffd05c35f97a146aab853f69b05fd9cd745d180fd54f37f0c1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/server.json": {
+    "bytes": 5402,
+    "sha256": "bc9a2a5b57788ce790c1ffc121c30d697ca34cf29074bf5093bca7e9b0e59a67"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/server.log": {
+    "bytes": 492,
+    "sha256": "312ab604165f6802f2ffdfa64f64c35eba77baee8e1d01c363c6b84516367b5e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "434e3a4cf69f165ef3e31d15346a98298128408cabb816c89df522fda5aec285"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "90cc881ca13d9d01e709d457cd097d0a148e558c45cab43456f5a073cda15ccd"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "a1afd3284deaca14fb92afd8fc3e3453583e04646f89fe765a9f9ed71a6c3886"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3.json": {
+    "bytes": 1193,
+    "sha256": "c42aef92bbfcc1bacfafe890467859580ed5bd7e60e44df53b082d8e56d454fc"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-3.log": {
+    "bytes": 3188,
+    "sha256": "bbd52c7da63b180a62eb12de36864ccb6433e867168c509e259229d84f866599"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4/config.json": {
+    "bytes": 846,
+    "sha256": "c00896d34df05b6d348c21877979baab80cd95d689a4414a5d05917caa4ee67b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4/result.json": {
+    "bytes": 4735,
+    "sha256": "eba330979955f08c88e2ac4887f3e636cab0c494afa93226ba411d306c5010f8"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "c757640ace6745cb9a7b04eba9f97344265cf9e915481be8c74f6211075b08a3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "5e62e8d2a80572f2cc9143562997916c63005c799a219923d07ab8efae5a2a44"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/server.json": {
+    "bytes": 5402,
+    "sha256": "f4b43f5e8ce1ab33da39df2e0ee8df61364e46fe711742f447d67f582adf7ef6"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/server.log": {
+    "bytes": 492,
+    "sha256": "5342f35664c56bf6c98b06291ee082988e366758eef35611f076184917b349d0"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "9ac42474e28427adb04993205022ab5a268ba8cc05b7016525cb05118cf7c888"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "26d8508854756914ad79d34f6bbd3498218b8aafd95ff5864581c4107780c926"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "ffdcc77a7c13eafbb2015bb6c2521d32a4bafbe6268cedfa91902d59678d9b50"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4.json": {
+    "bytes": 1193,
+    "sha256": "97a34c4d1103f7060917e5b37176c2702dd1a6f52f5fa481b0bee2c69c91f015"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-4.log": {
+    "bytes": 3188,
+    "sha256": "19efdc502914bba99ba6b6dedd204371567ce3f4a59a4372f83245300a50cbf3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5/config.json": {
+    "bytes": 846,
+    "sha256": "1599875d19b0e76834e1d1c88f524489f3ca13daec21811b7188bf065faac634"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5/result.json": {
+    "bytes": 4728,
+    "sha256": "9b99fdfc71d745ccefbf2c09cf60978098c4f82184b38b7b840f02a9a2848099"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "746cd321e530642bc47f9235c44f5eacf9ed9168ea1b0af1746f237266a857f9"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "8777973c920ef18f7ac6b2630baf78068229c4b12ef18fd28a111f2224dff4c1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/server.json": {
+    "bytes": 5402,
+    "sha256": "213417a70b00239ddda877c44285d9ff91710f3ca85a0f35eaaab8165bb042be"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/server.log": {
+    "bytes": 492,
+    "sha256": "aaea21d5b5c2ae8329ca9ff45ded5c153f7dbfe0eb529b6f9c69462302e266e5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "a227a2f41ff1f35acd2902bd4d8a9f6ccff581eec62c9586d6228c298a6a3fb7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "2d8f26147c7bf00da18f1d09a832c1026a1effbe8867e563010a821635b2ea4c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "dec1257c4410b6ec98a68968664cbd9137c113954bac694db81ca92a777d396c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5.json": {
+    "bytes": 1193,
+    "sha256": "f5fa42f740b9a155ec3dbf1df778491083161bcfef14a324bec8394dd7aa26c4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-baseline-5.log": {
+    "bytes": 3181,
+    "sha256": "b7fd89af640deeb2ef40cabe6717e18b60c6d76a83d9bf3a5b9b322dc9e72360"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1/config.json": {
+    "bytes": 846,
+    "sha256": "bdd7faa638fe397b646594c9fb3683c7a2897a1b8f5cf8fd0a8dcfea48421432"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1/result.json": {
+    "bytes": 4597,
+    "sha256": "e3696e9d0cc958d442ed04287cac52ce9006f8329290c9c1eb0946394d028611"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "79dbd73e169fedf708371eab629c88939c234a46e7d851db7d7f99c1276438ed"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "9505ba31908f9d6b9d27347a1b8ba7b438e7dde6d4ea8d80066c66d240ef04df"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "aedc8f00c73506f5f6e504904071965757837d17c960a19ad72337395a1285a8"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "78bdf12179e2158a2fac4ea47c7c513c7e658e332e853034dbc60fbe03194de0"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "c1dacf875e5c8eaa57a7438e1196364d2dce36b37eea94b638f4227beb93a549"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e4e334c17009f8f413c540d7188f01ba6dc2ea4b0debb052258c233ea469ae23"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "13d62cb5b04d7944ebf1a66170743526c6a8de216ecf8913de0c71ab280f326e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1.json": {
+    "bytes": 1202,
+    "sha256": "6d3171f2d7917f0327894077e75c73b601dd5d67000f4f1a0ce3ae852ea97d08"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-1.log": {
+    "bytes": 3100,
+    "sha256": "743007e6b70f975ac070ad7df7d77d7fb570f52caf0c7b7f82cbb97b9f3445fe"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2/config.json": {
+    "bytes": 846,
+    "sha256": "6697d4107fc16d389420bba126a7dd47a4396286a60386fb2cb7fb93273f2f6a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2/result.json": {
+    "bytes": 4605,
+    "sha256": "047934211c2ff6b55f82fcb0fb3d97012fd7a34c2fdfed57dbdbfd1e9e48d543"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "ed001d64e1832fcf41e652d5c333cf2b0b32b29722aefa31992680c943a7e26a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "359927a27daa9aa464d012b71de6fea06969abf60091ce18d2a211cb52d7225b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "e684993ad9b559496944550dccfcb1256f8dd149a5d27072e4ff7756c432840e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "229fd651998bd84cd4d38d5a1b0d8fec372a4645035f6d2f364844b226f4f198"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "8fa7578b26155928870cc9db61e63ed894d07c19b5cf14a24ab943f51c861aec"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "0d153986dc2fc1a020838e6268f9f99755cf1adc101499b30bfa15dbf8d12214"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "6339f6be9d21eb03ac1fc20cb79aca7d8d3e83a04bd0a8909b86e0381bbc162b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2.json": {
+    "bytes": 1202,
+    "sha256": "7abeb5c3c3ef7c7c928053900b3fa023f48a75b30ae5d959bb71633568804891"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-2.log": {
+    "bytes": 3108,
+    "sha256": "c42eb1a5cb2bc6766010790a57e95b14b445553c12355e83b33c12e5c48d169a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3/config.json": {
+    "bytes": 846,
+    "sha256": "f999aa408ac4b7a17eecc0031407116aa012706379f29f7f1d0227ac97b5e100"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3/result.json": {
+    "bytes": 4597,
+    "sha256": "33ea9a5012c55e6867a9586b8fb6e25dbfd83a3a7415e76885cc15618eb1592f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "46484f386043b407868c1028bdc8331f331c988aca5c3875f7e78c9704f398c7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "c860453ce3ddcf684bb2c7ed100e21ed5dad2ec88479ed806c0fa70bd7faa339"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "4324cfa5045b0309badd82e1035536403316e767df9af2d89cdc5114fa9aed4f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "770ec601ac049bab87bcf62098bc380816916999eedad88c5172f1e5a24c377e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "4260008ca78be9d999f8f8ebf28f5f14cd27a60bda9561638a506e41ac327f5e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "f33a1de7d944015f35666d82129df5ccb74d15a4459066e5db21694b9829f69e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "a251f8dec95141cb91eb7bfc5a4b57fccffff227f3524f3f6ad8d52885997e66"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3.json": {
+    "bytes": 1202,
+    "sha256": "530c730c989acb82fd95ef98198722f90fd7b6d669927e130a1de9ad53d39a75"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-3.log": {
+    "bytes": 3100,
+    "sha256": "d4efe593680509649f04550ee3ab09002038b41cefbddc55073ffd192643713a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4/config.json": {
+    "bytes": 846,
+    "sha256": "0d1467bbb2622badbaa807859112a63809f611a2e286afdf7af607e99185c8bb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4/result.json": {
+    "bytes": 4598,
+    "sha256": "002585fb014b8ec6f01aae4f26074f47913bc6791c05d754d331b78c589a441f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "f443fffb5a5db1c5a0ef52be8b0887d2362c247dcfa8f6cd42760df385398df3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "ab6b4e71cbca082eb2efe85491e61ada1eb8137cfb73081d56f85e06950ca3e6"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "3c3ccc21c81c704c72c95b2c5b3d22899f2416658039b82558ab50f56c85aa5e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "da4a2198f924e5b68ea43afc7f9bd467c0396668f91242d64c17ba9713c77a81"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "e5aee943e75ff2247f6467f3240bd3b9594b921825e5307299ef02f68b4af555"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "caca60de34fbfff743f9e0a682c5052cc4556fcfd4f26fbfc8fb8d8bc226ef8f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "98e0dca4af0e05172171a50917d7aa8a36214cb733e079929c940d3c725ae60a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4.json": {
+    "bytes": 1202,
+    "sha256": "3af53d58c3250e1fb2a2995faae64d3ba563677e779df915c7f5069ed8593784"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-4.log": {
+    "bytes": 3101,
+    "sha256": "f1355e361cdcea5f153cce8cd62156894386b7e265faf28f962c9ddf0e0de6eb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5/config.json": {
+    "bytes": 846,
+    "sha256": "a299a4cb278e551fa19c3ca920c202f9fa4bb8092027e302f957d99ff603c209"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5/result.json": {
+    "bytes": 4597,
+    "sha256": "9858f280c9b1ea218441b567adf4c3fd8b6c2cfabc2f2f440f12ceddcc6b2149"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "83615f7e2e6e16fadd50109bb7a90362661a77527bff9d4fa47e57344876e5f7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "fdfe9f119d49f4fd6310d791d6660d85f77a3ed2978fbf1e7da50c522874d522"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "08af68f8a93b2a1100f80c8fd9ad26e780771cc9c4149671018fcbce3835a631"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "5d3547ffe0518e2734359831b26c289ac7a63782d65764a37977c185651dc7aa"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "8efd2afb52a44842db98b858abc7bd795c9edb7b91fafcce8e44414932797214"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "0cc7d0ab65304a72ea0975af4279c6b7b8fc968e08c685d50c996cb27e83e141"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "e5999f9b28ba8aba9d5acecf5900339d3d05fd7999a10b252c0a726ed104f130"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5.json": {
+    "bytes": 1202,
+    "sha256": "c0f8a5b6c39857c9ecc0ff06f93b0bfb492b63845c0749f74c57a6268dc72bc7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-candidate-5.log": {
+    "bytes": 3100,
+    "sha256": "67e4062278a017e92cbf47809e84907a417c69867851268ba68c8da1ef48f6cb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1/config.json": {
+    "bytes": 846,
+    "sha256": "b1bf97d96b783ecd791c9d09173151b9d1c255ab8870fe83a87ee3e0ce39d1fd"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1/result.json": {
+    "bytes": 4752,
+    "sha256": "eb4357140f87b30950dd6de979ecf174c483e0f7edfd97cc2e88248cce7a119b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "2195f7f83bc2fc48b3913d90ba021a66cf713f1be8506853ac8353ba87f76669"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "448b563a3f8e6e0081a1a1341b852b16882c1ec0f666955de63dbbbe2c972b10"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "41a45c0ee5b8255b793d66949a60804e329d3a25cb3235b063c68285d1e6fbe4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "0568d42384d1ee0c5878e016fc959a30fe803ecb28265b6a3dac9726c07d8304"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "8899ae56cd25b4a73e29949252ebaa8633931fdce50c0738c2bcdd615ce88347"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "0b31071c4d49af308c23700590b1d9bdb2589ae41854923800ce18b3dcaa18a7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "94d3dc3de5b431c6c4c50281e5d2b67323df17806677412573d9454f3c1572f5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1.json": {
+    "bytes": 1212,
+    "sha256": "06ef42a696ab80830643398b8bb1852183da37bbebe80e3ed4ec869b106da82f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-1.log": {
+    "bytes": 3205,
+    "sha256": "01018f50d9001281a8284e32af16d817d6707a81f63c1b8adb4b49c1128ca6d5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2/config.json": {
+    "bytes": 846,
+    "sha256": "92d30f78d603c9b3499859668b8e70bb7e0d609add5f794b2e893bda318e3737"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2/result.json": {
+    "bytes": 4742,
+    "sha256": "5cb5e7ff9b282165f23ecb650897383af0e34c791a13484fc38bb6b480caf48d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "c928b512392d58d2e4c9b5c3cb0e5b21b98e6ff46e6680670b75ac47b3347938"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "2724176867bffe1ed5e2af491ad01099a189919cd3120e08bd60df21b6087c59"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "2434162ad69aaf85761f0465feb05f326aea7ff7055253e0c0b9e171d2ca24ee"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "2514e50377de8f796524f494e68dd36ae22f3b142c3c8e7c42be5b7f238f1cb1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "a2776d7a94310f4c4dd0b5f2c874dd9d06c908a0843729af2077efc74bd0ba38"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "d162227379421fde15c75236e10422e2f1ab3acdf0892fd17a2d961d2da74104"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "639e5783107c535d6ffed3757dec6cc081239d6aae434341d614d7f830e54ab3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2.json": {
+    "bytes": 1212,
+    "sha256": "5f6b5ff6ee8d7eabbd1c37af84c7e72aba84a93a1b5e8c671e65f0a02e416311"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-2.log": {
+    "bytes": 3195,
+    "sha256": "819260bd284b67a4a5de26cee85db5b22ce0c912e0c2219d990d9f8583a739ea"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3/config.json": {
+    "bytes": 846,
+    "sha256": "d82baf5ebed6655608b8ee8f2b70d45f8e058c640e72ad81b27dd4a6ede19ad6"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3/result.json": {
+    "bytes": 4752,
+    "sha256": "21c34cfb704c7cecb63af41330cad2a4a0700a22b9ed2cfbab3f86f21c6af9d2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "fe21744e2654ce4de5f7d2e0b8a0b9476d5a502961da36e94045c97517cc7b66"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "675b0cc518cb411c478559461df439fd7e57e2ee69f95e70304ce76a14dfc37d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "b22ccbbc367ce9470cb54e3c1ede001286fb2532edf804c5be62b098eee46e3c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "90623943061649afc1b46026fe55d289da575be9de0152fe69964d448a6eb6f4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "6eaff13fcf7928c5891ad34ef8aa4d005d5399864af24c497df3be12ebedcbe5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "c09bdaf805b45423b379820e6209df66724148016479be407b9681227a835755"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "5c6fec7611d55b03ead32dac8edac5f138858d43d1c63f56de1fdb4bfe3ba890"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3.json": {
+    "bytes": 1212,
+    "sha256": "60f9ded082a173863b0cd4ffd61e05e4a34592a729f9103458d095a970772929"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-3.log": {
+    "bytes": 3205,
+    "sha256": "afd55f208ab57896ba0178dfe6d7cfa7542b04bdf678d38201ed6d29d400b279"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4/config.json": {
+    "bytes": 846,
+    "sha256": "319d66e40e8c37ad54323180a483f69fac9413d5af247caf17f2d1e03d997326"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4/result.json": {
+    "bytes": 4748,
+    "sha256": "2a6ea463118119f1cf11e892b57dfcba836214779a49ead1d175ddec31c35af2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "2fd5f79ccc0d5bb83484126e84789e7f18315d0248372f6649bcc4eba530bf9b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "3f3286408237495e7991b4a0a7c05cb074078a935a3352fbf663fe862c85423d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "08cac3187467ba5e3d00e35f49fe9c6a98d5404f8d6c86ccad7d21b642de1563"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "cf4ae29a65bc45b7290132648fbb223d2b28ee704a29e33df7868ef826e3b6da"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "f004f216b7fa057783e26a7a920d74728946bf4f5e4047c2f8ef8b407f9bd4f4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "6f81ceeb4247c12c899e26d6f3a568edf3a640086a16a336afb23d80db811cc2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "36bd5a39dda57d3baf8b807fae4055568d547ea6a119d9c0196c7cba4f666b88"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4.json": {
+    "bytes": 1212,
+    "sha256": "c37c86759f4044e57f89cbf0fcd00f29213d916acd39ae3caecd810cc89605a3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-4.log": {
+    "bytes": 3201,
+    "sha256": "f05e5f0ac932f6ea2513b0d30c6669b2f0d5c342009d40e2701cd346d8fd1658"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5/config.json": {
+    "bytes": 846,
+    "sha256": "024301af0f6eb8110bf306d6aa6d68846940f065a053922128012aeb2d172180"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5/result.json": {
+    "bytes": 4745,
+    "sha256": "635cc8aa2456be2a899f81ce87380673fcea038bae1250fb1443406897a45906"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "54d989d069475b29f9b512ffd877fbc7defe42c19e163994df268e47f5f0c5f8"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "8f271e030f4e75ecbdfa8fa4cac4d1f14854f1b3182c1a1a58a83b7b78062e5b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/server.json": {
+    "bytes": 5412,
+    "sha256": "5362b6834dde8e1e96627942cf7ec9d0c027c02758ef1f42b41fe7c761762061"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/server.log": {
+    "bytes": 493,
+    "sha256": "f29f838ed5bd5a311853b5b1ca613125ff8d81f8314782fce56737135dc5c389"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "393c07df200a3206a0639f036be0f01349abf02fe3080397de104e090c382168"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "33ff5a5281b11e51b593ac9c32c6842895a9b54ba2ccf06234bc61482d4c825e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "6aebb35c32b43afb60a6b5532acadc3048a6ac66bc9321704735b786257d33e2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5.json": {
+    "bytes": 1212,
+    "sha256": "94ad224e1419ebb3ef58717cedb7b7152e64b9f7d2924d5444cc90fb24fd1a94"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-full-duplex-1-workers12-5.log": {
+    "bytes": 3198,
+    "sha256": "85ba8c440a97b7c8abd90acdbc76d1f96bf026865ebac949a1c1ad7f5982fa9d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1/config.json": {
+    "bytes": 846,
+    "sha256": "a50559d4c1c1b44a21dd7813c32deab5b51b52bc54d3cf133e5874286879ec17"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1/result.json": {
+    "bytes": 10214,
+    "sha256": "8f83a5d6ddbdec1b954e9323998fafb608e3a20a32d74635d43463409a50971c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "083f0389439f8afe5b1b61bab9c7a52b13b4215e9554858ff2be24dd53e4c63c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "0319873982ee08e5d657f035d9490a5829e7c826e0bfd56e547b8ec2900dd569"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/server.json": {
+    "bytes": 5352,
+    "sha256": "dbd5b46dde211f428c12f0b5c4841ba4f87335c06624bb4572b8aeb37cd4144a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/server.log": {
+    "bytes": 1054,
+    "sha256": "9e86077f6906ec36a10f49c5ffebcd909fc8ae7e74cbe6d05294a44ff6334a35"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "0b6d46f5575a6f648e5018a8b3e675d5727e2b11214d3c31eac3218d6706614f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "0099bf4cc99e9e1c8db7d3f50ec53c9ca5543607ef8c428d20167cd00e37463c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "4b90268613eb0908699f21ef942c76257447a8cc1212853e7eb9cb48bd0e21c7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1.json": {
+    "bytes": 1183,
+    "sha256": "53794dbf14b89f15501f8f1cde7b054689be25d22775b27be49c1acf20bd0893"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-1.log": {
+    "bytes": 6667,
+    "sha256": "7123bca16e9923385d72e6b0eedd422458751d75b05908ca2f8d842e00adbe00"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2/config.json": {
+    "bytes": 846,
+    "sha256": "4388078912b568f1e03b7e6806beb0437ba1bd9b5e5a6b796e9ad2117912b1f3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2/result.json": {
+    "bytes": 10224,
+    "sha256": "45aa702fa84cf60fdb2a665fa15f90bfe56c4dfebf6ac2adb37760b434f0f8dc"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "176852c2d861fb3be8d14b3d99a08112da3828f2225e605a047570c756175ddb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "7cafcdb4506179f816d056e22c7b95bd96e6ccfbafd4830f46e599dc41f9ae4e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/server.json": {
+    "bytes": 5352,
+    "sha256": "a5dfcc90a3c0ed8d3121837dfba6c394806f276b1d38f6770d605c400b13e8ef"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/server.log": {
+    "bytes": 1054,
+    "sha256": "994596235c85d7107177fadebbecd0d0578a7e6cf8086494b6c17da22aa1d849"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "421074c3aaaed62beeda7fa4fb71a68d0a84607d356e5240ba8db4c0855dbd7b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "de0751bd1f672894bef30832a5798d7231626315e49748502c79f2e0ddf93803"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "18734b739951e6ce2cd707bea886a02dd7be682ba64fca803c2623076e0c4d8d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2.json": {
+    "bytes": 1183,
+    "sha256": "c6ae48f63e98a8a5e13697fa5e263dd5670954f1f7dd06a902e93b623b89c9e5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-2.log": {
+    "bytes": 6677,
+    "sha256": "a5455f76ab1cacd3a9d51c4a6604a7f98569672c41bf7a0bbc4a36cb7a2b6a8d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3/config.json": {
+    "bytes": 846,
+    "sha256": "1e16894ec778211d670b747aefbb71794e5ad71cfdda941cb58eb66a7065b6d1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3/result.json": {
+    "bytes": 10216,
+    "sha256": "e49a30c54b9d677c358a89b65aa8df759e374d494eb39ebdefa3d82249b1c9fb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "95f4f1d0d1cb9f3109ef30851aeba7b3be81721e967be7131945f15b821d861c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "7f2181a3a07cac3717584d248411c5db3e5ea24e5fb0ce4928e8a6f243a561cf"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/server.json": {
+    "bytes": 5352,
+    "sha256": "7c204ce5dce349784764c2234b58f7574e9224a8428fddb91f29487a8e0db6cc"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/server.log": {
+    "bytes": 1054,
+    "sha256": "ff4fb8fc8dbb3d8ebd44da6de4548a0b264e38aeddb41ecb4b587587978bcfa1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "8aeb05892adfbc910a2efe3d286dde3c336f5a6874aa65f8ee0d308c369b6c71"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e59659a3ce917c4d3dee101b810fb3956accaea00789f1a33dfba382d28dd792"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "036563d8620e2d90ff3cd705ae21cdd8a7959f3cbb2a77456699f13be4f545e2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3.json": {
+    "bytes": 1183,
+    "sha256": "da400ebbbfbca894ebce9a5cf3ad23feab12035b1dabd4149561c0377b3287cc"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-3.log": {
+    "bytes": 6669,
+    "sha256": "2d4143884e6d1391cc490aa1868d749d43365d55afb29b830d5b47468ac1e5fe"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4/config.json": {
+    "bytes": 846,
+    "sha256": "c7fedea2266a9426a9b17ea525ce7d665d82f9335cf64182282a9feec8752fab"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4/result.json": {
+    "bytes": 10215,
+    "sha256": "846808fd3b5cae8ad40806c1e6123716aefde0c8391ddea45263e963012ab5c9"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "fefbec0e3465e4e9fc59d8235711fb93a8f9e87e67d7f9ffdbb3c5207a1e01a7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "0f8e6172e39c015f84858f1367faf5d40d936c7d048c13dc5c653044036f8687"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/server.json": {
+    "bytes": 5352,
+    "sha256": "fc484db490e0f3b8198e77b6b66a7b66ce5b622a1ad8dd8a257ac7fc35c6eae0"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/server.log": {
+    "bytes": 1054,
+    "sha256": "583f448e732dfea72e8fb7f0bfa6818291bf2e7e5ba3a227c5e1289e2de07396"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "417e94091f18b9d4afedff336f64da2edeb1b5856e05c70972255af1be2853d7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "72651cfc790a85ae8b3b3c9059b50f820e7dce0c8155c0d6db092d350515dea4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "4fc7a6eb073fb90d7ce128bb947300194deae3ba347d3244ecd055fa835537b4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4.json": {
+    "bytes": 1183,
+    "sha256": "0d0ab2c2fa995a69304f6e9d8837f06c575f60666c7583438476ca61cfb89101"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-4.log": {
+    "bytes": 6668,
+    "sha256": "e609d02a9a1290b60ee83da767680e73dcb53d78ed52a4956085006817b8d162"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5/config.json": {
+    "bytes": 846,
+    "sha256": "cba3f6d3aff4cfc5fb10747cc143587ac261a6eaacb7a78520df9ec3902e93a0"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5/result.json": {
+    "bytes": 10354,
+    "sha256": "60481ffe2dbc76b3a63b298e12870972bacfd4fd748f520db643599e0fa76b89"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "ef306bed54762139f29a3090f646ec81fb30d3e66f4f172eb934ffa2b53c3af1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "912fd086e011d9c34d6463e8bc7857dc487e009f623a1e836d2d1af166b96f8f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/server.json": {
+    "bytes": 5352,
+    "sha256": "ee9a5783ed2a57d6c46d89a578953e2b38b9de59e681c7c09d483c2796888ee8"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/server.log": {
+    "bytes": 1054,
+    "sha256": "29ccd2e7ca16645e310b036beed9ef21402f4fc81a3542a23b15a530b16aac14"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "2214df8ebcb4fba78343130891c03c8fea17bdc87f0cfc2e198c63f40b866c08"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e92cd7fac99579eeff5e22fae9198c2b508a2f34d3e7632dfc131e612c6b7518"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "729352fcdfd340f6e2b397f2c5160b240fa54924024ede6f9657e3f4e7fac2bf"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5.json": {
+    "bytes": 1183,
+    "sha256": "c5d276144ee825737df6ac974269819b15521944122e1b6a3dd5aaa0d7f88c7b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-baseline-5.log": {
+    "bytes": 6757,
+    "sha256": "8e1f20f03abec751349e6edb78368b50312f4300155c7cc1e205b9df87283d79"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1/config.json": {
+    "bytes": 846,
+    "sha256": "f93158f2ef6888d79d478f84db79397c23b764490f287429846551ffe3b67b51"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1/result.json": {
+    "bytes": 9380,
+    "sha256": "e4bafa0c20d3ead9dfce313abd546970e6c531904739fe87f0ef2be5876b2279"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "a6e3d69051a5e6d6ed37853b32511547f35f139c45f37be1ebc0667fdb79eadf"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "6902f37043ded55b5f8aa9cfc1cfe03622265aa1eec888a12a77c1b1f0827f7a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "89ee86e05724931d11d51447da52f6eaab9e0f95b9e11c7a6044c3e0414f3ba5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "bb770d1386c8e637c5e51f6198b12e11e161f00bbe79ca3d72d3a06ff52e98b2"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "7724bfe3cb2c14c5198b061e73349798e98f24ff9ddafd627b69d2ca6b5dad3f"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "85fe8c81603b159faaaf3bba5000c7bb2ebf384fd6a0da34a64b7df1db5db402"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "69328bb711af3cbf88e3975483744c80f39268804c6a747e91c07bcdebfab395"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1.json": {
+    "bytes": 1192,
+    "sha256": "cff1976187053f9267027b0b7c0757e61b8777d36d448b21eb5613fa7c8e58f0"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-1.log": {
+    "bytes": 6133,
+    "sha256": "6d7bf28b5ed4840be221221250be719afda5f97e490051e267c4b6401879a026"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2/config.json": {
+    "bytes": 846,
+    "sha256": "70a3b9d7264c78c8380ce6b3fcff35f5fa6af50fd60a88dbce2463a21755d695"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2/result.json": {
+    "bytes": 9244,
+    "sha256": "a2693c07f4a4c8b68d9061fcbb2073baf299b43e7699c39fadeb48b97a26d710"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "afaf16cececbfb47bb0ff865acd416d79a958d2958c89fbfa98394e189ffd156"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "aebaad134ea20475b56341f8fce3680dc3359c32e0f6d0a6fd9be65c9cc33926"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "5e75d2ded42c18add98467944ae11f3bf97a675f4ee95a027a4eac9275492609"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "bc816c9de92f610e1e6d8ead03bfb44fd3e04b27aa7f6704a2e43ea89f74b322"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "905beeeb5d4024503ba8cd62ce7602697ecf59b03981a9d69a7b6a73fd0a7b85"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "5f0e0dbbe534eb048fafd896977ebe068a36c3a38317a47a1fe0f43b134b0d07"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "007085bd49cd663df1a52a27fabcf16f0ec2a8441b59030265d914061830382e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2.json": {
+    "bytes": 1192,
+    "sha256": "dab1c51a1710296349c40888e1ede4b544c9f0863208a2d02303f88098249b72"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-2.log": {
+    "bytes": 6047,
+    "sha256": "a63c29032accb6ea67c4a829663e7884d6624e09f1fab2204f8ac9812142398e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3/config.json": {
+    "bytes": 846,
+    "sha256": "1a710fbca8f678b9599777f992e53317330100b3e03a272ae4427a9055902d89"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3/result.json": {
+    "bytes": 9381,
+    "sha256": "a90613bfaadd09dd98f6bd16d3a88cd4caf67375bcd45674366eeb034bb2d80b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "f996d367da7930becc6edb2e7e94d3579a3261cf37a98e71981d613856349aee"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "a58b3050848f86e74053c85a28bd14573fbaaeaf690e1c470ad07a9386e9e4dc"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "fae96663356ac151434c2c3f0c898bddee1ae668b3418e355c4e7d95a4aee70d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "c24674de27413660e301cf070b80ee59c55f4bbbb7672ef0b4eddefc066ff001"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "6e0c35930453bbec1a26df5f4f540aed95f6f01503181baad6270532e5fb5759"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "ae21787b9397ae4cbd97c219cf396b4a44d8cb50530e9011c30fde95448893b7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "ba0a2ffe0c7d13dabad510ba6d9babd10451a3a3ab5f35d61ac2667b4aee2933"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3.json": {
+    "bytes": 1192,
+    "sha256": "0d72a255919d5ee2136dea3cd0adf5fc802d18ada634547f879ea9fc049c8c0d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-3.log": {
+    "bytes": 6134,
+    "sha256": "28ee7a6dac748b23d0b711cbf121c8f5788c61f1463dd796aa1f35830e3fc9a8"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4/config.json": {
+    "bytes": 846,
+    "sha256": "bc6b082f880235d60916b6c7874390a3fda936c88f206b06cddc9cc5a5740922"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4/result.json": {
+    "bytes": 9115,
+    "sha256": "9a8be31638df53ddce8f3fa0079a6cd0ebc6a05b8d76f161e2ec017be1805100"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "4ca35fc056323f04249bb4a2cf3f931a661362f26bc4991138d6e031fca2608e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "aceefa617c7a08375614f375ed74a5e72465707f0fd29dbbc69db65d300a7972"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "991bb31f167a0bffb09d9d01901dba49d0e5d9a07d84856b8f5d92d6b097dd41"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "39923b1f3b765d6242dea8255c6022bf0f81d4620ac7523398881e809cc79ba5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "9d3da02cc4471034ea2daf25347728623d5a7c47c701a9da2e1cbf44c9d47f9c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "381052bac8ce944d625478bfdc99c5515d4c4325adcfdb74662ad31d4bd74b27"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "989076fdd71ed00b52c0daabd47ebb926fb8bac8e94be42af9dbfaafbb5a2fc1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4.json": {
+    "bytes": 1192,
+    "sha256": "2c3784fc992f87ec549c70969ba2146e80cedd4859bc478fabc9c1866bf95e54"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-4.log": {
+    "bytes": 5968,
+    "sha256": "f64715d215ab8936282eee626225718ff22da19518b976bad60985c7efd39cda"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5/config.json": {
+    "bytes": 846,
+    "sha256": "b7b102cdcbc22c8eff51c88bff243bc2de7ea1e2c101823d909c10e98be37b41"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5/result.json": {
+    "bytes": 9244,
+    "sha256": "22a9ba5366a75b15841f7a7f12762b8015f6b568d6c90c278c39c3fa2013f60a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "a700cc44e050aa6a05c7e9e59ea7ef58bc1d6e6e6d30bdea970e10d2d41f6ffa"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "e7a4587f8aca042cd85d96546e478f39ddbc427c7ca75a2300847cea5b335f9b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "c8f5ce81a2f9ca302a983e1efa007f8068f90234d25ed306504f4653a1a60246"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "2cc303d75baf9da172e0ac2bff6ecdc80ff7d1c0b4f3d367db43a3b0b2a96624"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "93e6fafc43d386b66403dd3373698274be64f879346afa7ff9f3895fe002c71e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "ba75701552f094cd1de406168a682c8fa1813a3738c8b0209e5b4c9ec4ce69c3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "6aa69d483a846c07b57c569aef7f15f3d22029915964d631fe2c3c1ac9712849"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5.json": {
+    "bytes": 1192,
+    "sha256": "07ca383aa9a499d249bcac95c27f6ffaa2c0e86abc41d38d7d56e9b21bee20f9"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-candidate-5.log": {
+    "bytes": 6047,
+    "sha256": "929e86f79563cc545865cafa6238720d0e216193c89ccb55d0d7da6569052e92"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1/config.json": {
+    "bytes": 846,
+    "sha256": "76dd52e3d5d38eab23475128b4b71faa5bd87638954abfdc5bdd96ba62121275"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1/result.json": {
+    "bytes": 9682,
+    "sha256": "f15bfd221fa7c63730f31a4ed3e790b8a584a6b59afe311ff9e4476b313e847e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "c9fecfe7252166384db1fda1e0bcd50cfee1cec3912b01bb6721f921341f30a1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "7dc7aa311f0e34741b39fca4d6bf9bd29860cca3f521ff519dffb21a50d3899c"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "ea7c30a8857ebaabee4da9172a3904159593259fde6d920d4aebc0103723ba6a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "740fae0ecb9622d98598f4d1059665e6b3b71633589bacf367604bd72d4a9b84"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "7be4772b29a7952527565bdb4fed3aa3a6b7782fc1fb117127caae1537de56fb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "6bbf2fd42c55d672ab7705c74ae6250f42ed9277ee9579b8921e182ab4a75a58"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "1bcca7252280fa29eca2d883a4e43df392b1770f46fe92e45c69bec57a1289bd"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1.json": {
+    "bytes": 1202,
+    "sha256": "4cca1ffbb51f797f4067167f0bda2b444efb67912098f5841fac146aef69cb12"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-1.log": {
+    "bytes": 6335,
+    "sha256": "3847fb3689c4566cc7ec489b1fa32f84c9fa26b32fc254cf9a4412fa0590aaea"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2/config.json": {
+    "bytes": 846,
+    "sha256": "f3a7dc2b56a912eb8cfd317ac78a4d7d27ee22685fae4263a8a7cbddb9b6f416"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2/result.json": {
+    "bytes": 9964,
+    "sha256": "e7d18edc812272574458586d9f2f9d9856c6586398ec289dd61199bd4534a789"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "046f1b1a9ceed6f825e837277ad7019f2d7840fe07342d424ac2890be1484b62"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "9bda187506e21e75ab0954bd2238f798694debd453670892281edd9b6ba8b928"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "39a98570789d8b37feb3ba8397eec752f0fd4519ec5d0af35c5aabc08c9049a3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "5c31c15cecce1dfb1f8aec17c2819b2d2fcc1841798e51e5524d1a6f659865d1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "1661681f923a8f1f000cac39f4a38f094d062f7146561239537b066ccdbb66e5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "9f8e0905e9a82ec53d47e12d97d9ffea0bbddcaf2fa41aeec88bf9280a05d990"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "721e982d8cbad933e2a0040b9f871f338902ccca6a535c7e5881ec0262f335c7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2.json": {
+    "bytes": 1202,
+    "sha256": "750858da4e4ff350ec9f67485a939809c7af854457dedad15a23a89f61262d50"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-2.log": {
+    "bytes": 6517,
+    "sha256": "a9296f2a38175653908fea0a1446900c4042d155d29a8c4b1da6912467523620"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3/config.json": {
+    "bytes": 846,
+    "sha256": "7189a56b00103cd877b15498ee6c20936d9dbbe83e453a1576c857ab72d849e5"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3/result.json": {
+    "bytes": 9956,
+    "sha256": "abe20a7b46349c906e4fa92ff2d3d6052222a9962bf090d55bf5ba3285afc5a7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "6a34f41913ea71bc1978531d097f849197ed223d863c1c120e922d6cdcc24d45"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "e839f708f955eb8718ad4b21f49c5e36c99b435e4b300e3369cec53667fab8bb"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "c4eb98028b457ae2ee91b7930fc9f80fe4bdf3dcb59e8a26b7a6189fd09c0358"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "2aecc62c23de8496477af738feeada861ae60163e17799f98da9fc5a7a70fc6d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "0b1a991091a9256c2979962c300571988286b7786e5b899d1e2fb4de58b4c91a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "aec1df06cb686809e3905318e1da38ad4a0171f918ca63ca3d13bf9200a9b75e"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "9a93c34f281fb0b80498ec700d066a16d7cc192217fc15918bb1d27d319f54c6"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3.json": {
+    "bytes": 1202,
+    "sha256": "8d24b959bb7ef7c0100706bd275d106fdd404ce7b74c0d1a75dcd260f927ef94"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-3.log": {
+    "bytes": 6509,
+    "sha256": "c0e9800cbfb7bb17b62040f282c9485b5cc97138b757c3dc728cfe97cc731d65"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4/config.json": {
+    "bytes": 846,
+    "sha256": "e269fdd2a665e108c8447bc0a54fb26b7f9173ea4853b059e6f8d13ea2e4feb7"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4/result.json": {
+    "bytes": 9820,
+    "sha256": "8fd9a8e76e62b68262a1bc7077f0ee9768a320bfd1d125f757d57dcca99a49e3"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "6e3338ab17bc0402280c5192b22f27bfc3cbf5770d91994169056b23d2f53317"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "4b7335480118ab85efbb81e84990615d5f77ad852cecaf55254a4ac7683ddefa"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "3bff1a812a7a2325f347e63836c8b46011c873b4939ba0e065b4f5e92aa5a791"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "8bfe01ccb5389bea2632b3300290d6af830778893f6d28d243750abe55aec4ad"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "a6cf88637506d86ab4bb85a1092e50b8958fd78c0cb99bd89f51d8df81f66af1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "43083441fa764088645cb4ca196e37da92b27165efc6f1d0d258c73736a41c0d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "6e67cbf94641ed6f99e52de6f4a5e0ded649059f3a27d03eec62319ea686e095"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4.json": {
+    "bytes": 1202,
+    "sha256": "0584e9210d742ec567c440a76355cd03ace3b2ea52f04059ca4df0958169142a"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-4.log": {
+    "bytes": 6423,
+    "sha256": "bd3e232aba8673f35625ed3b249911acbf3244a7b924caf23dba5c607602badc"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5/config.json": {
+    "bytes": 846,
+    "sha256": "323bfcb5b331653942ec91ddb1b3af28bd10f6cd068dd960166a66db60ab11a4"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5/result.json": {
+    "bytes": 9818,
+    "sha256": "27008508fe19123bb9c959dee78796429ca128d1c3de05a94de5d47dda9d6031"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "cadfb73009eb69ae446f9b3f61c0c682b560dd506d0e199339b3cd460eb5d7d1"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "542e65aae173f7afe36ed324e0a4033f56065b8b67dcab87cca92e1cabfdd096"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/server.json": {
+    "bytes": 5362,
+    "sha256": "e1194e63eb3bd7194cc5770a12e28b60d061d3b3b0f05e43def96a3454b49881"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/server.log": {
+    "bytes": 1055,
+    "sha256": "702fa01977995d9fac69ab2dfea75d89f049bcb875feac6a4f932489f8282b12"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "787c93680474e7ef7938e07d0f87a0c6369da522f8641a25a9cf40f178b5d8f8"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "cdb07519a1e566870e0f0c379e3bd0c110b0cb622bf1b5edd7d26dfadd6bc55b"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5-server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "31717122b04297cf423aa4ae0aaeb16700db40e7d6af850139db3086f797af12"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5.json": {
+    "bytes": 1202,
+    "sha256": "ba52d1f107f7bb64d69f031cf2bddfc2c4296cb47fda7b3933ed2b42ea9f895d"
+  },
+  "evidence/h2-tun-memory-reproduction/xhttp-h2-tun-upload-8-workers12-5.log": {
+    "bytes": 6421,
+    "sha256": "d7d75c0489fd950e90fc3286a0e6a1f7d30b22d462fa9daba88e496dd929ef8f"
+  },
+  "input-verification.json": {
+    "bytes": 434,
+    "sha256": "413878a51d3f3230046efa0d12fc8c4164eef8f0bed3fe6209ebb6ac35e5cccc"
+  },
+  "main-guard.json": {
+    "bytes": 83798,
+    "sha256": "91e67bcdb405657c1f6c367b128e819425454bdf4998194baf1555c13641aaf5"
+  },
+  "memory-profiles-driver.log": {
+    "bytes": 389,
+    "sha256": "28cefafd99b64c46e93a9c9ef8162c0fda33cffd462eeaa8568e62e53180fdfe"
+  },
+  "memory-profiles.json": {
+    "bytes": 51046,
+    "sha256": "cdd45d185d6886e4deae4a102d707813163537accc2f95ed9959d7f5f4ee4c82"
+  },
+  "memory-relief-driver.log": {
+    "bytes": 214,
+    "sha256": "ed9506a4aaea16ee7b0da1c94e95ea2196533d440032f6035ca68d7f6bd6f39a"
+  },
+  "memory-relief-profiles.json": {
+    "bytes": 31576,
+    "sha256": "4ed2c7973ab07553b67b85cc295a7e249d2fb1e1740c18748038891215b228cb"
+  },
+  "plan.json": {
+    "bytes": 6157,
+    "sha256": "07d94ff7b9a196bd55dba258d1a7c77ccb9232fca14a9e15a9a4d98a601552b9"
+  },
+  "profiles/duplex1-baseline/active-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "67e3c385b35085d43effb147f9c442a555d6fedc3da61c7993d8205a82e6b434"
+  },
+  "profiles/duplex1-baseline/after-heap.txt": {
+    "bytes": 6392,
+    "sha256": "2e978c534de65275f06cab489a057d3b49ded00b56a41f3c12e63b15517ef0ce"
+  },
+  "profiles/duplex1-baseline/after-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "98cadda9a7bb4562b165897c96535d68cd4737e760aeb864a2466ba78b893ec4"
+  },
+  "profiles/duplex1-baseline/before-heap.txt": {
+    "bytes": 5499,
+    "sha256": "77294eff316f2a63fa489b71affeab4800e2b88d482900dbf0dacee1587dbe89"
+  },
+  "profiles/duplex1-baseline/before-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "46260aefd967c2615082470a629d38f6e5fe1f6c520d5029e30af6339683beaf"
+  },
+  "profiles/duplex1-baseline/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "c496157c498f68f98bd8791f7d705839edd7293f58c9cfd3c8873698b0b8fc6e"
+  },
+  "profiles/duplex1-baseline/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "32bbad0b4b37df8a9bd8b7636fe1aa22a21056729ddef600a0aa54699fff4327"
+  },
+  "profiles/duplex1-baseline/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "c1991781dc7c8a07d137d5104f80cf8dc37cf6e7eacc8af8a04d84835a282667"
+  },
+  "profiles/duplex1-baseline/diagnostic.json": {
+    "bytes": 5975,
+    "sha256": "109c6f7498806c8b56f0b90dd01c76383ea1fd280c84d3a6ee4f9fac959ec715"
+  },
+  "profiles/duplex1-baseline/driver.log": {
+    "bytes": 13862,
+    "sha256": "414489e5ed6e5923d1ec1b99aae2dcf23b31dc4a0381da31b1a02eb45d1986aa"
+  },
+  "profiles/duplex1-baseline/idle10-heap.txt": {
+    "bytes": 6392,
+    "sha256": "3fcf381fe28d8d922df8d2a4271d5a412773166408f939356c4e369c8e95dd43"
+  },
+  "profiles/duplex1-baseline/idle10-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "b1da7de25c0eb659849de9ccf29ccf00578087801a7c999d7b2d9ccbc4d42c20"
+  },
+  "profiles/duplex1-baseline/request.json": {
+    "bytes": 1169,
+    "sha256": "b6d743bf1286d453c20701fdf8e069cd96e0c7cbc6be4ec6e14705b99b0aac60"
+  },
+  "profiles/duplex1-baseline/run/config.json": {
+    "bytes": 846,
+    "sha256": "160c5db44d7ad1b148ef380b6992333b53d19cce2c4e231516f73506503312d1"
+  },
+  "profiles/duplex1-baseline/run/result.json": {
+    "bytes": 21563,
+    "sha256": "6758ee2e4571e91bc5992172f1399550009c7010f261f01941ea67aaaaa606bf"
+  },
+  "profiles/duplex1-baseline/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "9944e4acb3be3aa1196968ddc6a0e65db7bb72c712fa1813e58e809b1ad63250"
+  },
+  "profiles/duplex1-baseline/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "f5152f9681f990cb1149294037c0ae41673e68cdb941cb49b257f9dbc9fbd810"
+  },
+  "profiles/duplex1-baseline/server/fixture/server.json": {
+    "bytes": 4922,
+    "sha256": "c3e90782f84222b6707b20a4480e1ef4aec2780fe414f048ca1de6dbae10c645"
+  },
+  "profiles/duplex1-baseline/server/fixture/server.log": {
+    "bytes": 444,
+    "sha256": "fe9d3b754444bb50bf926860ca6dc4231f17e21cc23f2e4e479b824ee934e1ea"
+  },
+  "profiles/duplex1-baseline/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "372ffeec2631836811dca408198300b1eba6030c69b2eb00d6d6cc50a24986bb"
+  },
+  "profiles/duplex1-baseline/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "921785a007d5120e15f8c8dd1efad4d2efe35be0596add51e5ce21dac03f9525"
+  },
+  "profiles/duplex1-baseline/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "0c105c26e803215a1b3faa471c52adcaa0b1b51ba426351087fba342db485c6a"
+  },
+  "profiles/duplex1-baseline2/active-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "1cfda4989145bd3968edd616f7666c32ac2482d7bba48e9bb83b0684c65d259a"
+  },
+  "profiles/duplex1-baseline2/after-heap.txt": {
+    "bytes": 6390,
+    "sha256": "5456f0b8157b25836df2d048aced103b0e4896cbfdaf5328d5bcd67d6fac969e"
+  },
+  "profiles/duplex1-baseline2/after-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "3fed433b667b7d97eaf507930a9dc1c60b001b5ac855575f7641d84008b0e27f"
+  },
+  "profiles/duplex1-baseline2/before-heap.txt": {
+    "bytes": 5495,
+    "sha256": "3cc2e08e82d0bc5819f1bc2788528e2ba5edc26f0da4691fdb211f40a6f36320"
+  },
+  "profiles/duplex1-baseline2/before-vmmap.txt": {
+    "bytes": 4515,
+    "sha256": "10e2f4eb39ce3d5d04137737ba981e00037de3993b61abb7843cdd21deb5e109"
+  },
+  "profiles/duplex1-baseline2/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline2/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "35c30f989f5c0e735921b9f5c23b9b45a556a03b9b1a2a00c2332d291a1e569b"
+  },
+  "profiles/duplex1-baseline2/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline2/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "b3696e75f976348f9cd27de300353a73783f0a6bf854aadb7b8a53b4cfc57024"
+  },
+  "profiles/duplex1-baseline2/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline2/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "dea53575777545b7e9a38766847bf61f9862eef2a040b5b0b2647a2d8ee3c6cd"
+  },
+  "profiles/duplex1-baseline2/diagnostic.json": {
+    "bytes": 5985,
+    "sha256": "a8559a5e2a8d8ded87f529c32f62dae0386e22c7dad02148518ebb5e04eea6d6"
+  },
+  "profiles/duplex1-baseline2/driver.log": {
+    "bytes": 13329,
+    "sha256": "930b71a3809f7004cb2146967a7dbab8554a615a4d97fc75ff08272dab471b0e"
+  },
+  "profiles/duplex1-baseline2/idle10-heap.txt": {
+    "bytes": 6390,
+    "sha256": "1df7cf72fb59a56cc9604651ac8bd71fc1aacdc144f4df523af2e4c31069d4ed"
+  },
+  "profiles/duplex1-baseline2/idle10-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "9fd176cc13640e2b3f6df3496c9c4dff5896a1d2fa394e8d1853a48244632a74"
+  },
+  "profiles/duplex1-baseline2/request.json": {
+    "bytes": 1170,
+    "sha256": "1a50f857cd16db029b58d181c55a0f9f92779b1cb7910e7a240c9a23af8e5335"
+  },
+  "profiles/duplex1-baseline2/run/config.json": {
+    "bytes": 846,
+    "sha256": "d2118f6e297af5d83189bcfa12fa94655976746566184955f70eb211ea100a04"
+  },
+  "profiles/duplex1-baseline2/run/result.json": {
+    "bytes": 20730,
+    "sha256": "9d5ed3f78214ba8b7fa1198e389738620e4313f95c36d697d4c9ed3c1cc122db"
+  },
+  "profiles/duplex1-baseline2/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline2/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-baseline2/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "efcb47574e0fe6793d4a1c8f4d3bc5e5911f8ef24df0a0d8dc0585d9b109e41f"
+  },
+  "profiles/duplex1-baseline2/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "cf4557fc811527f3771268b635062013ab58975f3b97017427cea2d09cffe1cd"
+  },
+  "profiles/duplex1-baseline2/server/fixture/server.json": {
+    "bytes": 4932,
+    "sha256": "496a68998daeb3164d869f88f462ec2a50588cd78fd864129638f90d066dd966"
+  },
+  "profiles/duplex1-baseline2/server/fixture/server.log": {
+    "bytes": 445,
+    "sha256": "d4ddba18c641120b7c5d46910d45a7e08901e79819cc0f64a5c73a6214d7cb70"
+  },
+  "profiles/duplex1-baseline2/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "6028ef48101cd3057096b918ff703ace2ef3735f88bb07f54f536c4f880133b4"
+  },
+  "profiles/duplex1-baseline2/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e6886482bcf6012f3c8fd14dc2ea1bf7d8b6cc1c0eeff4a7644f37b57d8c90e4"
+  },
+  "profiles/duplex1-baseline2/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "23375255e3f58f415dfe51b3314db8e8de70a47e88bb919148188758d88fe704"
+  },
+  "profiles/duplex1-candidate/active-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "22b3305f39a6c98e02f882ddff835bddb647bc4cb2dc890537bd8fb22e8b330f"
+  },
+  "profiles/duplex1-candidate/after-heap.txt": {
+    "bytes": 6490,
+    "sha256": "3c117b3ba7119d7ff7cb48d3a6722f64250b0b0c1abe8963b3a9a1a7172c5af9"
+  },
+  "profiles/duplex1-candidate/after-vmmap.txt": {
+    "bytes": 4662,
+    "sha256": "0abc0b1ca46251ea37501dd277d66861dc9ff69aacec736b8ee539353dd50e82"
+  },
+  "profiles/duplex1-candidate/before-heap.txt": {
+    "bytes": 5595,
+    "sha256": "5a12251e4721a2d0636a8ece50c553db387a6c7f27d0e0834d9a4e04146eb472"
+  },
+  "profiles/duplex1-candidate/before-vmmap.txt": {
+    "bytes": 4515,
+    "sha256": "0c91702e478908e552a5623190108f905d2c35da3098da65c4da0004e5480f2e"
+  },
+  "profiles/duplex1-candidate/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-candidate/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "5bb99edf9d6f5d1806e0b479ad1deafa966b05b44c16767cc0349f2cd246da59"
+  },
+  "profiles/duplex1-candidate/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-candidate/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "11baaf47743cf5926f88a316c6df04ffb4abd7189f29321fc285f1307c1cb723"
+  },
+  "profiles/duplex1-candidate/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-candidate/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "6b61e532722183bd8916b0abb1bb75a805ab3ae6efdc4ac890f4d6b68e18d46a"
+  },
+  "profiles/duplex1-candidate/diagnostic.json": {
+    "bytes": 6060,
+    "sha256": "c25355fe46dbb3ebe53617778ad8b2b01d7c5786534de77196af3dd9360e983d"
+  },
+  "profiles/duplex1-candidate/driver.log": {
+    "bytes": 13513,
+    "sha256": "3dae54b70fb203c8b2503d7f9ac2ffcff292946fd2660fe1d6027bbede9c779b"
+  },
+  "profiles/duplex1-candidate/idle10-heap.txt": {
+    "bytes": 6490,
+    "sha256": "123c718dad640ded1a7a4a0cf44b4c08213b8c8a873d28cf5007b9b8e1f727c4"
+  },
+  "profiles/duplex1-candidate/idle10-vmmap.txt": {
+    "bytes": 4661,
+    "sha256": "b4534f2263378abf9336ee3a24d5952f971647b06a0abc40318ddf96a95eb196"
+  },
+  "profiles/duplex1-candidate/request.json": {
+    "bytes": 1178,
+    "sha256": "26947cb0b1f39d83944306afd6020136350faf3680fd6c17cb1c33ae1c11e7d9"
+  },
+  "profiles/duplex1-candidate/run/config.json": {
+    "bytes": 846,
+    "sha256": "f8359fcc025ece30ef570af4239b4fc6332a00c91f107a9151176dcd1f6bcf4e"
+  },
+  "profiles/duplex1-candidate/run/result.json": {
+    "bytes": 21014,
+    "sha256": "32ae25bd8a45e031c72c97a65019e2b182cf85a7c88cbbfe4acb5ba6c99e74c2"
+  },
+  "profiles/duplex1-candidate/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-candidate/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-candidate/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "8548a31f473f59f9dcc8efefd1ecc0529912f6aba0714bdc1f1c20ddc49f5e29"
+  },
+  "profiles/duplex1-candidate/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "bbb0783bfa9807106b3fc499d18ea243ca782039852134d009d414f01bd0d4f7"
+  },
+  "profiles/duplex1-candidate/server/fixture/server.json": {
+    "bytes": 4932,
+    "sha256": "03b38fccbada67ecee9f3f81687c53c37fcf43b6088a50adeed04d760a34c4ea"
+  },
+  "profiles/duplex1-candidate/server/fixture/server.log": {
+    "bytes": 445,
+    "sha256": "84703d84568444b1b1045d40dbbfcd6a81cf221066bb662d538d5bb4cb6727ba"
+  },
+  "profiles/duplex1-candidate/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "a828250d177a21972faf5136c8c92736aaa0848572dd75b1812dd315c5eb956c"
+  },
+  "profiles/duplex1-candidate/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "1beccc681034624efe7eee79e66664003b0de15533f75adc6d3fa51f09724084"
+  },
+  "profiles/duplex1-candidate/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "6fed5166095aee1ae32d073371c934fb370df1c7a914ec01e25d6b5d2d33ae81"
+  },
+  "profiles/duplex1-workers12/active-vmmap.txt": {
+    "bytes": 4658,
+    "sha256": "d1aad63c5b24dc1e62c6adbffe1bec3a92469fbe3a6471a464aedf65900674e0"
+  },
+  "profiles/duplex1-workers12/after-heap.txt": {
+    "bytes": 6493,
+    "sha256": "d0c3198549b99181dbbb00349d53c5f1e20588716e6fc41a01133e359b95b607"
+  },
+  "profiles/duplex1-workers12/after-vmmap.txt": {
+    "bytes": 4658,
+    "sha256": "ec2134f21a4f5c52e75bfda91835962fddaeac95b17ce2e876954ffe46eceefe"
+  },
+  "profiles/duplex1-workers12/before-heap.txt": {
+    "bytes": 5599,
+    "sha256": "051b7b7932e36bcd191288dbe794fdaa0175805e349a86c83d6c122b9cbbac76"
+  },
+  "profiles/duplex1-workers12/before-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "addafb55b7f16a1f8a9b9a87fdb1cc73d00561253893194d572a7de1a51f492a"
+  },
+  "profiles/duplex1-workers12/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-workers12/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "7a581e5c68a3387a45f513748d6868efa037aec34f693ff9cf04d439a448c3f7"
+  },
+  "profiles/duplex1-workers12/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-workers12/checkpoints/before.json": {
+    "bytes": 59,
+    "sha256": "dfc7b315dca911d41c49e19e69c31276ed7da4054269f585a592e2e500510682"
+  },
+  "profiles/duplex1-workers12/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-workers12/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "1d5b88e8f8776adc1e597f96ced1c40cdae290a79e9e892f8a213b2ed369667d"
+  },
+  "profiles/duplex1-workers12/diagnostic.json": {
+    "bytes": 6146,
+    "sha256": "89bee59d951c7f8498badae0fe72734fb0e8eda1cd617c1df6bd6e9f4956b95c"
+  },
+  "profiles/duplex1-workers12/driver.log": {
+    "bytes": 13354,
+    "sha256": "21ad1450a7d5860361966a3987ee319e7c0c911f04a601050873e8944bfc7aa5"
+  },
+  "profiles/duplex1-workers12/idle10-heap.txt": {
+    "bytes": 6493,
+    "sha256": "17c6cdb8e4d7f1096622c6a57c1ff4fb788aef86243cb144c06679342ff0c35c"
+  },
+  "profiles/duplex1-workers12/idle10-vmmap.txt": {
+    "bytes": 4658,
+    "sha256": "f6d1707e02ab89705e64426a6fc9b67918b7615d90ada812f6637063d728138f"
+  },
+  "profiles/duplex1-workers12/request.json": {
+    "bytes": 1188,
+    "sha256": "38e38fe2a82d92d1f93b2756506dabd2381a60819847c3ad41ddde94a256473d"
+  },
+  "profiles/duplex1-workers12/run/config.json": {
+    "bytes": 846,
+    "sha256": "2acd0d98559a8f809eb7585600fd53e6068bb9f42c0588131bc63693f56fbd76"
+  },
+  "profiles/duplex1-workers12/run/result.json": {
+    "bytes": 20755,
+    "sha256": "778758425a68120ddd7079409d03638e62dc41cc4a21b959fa416bb088d57a82"
+  },
+  "profiles/duplex1-workers12/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-workers12/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/duplex1-workers12/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "462b00edf01c167c885c6081db345089431d64efecbb292652ab45fa0ae2b8c3"
+  },
+  "profiles/duplex1-workers12/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "b940682155c4ffb209b04076013f0eec085903e2319be9cd507b0bc71d39c926"
+  },
+  "profiles/duplex1-workers12/server/fixture/server.json": {
+    "bytes": 4932,
+    "sha256": "c52033d02020ea13b2c7af5a2236314ab4518fc9a083182bb65a0fa42be9a35e"
+  },
+  "profiles/duplex1-workers12/server/fixture/server.log": {
+    "bytes": 445,
+    "sha256": "ab5c6bba89ab0e09b416007e6a087c5e20172dcd98bb339558b5f0570b151d9d"
+  },
+  "profiles/duplex1-workers12/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "b6d948424c0631d94bc9d1462f78911330fd764f4e11107ebb9ecddf7ff216e5"
+  },
+  "profiles/duplex1-workers12/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "4099d93674bc4f630bbcc33103423b098d622fa07007f17908429adad2bc9dd3"
+  },
+  "profiles/duplex1-workers12/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "5d573acf88612577faa5e0dc8e8f1a97c7587576ac836871bc7b3128c4771ba8"
+  },
+  "profiles/upload8-baseline/active-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "03a714e0ba8a23ca81c786cb563ca7a97bcc0985a151c14e7ae90483054f0bfc"
+  },
+  "profiles/upload8-baseline/after-heap.txt": {
+    "bytes": 6497,
+    "sha256": "32a6168049b578e76dab02f5d3c727aa00b79a3965ba2c53095a93018e835fa4"
+  },
+  "profiles/upload8-baseline/after-vmmap.txt": {
+    "bytes": 4658,
+    "sha256": "cc0d1707306867316a483dea64d96b370015371a17bb19b1959730669702b530"
+  },
+  "profiles/upload8-baseline/before-heap.txt": {
+    "bytes": 5499,
+    "sha256": "9f40d8e8d0606e115f10496fb0e30ce0abd6bdcbe5ee854265b3a945e9bc6355"
+  },
+  "profiles/upload8-baseline/before-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "6d189b74e72b34a67f14c7cd9e33a738f3043f1a5096bab2a8b233aa0b2c6663"
+  },
+  "profiles/upload8-baseline/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "cdabfb8039c701f33cccc8cba25603d95c7a470c335837e3ab8e9a907a3c58ad"
+  },
+  "profiles/upload8-baseline/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline/checkpoints/before.json": {
+    "bytes": 59,
+    "sha256": "84c7cf9044b1f2a3e4e7e84a8d9b5ff85cf411e56da52e4e84b231ec47a16562"
+  },
+  "profiles/upload8-baseline/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline/checkpoints/idle.json": {
+    "bytes": 57,
+    "sha256": "e650e554d8631183f2930e9528883a5141e83cb90bc1f9da5741c67d1ef9b004"
+  },
+  "profiles/upload8-baseline/diagnostic.json": {
+    "bytes": 5968,
+    "sha256": "75a27569195ce28a685f91c2ca71687081be6b979605c77cc8e61f17113b5903"
+  },
+  "profiles/upload8-baseline/driver.log": {
+    "bytes": 17240,
+    "sha256": "3beff6e78b898c0dbd25fc00e8317128104bdfc68d7b3c423633e51af2d088ff"
+  },
+  "profiles/upload8-baseline/idle10-heap.txt": {
+    "bytes": 6497,
+    "sha256": "20194f07fb0e514ba458a7da6f89137d4d47d62884f0594af7c36a1bff650c82"
+  },
+  "profiles/upload8-baseline/idle10-vmmap.txt": {
+    "bytes": 4661,
+    "sha256": "eac7dca26b6c17a5170e01cc3155ba500855c98ad67630e910a1add9a4948daf"
+  },
+  "profiles/upload8-baseline/request.json": {
+    "bytes": 1164,
+    "sha256": "3ba643d646dadf325f51cc19ea92617b7f59d236c0a78f30fc041a99823dbcd8"
+  },
+  "profiles/upload8-baseline/run/config.json": {
+    "bytes": 846,
+    "sha256": "d3e5640b6268e6cc560b38fb97f4f07cdb82671ff4958eb8a556b848e1e9d950"
+  },
+  "profiles/upload8-baseline/run/result.json": {
+    "bytes": 26791,
+    "sha256": "49a4466d5a79f0d3987e292dafa8f8c96c9e323e7ad6d8867961557e1dd49f4f"
+  },
+  "profiles/upload8-baseline/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "942f9cb65b156c04f34dce9b6ddb6b2a2d99a140fb2ed6567857134c6eab6aaf"
+  },
+  "profiles/upload8-baseline/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "408bfc297d42a0bff9d7d26e3d9f466414e0ff1c9bcfaf0e46faaf53cdd1ab4c"
+  },
+  "profiles/upload8-baseline/server/fixture/server.json": {
+    "bytes": 4922,
+    "sha256": "31657115a59823021b2e12a86fadd7b1c386f40cd5b05ed77e65b9e2dad203b7"
+  },
+  "profiles/upload8-baseline/server/fixture/server.log": {
+    "bytes": 1011,
+    "sha256": "8211813e459370e589ccbd649d1583ffbd77ec3bf2305c78b3035fb38222efb7"
+  },
+  "profiles/upload8-baseline/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "e8bcef1ef967d36820cfd412e60e9e00b33955931eca6334df0da343ba8c709b"
+  },
+  "profiles/upload8-baseline/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "8b2bcb9084636c3fb29e64713727f1784880743673c539dfebcd348883436a8f"
+  },
+  "profiles/upload8-baseline/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "b6e9cf13b0a8e90f5ef3434065e97c98032dcdd931290ee06d243533f0660fb1"
+  },
+  "profiles/upload8-baseline2/active-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "425cf9e96b4e367a75b3ba3bfdc930eff4968ae543cf66592586ad067da89135"
+  },
+  "profiles/upload8-baseline2/after-heap.txt": {
+    "bytes": 6395,
+    "sha256": "f286c1f987f4bdf917d500f63329dd3e222392b0c8749b3a5e2832e64ef27529"
+  },
+  "profiles/upload8-baseline2/after-vmmap.txt": {
+    "bytes": 4661,
+    "sha256": "d213a487cb6814538135ee23a47e03d82aed0cde00d34712129f947e962f5de9"
+  },
+  "profiles/upload8-baseline2/before-heap.txt": {
+    "bytes": 5495,
+    "sha256": "0eb641ee3f10639910c11b73a6d11a65af53b71f156504f44dce2df14b824f30"
+  },
+  "profiles/upload8-baseline2/before-vmmap.txt": {
+    "bytes": 4515,
+    "sha256": "7e4275a610814446ea1f3a10a2dc1ca078c1c310964f5646ae082bfce6828fb7"
+  },
+  "profiles/upload8-baseline2/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline2/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "c002accdf818f544579c8a799577e375b170a2d70e7960ba285171905fcb5360"
+  },
+  "profiles/upload8-baseline2/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline2/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "2fc86159eaa7dac6459f9c65fc3907b9a39ec34ba57b99a1f9197f3160701231"
+  },
+  "profiles/upload8-baseline2/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline2/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "ca28065ade839e0e07cf941ce1d390bf0f6722f5add433674497334f8e2b62f8"
+  },
+  "profiles/upload8-baseline2/diagnostic.json": {
+    "bytes": 5977,
+    "sha256": "b7c662fb2245575df88e68d954dca18d8089209875d69d0f888605f4ae85d2cb"
+  },
+  "profiles/upload8-baseline2/driver.log": {
+    "bytes": 16834,
+    "sha256": "8b62094ae29f1ea300ba729ac81f52754cc665e54864ce689762e12971b51214"
+  },
+  "profiles/upload8-baseline2/idle10-heap.txt": {
+    "bytes": 6394,
+    "sha256": "abc43ad0ccfe8e3d0f33e21fba9e1e943c57c6c4eadd8c42657181860d185332"
+  },
+  "profiles/upload8-baseline2/idle10-vmmap.txt": {
+    "bytes": 4662,
+    "sha256": "56102a2dfec9355af91e52a4c0154567fd717b2186bf0609344f813926d734f9"
+  },
+  "profiles/upload8-baseline2/request.json": {
+    "bytes": 1165,
+    "sha256": "6e2b444a66651ac7a8d4a3ae53b2d282ef0f25463761a44663b6649a2c3ef91d"
+  },
+  "profiles/upload8-baseline2/run/config.json": {
+    "bytes": 846,
+    "sha256": "47dab09a80356f5732d9927f22b3e1507e7918ac47e180540e4383491b0dd628"
+  },
+  "profiles/upload8-baseline2/run/result.json": {
+    "bytes": 26235,
+    "sha256": "d789d4619afb20fcc8865986988439ec9823aa21a8b153d804fda903103fa932"
+  },
+  "profiles/upload8-baseline2/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline2/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-baseline2/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "55258bec8ed6d56005b84fe448ab1d40850428b718bb90cd453ffbfed68941f1"
+  },
+  "profiles/upload8-baseline2/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "92afbd472e42ae070595d28b35453e2740f0cd27af9d02643181a65f058fcfa5"
+  },
+  "profiles/upload8-baseline2/server/fixture/server.json": {
+    "bytes": 4932,
+    "sha256": "f61e6ddd124b81dec295926eb8bf2403cf1aee9be55e54c37db311561798e042"
+  },
+  "profiles/upload8-baseline2/server/fixture/server.log": {
+    "bytes": 1012,
+    "sha256": "741146f7b36a6026df28d13f11e97c043fa1e871089ba06cac33236a21bb48bc"
+  },
+  "profiles/upload8-baseline2/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "e19b4e099a20b2f2b3e6873ff07f5dd7e3d761098cbfea1637ef83cada0c7b08"
+  },
+  "profiles/upload8-baseline2/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "6208bf742d48fc514b6ce377cd1a7ac0e1aa15e0ae8229aa51fbe6219ae58075"
+  },
+  "profiles/upload8-baseline2/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "0a184494472958b488f43a8936f450fe9ce35047c8414e946ba5b468a512b590"
+  },
+  "profiles/upload8-candidate/active-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "d11a3b6e0ec723a92018892327e39fad8451f9fd4e782ca1942b617220b7c56e"
+  },
+  "profiles/upload8-candidate/after-heap.txt": {
+    "bytes": 6493,
+    "sha256": "d0061b10482c59e8652d39bc96dfe586b53944a871ef49203ebd0cb09670d0f0"
+  },
+  "profiles/upload8-candidate/after-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "89805db610ad66c006752a46fa5711d572c3c0ee44df79b9582066c6020cab42"
+  },
+  "profiles/upload8-candidate/before-heap.txt": {
+    "bytes": 5595,
+    "sha256": "367ec4eddf67429ecaf203674dc06bf60a107d3c555d451c5ae2e6d35d372966"
+  },
+  "profiles/upload8-candidate/before-vmmap.txt": {
+    "bytes": 4515,
+    "sha256": "bbf7488a4c16db6d4227a889877b9cbcf97e1ea2b70211a8d1d29fa8e3796259"
+  },
+  "profiles/upload8-candidate/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-candidate/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "73f6453118c1b24e3ad8d01e8318821924db5839f09121b779eb420968da45de"
+  },
+  "profiles/upload8-candidate/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-candidate/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "aafb3e17845f1767786795a68fba16fbbfc4d60f52076b357081dafba1622c8e"
+  },
+  "profiles/upload8-candidate/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-candidate/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "210b0d16ef1a02ef0751dd07634b9c2afc11d0ece08a231a8e58b591f88b38df"
+  },
+  "profiles/upload8-candidate/diagnostic.json": {
+    "bytes": 6050,
+    "sha256": "fa8ecc78e1336e3f960696276bc6516986fa6bada92851c2ac605e1c5b1eb509"
+  },
+  "profiles/upload8-candidate/driver.log": {
+    "bytes": 16315,
+    "sha256": "f670d002948df7414671ab6158657a8fd17fc09a4bd7777b421e027aa022fe00"
+  },
+  "profiles/upload8-candidate/idle10-heap.txt": {
+    "bytes": 6493,
+    "sha256": "3a58a201f81453c40ac26441679fa6bf2fe188ad1c5c4ba6b2a46eede97b886c"
+  },
+  "profiles/upload8-candidate/idle10-vmmap.txt": {
+    "bytes": 4661,
+    "sha256": "c22ca58444aa4d3bf9a9a4ef19701f7ffec09c9d47c509b3a1a0ee0b1caf1ce8"
+  },
+  "profiles/upload8-candidate/request.json": {
+    "bytes": 1173,
+    "sha256": "4da4240864595b89c6837757ad67861e9b19edf7978dff28aad7c7c16750bc8c"
+  },
+  "profiles/upload8-candidate/run/config.json": {
+    "bytes": 846,
+    "sha256": "730e4837023ed16bc91d7c6e628e5cdbb5584340f02056266099432a9c85825a"
+  },
+  "profiles/upload8-candidate/run/result.json": {
+    "bytes": 25416,
+    "sha256": "6ea6a9b3a61695dbbfd5bbdeb7ef35a09fdb7e08790a0d4ce8828ffd2347f636"
+  },
+  "profiles/upload8-candidate/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-candidate/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-candidate/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "dc56301f1ce2a832b44949c20d58f97b042f91b909534046690958fe0a58e1b5"
+  },
+  "profiles/upload8-candidate/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "cd38d4eb22c15932c37e2d6be06fe74186128cb0bf9545b400708012f981d08c"
+  },
+  "profiles/upload8-candidate/server/fixture/server.json": {
+    "bytes": 4932,
+    "sha256": "6a708a888a228057e748fb9dc9b40c7ca6838882162fccbaf82396fd6afa460d"
+  },
+  "profiles/upload8-candidate/server/fixture/server.log": {
+    "bytes": 1012,
+    "sha256": "886f8d72fa39afe1d676232b3285091f3c0ddc9a346b5f61923dff4dfad0b6fb"
+  },
+  "profiles/upload8-candidate/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "9262366a96c9377948eb043765098b42e899b5b026df18b294f284f32fd2413e"
+  },
+  "profiles/upload8-candidate/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "5edb21c17002212a389a9b04bef2ad8feffd19fd7616617322e322c16cb1c7e6"
+  },
+  "profiles/upload8-candidate/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "ce73818fff219daf04a34db81a38a1ab1d946d67aad44472085dcf293dae0663"
+  },
+  "profiles/upload8-workers12/active-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "24fd0be1f46f21298c9ec7c4e46e5e348e46322c71af86191168b5fc45ada89e"
+  },
+  "profiles/upload8-workers12/after-heap.txt": {
+    "bytes": 6596,
+    "sha256": "0e635f4f1b04e453d191c328e1183ab4db6b85baef9016e1ebd89d9bb9144aa1"
+  },
+  "profiles/upload8-workers12/after-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "054899b73ea3e87658d7c29f1edf6a6e6ad03df7fa279b881d18bd72546b1266"
+  },
+  "profiles/upload8-workers12/before-heap.txt": {
+    "bytes": 5599,
+    "sha256": "48a4200cba777788d353e3ffd5e7bb7193da68c39998219ff3b2663777da70b9"
+  },
+  "profiles/upload8-workers12/before-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "335e1a4b2779dbed41e0f6de472837423f6d67e80bf25835a717ecbcdc6eacba"
+  },
+  "profiles/upload8-workers12/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-workers12/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "df3870500843998e2f2523988c15fa9a1affe8a2a8459d65043ed5839ac2bbb0"
+  },
+  "profiles/upload8-workers12/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-workers12/checkpoints/before.json": {
+    "bytes": 59,
+    "sha256": "7a2202ad9f7c6f1320d6cc59111ec14543a456df81fb75edd3a3a750a4d7590e"
+  },
+  "profiles/upload8-workers12/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-workers12/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "add72b1e12a06c445ee10d5a39ac091d0e9f24e06dc1df4308dc4a8bb14a621a"
+  },
+  "profiles/upload8-workers12/diagnostic.json": {
+    "bytes": 6138,
+    "sha256": "a5f541aba34e4dc9bd2c6855fbf11b398d67abea3a01f645953e14674db3e24a"
+  },
+  "profiles/upload8-workers12/driver.log": {
+    "bytes": 17162,
+    "sha256": "a6279f28e0a82632ec90152f5f4e5ac39a9de5916f40919ebef9044badab8a53"
+  },
+  "profiles/upload8-workers12/idle10-heap.txt": {
+    "bytes": 6596,
+    "sha256": "73d215dde982164db7d7116085933c2d6b73add701159088718f5ed5582b34af"
+  },
+  "profiles/upload8-workers12/idle10-vmmap.txt": {
+    "bytes": 4661,
+    "sha256": "7647cac87fa593153c1f54f5aa663f9127aa4d232284269aaba273d4a08c6341"
+  },
+  "profiles/upload8-workers12/request.json": {
+    "bytes": 1183,
+    "sha256": "9a6d6ccf6a8e52f9442b6e3c7456f54ed2372b3563df969874d460027657a9d0"
+  },
+  "profiles/upload8-workers12/run/config.json": {
+    "bytes": 846,
+    "sha256": "3126c75a786a506507048b83e74e3a1ad7e9a55f00ea88b6d4b51d563c844052"
+  },
+  "profiles/upload8-workers12/run/result.json": {
+    "bytes": 26663,
+    "sha256": "6c77a8c75fa2df928c8a386a1a59e1825e2b1722b78d43a86ec0e1be4a432fba"
+  },
+  "profiles/upload8-workers12/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-workers12/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "profiles/upload8-workers12/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "ef562d36f752a594b7bce5f70da076e9e5ace1348e186e59655ec1007ec35345"
+  },
+  "profiles/upload8-workers12/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "87d6c754e218e689a274808346232cd80ec9e3d3ad46f5f0617281a53bfe1f36"
+  },
+  "profiles/upload8-workers12/server/fixture/server.json": {
+    "bytes": 4932,
+    "sha256": "aa16cca2e089620a3b79de7bc00227297f5ee152aa4971c438b698b32244b539"
+  },
+  "profiles/upload8-workers12/server/fixture/server.log": {
+    "bytes": 1012,
+    "sha256": "5f11f2deed033786b9fb6c664c4d0acee0cc8b32287cc020309783ddbc7d897e"
+  },
+  "profiles/upload8-workers12/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "3502c7daacfec8ecf0d5ba9338c7f74a239d50c0727d4642628cb2068d35cd04"
+  },
+  "profiles/upload8-workers12/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e812cded027ecd367dd174e95b3f986ce2e4f5e269b1e2b3cdb65f26a157a113"
+  },
+  "profiles/upload8-workers12/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "ae60305576477b1609b683bee351daf09c1f711e66139107300238faa2e4935a"
+  },
+  "quiet_bench_guard.py": {
+    "bytes": 1192,
+    "sha256": "b27f9f5073e48ecee0cc024f1f57e8d2db1998192686ca4afb5a651a759755c0"
+  },
+  "relief-profiles/upload8-baseline/active-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "bf163dc0763ae69d021bd193063f9ae15a854aff6f62d1fc0411c990d50dd425"
+  },
+  "relief-profiles/upload8-baseline/after-heap.txt": {
+    "bytes": 6398,
+    "sha256": "f61632bb143b0e68da80e12d417cdb8795c2cd9d0624782322e93ff941a9807a"
+  },
+  "relief-profiles/upload8-baseline/after-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "7de44f881eb41bc1e598145fca8045006b501644b8a4a3320c649f26a22f781c"
+  },
+  "relief-profiles/upload8-baseline/before-heap.txt": {
+    "bytes": 5499,
+    "sha256": "fc3e176f65ae969eafbf9a09bb9ffd55771ad7460493a0b35d756975df70b197"
+  },
+  "relief-profiles/upload8-baseline/before-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "a8ec360a15a64a10604a656a817c9d5455237f9b92792e3b8bdfdb0ffd6ecbfd"
+  },
+  "relief-profiles/upload8-baseline/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "66f35572e5225b28fcb12aec439e21f38e34de167ad48e3005c16bf3380b4f01"
+  },
+  "relief-profiles/upload8-baseline/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "7113b14d49457f5e32f37ce578be8e83d1ffb05a7abec4067be3a1ce4307b958"
+  },
+  "relief-profiles/upload8-baseline/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline/checkpoints/idle.json": {
+    "bytes": 57,
+    "sha256": "1060975608634d366515d7bacd445a34984f85c1bdf3a2b7205509386272a34b"
+  },
+  "relief-profiles/upload8-baseline/diagnostic.json": {
+    "bytes": 7397,
+    "sha256": "d2e193ed5b15063b0be2edd64059c5f22e06d50d80d9adaa066b206e7c7a4f3b"
+  },
+  "relief-profiles/upload8-baseline/driver.log": {
+    "bytes": 18438,
+    "sha256": "b656c6385b0abe36eb130c67caad96eaeef921216ea57ee24538fe2dbb806042"
+  },
+  "relief-profiles/upload8-baseline/idle10-heap.txt": {
+    "bytes": 6398,
+    "sha256": "8684da73f251ea446762dfdd02ae925d9c72f39a1ce3d5f7d7fabce3ab9eae4e"
+  },
+  "relief-profiles/upload8-baseline/idle10-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "7bda141c8a8c64132a8099f33299f57c18295a102eeb6fd4d6a7cb95822a019a"
+  },
+  "relief-profiles/upload8-baseline/relief.reply": {
+    "bytes": 2,
+    "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "relief-profiles/upload8-baseline/relief.trigger": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline/relieved-heap.txt": {
+    "bytes": 6398,
+    "sha256": "341540a6ded509018136f06bcf5f1950488583bbc3913ec6c354abee4309dc2b"
+  },
+  "relief-profiles/upload8-baseline/relieved-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "616fde9517c3700b96a202ac972ecffa66cf54dc300932513f7c8b2462a81531"
+  },
+  "relief-profiles/upload8-baseline/request.json": {
+    "bytes": 1513,
+    "sha256": "af0659fcf5267250d5fcf893ff0cb0ee66d45c65a37acbfc625dfff5f841bc1d"
+  },
+  "relief-profiles/upload8-baseline/run/config.json": {
+    "bytes": 846,
+    "sha256": "23add682e81044f8e61c2983de8d09692750b01051143730c8de21a6738aebdc"
+  },
+  "relief-profiles/upload8-baseline/run/result.json": {
+    "bytes": 28510,
+    "sha256": "e1f526bdb1ebcb1ff6e05dc8d5c3d8d58af1a37387d60e37e913ba12cd7d4e14"
+  },
+  "relief-profiles/upload8-baseline/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "87879d68a4f8b986a23267ba8eb4b42be1402a6b97914fbe9894cf3c183c216f"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "b37aaebde89c51c9a297d7e0ee70d592a734cefa29adafd3ae233cd15cc19640"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/server.json": {
+    "bytes": 4992,
+    "sha256": "586089e2046ba7a3fe4862f1dff8cbb13374466528c61138cc2b61ddd77c1ca9"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/server.log": {
+    "bytes": 1018,
+    "sha256": "905dc29f8ae0bce8b5733b1ecd01e39461b06b16b8c8e28612be4380b0dbeb51"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "de2e8210fd848c864e62212b5d6b32cf23cd3dc40bd3c8d0015dad4ddf99ec09"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "eaf2ad4a133dc4ed7b969feec6a9928b9c8423971ad4bd9b455e16ee1b1b9cf7"
+  },
+  "relief-profiles/upload8-baseline/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "1c3e6ccec44cee9877e0f1a4892f6dc68f03128bc1fa39f03eded248d1114e48"
+  },
+  "relief-profiles/upload8-baseline2/active-vmmap.txt": {
+    "bytes": 4520,
+    "sha256": "684d7cab8c324b1bd46152d32533f97b12ee186016346556e4fc1d73c2fc0ab6"
+  },
+  "relief-profiles/upload8-baseline2/after-heap.txt": {
+    "bytes": 6395,
+    "sha256": "60aac50265fa0d0484dca67688df49323098c39dcfb9ffb9d267091958a311ad"
+  },
+  "relief-profiles/upload8-baseline2/after-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "27970c26d974b94df52c5eef3ac0c194b7e6d1f1a80fb0ba6726a1b62680ef2e"
+  },
+  "relief-profiles/upload8-baseline2/before-heap.txt": {
+    "bytes": 5495,
+    "sha256": "640eec0b3fee424e28a7184539c777a2d85c94794f1239e967f02441a74e5a9e"
+  },
+  "relief-profiles/upload8-baseline2/before-vmmap.txt": {
+    "bytes": 3464,
+    "sha256": "426cf2329a215c29a2a6fe546dbe302e486e8f8c1e9bd68ce558b9219f1ff316"
+  },
+  "relief-profiles/upload8-baseline2/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline2/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "a202a15752a083a55e5f994a955e55384aaf5707a0bce5b1a704e87ce07701a6"
+  },
+  "relief-profiles/upload8-baseline2/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline2/checkpoints/before.json": {
+    "bytes": 59,
+    "sha256": "8019a639789d1fa642306dc3f055bb932f3a0f0d8875dc1fa917bd4ddc530e3d"
+  },
+  "relief-profiles/upload8-baseline2/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline2/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "5524b0e9b167711a5edecf8dd0c5dee3d4c33ce1be77ca6efbda6d683a82b342"
+  },
+  "relief-profiles/upload8-baseline2/diagnostic.json": {
+    "bytes": 7410,
+    "sha256": "84ff96b79d099b383e85788b1f39f7d15b21c1c82a1e16d3a2253fba5b5c3c5b"
+  },
+  "relief-profiles/upload8-baseline2/driver.log": {
+    "bytes": 17861,
+    "sha256": "ea501c8d9f92699fb25b5a5157768bc9fa9d2558605e572f7facd2438a9749b3"
+  },
+  "relief-profiles/upload8-baseline2/idle10-heap.txt": {
+    "bytes": 6395,
+    "sha256": "c980e0490de64a0609954a3175a9ff87eaa842e35b673c4221513fc8b92802f6"
+  },
+  "relief-profiles/upload8-baseline2/idle10-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "4cbf48576cc59272e87b1eece11d9a5ad9806e32ba5d5463372fc6e0678b9fcc"
+  },
+  "relief-profiles/upload8-baseline2/relief.reply": {
+    "bytes": 2,
+    "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "relief-profiles/upload8-baseline2/relief.trigger": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline2/relieved-heap.txt": {
+    "bytes": 6395,
+    "sha256": "76680d0a661f94a8fb900516a6674cacf9f9b82b7800d4d3c70c2c4062e73710"
+  },
+  "relief-profiles/upload8-baseline2/relieved-vmmap.txt": {
+    "bytes": 4659,
+    "sha256": "3c924e033421a87769932b244d3ae0e568ad75e12d12a4cb15e2fe6c2b9e4b04"
+  },
+  "relief-profiles/upload8-baseline2/request.json": {
+    "bytes": 1516,
+    "sha256": "dbb2cca0e24880e063180a704ded798bc06cc2fe1ee9a266eff269dec3c24bd1"
+  },
+  "relief-profiles/upload8-baseline2/run/config.json": {
+    "bytes": 846,
+    "sha256": "fb8d2e2ed604a02800c3fb105adee959be2379d34780bcaaccc333736f214ff8"
+  },
+  "relief-profiles/upload8-baseline2/run/result.json": {
+    "bytes": 27683,
+    "sha256": "46bbbff6a52bdc4844bee060998606ee733f9e6b10ad74dbb65df6990c461303"
+  },
+  "relief-profiles/upload8-baseline2/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline2/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "03fe7d0111d8cc6589ffd8eecf7c462a2aa5180c0cc1622f5884a9d9758cf431"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "4c2720cc9247a77c7c12918cfba39353c9f6c095d2326a72af5b876514fa9fc2"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/server.json": {
+    "bytes": 5002,
+    "sha256": "d46cffbc8761d0195e6e00df48dad04bd8bb5f232660b29530c7ffa4c7e407ed"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/server.log": {
+    "bytes": 1019,
+    "sha256": "01c7a11cc31cdb53b6e7e8010cfef5103cfe151a9f186f26cd25a9bc342deb04"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "f2e6e29998e8bebe2f3e3a3cc28630c0d269e8ef5a677c17f44375f6f7e6b3d0"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "839cc232a7ab153c9496f0dee39f840d9b150d3504ffcf35a0b4f236f251e020"
+  },
+  "relief-profiles/upload8-baseline2/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "cc05b324cf0766791facb50391dc9263a8cb48b94e79cd042ed569ba837d5ca1"
+  },
+  "relief-profiles/upload8-candidate/active-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "a41836d5d2196c45af2f22e285d6b499e0a2b7ef01724ecbae835e2af41e4044"
+  },
+  "relief-profiles/upload8-candidate/after-heap.txt": {
+    "bytes": 6493,
+    "sha256": "d0b8eaa33aae333ab8fd65580e24077c389d832a09a419dfa771369f2eaa5c74"
+  },
+  "relief-profiles/upload8-candidate/after-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "7965988ca1f0725961b1065d93c4bc1cf44b9549dff057157ddcc98fe2a197cd"
+  },
+  "relief-profiles/upload8-candidate/before-heap.txt": {
+    "bytes": 5595,
+    "sha256": "fb787342dcfc9806cb1767561446cf71916171fa0cb62e6cc465d22545489329"
+  },
+  "relief-profiles/upload8-candidate/before-vmmap.txt": {
+    "bytes": 4515,
+    "sha256": "95e1e89dfbfb21aadcb052ac66dc11a64050d376348ad88599dbb88456c80c68"
+  },
+  "relief-profiles/upload8-candidate/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-candidate/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "aba90e65ffd3ee11c3c8e9fde729f7520bb363cccffa1186612f5f936822becd"
+  },
+  "relief-profiles/upload8-candidate/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-candidate/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "319d6970114977a5113017c4a43a024e70c61eeb257ebf3978095bb6de991328"
+  },
+  "relief-profiles/upload8-candidate/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-candidate/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "f48a4b25bd60b15b394894fd7f3b1c2758d50006dd0e525e04cea188bb74cf5e"
+  },
+  "relief-profiles/upload8-candidate/diagnostic.json": {
+    "bytes": 7495,
+    "sha256": "6f6d8ca1f80f0bc237228f7ec2e99d60e84d91ceb0bb3635f6b237ae1d46f38d"
+  },
+  "relief-profiles/upload8-candidate/driver.log": {
+    "bytes": 17688,
+    "sha256": "6a96f112f67b63862932f695ebaa23e6802dd15c86c50a5ac0f6191c82e90107"
+  },
+  "relief-profiles/upload8-candidate/idle10-heap.txt": {
+    "bytes": 6493,
+    "sha256": "fa0549624444c03fd66fe9e50771227a22a23de5b0ea7d4f85d8995f066ecb17"
+  },
+  "relief-profiles/upload8-candidate/idle10-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "2f45215093da07f6a4dadca5ac64dac5c2f6fbf751be9775ee01cb5695ffa7df"
+  },
+  "relief-profiles/upload8-candidate/relief.reply": {
+    "bytes": 2,
+    "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "relief-profiles/upload8-candidate/relief.trigger": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-candidate/relieved-heap.txt": {
+    "bytes": 6493,
+    "sha256": "66c6f5ee95613ce6358f49df79434f73f38bce38a1933e05c157addfd64f3a51"
+  },
+  "relief-profiles/upload8-candidate/relieved-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "5e62768857ae4b99cf7cac2c87345be4487a655f11ebc05091300b7bf291687a"
+  },
+  "relief-profiles/upload8-candidate/request.json": {
+    "bytes": 1524,
+    "sha256": "4ee5cf641741d4a4049759c600b6dc804c0299dd7f63e91f74c9b8b6373a3cb0"
+  },
+  "relief-profiles/upload8-candidate/run/config.json": {
+    "bytes": 846,
+    "sha256": "3dc1477c4455a72e6d82d2c6858e4fe735ea78f3a1a295fff42e6e5bd971edfc"
+  },
+  "relief-profiles/upload8-candidate/run/result.json": {
+    "bytes": 27410,
+    "sha256": "3366c6feaea3c207495228671d8d501d30c7db11a487caaa94cc1ff09be94a87"
+  },
+  "relief-profiles/upload8-candidate/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-candidate/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "2b6c005ae028663a61cecda6c8378ed9f57555a7597db430c1d26d24f8f3180c"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "a41e349a08420760c2ba5d1bcea53e6b22874e12a0b04b91c0e43b88404513ad"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/server.json": {
+    "bytes": 5002,
+    "sha256": "c840ff92ef954bce84529e324fb7eaa71211523708b1c2faed9a328e3fae5dae"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/server.log": {
+    "bytes": 1019,
+    "sha256": "26aa28b154485c29a67c95e17891570f1fff5e01bca2d65941fff06ad32c4cfc"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "bfb12da435bc377b8fd69fac96726f2aaf102ea15b75c0d3acb050f0420d6671"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "d54cc5dee83d0b6d1a6950d1642716f3dde007f52c11cd8347b30f075f624be4"
+  },
+  "relief-profiles/upload8-candidate/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "b8d24f1d0c3b1c28515b118240eee9c8b1c7aa76b09fead966140035698595ca"
+  },
+  "relief-profiles/upload8-workers12/active-vmmap.txt": {
+    "bytes": 4521,
+    "sha256": "d303c50876741ae9b12807f62c3a313c86af1adcb444a4486770caadd5b39d86"
+  },
+  "relief-profiles/upload8-workers12/after-heap.txt": {
+    "bytes": 6498,
+    "sha256": "17864c299ccbdc86f0cdd1e638c165f842544a23f98f4e783f12ba5d2daa623e"
+  },
+  "relief-profiles/upload8-workers12/after-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "859953045b50cc47de24f2e87debc45361707bb6b49e949afddc13e72ecd0a88"
+  },
+  "relief-profiles/upload8-workers12/before-heap.txt": {
+    "bytes": 5599,
+    "sha256": "785f6af11b5f8f8ebe094679be08c82d44c908765bae7b9382397f60accb9ad7"
+  },
+  "relief-profiles/upload8-workers12/before-vmmap.txt": {
+    "bytes": 4519,
+    "sha256": "ee95e81e16d6e472bcbc793ee063046a065fc0d77e191e22025c8aa0d488c664"
+  },
+  "relief-profiles/upload8-workers12/checkpoints/after.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-workers12/checkpoints/after.json": {
+    "bytes": 59,
+    "sha256": "e580d5683584e866f8b0fa67523dc7b7bfc0698daff3b7ce9568e7a17247542b"
+  },
+  "relief-profiles/upload8-workers12/checkpoints/before.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-workers12/checkpoints/before.json": {
+    "bytes": 60,
+    "sha256": "b6593bac8304135671ac84a5d471f26770a4eee9f6f2af276e3a99150e4db995"
+  },
+  "relief-profiles/upload8-workers12/checkpoints/idle.continue": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-workers12/checkpoints/idle.json": {
+    "bytes": 58,
+    "sha256": "e5cc85fc7e80261a55e34eb9f82c9ce66f5e8fc56d9ea7199974e021dfac73bd"
+  },
+  "relief-profiles/upload8-workers12/diagnostic.json": {
+    "bytes": 7611,
+    "sha256": "559dbde6e0090e0ebd2af27d28aa2828d2bdee743b35321fb8f92d1632ef95e1"
+  },
+  "relief-profiles/upload8-workers12/driver.log": {
+    "bytes": 18106,
+    "sha256": "c9dcf8d91972df53ffc851e19b83963fb07de796df1bbf8846e9763ee42b5ea7"
+  },
+  "relief-profiles/upload8-workers12/idle10-heap.txt": {
+    "bytes": 6498,
+    "sha256": "931a41f049cc027df1855bb854b0a6fd21c9f025cc73eb1fce391f532071f443"
+  },
+  "relief-profiles/upload8-workers12/idle10-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "661e13ebd8a87680aebe0a7b89059069cee3b38fd52268d0328de29c7756128a"
+  },
+  "relief-profiles/upload8-workers12/relief.reply": {
+    "bytes": 2,
+    "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+  },
+  "relief-profiles/upload8-workers12/relief.trigger": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-workers12/relieved-heap.txt": {
+    "bytes": 6498,
+    "sha256": "f5db86bbd1e42b52397bf1abd247c91c436775fcd4936973a13460f5457db4af"
+  },
+  "relief-profiles/upload8-workers12/relieved-vmmap.txt": {
+    "bytes": 4660,
+    "sha256": "7c735989e026371a96f515557aea084d043b4ebf468ae6f937deb2989b59ecfd"
+  },
+  "relief-profiles/upload8-workers12/request.json": {
+    "bytes": 1534,
+    "sha256": "b34dde8e912afcbc574aff42af7f30f2f4a39ec651780195965f5c5786a52a6c"
+  },
+  "relief-profiles/upload8-workers12/run/config.json": {
+    "bytes": 846,
+    "sha256": "7d484c584d8652c57480b255ed4be59e4ef1393cbbbff871ec75b91c7f91cb0c"
+  },
+  "relief-profiles/upload8-workers12/run/result.json": {
+    "bytes": 27978,
+    "sha256": "0c7eb116d8cdf5ce8e0bceb364745df24aff0fc684e3b1e38ce45d7424956c08"
+  },
+  "relief-profiles/upload8-workers12/run/stderr.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-workers12/run/stdout.log": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/client-wg.pem": {
+    "bytes": 119,
+    "sha256": "0cbac912d75f133386d48553bf4e57f2e23d575724f4b8150e3196fe3a70499a"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/server-wg.pem": {
+    "bytes": 119,
+    "sha256": "c716fce8344f81e1ff4640be9cf3dfa92b53920116122da847c1f80f7c802f91"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/server.json": {
+    "bytes": 5002,
+    "sha256": "c7f32dbefe18222cfe02cbde7671143fba295dd5ec9c74c72c04013ff05d6425"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/server.log": {
+    "bytes": 1019,
+    "sha256": "7748fa07d40a06ae2b1e765bfb0dc1c899b89a74c9ffd9403e35a466eded73af"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/tls.crt": {
+    "bytes": 591,
+    "sha256": "089f4d649ff33037e11ef4d164c1174c60bc705a896b19da0e6cc20f1557ba70"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/tls.key": {
+    "bytes": 241,
+    "sha256": "e3a709c04f27edb75a2f00cf108d96522165d337649d24bee603d5a84e1bd589"
+  },
+  "relief-profiles/upload8-workers12/server/fixture/v07-probe.json": {
+    "bytes": 2468,
+    "sha256": "912fdfe304c8a5558ec901804304abd57850f6555aaaccfcf38b864662d92a86"
+  },
+  "reproduction-driver.log": {
+    "bytes": 1835,
+    "sha256": "d2444cbcca80fc920ef395419bb15770cb09ae9cb1f44eea301b70cf6a3b9ee1"
+  },
+  "run-allocator-control.py": {
+    "bytes": 6376,
+    "sha256": "5c0a6110d069c54e7d42ed52b5245f44ea4627b2438bdbb51ec3616b72792d9e"
+  },
+  "run-memory-profiles.py": {
+    "bytes": 5323,
+    "sha256": "254970c5cb0e852e08cab5641d1f36819f0307dd6a420f8538f96c93740d0cbd"
+  },
+  "run-memory-relief.py": {
+    "bytes": 5891,
+    "sha256": "79cd6312c69726a325fe0fd094ff85497e3f72a96994ab40382ee83e3107ed9f"
+  },
+  "run-reproduction.py": {
+    "bytes": 5838,
+    "sha256": "3acbc58645b383f72dbd683af89763bffe2b0195466fe98e91f58fe9d0e8133e"
+  },
+  "verify-inputs.py": {
+    "bytes": 3705,
+    "sha256": "0afa10175b5df7456fb4a101591c006a43cbb111b3e8b189fe24cf22b60e885d"
+  }
+}

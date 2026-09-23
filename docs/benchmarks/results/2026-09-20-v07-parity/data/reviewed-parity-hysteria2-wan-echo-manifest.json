@@ -1,0 +1,3855 @@
+{
+  "binary_builds": {
+    "candidate": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+          "xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+        "canonical_vendor_basis": {
+          "log": "reviewed-canonical-vendor.log",
+          "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+          "unchanged": false,
+          "vendor_tree": "3fb4f61a8c5f4385c51be6efa44a60bc4ee69706"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+          "parent_commit": "107d71f776c68a359ec6f71234b2587ee8b781cb",
+          "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "patch_sha256": "395b56aae6abbba3585100568faf99d772684514e10e726f8756078c1890dbb3",
+          "purpose": "Hysteria-only empty local CID; actual Initial capture plus native/Xray interop, blackholed path recovery, protection, and H3 regression tests; benefit to be measured",
+          "source_commit": "a2d6c8f2d6a17f6ce023d9a59b8d48621130c641",
+          "source_tree": "ce6dce5b1e615c7782b6120d98d220920864e16b",
+          "validation": [
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--test",
+                "hysteria_native_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+              },
+              "name": "native",
+              "returncode": 0,
+              "seconds": 19.483339071273804
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+              },
+              "name": "xray",
+              "returncode": 0,
+              "seconds": 3.1275367736816406
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "stream_xhttp_h3_tests"
+              ],
+              "environment": {},
+              "name": "h3",
+              "returncode": 0,
+              "seconds": 18.900521993637085
+            },
+            {
+              "command": [
+                "cargo",
+                "fmt",
+                "--all",
+                "--",
+                "--check"
+              ],
+              "environment": {},
+              "name": "format",
+              "returncode": 0,
+              "seconds": 1.131680965423584
+            },
+            {
+              "command": [
+                "cargo",
+                "build",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-cli"
+              ],
+              "environment": {},
+              "name": "build",
+              "returncode": 0,
+              "seconds": 50.62861704826355
+            }
+          ]
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+        "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json",
+      "sha256": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch",
+        "sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c"
+      }
+    }
+  },
+  "candidate_workers": null,
+  "cases": [
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-tcp-latency-1",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-tcp-latency-8",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-udp-1",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "hysteria2",
+      "traffic": "udp"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-udp-8",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "hysteria2",
+      "traffic": "udp"
+    }
+  ],
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native": "304d19e4518352ac823b46f2b6ebcfa1c284157debabea70f3ba4eaaa1802356",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client.json": "6dbb95fa30dd82af6e4de68a4cd4bc4a1dc4a0ee949286dea273f23f3fbca86b",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client": "b342adec5d2c217bbffca675243b2ee7cf2c21ef044d242c740e6244b816129e",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/bin/sing-box": "b2b34ea4948148b36d4fe5a2759c9cb8a0f5356c6908b697ba2118eebe8a06b3",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client.json": "204cc4ac5b15cad2382846da1ce58d032a151850151114165fefad4cac688468",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client.json": "da8b0e01f9f11549b674beddb27afbe7a60c31324960d11a9da213e370f44067",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-protocol-parity.py": "38d733a9023694a5432f68dba68b1b5c4a784cbf97e532d7e8751c2904da43ee"
+  },
+  "finished_unix": 1789997578.3154502,
+  "idle_connections_by_version": {
+    "candidate": 0,
+    "native": 0,
+    "singbox": 0,
+    "xray": 0
+  },
+  "idle_settle_seconds": 0,
+  "link_mbps_per_direction": 100.0,
+  "one_way_delay_ms": 25.0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "process_accounting": "prepared real binary launched directly; one verified TCP echo before steady measurements; startup and lifetime CPU retained separately",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_go_workers": 2,
+  "repeats": 3,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997313.790567
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997315.8486679
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997317.8915021
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 132,
+        "peak_queued_bytes": 3780,
+        "receive_buffer_bytes": 2097152,
+        "received": 132,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.055268049240112,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997319.048218
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997321.102697
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997323.1532748
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 105,
+        "peak_queued_bytes": 3094,
+        "receive_buffer_bytes": 2097152,
+        "received": 107,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.052169322967529,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997324.315259
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997326.375995
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997328.433648
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997328.4593852
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 122,
+        "peak_queued_bytes": 5315,
+        "receive_buffer_bytes": 2097152,
+        "received": 122,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.1090991497039795,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 12.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 61584
+              }
+            ],
+            "time_unix": 1789997329.6123421
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997331.668304
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997333.7193742
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997334.689815
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 98,
+        "peak_queued_bytes": 2781,
+        "receive_buffer_bytes": 2097152,
+        "received": 98,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.0254740715026855,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997335.8583639
+          },
+          {
+            "processes": [
+              {
+                "cpu": 23.5,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 10.5,
+                "executable": "/usr/libexec/opendirectoryd",
+                "pid": 381
+              },
+              {
+                "cpu": 10.3,
+                "executable": "/usr/libexec/dasd",
+                "pid": 392
+              },
+              {
+                "cpu": 17.2,
+                "executable": "/usr/sbin/cfprefsd",
+                "pid": 614
+              },
+              {
+                "cpu": 16.8,
+                "executable": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/biomed",
+                "pid": 40089
+              },
+              {
+                "cpu": 62.0,
+                "executable": "/System/Library/ExtensionKit/Extensions/AssetMetricsExtension.appex/Contents/MacOS/AssetMetricsExtension",
+                "pid": 61824
+              },
+              {
+                "cpu": 14.7,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61856
+              },
+              {
+                "cpu": 18.9,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61858
+              },
+              {
+                "cpu": 18.4,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61866
+              },
+              {
+                "cpu": 15.9,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61867
+              },
+              {
+                "cpu": 15.6,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61868
+              },
+              {
+                "cpu": 15.7,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61869
+              },
+              {
+                "cpu": 16.2,
+                "executable": "/usr/sbin/cfprefsd",
+                "pid": 61870
+              },
+              {
+                "cpu": 14.8,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61871
+              },
+              {
+                "cpu": 16.4,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61872
+              },
+              {
+                "cpu": 16.2,
+                "executable": "/System/Library/Frameworks/Contacts.framework/Support/contactsd",
+                "pid": 61873
+              },
+              {
+                "cpu": 76.9,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              }
+            ],
+            "time_unix": 1789997337.946985
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.4,
+                "executable": "/usr/sbin/cfprefsd",
+                "pid": 614
+              },
+              {
+                "cpu": 188.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 87.6,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 210.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997339.969795
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 132,
+        "peak_queued_bytes": 3523,
+        "receive_buffer_bytes": 2097152,
+        "received": 132,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.060930967330933,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 140.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 25.8,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 230.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 83.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997341.202786
+          },
+          {
+            "processes": [
+              {
+                "cpu": 130.1,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 212.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997343.270122
+          },
+          {
+            "processes": [
+              {
+                "cpu": 126.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 216.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997345.335126
+          },
+          {
+            "processes": [
+              {
+                "cpu": 124.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 216.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997346.288084
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 98,
+        "peak_queued_bytes": 3003,
+        "receive_buffer_bytes": 2097152,
+        "received": 98,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.02620005607605,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 224.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997347.481216
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 223.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997349.551145
+          },
+          {
+            "processes": [
+              {
+                "cpu": 175.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997351.607056
+          },
+          {
+            "processes": [
+              {
+                "cpu": 186.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997351.640398
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 123,
+        "peak_queued_bytes": 5000,
+        "receive_buffer_bytes": 2097152,
+        "received": 125,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.106578350067139,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 204.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997352.832381
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.7,
+                "executable": "/usr/libexec/dprivacyd",
+                "pid": 62488
+              },
+              {
+                "cpu": 206.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997354.898688
+          },
+          {
+            "processes": [
+              {
+                "cpu": 211.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997356.906867
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 105,
+        "peak_queued_bytes": 3475,
+        "receive_buffer_bytes": 2097152,
+        "received": 105,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.017711877822876,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 216.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997358.1000571
+          },
+          {
+            "processes": [
+              {
+                "cpu": 220.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997360.1656451
+          },
+          {
+            "processes": [
+              {
+                "cpu": 226.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997362.2294679
+          },
+          {
+            "processes": [
+              {
+                "cpu": 226.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997362.262804
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 121,
+        "peak_queued_bytes": 5001,
+        "receive_buffer_bytes": 2097152,
+        "received": 123,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.082607984542847,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 188.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997363.4510741
+          },
+          {
+            "processes": [
+              {
+                "cpu": 190.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997365.517231
+          },
+          {
+            "processes": [
+              {
+                "cpu": 180.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997367.5818439
+          },
+          {
+            "processes": [
+              {
+                "cpu": 216.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997368.534977
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 100,
+        "peak_queued_bytes": 3040,
+        "receive_buffer_bytes": 2097152,
+        "received": 100,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.028564929962158,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 230.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997369.7233942
+          },
+          {
+            "processes": [
+              {
+                "cpu": 198.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997371.7865
+          },
+          {
+            "processes": [
+              {
+                "cpu": 182.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997373.84448
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 132,
+        "peak_queued_bytes": 3594,
+        "receive_buffer_bytes": 2097152,
+        "received": 134,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.065744161605835,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 183.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997375.035723
+          },
+          {
+            "processes": [
+              {
+                "cpu": 197.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997377.1036549
+          },
+          {
+            "processes": [
+              {
+                "cpu": 190.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997379.130026
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-1-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-1-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 108,
+        "peak_queued_bytes": 3377,
+        "receive_buffer_bytes": 2097152,
+        "received": 110,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.039434194564819,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 206.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997380.322022
+          },
+          {
+            "processes": [
+              {
+                "cpu": 222.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997382.38785
+          },
+          {
+            "processes": [
+              {
+                "cpu": 225.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997384.406213
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 619,
+        "peak_queued_bytes": 9873,
+        "receive_buffer_bytes": 2097152,
+        "received": 619,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.028892755508423,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 206.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997385.594697
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.8,
+                "executable": "/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/XPCServices/ANECompilerService.xpc/Contents/MacOS/ANECompilerService",
+                "pid": 63720
+              },
+              {
+                "cpu": 26.0,
+                "executable": "/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/Versions/A/Support/photolibraryd",
+                "pid": 63742
+              },
+              {
+                "cpu": 17.4,
+                "executable": "/System/Library/CoreServices/ScopedBookmarkAgent",
+                "pid": 63757
+              },
+              {
+                "cpu": 185.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997387.662588
+          },
+          {
+            "processes": [
+              {
+                "cpu": 74.8,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 18.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 63900
+              },
+              {
+                "cpu": 237.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 60.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997389.670031
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 604,
+        "peak_queued_bytes": 14356,
+        "receive_buffer_bytes": 2097152,
+        "received": 604,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.047909736633301,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 78.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 183.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 36.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997390.859385
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.4,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 73.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 203.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997392.9276469
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.6,
+                "executable": "/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/Versions/A/Support/photolibraryd",
+                "pid": 63742
+              },
+              {
+                "cpu": 185.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997394.984072
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.6,
+                "executable": "/System/Library/PrivateFrameworks/PhotoLibraryServices.framework/Versions/A/Support/photolibraryd",
+                "pid": 63742
+              },
+              {
+                "cpu": 199.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997395.018145
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 617,
+        "peak_queued_bytes": 9882,
+        "receive_buffer_bytes": 2097152,
+        "received": 617,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.100057125091553,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 212.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997396.2073321
+          },
+          {
+            "processes": [
+              {
+                "cpu": 221.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 151.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997398.248645
+          },
+          {
+            "processes": [
+              {
+                "cpu": 23.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 11.6,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 37997
+              },
+              {
+                "cpu": 15.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 222.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 29.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997400.312663
+          },
+          {
+            "processes": [
+              {
+                "cpu": 224.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997401.274793
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 613,
+        "peak_queued_bytes": 15410,
+        "receive_buffer_bytes": 2097152,
+        "received": 613,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.011961221694946,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 220.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997402.475817
+          },
+          {
+            "processes": [
+              {
+                "cpu": 220.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997404.541812
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 64410
+              },
+              {
+                "cpu": 219.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997406.562243
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 619,
+        "peak_queued_bytes": 9928,
+        "receive_buffer_bytes": 2097152,
+        "received": 619,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.040284156799316,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 207.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997407.7596061
+          },
+          {
+            "processes": [
+              {
+                "cpu": 263.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997409.828779
+          },
+          {
+            "processes": [
+              {
+                "cpu": 223.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 96.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997411.863651
+          },
+          {
+            "processes": [
+              {
+                "cpu": 174.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 20.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997412.778652
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 618,
+        "peak_queued_bytes": 16205,
+        "receive_buffer_bytes": 2097152,
+        "received": 618,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.976266860961914,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 201.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 15.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997413.972032
+          },
+          {
+            "processes": [
+              {
+                "cpu": 205.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997416.0374131
+          },
+          {
+            "processes": [
+              {
+                "cpu": 211.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997418.0919402
+          },
+          {
+            "processes": [
+              {
+                "cpu": 211.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997418.125159
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 615,
+        "peak_queued_bytes": 9912,
+        "receive_buffer_bytes": 2097152,
+        "received": 617,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.0772318840026855,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 217.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997419.3141918
+          },
+          {
+            "processes": [
+              {
+                "cpu": 168.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997421.379415
+          },
+          {
+            "processes": [
+              {
+                "cpu": 184.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997423.381793
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 601,
+        "peak_queued_bytes": 14930,
+        "receive_buffer_bytes": 2097152,
+        "received": 601,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.013833045959473,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 177.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997424.57411
+          },
+          {
+            "processes": [
+              {
+                "cpu": 188.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997426.642462
+          },
+          {
+            "processes": [
+              {
+                "cpu": 175.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997428.693077
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 629,
+        "peak_queued_bytes": 9917,
+        "receive_buffer_bytes": 2097152,
+        "received": 629,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.071533918380737,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 212.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997429.890035
+          },
+          {
+            "processes": [
+              {
+                "cpu": 228.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997431.955327
+          },
+          {
+            "processes": [
+              {
+                "cpu": 218.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997434.019965
+          },
+          {
+            "processes": [
+              {
+                "cpu": 213.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997434.940489
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 591,
+        "peak_queued_bytes": 16032,
+        "receive_buffer_bytes": 2097152,
+        "received": 591,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.000967264175415,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 220.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997436.1103098
+          },
+          {
+            "processes": [
+              {
+                "cpu": 219.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997438.1713002
+          },
+          {
+            "processes": [
+              {
+                "cpu": 218.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997440.214735
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 610,
+        "peak_queued_bytes": 9879,
+        "receive_buffer_bytes": 2097152,
+        "received": 612,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.047639846801758,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 226.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997441.411645
+          },
+          {
+            "processes": [
+              {
+                "cpu": 221.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997443.476989
+          },
+          {
+            "processes": [
+              {
+                "cpu": 252.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997445.510166
+          }
+        ]
+      },
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-tcp-latency-8-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-tcp-latency-8-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 609,
+        "peak_queued_bytes": 15584,
+        "receive_buffer_bytes": 2097152,
+        "received": 609,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.042068004608154,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 328.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997446.711651
+          },
+          {
+            "processes": [
+              {
+                "cpu": 229.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997448.778005
+          },
+          {
+            "processes": [
+              {
+                "cpu": 138.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997450.789739
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 185,
+        "peak_queued_bytes": 3814,
+        "receive_buffer_bytes": 2097152,
+        "received": 185,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.022648811340332,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 170.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997451.981497
+          },
+          {
+            "processes": [
+              {
+                "cpu": 179.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997454.047227
+          },
+          {
+            "processes": [
+              {
+                "cpu": 186.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997456.056556
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 185,
+        "peak_queued_bytes": 2748,
+        "receive_buffer_bytes": 2097152,
+        "received": 185,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.023689031600952,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 196.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997457.246496
+          },
+          {
+            "processes": [
+              {
+                "cpu": 190.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 20.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997459.293403
+          },
+          {
+            "processes": [
+              {
+                "cpu": 186.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997461.3349838
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 202,
+        "peak_queued_bytes": 5001,
+        "receive_buffer_bytes": 2097152,
+        "received": 202,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.040308952331543,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 226.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997462.512377
+          },
+          {
+            "processes": [
+              {
+                "cpu": 266.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997464.578157
+          },
+          {
+            "processes": [
+              {
+                "cpu": 216.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997466.646084
+          },
+          {
+            "processes": [
+              {
+                "cpu": 218.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997467.6017761
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 213,
+        "peak_queued_bytes": 2776,
+        "receive_buffer_bytes": 2097152,
+        "received": 213,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.034733057022095,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 224.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997468.799351
+          },
+          {
+            "processes": [
+              {
+                "cpu": 215.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997470.8639371
+          },
+          {
+            "processes": [
+              {
+                "cpu": 203.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997472.8719108
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 185,
+        "peak_queued_bytes": 4371,
+        "receive_buffer_bytes": 2097152,
+        "received": 185,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.017187118530273,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 217.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997474.077319
+          },
+          {
+            "processes": [
+              {
+                "cpu": 17.7,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 12.8,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              },
+              {
+                "cpu": 196.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997476.13971
+          },
+          {
+            "processes": [
+              {
+                "cpu": 208.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997478.205599
+          },
+          {
+            "processes": [
+              {
+                "cpu": 19.2,
+                "executable": "/System/Library/PrivateFrameworks/ChronoCore.framework/Support/chronod",
+                "pid": 729
+              },
+              {
+                "cpu": 26.1,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 12.9,
+                "executable": "/System/Library/PrivateFrameworks/TCC.framework/Support/tccd",
+                "pid": 46885
+              },
+              {
+                "cpu": 32.2,
+                "executable": "/System/Library/PrivateFrameworks/DataAccess.framework/Support/dataaccessd",
+                "pid": 66902
+              },
+              {
+                "cpu": 208.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 12.4,
+                "executable": "/System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd",
+                "pid": 79283
+              }
+            ],
+            "time_unix": 1789997479.140068
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 219,
+        "peak_queued_bytes": 2909,
+        "receive_buffer_bytes": 2097152,
+        "received": 219,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.01862096786499,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 24.4,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 10.4,
+                "executable": "/System/Applications/Calendar.app/Contents/MacOS/Calendar",
+                "pid": 38284
+              },
+              {
+                "cpu": 20.8,
+                "executable": "/System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd",
+                "pid": 47436
+              },
+              {
+                "cpu": 16.5,
+                "executable": "/System/Library/PrivateFrameworks/DataAccess.framework/Support/dataaccessd",
+                "pid": 66902
+              },
+              {
+                "cpu": 201.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 10.4,
+                "executable": "/System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd",
+                "pid": 79283
+              }
+            ],
+            "time_unix": 1789997480.3995829
+          },
+          {
+            "processes": [
+              {
+                "cpu": 34.8,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 222.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997482.469197
+          },
+          {
+            "processes": [
+              {
+                "cpu": 223.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997484.5356789
+          },
+          {
+            "processes": [
+              {
+                "cpu": 257.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997484.5705411
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 204,
+        "peak_queued_bytes": 3976,
+        "receive_buffer_bytes": 2097152,
+        "received": 204,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.089306831359863,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 15.2,
+                "executable": "/usr/libexec/aned",
+                "pid": 447
+              },
+              {
+                "cpu": 56.8,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 53.4,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 191.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997485.761208
+          },
+          {
+            "processes": [
+              {
+                "cpu": 14.2,
+                "executable": "/System/Library/PrivateFrameworks/DataAccess.framework/Support/dataaccessd",
+                "pid": 66902
+              },
+              {
+                "cpu": 288.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997487.824899
+          },
+          {
+            "processes": [
+              {
+                "cpu": 29.2,
+                "executable": "/System/Applications/Calendar.app/Contents/MacOS/Calendar",
+                "pid": 38284
+              },
+              {
+                "cpu": 17.1,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 72697
+              },
+              {
+                "cpu": 230.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997489.8874571
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.2,
+                "executable": "/System/Applications/Calendar.app/Contents/MacOS/Calendar",
+                "pid": 38284
+              },
+              {
+                "cpu": 10.6,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 72697
+              },
+              {
+                "cpu": 262.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997489.9215949
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 184,
+        "peak_queued_bytes": 2748,
+        "receive_buffer_bytes": 2097152,
+        "received": 184,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.112494230270386,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 12.9,
+                "executable": "/System/Library/PrivateFrameworks/DataAccess.framework/Support/dataaccessd",
+                "pid": 66902
+              },
+              {
+                "cpu": 213.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997491.1094568
+          },
+          {
+            "processes": [
+              {
+                "cpu": 205.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997493.1782022
+          },
+          {
+            "processes": [
+              {
+                "cpu": 219.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997495.176657
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 200,
+        "peak_queued_bytes": 5000,
+        "receive_buffer_bytes": 2097152,
+        "received": 200,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.024349927902222,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 194.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997496.375229
+          },
+          {
+            "processes": [
+              {
+                "cpu": 171.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997498.440317
+          },
+          {
+            "processes": [
+              {
+                "cpu": 174.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997500.503854
+          },
+          {
+            "processes": [
+              {
+                "cpu": 212.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997501.418472
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 213,
+        "peak_queued_bytes": 2776,
+        "receive_buffer_bytes": 2097152,
+        "received": 213,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.000676155090332,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 208.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 156.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997502.591773
+          },
+          {
+            "processes": [
+              {
+                "cpu": 274.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997504.6567612
+          },
+          {
+            "processes": [
+              {
+                "cpu": 296.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997506.6581051
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 186,
+        "peak_queued_bytes": 3015,
+        "receive_buffer_bytes": 2097152,
+        "received": 186,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.0109779834747314,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 15.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 52076
+              },
+              {
+                "cpu": 28.6,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 245.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 15.8,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 90248
+              },
+              {
+                "cpu": 64.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997507.8447418
+          },
+          {
+            "processes": [
+              {
+                "cpu": 276.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 63.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997509.8782341
+          },
+          {
+            "processes": [
+              {
+                "cpu": 276.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 15.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997511.901319
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-1-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-1-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 181,
+        "peak_queued_bytes": 2766,
+        "receive_buffer_bytes": 2097152,
+        "received": 181,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.020092010498047,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 288.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 12.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997513.095607
+          },
+          {
+            "processes": [
+              {
+                "cpu": 277.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997515.1616619
+          },
+          {
+            "processes": [
+              {
+                "cpu": 262.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997517.1639218
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 947,
+        "peak_queued_bytes": 11912,
+        "receive_buffer_bytes": 2097152,
+        "received": 947,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.0119287967681885,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 305.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997518.357455
+          },
+          {
+            "processes": [
+              {
+                "cpu": 296.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997520.424914
+          },
+          {
+            "processes": [
+              {
+                "cpu": 143.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997522.4419808
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-singbox-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 883,
+        "peak_queued_bytes": 11952,
+        "receive_buffer_bytes": 2097152,
+        "received": 883,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.029584884643555,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 223.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997523.6326752
+          },
+          {
+            "processes": [
+              {
+                "cpu": 190.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997525.69958
+          },
+          {
+            "processes": [
+              {
+                "cpu": 179.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997527.7169778
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-native-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 898,
+        "peak_queued_bytes": 11935,
+        "receive_buffer_bytes": 2097152,
+        "received": 898,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.037958860397339,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 210.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997528.907118
+          },
+          {
+            "processes": [
+              {
+                "cpu": 221.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997530.972922
+          },
+          {
+            "processes": [
+              {
+                "cpu": 222.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997533.038848
+          },
+          {
+            "processes": [
+              {
+                "cpu": 225.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997533.9983559
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-xray-1.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1158,
+        "peak_queued_bytes": 12048,
+        "receive_buffer_bytes": 2097152,
+        "received": 1158,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.0395848751068115,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 190.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997535.1840389
+          },
+          {
+            "processes": [
+              {
+                "cpu": 197.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997537.2452748
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.6,
+                "executable": "/usr/sbin/cfprefsd",
+                "pid": 614
+              },
+              {
+                "cpu": 55.7,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 218.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997539.24813
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 934,
+        "peak_queued_bytes": 11883,
+        "receive_buffer_bytes": 2097152,
+        "received": 934,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.009231090545654,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 10.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 69474
+              },
+              {
+                "cpu": 209.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997540.438773
+          },
+          {
+            "processes": [
+              {
+                "cpu": 40.2,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 201.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997542.503714
+          },
+          {
+            "processes": [
+              {
+                "cpu": 34.8,
+                "executable": "/System/Library/Frameworks/Security.framework/Versions/A/XPCServices/authd.xpc/Contents/MacOS/authd",
+                "pid": 452
+              },
+              {
+                "cpu": 10.2,
+                "executable": "/System/Library/CoreServices/SystemUIServer.app/Contents/MacOS/SystemUIServer",
+                "pid": 676
+              },
+              {
+                "cpu": 203.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997544.562932
+          },
+          {
+            "processes": [
+              {
+                "cpu": 194.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997545.4979122
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-xray-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1153,
+        "peak_queued_bytes": 11991,
+        "receive_buffer_bytes": 2097152,
+        "received": 1153,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.010806083679199,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 217.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997546.6886022
+          },
+          {
+            "processes": [
+              {
+                "cpu": 223.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997548.754602
+          },
+          {
+            "processes": [
+              {
+                "cpu": 207.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997550.796948
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-native-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 894,
+        "peak_queued_bytes": 11939,
+        "receive_buffer_bytes": 2097152,
+        "received": 894,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.053677797317505,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 237.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997551.994336
+          },
+          {
+            "processes": [
+              {
+                "cpu": 265.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997554.055522
+          },
+          {
+            "processes": [
+              {
+                "cpu": 47.0,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 304.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997556.0805252
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-singbox-2.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 890,
+        "peak_queued_bytes": 11998,
+        "receive_buffer_bytes": 2097152,
+        "received": 890,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.030678033828735,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 16.3,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 307.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 18.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997557.2595
+          },
+          {
+            "processes": [
+              {
+                "cpu": 87.0,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 283.6,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997559.3266308
+          },
+          {
+            "processes": [
+              {
+                "cpu": 11.4,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 256.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997561.3542569
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-native-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 903,
+        "peak_queued_bytes": 11963,
+        "receive_buffer_bytes": 2097152,
+        "received": 903,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.046567916870117,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 58.6,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 285.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 86.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997562.520237
+          },
+          {
+            "processes": [
+              {
+                "cpu": 51.3,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 278.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997564.585582
+          },
+          {
+            "processes": [
+              {
+                "cpu": 40.2,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 300.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997566.651537
+          },
+          {
+            "processes": [
+              {
+                "cpu": 67.6,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 293.8,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997567.626274
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-xray-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1153,
+        "peak_queued_bytes": 11970,
+        "receive_buffer_bytes": 2097152,
+        "received": 1153,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.048713207244873,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 79.8,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 292.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997568.8451571
+          },
+          {
+            "processes": [
+              {
+                "cpu": 83.7,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 272.4,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997570.917498
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.2,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 80.2,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 313.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997572.9293592
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 953,
+        "peak_queued_bytes": 11883,
+        "receive_buffer_bytes": 2097152,
+        "received": 953,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.027799844741821,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 15.2,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 279.5,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997574.1334138
+          },
+          {
+            "processes": [
+              {
+                "cpu": 315.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997576.198545
+          },
+          {
+            "processes": [
+              {
+                "cpu": 250.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997578.1998668
+          }
+        ]
+      },
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-hysteria2-wan-echo/hysteria2-socks-udp-8-singbox-3.json"
+      ],
+      "output_relative": "hysteria2-socks-udp-8-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 892,
+        "peak_queued_bytes": 11955,
+        "receive_buffer_bytes": 2097152,
+        "received": 892,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.021106004714966,
+      "surviving_process_group": false,
+      "version": "singbox"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "source_provenance_note": "source_commit/source.patch describe the collector workspace; each frozen executable is identified by SHA256 and its adjacent binary_builds metadata when available",
+  "started_unix": 1789997312.621189,
+  "status": "pass",
+  "suite": "new",
+  "target": "strictly lower RSS; no lower throughput, higher latency/CPU or additional failures; uncertainty is reported separately, never converted into a pass",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "native": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/native-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "singbox": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/singbox-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "xray": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/xray-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    }
+  },
+  "warmup": true
+}

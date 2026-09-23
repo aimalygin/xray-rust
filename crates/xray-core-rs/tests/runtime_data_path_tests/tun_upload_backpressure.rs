@@ -54,6 +54,56 @@ async fn blocked_upload() -> (Core, TunTcpClient, tokio::io::DuplexStream) {
 }
 
 #[tokio::test]
+async fn freeing_upload_capacity_resumes_buffered_tcp_without_new_packets() {
+    timeout(Duration::from_secs(10), async {
+        let (mut core, mut client, mut peer) = blocked_upload().await;
+        client
+            .sockets
+            .get_mut::<smol_tcp::Socket>(client.tcp)
+            .set_congestion_control(smol_tcp::CongestionControl::None);
+        let payload = [0x51; 8192];
+        // Saturate the bridge while its bounded writer is stalled. Leave
+        // additional bytes inside the TCP receive window, then stop input.
+        while core
+            .tun()
+            .stats()
+            .await
+            .tcp_stack_to_remote_backpressure_events
+            == 0
+        {
+            client
+                .sockets
+                .get_mut::<smol_tcp::Socket>(client.tcp)
+                .send_slice(&payload)
+                .unwrap();
+            pump_tun_once(&mut client, core.tun()).await;
+        }
+        sleep(Duration::from_millis(30)).await;
+        let before = core.tun().stats().await.tcp_stack_to_remote_bytes;
+        let drain = tokio::spawn(async move {
+            let mut bytes = [0; 8192];
+            while peer.read(&mut bytes).await.unwrap_or(0) != 0 {}
+        });
+        // No pump/client poll here: a TCP retransmission or zero-window probe
+        // must not be required to wake the stack after the writer frees space.
+        let resumed = timeout(Duration::from_millis(500), async {
+            while core.tun().stats().await.tcp_stack_to_remote_bytes == before {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        core.stop().await.unwrap();
+        drain.abort();
+        assert!(
+            resumed.is_ok(),
+            "freed upload capacity did not wake the TCP stack"
+        );
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn stalled_tun_upload_allows_same_flow_download() {
     timeout(Duration::from_secs(4), async {
         let (mut core, mut client, mut peer) = blocked_upload().await;

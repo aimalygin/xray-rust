@@ -2,12 +2,12 @@ use bytes::Bytes;
 use rand::RngExt;
 use tracing::{debug, trace, trace_span};
 
-use super::{Connection, SentFrames, spaces::SentPacket};
+use super::{spaces::SentPacket, Connection, SentFrames};
 use crate::{
-    ConnectionId, Instant, TransportError, TransportErrorCode,
     connection::ConnectionSide,
     frame::{self, Close},
-    packet::{FIXED_BIT, Header, InitialHeader, LongType, PacketNumber, PartialEncode, SpaceId},
+    packet::{Header, InitialHeader, LongType, PacketNumber, PartialEncode, SpaceId, FIXED_BIT},
+    ConnectionId, Instant, TransportError, TransportErrorCode,
 };
 
 pub(super) struct PacketBuilder {
@@ -202,7 +202,23 @@ impl PacketBuilder {
             false => 0,
         };
 
+        // Match the packets eligible for on_packet_acked's delivery sample.
+        // The size is this encrypted packet, not the cumulative GSO/coalescing
+        // buffer. This common path also accounts for ack-eliciting MTU probes.
+        let delivery_token = if ack_eliciting {
+            conn.path.congestion.on_sent_with_in_flight(
+                now,
+                size.into(),
+                exact_number,
+                conn.path.in_flight.bytes,
+                conn.app_limited,
+            )
+        } else {
+            0
+        };
+
         let packet = SentPacket {
+            delivery_token,
             path_generation: conn.path.generation(),
             largest_acked: sent.largest_acked,
             time_sent: now,

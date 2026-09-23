@@ -1,0 +1,164 @@
+{
+  "purpose": "Separate runtime worker count and short-transfer sampling from reproducible legacy regressions",
+  "driver": "/private/tmp/xray-v07-parity-20260920/run-reviewed-steady-confirmation.py",
+  "driver_sha256": "469ee8b213603124d275784b0832f8014306a0edcbcc8d53542092ef025dc70c",
+  "byte_identical_worker_control": true,
+  "source_build": {
+    "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+    "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f",
+    "clean": true,
+    "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "binary_hashes": {
+      "xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d"
+    },
+    "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+    "patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+    "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+    "profile": "release",
+    "preceding_validated_build": {
+      "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+      "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53",
+      "clean": true,
+      "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+      "binary_hashes": {
+        "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+        "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf"
+      },
+      "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+      "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+      "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+      "preceding_runtime_build": {
+        "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+        "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+        "clean": true,
+        "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+        "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+        "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+        "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+        "experimental": true,
+        "vendor_provenance_not_regenerated": true
+      },
+      "byte_identical_cli_to_focus": true,
+      "profile": "release",
+      "canonical_vendor_verified": true,
+      "performance_acceptance": "pending"
+    },
+    "focused_build": {
+      "source_commit": "a2d6c8f2d6a17f6ce023d9a59b8d48621130c641",
+      "source_tree": "ce6dce5b1e615c7782b6120d98d220920864e16b",
+      "clean": true,
+      "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+      "parent_commit": "107d71f776c68a359ec6f71234b2587ee8b781cb",
+      "patch_sha256": "395b56aae6abbba3585100568faf99d772684514e10e726f8756078c1890dbb3",
+      "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+      "validation": [
+        {
+          "name": "native",
+          "command": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--release",
+            "-p",
+            "xray-transport",
+            "--test",
+            "hysteria_interop_tests",
+            "--test",
+            "hysteria_native_interop_tests",
+            "--",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "environment": {
+            "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+          },
+          "returncode": 0,
+          "seconds": 19.483339071273804
+        },
+        {
+          "name": "xray",
+          "command": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--release",
+            "-p",
+            "xray-transport",
+            "--test",
+            "hysteria_interop_tests",
+            "--",
+            "--ignored",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "environment": {
+            "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+          },
+          "returncode": 0,
+          "seconds": 3.1275367736816406
+        },
+        {
+          "name": "h3",
+          "command": [
+            "cargo",
+            "test",
+            "--offline",
+            "--locked",
+            "--release",
+            "-p",
+            "xray-transport",
+            "--test",
+            "stream_xhttp_h3_tests"
+          ],
+          "environment": {},
+          "returncode": 0,
+          "seconds": 18.900521993637085
+        },
+        {
+          "name": "format",
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "environment": {},
+          "returncode": 0,
+          "seconds": 1.131680965423584
+        },
+        {
+          "name": "build",
+          "command": [
+            "cargo",
+            "build",
+            "--offline",
+            "--locked",
+            "--release",
+            "-p",
+            "xray-cli"
+          ],
+          "environment": {},
+          "returncode": 0,
+          "seconds": 50.62861704826355
+        }
+      ],
+      "purpose": "Hysteria-only empty local CID; actual Initial capture plus native/Xray interop, blackholed path recovery, protection, and H3 regression tests; benefit to be measured"
+    },
+    "canonical_vendor_verified": true,
+    "canonical_vendor_basis": {
+      "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+      "vendor_tree": "3fb4f61a8c5f4385c51be6efa44a60bc4ee69706",
+      "log": "reviewed-canonical-vendor.log",
+      "unchanged": false
+    },
+    "performance_acceptance": "pending final comparison"
+  },
+  "workload_override": "4096 MiB per flow",
+  "measurements_replace_original_evidence": false
+}

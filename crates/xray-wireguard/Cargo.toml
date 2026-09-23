@@ -13,7 +13,7 @@ bytes.workspace = true
 gotatun = { path = "../../vendor/gotatun", version = "=0.9.1", default-features = false, features = ["ring", "device"] }
 rand.workspace = true
 socket2 = "0.6.5"
-smoltcp = { workspace = true, features = ["socket-udp"] }
+smoltcp = { workspace = true, features = ["socket-udp", "socket-tcp-reno"] }
 thiserror.workspace = true
 tokio.workspace = true
 x25519-dalek.workspace = true

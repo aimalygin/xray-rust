@@ -1,0 +1,7 @@
+{
+  "compiler_load_detected": false,
+  "runs_observed": 72,
+  "compiler_sample_interval_seconds": 2,
+  "compiler_threshold_cpu_percent": 10,
+  "driver_sha256": "7e608cad738f61305ee183af1db84bd8a2c34ae2a7d39365e68c09302827cdb1"
+}

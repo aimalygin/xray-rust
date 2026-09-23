@@ -1,0 +1,487 @@
+{
+  "artifact_sha256": {
+    "grpc-download-1-baseline-1/1790003668422/xray-rust/stream-transport/result.json": "1e59d951fcb7f194b99cf20b53da7f8aeb8c5f1597229653faf2f0f61dade310",
+    "grpc-download-1-baseline-2/1790003673592/xray-rust/stream-transport/result.json": "f92698a0de7ee060aed3a47da53aec72f0ec06328998b6f8febdcaaff1f7d582",
+    "grpc-download-1-baseline-3/1790003699369/xray-rust/stream-transport/result.json": "124651686f77bacedea49aa60e7399edf5222940a9d646acb9930cd8529034f8",
+    "grpc-download-1-candidate-1/1790003658062/xray-rust/stream-transport/result.json": "5c4985c0a57cb82ca64606e50571c821dc78b4632050206c2c6734203edc6ed7",
+    "grpc-download-1-candidate-2/1790003683964/xray-rust/stream-transport/result.json": "1e06101b98604c23beb3b246d87faa83c924939b7db0ffc258385b5c98d9adbf",
+    "grpc-download-1-candidate-3/1790003689077/xray-rust/stream-transport/result.json": "8fec33e679c7c76f43c346682e8c43604b5d2afc9e85990704cd263a98f41755",
+    "grpc-download-1-workers12-1/1790003663223/xray-rust/stream-transport/result.json": "67f489474c9b7cfc10fce1176bd05d044ea6980811dfaed130bf4391dc2efe40",
+    "grpc-download-1-workers12-2/1790003678751/xray-rust/stream-transport/result.json": "6af5a81e6bb47b72856c2734c0621465c1f007363443b7d9f5900ffcbe6690c7",
+    "grpc-download-1-workers12-3/1790003694209/xray-rust/stream-transport/result.json": "b804a88e67377b7ba81711f8e36bc96435a9a5cda33bb4e33b9b0c932d53a0f1",
+    "xhttp-h2-download-1-baseline-1/1790003714348/xray-rust/stream-transport/result.json": "2003b7882fe7de6974b2071b9e1bd16fc61ac7ae7c76d4dfc016326b594527c9",
+    "xhttp-h2-download-1-baseline-2/1790003719242/xray-rust/stream-transport/result.json": "f613df5706c6216e1a54773d80dd73b1bd85d8a4c873bfe49fc8316db8d5e6af",
+    "xhttp-h2-download-1-baseline-3/1790003743431/xray-rust/stream-transport/result.json": "5c9a0f59070a7ce5a83c0ad63fe09bc58982123dc6a49569037fc0abc007b14a",
+    "xhttp-h2-download-1-candidate-1/1790003704605/xray-rust/stream-transport/result.json": "ba620bdfa561b0fa833aca3a79deb765ee86e224ae542738a2144275e60e7235",
+    "xhttp-h2-download-1-candidate-2/1790003728853/xray-rust/stream-transport/result.json": "762580cc3348f53ea82711c2ff2f1a1db370cc783d6c308bfcbc33be94a18a4e",
+    "xhttp-h2-download-1-candidate-3/1790003733718/xray-rust/stream-transport/result.json": "88c51dbb9866ce2d4c2a011774694548fb3a33909f06f0aae9536de9e26270e6",
+    "xhttp-h2-download-1-workers12-1/1790003709475/xray-rust/stream-transport/result.json": "9cdb4199b054c374bcef9d4732e28c3b7716859202815472f5fd2f74ea1c22ce",
+    "xhttp-h2-download-1-workers12-2/1790003724044/xray-rust/stream-transport/result.json": "31149c514cd2005f3d662f69565be9e4f69feb5903af78ce1c6b2326fd12365d",
+    "xhttp-h2-download-1-workers12-3/1790003738597/xray-rust/stream-transport/result.json": "1a065af2b76b0c8c5db5d72df4260208db706033543927aa7f4a731323a095b7",
+    "xhttp-h2-download-8-baseline-1/1790003784502/xray-rust/stream-transport/result.json": "79477e46fbae2c855876c95a6a9e5e665e71cc77da46913259723f8f6b675629",
+    "xhttp-h2-download-8-baseline-2/1790003802807/xray-rust/stream-transport/result.json": "09c51b5325cfc54d338111c018e119de05d7ba24d0649d27b5aee1201d90da54",
+    "xhttp-h2-download-8-baseline-3/1790003905667/xray-rust/stream-transport/result.json": "c478d613502bfc153653f41ff40cebc88dc5cd74495ab9f5fd2beac297e5d661",
+    "xhttp-h2-download-8-candidate-1/1790003748244/xray-rust/stream-transport/result.json": "0a5cda9dbf8c67de48a76090df2cf5eecf7af81336ce72cf857982fc777aebc6",
+    "xhttp-h2-download-8-candidate-2/1790003846089/xray-rust/stream-transport/result.json": "53aaf17cfb89bd85e68ca9b226983a69f8f4dfbe55c0cb9f892d010071816819",
+    "xhttp-h2-download-8-candidate-3/1790003866241/xray-rust/stream-transport/result.json": "4403f911bbcf089b5c58bff447efb66466b0ee857c0a152313ef1106ac73bcee",
+    "xhttp-h2-download-8-workers12-1/1790003764055/xray-rust/stream-transport/result.json": "25408f974ffb04e1ac4b1fc84d21d06028dbe70343d849ffc3cd1dbd412f3481",
+    "xhttp-h2-download-8-workers12-2/1790003820939/xray-rust/stream-transport/result.json": "8eb8bf30a20f9728af3cfcf3a124327121639792e4e75cc7c8997b8cad247131",
+    "xhttp-h2-download-8-workers12-3/1790003886043/xray-rust/stream-transport/result.json": "e8dea358bd903a42efddf7a32be3aeea9597c74f789483718d73b452d0046c63"
+  },
+  "failures": [],
+  "manifest_sha256": "8d121e2a981128fc0ec2b446e32a39d02064183c6431b2b2f516ace236cfb8b9",
+  "rows": [
+    {
+      "case": "grpc-download-1",
+      "ratios": {
+        "cpu_ms": 0.928709055876686,
+        "cpu_ms_per_mib": 0.928709055876686,
+        "rss_mib": 0.9887850467289719,
+        "throughput_mib_s": 1.0139909553420012
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5260,
+              "median": 5190,
+              "min": 5180,
+              "samples": [
+                5260,
+                5190,
+                5180
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.2841796875,
+              "median": 1.26708984375,
+              "min": 1.2646484375,
+              "samples": [
+                1.2841796875,
+                1.26708984375,
+                1.2646484375
+              ]
+            },
+            "rss_mib": {
+              "max": 8.375,
+              "median": 8.359375,
+              "min": 8.328125,
+              "samples": [
+                8.328125,
+                8.359375,
+                8.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 847.935676574707,
+              "median": 843.5249328613281,
+              "min": 837.5644683837891,
+              "samples": [
+                843.5249328613281,
+                847.935676574707,
+                837.5644683837891
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 4850,
+              "median": 4820,
+              "min": 4800,
+              "samples": [
+                4800,
+                4820,
+                4850
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.18408203125,
+              "median": 1.1767578125,
+              "min": 1.171875,
+              "samples": [
+                1.171875,
+                1.1767578125,
+                1.18408203125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.265625,
+              "median": 8.265625,
+              "min": 8.25,
+              "samples": [
+                8.265625,
+                8.25,
+                8.265625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 858.4260940551758,
+              "median": 855.3266525268555,
+              "min": 854.9690246582031,
+              "samples": [
+                858.4260940551758,
+                854.9690246582031,
+                855.3266525268555
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5240,
+              "median": 5230,
+              "min": 5170,
+              "samples": [
+                5230,
+                5240,
+                5170
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.279296875,
+              "median": 1.27685546875,
+              "min": 1.26220703125,
+              "samples": [
+                1.27685546875,
+                1.279296875,
+                1.26220703125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.671875,
+              "median": 8.671875,
+              "min": 8.640625,
+              "samples": [
+                8.671875,
+                8.640625,
+                8.671875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 847.2204208374023,
+              "median": 845.6707000732422,
+              "min": 845.0746536254883,
+              "samples": [
+                845.0746536254883,
+                845.6707000732422,
+                847.2204208374023
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-download-1",
+      "ratios": {
+        "cpu_ms": 0.9210526315789473,
+        "cpu_ms_per_mib": 0.9210526315789473,
+        "rss_mib": 0.8694362017804155,
+        "throughput_mib_s": 0.9977771966527197
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 6490,
+              "median": 6460,
+              "min": 6410,
+              "samples": [
+                6490,
+                6410,
+                6460
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.58447265625,
+              "median": 1.5771484375,
+              "min": 1.56494140625,
+              "samples": [
+                1.58447265625,
+                1.56494140625,
+                1.5771484375
+              ]
+            },
+            "rss_mib": {
+              "max": 11.8125,
+              "median": 10.53125,
+              "min": 9.1875,
+              "samples": [
+                11.8125,
+                10.53125,
+                9.1875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 912.5471115112305,
+              "median": 911.712646484375,
+              "min": 905.2753448486328,
+              "samples": [
+                905.2753448486328,
+                912.5471115112305,
+                911.712646484375
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5960,
+              "median": 5950,
+              "min": 5940,
+              "samples": [
+                5960,
+                5940,
+                5950
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.455078125,
+              "median": 1.45263671875,
+              "min": 1.4501953125,
+              "samples": [
+                1.455078125,
+                1.4501953125,
+                1.45263671875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.90625,
+              "median": 9.15625,
+              "min": 9.109375,
+              "samples": [
+                9.15625,
+                9.109375,
+                11.90625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 914.5736694335938,
+              "median": 909.6860885620117,
+              "min": 908.6132049560547,
+              "samples": [
+                908.6132049560547,
+                914.5736694335938,
+                909.6860885620117
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 6460,
+              "median": 6460,
+              "min": 6460,
+              "samples": [
+                6460,
+                6460,
+                6460
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5771484375,
+              "median": 1.5771484375,
+              "min": 1.5771484375,
+              "samples": [
+                1.5771484375,
+                1.5771484375,
+                1.5771484375
+              ]
+            },
+            "rss_mib": {
+              "max": 12.40625,
+              "median": 10.5,
+              "min": 9.53125,
+              "samples": [
+                10.5,
+                12.40625,
+                9.53125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 914.8120880126953,
+              "median": 912.9047393798828,
+              "min": 910.0437164306641,
+              "samples": [
+                910.0437164306641,
+                914.8120880126953,
+                912.9047393798828
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-download-8",
+      "ratios": {
+        "cpu_ms": 0.49292345152944755,
+        "cpu_ms_per_mib": 0.49292345152944755,
+        "rss_mib": 1.0915086562242373,
+        "throughput_mib_s": 0.9222388936003654
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 66660,
+              "median": 65710,
+              "min": 65620,
+              "samples": [
+                65620,
+                65710,
+                66660
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.0343017578125,
+              "median": 2.00531005859375,
+              "min": 2.0025634765625,
+              "samples": [
+                2.0025634765625,
+                2.00531005859375,
+                2.0343017578125
+              ]
+            },
+            "rss_mib": {
+              "max": 20.890625,
+              "median": 18.953125,
+              "min": 14.921875,
+              "samples": [
+                18.953125,
+                14.921875,
+                20.890625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1850.724220275879,
+              "median": 1827.3591995239258,
+              "min": 1659.393310546875,
+              "samples": [
+                1827.3591995239258,
+                1850.724220275879,
+                1659.393310546875
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 32800,
+              "median": 32390,
+              "min": 28480,
+              "samples": [
+                28480,
+                32800,
+                32390
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.0009765625,
+              "median": 0.98846435546875,
+              "min": 0.869140625,
+              "samples": [
+                0.869140625,
+                1.0009765625,
+                0.98846435546875
+              ]
+            },
+            "rss_mib": {
+              "max": 22.75,
+              "median": 20.6875,
+              "min": 17.546875,
+              "samples": [
+                17.546875,
+                22.75,
+                20.6875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2121.3293075561523,
+              "median": 1685.2617263793945,
+              "min": 1656.0554504394531,
+              "samples": [
+                2121.3293075561523,
+                1656.0554504394531,
+                1685.2617263793945
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 68630,
+              "median": 64950,
+              "min": 64620,
+              "samples": [
+                64620,
+                68630,
+                64950
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.09442138671875,
+              "median": 1.98211669921875,
+              "min": 1.9720458984375,
+              "samples": [
+                1.9720458984375,
+                2.09442138671875,
+                1.98211669921875
+              ]
+            },
+            "rss_mib": {
+              "max": 23.890625,
+              "median": 22.078125,
+              "min": 20.875,
+              "samples": [
+                23.890625,
+                22.078125,
+                20.875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1698.7323760986328,
+              "median": 1631.4983367919922,
+              "min": 1323.9383697509766,
+              "samples": [
+                1631.4983367919922,
+                1323.9383697509766,
+                1698.7323760986328
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "legacy"
+}

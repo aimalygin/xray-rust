@@ -1,0 +1,231 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "xhttp-h1-tun-download-1",
+      "iterations": 4096,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "xhttp-h1",
+      "traffic": "download"
+    }
+  ],
+  "cleanup_policy": "RAII kill/wait; per-run process-group and engine inventory verification",
+  "collector_sha256": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d",
+  "diagnostic": true,
+  "finished_unix": 1789839695.4966881,
+  "fixture_policy": "fresh reference server and keys per run",
+  "harness_sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+  "harness_source_sha256": {
+    "crates/xray-bench/src/chart.rs": "23412b029da405c297c4db3e6e4ba10c6e0c2c8fcd2867ea7afbd0e576fa4d32",
+    "crates/xray-bench/src/lib.rs": "d23d10a04520c353059f506b88b912733c684596fc3df332fa383f1d0c1ba2bd",
+    "crates/xray-bench/src/main.rs": "fb0ba4a044c7ad40c80fc1532b0eb1528309532c9e46847c352b9602457327de",
+    "crates/xray-bench/src/process_metrics.rs": "9d680ad186db2ac5a4ccd26fadc18a79d04ba0f945398e2bca11307230a56d7a",
+    "crates/xray-bench/src/protocol_bench.rs": "470738a1268eb0e63b949e814f39ab14923727059be67f8e3fea97b100126232",
+    "crates/xray-bench/src/stream_transport.rs": "167fbc815f525686c0e96dafc28b27eb495bdfe4a8b03c75c94659bbde4d4b5e"
+  },
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "preflight_campaign_processes": [],
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_sha256": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+  "repeats": 5,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-1",
+      "output_relative": "xhttp-h1-tun-download-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7243750095367432,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-1",
+      "output_relative": "xhttp-h1-tun-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7240359783172607,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-2",
+      "output_relative": "xhttp-h1-tun-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.774003028869629,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-2",
+      "output_relative": "xhttp-h1-tun-download-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.740065097808838,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-3",
+      "output_relative": "xhttp-h1-tun-download-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7287099361419678,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-3",
+      "output_relative": "xhttp-h1-tun-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7351560592651367,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-4",
+      "output_relative": "xhttp-h1-tun-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.736556053161621,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-4",
+      "output_relative": "xhttp-h1-tun-download-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7267189025878906,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-baseline-5",
+      "output_relative": "xhttp-h1-tun-download-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7284858226776123,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/h1-download-diagnostic-clean/xhttp-h1-tun-download-1-candidate-5",
+      "output_relative": "xhttp-h1-tun-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7300348281860352,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "started_unix": 1789839666.2320828,
+  "status": "pass",
+  "suite": "tun",
+  "versions": {
+    "baseline": {
+      "cargo_lock_sha256": "b8a3367208d71ac866b128ca1c6ab33d864cd307b5a655c4a5bcd4cbbd1c4bf6",
+      "commit": "ed5258a3a589c2a1f9330142f37c8f3d28a640fa",
+      "dirty": false,
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "original_harness_sha256": "7bff0957e927a8865f18d6c3698dbd068768777ae26ee5583383d307599f9b4d",
+      "tree": "63576692a7da7c63ec8f3fa3de35231082d0b1ca"
+    },
+    "candidate": {
+      "cargo_lock_sha256": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+      "commit": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+      "dirty": false,
+      "engine_sha256": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564",
+      "original_harness_sha256": "b380384a484ea43cce65d51e77236ea64ee014f1b9f1225bafe738a08fbcca1a",
+      "tree": "03b26062e08a151b09f6e882d06080a97ba577b0"
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "artifact_sha256": {
+    "wireguard-socks-full-duplex-16-candidate-1/result.json": "b9acb3745c97c8b668a01d4d6924dd52e117b8daf494ca15e6ba66b233e98ff0",
+    "wireguard-socks-full-duplex-16-candidate-10/result.json": "de7586d2b687c3b47a3ed67a514a9249e281de96eafbb65aa1dd26bfea531f70",
+    "wireguard-socks-full-duplex-16-candidate-11/result.json": "bef7b80e69ac9bf42050b37eaaf82a99c9331ae733d60eb182d42ba40a142226",
+    "wireguard-socks-full-duplex-16-candidate-12/result.json": "ae2538edc25eaa248aa441fdc5d2cc32432a037cd4a936fc6585e7a262511aed",
+    "wireguard-socks-full-duplex-16-candidate-13/result.json": "29fff94b93e1ebd7b71e9ec1b6d317d2ec7a5f7af19b8cbc7f7d3bd5026a7957",
+    "wireguard-socks-full-duplex-16-candidate-14/result.json": "93b7761cb904b858cfef7b95c25f7d69572624a078abd372451aa353632809da",
+    "wireguard-socks-full-duplex-16-candidate-15/result.json": "4a4db7605a20f7d5b7670b34c35b2241c0a905ccb78040c89e2bb193b9745085",
+    "wireguard-socks-full-duplex-16-candidate-16/result.json": "8cf9c8e73a31e6220024e4eae0dab1d66ae2e2f5c088cc5c58d4a51ab59753af",
+    "wireguard-socks-full-duplex-16-candidate-17/result.json": "3c39af3bd978568885185d33da5e1ee27efe579ec9194dd251cfa688ee0ddff8",
+    "wireguard-socks-full-duplex-16-candidate-18/result.json": "3e101bbbcb54eab983bde759973301cdb41e4c6fa5830b049018449f0a35b371",
+    "wireguard-socks-full-duplex-16-candidate-19/result.json": "d013e7cbaf3a04ad19c7d00838935afb9986a0ba9f9c73c49e08a69dbdac954a",
+    "wireguard-socks-full-duplex-16-candidate-2/result.json": "4a4244dedf1a1a60af6cb211a5d4bf242bc6b3edcbb5d41f2c60cb7f398d1032",
+    "wireguard-socks-full-duplex-16-candidate-20/result.json": "056788f323185ae9b1eb26278b8d1cfe9b35e7732712333b51103830f84d00fa",
+    "wireguard-socks-full-duplex-16-candidate-3/result.json": "aa8ae8d3b4647b2faaa91a402dbfe678f46d1bfebc43e5ef427d398f7707acbd",
+    "wireguard-socks-full-duplex-16-candidate-4/result.json": "6dd2ff770bb4dbdf72602bd09d42373250ac8686ee33fc36b958633b5680302a",
+    "wireguard-socks-full-duplex-16-candidate-5/result.json": "2a97b0e0a573f7a6c361763d23cb7fd28e0cdff7424fb6552cf8f525af238ba1",
+    "wireguard-socks-full-duplex-16-candidate-6/result.json": "556b0be091fe722fa2e91575a5a19e827f4ff549e112c517899eb3ecd540b508",
+    "wireguard-socks-full-duplex-16-candidate-7/result.json": "4c4189c34a9e582472f78b975ffbaf9247b27a1e93f0e38d1704671b9758d6e6",
+    "wireguard-socks-full-duplex-16-candidate-8/result.json": "b98b025f798847112ffb3d96ca8515492c3e8a881c91093f65752166ab4189db",
+    "wireguard-socks-full-duplex-16-candidate-9/result.json": "8d7ad7851819b9bb12cf9939453414d51d96471c04f18715309d59b73902e593"
+  },
+  "failures": [],
+  "manifest_sha256": "c68298c6f5e397cd857d524eb81871d3e263c99dcf9e5476d28cdc155304ddbb",
+  "rows": [
+    {
+      "case": "wireguard-socks-full-duplex-16",
+      "review": [],
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 7370,
+              "median": 7100.0,
+              "min": 6820,
+              "samples": [
+                7060,
+                7030,
+                7070,
+                7370,
+                7110,
+                7120,
+                7020,
+                7180,
+                6970,
+                7140,
+                7230,
+                7020,
+                7090,
+                7090,
+                6820,
+                7160,
+                7170,
+                7200,
+                7150,
+                7060
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 7.197265625,
+              "median": 6.93359375,
+              "min": 6.66015625,
+              "samples": [
+                6.89453125,
+                6.865234375,
+                6.904296875,
+                7.197265625,
+                6.943359375,
+                6.953125,
+                6.85546875,
+                7.01171875,
+                6.806640625,
+                6.97265625,
+                7.060546875,
+                6.85546875,
+                6.923828125,
+                6.923828125,
+                6.66015625,
+                6.9921875,
+                7.001953125,
+                7.03125,
+                6.982421875,
+                6.89453125
+              ]
+            },
+            "rss_mib": {
+              "max": 49.71875,
+              "median": 48.5234375,
+              "min": 47.8125,
+              "samples": [
+                48.859375,
+                49.71875,
+                48.234375,
+                48.171875,
+                48.375,
+                48.28125,
+                48.15625,
+                48.515625,
+                49.25,
+                48.6875,
+                48.640625,
+                48.8125,
+                48.046875,
+                49.65625,
+                48.421875,
+                48.3125,
+                47.8125,
+                48.53125,
+                49.109375,
+                48.5625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 277.1213867110891,
+              "median": 266.79916833518246,
+              "min": 255.50603229568753,
+              "samples": [
+                268.0290545819481,
+                270.0814237045161,
+                268.4078138258922,
+                255.50603229568753,
+                266.57706136928067,
+                264.0450993671137,
+                271.50805656740437,
+                263.74076399419005,
+                273.09366354104475,
+                263.5551939643497,
+                260.8965582629985,
+                271.4623003656534,
+                267.0212753010843,
+                268.2789368646691,
+                277.1213867110891,
+                262.7058345847566,
+                265.19928813456346,
+                262.1151295911663,
+                261.136814109829,
+                268.0453025355214
+              ]
+            }
+          },
+          "passed_repeats": 20
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

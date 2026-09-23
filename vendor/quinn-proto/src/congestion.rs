@@ -1,7 +1,7 @@
 //! Logic for controlling the rate at which data is sent
 
-use crate::Instant;
 use crate::connection::RttEstimator;
+use crate::{Duration, Instant};
 use std::any::Any;
 use std::sync::Arc;
 
@@ -15,9 +15,43 @@ pub use new_reno::{NewReno, NewRenoConfig};
 
 /// Common interface for different congestion controllers
 pub trait Controller: Send + Sync {
-    /// One or more packets were just sent
+    /// An ack-eliciting packet was just sent.
+    ///
+    /// `bytes` is the size of this encrypted packet, excluding any other
+    /// packets coalesced into the same datagram or GSO transmit.
     #[allow(unused_variables)]
     fn on_sent(&mut self, now: Instant, bytes: u64, last_packet_number: u64) {}
+
+    /// Record a sent packet with flight state, returning an opaque delivery token.
+    ///
+    /// The token is returned unchanged in `on_ack_with_token`. The default
+    /// preserves controllers implementing only the original callbacks.
+    #[allow(unused_variables)]
+    fn on_sent_with_in_flight(
+        &mut self,
+        now: Instant,
+        bytes: u64,
+        last_packet_number: u64,
+        in_flight: u64,
+        app_limited: bool,
+    ) -> u64 {
+        self.on_sent(now, bytes, last_packet_number);
+        0
+    }
+
+    /// A packet was delivered, with the token recorded when it was sent.
+    #[allow(unused_variables)]
+    fn on_ack_with_token(
+        &mut self,
+        now: Instant,
+        sent: Instant,
+        bytes: u64,
+        app_limited: bool,
+        rtt: &RttEstimator,
+        token: u64,
+    ) {
+        self.on_ack(now, sent, bytes, app_limited, rtt);
+    }
 
     /// Packet deliveries were confirmed
     ///
@@ -33,6 +67,13 @@ pub trait Controller: Send + Sync {
         rtt: &RttEstimator,
     ) {
     }
+
+    /// A fresh, raw RTT sample was measured for this ACK batch.
+    ///
+    /// Called before `on_end_acks`; inferred acknowledgements produce no sample.
+    /// The duration includes peer ACK delay, like the path's minimum RTT.
+    #[allow(unused_variables)]
+    fn on_rtt_sample(&mut self, now: Instant, rtt: Duration, app_limited: bool) {}
 
     /// Packets are acked in batches, all with the same `now` argument. This indicates one of those batches has completed.
     #[allow(unused_variables)]
@@ -64,6 +105,12 @@ pub trait Controller: Send + Sync {
 
     /// Number of ack-eliciting bytes that may be in flight
     fn window(&self) -> u64;
+
+    /// Optional transmission pacing rate in bytes per second.
+    /// Zero or None retains the default congestion-window / RTT pacer.
+    fn pacing_rate(&self) -> Option<u64> {
+        None
+    }
 
     /// Retrieve implementation-specific metrics used to populate `qlog` traces when they are enabled
     fn metrics(&self) -> ControllerMetrics {

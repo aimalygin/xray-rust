@@ -1,0 +1,83 @@
+{
+  "core_head_unchanged": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+  "diagnostic_attempts": [
+    {
+      "classification": "diagnostic_success",
+      "completed_validated": true,
+      "owned_cleanup_verified": true,
+      "path": "histories/candidate2-64m"
+    },
+    {
+      "classification": "diagnostic_success",
+      "completed_validated": true,
+      "owned_cleanup_verified": true,
+      "path": "histories/candidate2-full-16m"
+    },
+    {
+      "classification": "diagnostic_success",
+      "completed_validated": true,
+      "owned_cleanup_verified": true,
+      "path": "histories/parent-release2-full-16m"
+    },
+    {
+      "classification": "diagnostic_success",
+      "completed_validated": true,
+      "owned_cleanup_verified": true,
+      "path": "histories/pooled-release2-full-16m"
+    },
+    {
+      "classification": "diagnostic_success",
+      "completed_validated": true,
+      "owned_cleanup_verified": true,
+      "path": "histories/reclaim-release2-full-16m"
+    },
+    {
+      "classification": "Instruments_attach_failure",
+      "completed_validated": false,
+      "owned_cleanup_verified": true,
+      "path": "traces/candidate2-512m"
+    },
+    {
+      "classification": "diagnostic_success",
+      "completed_validated": true,
+      "owned_cleanup_verified": true,
+      "path": "traces/candidate2-512m-signed"
+    }
+  ],
+  "guarded_core_files_verified": 573,
+  "mobile_clean": true,
+  "patch_reconstruction": [
+    {
+      "commit": "b9577f874b3f102880ae078038855803d85f5d04",
+      "parent": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+      "patch": "source-provenance/parent.patch",
+      "sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+      "tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f"
+    },
+    {
+      "commit": "cac1b3f424ce7ce5f8db85869b6616c46cf4de60",
+      "parent": "b9577f874b3f102880ae078038855803d85f5d04",
+      "patch": "source-provenance/diagnostic-harness.patch",
+      "sha256": "b8186cdfafd2ae6e5960716d782c910955cf8e82cd0fd797723afa66c96592c1",
+      "tree": "f9dad7484718e1d1faed9266d861bb93f2550da1"
+    },
+    {
+      "commit": "449469ae3dcd1dd9fbf5388160af513ff8ab440d",
+      "parent": "b9577f874b3f102880ae078038855803d85f5d04",
+      "patch": "reclaim.patch",
+      "sha256": "7988972395ba110a407bd656a458cf26952c2adea69c0dc1f317ad42fd627007",
+      "tree": "edea758b2ec79c30ea3ecc9f3e890df22c5a923a"
+    },
+    {
+      "commit": "10dda33f17fc9ce13687f812d22836485573262e",
+      "parent": "b9577f874b3f102880ae078038855803d85f5d04",
+      "patch": "pooled.patch",
+      "sha256": "1066cc551fc02f052c4a4c8c6546107a92c50e556dc78f4bd578c154051e72ab",
+      "tree": "a2c32a8b91de2cf967561bd430256a84424b0ec2"
+    }
+  ],
+  "prepared_extra_protocol_validations_executed": false,
+  "production_tun_fd_unchanged": true,
+  "quiet_guard_timeout_before_any_timed_run": true,
+  "timed_runs_verified": 15
+}

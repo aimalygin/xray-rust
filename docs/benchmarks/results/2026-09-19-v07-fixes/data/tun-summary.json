@@ -1,0 +1,3919 @@
+{
+  "artifact_sha256": {
+    "freedom-tun-download-1-baseline-1/result.json": "512312f34d9047fe5bbd7b8cae0f319521c622709a8cd0b650852c7903958d6f",
+    "freedom-tun-download-1-baseline-2/result.json": "04d150967916676bde37b3634113f800181eb1baf404b3953b14bf3cf0758e40",
+    "freedom-tun-download-1-baseline-3/result.json": "ebcdbe8fbf0646faa91d024f1a6a8c206514c037611863e068f467503808b838",
+    "freedom-tun-download-1-baseline-4/result.json": "de912cdd021d7680a1544d0090d468abea528332411a66c70cc891006f3cb3f6",
+    "freedom-tun-download-1-baseline-5/result.json": "577b7a297638a481d0053465e7b70e5b57d4827592ab4a335f23000ed4d22e56",
+    "freedom-tun-download-1-candidate-1/result.json": "a593501ce2cc94c4cc3840ac04e5e35a41a933755bce8376d25a382249c9bc8a",
+    "freedom-tun-download-1-candidate-2/result.json": "cbcab174f5a302163492de05e711511de3e0776178a45c30917b09afec1c4baa",
+    "freedom-tun-download-1-candidate-3/result.json": "d6a6fef42f7dcb2ac2e1445e9d91cee2e9e5c32d4321a97e59b62b35b0935d01",
+    "freedom-tun-download-1-candidate-4/result.json": "2f1718619f0c2c3d6a9fbb3fb59d32dcc2cb93fa22c05aee66a446b29f633b1e",
+    "freedom-tun-download-1-candidate-5/result.json": "71b4ed12069ce561b1170d4fe4e9dde45ecf68793f943a80e4ef15ae3cd3a13c",
+    "freedom-tun-download-8-baseline-1/result.json": "df7f1588a83c6a5093f5a3793ff7aec67b8217739e0b61cf9f6377c5674e6c33",
+    "freedom-tun-download-8-baseline-2/result.json": "fea37a3227e9e6fdc40cd56a6b449a9487226d4b860aa2eb4ab1296217b6fe28",
+    "freedom-tun-download-8-baseline-3/result.json": "966e8e0877a11e6b0cdb7ddf88c595e02b9cac8e350d5e8f50e1a1ee09cc8a1a",
+    "freedom-tun-download-8-baseline-4/result.json": "ebba6847efe0a296880a00d2b3badd5554fbca596efef124da68d6bc33175ddb",
+    "freedom-tun-download-8-baseline-5/result.json": "e01e8f6d2293ca56cf9126fca0b17cac15078fcdbc4ebf86fdb180454e98c4e8",
+    "freedom-tun-download-8-candidate-1/result.json": "08ef8de4b7d4d5116d28af83afd482132ae20ed42f7a0673e2a0e3fbadff72b1",
+    "freedom-tun-download-8-candidate-2/result.json": "92a3824749e597be4ff77cbe3ca5a422263df834986642ec2e1a80b570e3c673",
+    "freedom-tun-download-8-candidate-3/result.json": "cd066cc4a8fa6440e887371413a2c0ef53b47088f27995fc539613ea3c72e044",
+    "freedom-tun-download-8-candidate-4/result.json": "4a035a55a6b56233b91f002fc595bae9155a61f9c62deeb6e790d3c65193b0f1",
+    "freedom-tun-download-8-candidate-5/result.json": "5ea6288353f8c73bb4e92fbb9b13367a24fcd6211dd9482b72e005cb769ea37f",
+    "freedom-tun-full-duplex-1-baseline-1/result.json": "3d05ae21a3d524577a6848750abff12a606b78ba1c02d4733cc42660a023876b",
+    "freedom-tun-full-duplex-1-baseline-2/result.json": "cc973cb8e0ae639d4f63c14a0bd1aa4ccb5aa4f3511fb2da4ddec9737632de08",
+    "freedom-tun-full-duplex-1-baseline-3/result.json": "bdd22e2ab09695c34e61f5f4edeb52750bafd685ecb98f4c4a842fbaacefc666",
+    "freedom-tun-full-duplex-1-baseline-4/result.json": "b60b4dfa992669876e61684500f0e576e0f85c1cb73f3b63f7b443cc3091cdf4",
+    "freedom-tun-full-duplex-1-baseline-5/result.json": "da04f99f50a76ac4891577e2efc2c48160bc55683314e9433f8e5309b9b393f1",
+    "freedom-tun-full-duplex-1-candidate-1/result.json": "8399efee15c666052751e2d154ab0d4ef95217da45cd286b487bb2a7a038fc82",
+    "freedom-tun-full-duplex-1-candidate-2/result.json": "90eccece61bce1818bdcfa3e405f373cca7df5244b7a2a40d6cf7f044b846d16",
+    "freedom-tun-full-duplex-1-candidate-3/result.json": "b00e21ebebbb8c117cffca548f3761d9772885e9e58538cb0d098af0f869e77c",
+    "freedom-tun-full-duplex-1-candidate-4/result.json": "e298b9a5549d8ccabc04ccb5c3c992f944c8a819aefaa3e3f371ae3611c8dbac",
+    "freedom-tun-full-duplex-1-candidate-5/result.json": "171db61dd21947379dda03831cc4919f8485ce308fb006680006ae8b384e5a75",
+    "freedom-tun-full-duplex-8-baseline-1/result.json": "35a68628157e620a0a49cf1dfcd038492fe9948ae63b3971878249395cc5656c",
+    "freedom-tun-full-duplex-8-baseline-2/result.json": "7a7c30c656c2e08945fc3c32705d3c9b67d8947bfe549a29ab2edb7d01674763",
+    "freedom-tun-full-duplex-8-baseline-3/result.json": "d4e117f10bc78d1f460f871a60c930526afde64b37024a2f8b9fc1d14d854c47",
+    "freedom-tun-full-duplex-8-baseline-4/result.json": "38c0fa325d339e9cfa80bf5464875fa826d05b4d20ff325e92d1a6fde916c1f9",
+    "freedom-tun-full-duplex-8-baseline-5/result.json": "51ddada7ab631cdc0e787ae8c65187a8df0c38917cb6b84ba92b2ef03545798b",
+    "freedom-tun-full-duplex-8-candidate-1/result.json": "94fb0eca8491d5bf1cff7622e62259fd51a8efa0fe6572870e459e47913c7043",
+    "freedom-tun-full-duplex-8-candidate-2/result.json": "9462376ae71874fd06402c5e4394590302186318888613311d12a1b598893692",
+    "freedom-tun-full-duplex-8-candidate-3/result.json": "1fd920a33f6a5f28f37005f4b8b3f35e1b405d1c947749c50b88bcdcb97cb863",
+    "freedom-tun-full-duplex-8-candidate-4/result.json": "baf0ba7b15e70bad45f8e6d279d060e1386106bbb612a9c68581ba707d278bad",
+    "freedom-tun-full-duplex-8-candidate-5/result.json": "86cf081c54e6a584987ded763848475d0e92480008dda3a42d11109d157114f0",
+    "freedom-tun-upload-1-baseline-1/result.json": "f43722e7ed963c65d4454c987d51c9b2e26fad278e4e2c47f1d9319a11bc3e60",
+    "freedom-tun-upload-1-baseline-2/result.json": "758c0023e67d712b43b30af904928be4ad98acd6275da038d2e25216bed306dc",
+    "freedom-tun-upload-1-baseline-3/result.json": "92a32497949447d28aac5762f8a41f00ff4048b2d5a484b98bf735e8a240f543",
+    "freedom-tun-upload-1-baseline-4/result.json": "9398343055e3a5ca42c3c0cce80c38468c42b27d68605ad9b40805fdbc0f52bb",
+    "freedom-tun-upload-1-baseline-5/result.json": "e01508a163b18258067b68f8667cd13517a3ad1e01d79d0b2f1c89319be4108c",
+    "freedom-tun-upload-1-candidate-1/result.json": "d5c097d9c51fc1c00cd73828ee32158b2bd36fb355cad896f7cc390fc4a52cb3",
+    "freedom-tun-upload-1-candidate-2/result.json": "f62717c2f1551b7af02056bd9f3bcffd3505e5c5cd15468748a8f46a2a3dea8a",
+    "freedom-tun-upload-1-candidate-3/result.json": "b1767d91270e6f260cc02be2dfc22088b749eb648d71842e6dd50572e912a247",
+    "freedom-tun-upload-1-candidate-4/result.json": "c1f8eb5d439fdd196109d42a812d35db8b09cde3bc460b6b1acdc8bc35508fe1",
+    "freedom-tun-upload-1-candidate-5/result.json": "ed24aad22860c8a555d6d45b8c54afc244c60e0afc42526784d125cc893a2491",
+    "freedom-tun-upload-8-baseline-1/result.json": "4eda0bf6d07f059ee18ea5c7a04b73159bbc3481ca74e74b8d85829a3ca764c7",
+    "freedom-tun-upload-8-baseline-2/result.json": "df48f44483d73c49887bd379f296fc3b87caa4adda635cc484c76ca233478ae6",
+    "freedom-tun-upload-8-baseline-3/result.json": "98a976814ec019400c04ea2ebf84f1cae224357c18356823668aaf83d068c871",
+    "freedom-tun-upload-8-baseline-4/result.json": "4f325b6e8c197575c65a9f8ccc6273ec69002c7f4bea0bc93af6aaeee5c62fd7",
+    "freedom-tun-upload-8-baseline-5/result.json": "6b95b3adba33a7eb54d9585a5d78ff8689fd70be2fd64ce486b23f67a9df2fa7",
+    "freedom-tun-upload-8-candidate-1/result.json": "bcc019065cfc094bcae50fdbbc5ca0fedb90b5f771cd7036f6dc1bc91af2c6d3",
+    "freedom-tun-upload-8-candidate-2/result.json": "a73b834963ec69ec6207f4be9e699c10d7fff9ed4f5776661e66ec273373f0b4",
+    "freedom-tun-upload-8-candidate-3/result.json": "457d8231a44044a4c88867325c0577dea74800acb855dc5a3821ad1f61bdc78e",
+    "freedom-tun-upload-8-candidate-4/result.json": "49152537cb6586cd41d0cefe0653f5a982940c5f0abbdbfe3e52515f5b36c757",
+    "freedom-tun-upload-8-candidate-5/result.json": "6273743443e940015913a45578bee4342b0c72bb9560b8c894c50f91a9997d3a",
+    "vless-tls-tun-download-1-baseline-1/result.json": "66693b43bb76f5c64305384f8cf2ddde3f224b380c3835634b0f4bfd80711c84",
+    "vless-tls-tun-download-1-baseline-2/result.json": "0f5248f644487b7e2c93447b27027a01d52809a3a9854ccb1ad5db7e678b964e",
+    "vless-tls-tun-download-1-baseline-3/result.json": "000e25f9200752e5b035e1c5201b00052d02c288b1774bf5bc4c0e3ab0df5f8d",
+    "vless-tls-tun-download-1-baseline-4/result.json": "ea179f68c5098648996db347f551a6af90b3a29d04eddca8bf042f67820d142c",
+    "vless-tls-tun-download-1-baseline-5/result.json": "fbc882af8badabeda73b378217d0b055affd9ae3c31629f28ed9a6129ec2f074",
+    "vless-tls-tun-download-1-candidate-1/result.json": "67fcb18a0507595d845624ae379dd2c51a7e417a6500352c3ce7ea52691e330a",
+    "vless-tls-tun-download-1-candidate-2/result.json": "74927268e57eccd3cf873bb176ce8bb72a0081186781889d792b613406514746",
+    "vless-tls-tun-download-1-candidate-3/result.json": "7ed6454ad71a72e8a80bcf8e690e11ee2f0c77307b8c3a50b315c5a73cc3d9df",
+    "vless-tls-tun-download-1-candidate-4/result.json": "6558ca6262d5ecb993fa10a9ed45de5d34f028147182d5359176d680283e8c82",
+    "vless-tls-tun-download-1-candidate-5/result.json": "e45387699b610290f79c088732b8f54de528f1b9e08e5c8dbcaefc9fa340f224",
+    "vless-tls-tun-download-8-baseline-1/result.json": "a9084365a32f9372302b582fa8b5c7a519adedd44ae3d196713f1a8027ed3729",
+    "vless-tls-tun-download-8-baseline-2/result.json": "34a6af1728911832607b480a8eb079cbef066666854db853ae4f312e57a284f5",
+    "vless-tls-tun-download-8-baseline-3/result.json": "5a946f21ebed516cf4b1cd6cf742aa1805ecf424509828043c1c2d44bae2ee94",
+    "vless-tls-tun-download-8-baseline-4/result.json": "72e245e6b84454ccebf29aadc069b6b4c3f4f3107aa7eb41640e334229658315",
+    "vless-tls-tun-download-8-baseline-5/result.json": "8e1dd591befcb4169f606df4eb5e700ba5b6a4bc7bf303af38e3a52a1d40b82d",
+    "vless-tls-tun-download-8-candidate-1/result.json": "e1dc41ea61ec49faa2de0ec127c8f8b6f3a85a16c615a0e0bf3d09fa40d4b8cc",
+    "vless-tls-tun-download-8-candidate-2/result.json": "fa617cdd3b52dc2b71da01a3193803219478f26782e197258c471e055936be5c",
+    "vless-tls-tun-download-8-candidate-3/result.json": "69b9d6b65d0415bf801ece9c455714f161e864f397517ec8c23c693635184dfd",
+    "vless-tls-tun-download-8-candidate-4/result.json": "97e076532b75922e82f7586bd85cce37f5ba2479880916d25feb7df022b5951e",
+    "vless-tls-tun-download-8-candidate-5/result.json": "133810cc6bd52273bb7d6a77a80d9c4650422fc98f18f10c74d1f1aa7661148c",
+    "vless-tls-tun-full-duplex-1-baseline-1/result.json": "011b3e23fec041e36701a9d378bc8493a2a8aeabb3949538299f959024ccb800",
+    "vless-tls-tun-full-duplex-1-baseline-2/result.json": "33e468c7f5dcd0085178df8bbbec0b2a2910318613d2c3f2c1399352f1b91ba8",
+    "vless-tls-tun-full-duplex-1-baseline-3/result.json": "e4e68af96cfa2a315e56cb11f834ff9cb0e445db4c9a136046ce2ee0a7490f8b",
+    "vless-tls-tun-full-duplex-1-baseline-4/result.json": "58cca4854eeca3e7f9f8c1ee3542ddd3b4f2d01de4dd7188ab2bce835bc81e1b",
+    "vless-tls-tun-full-duplex-1-baseline-5/result.json": "b265b5831a8687fce7c1ee59b287aebe0c9e2c071a041d81d1f84c265728e79a",
+    "vless-tls-tun-full-duplex-1-candidate-1/result.json": "489db29e98058d044ea48263a43395963a549c85e7b25a09a4c6ceb673eb79d2",
+    "vless-tls-tun-full-duplex-1-candidate-2/result.json": "89cf6ffe30185e08da633014c8c723d5f7b42e5e13f9d14b0ae01821eb1827f2",
+    "vless-tls-tun-full-duplex-1-candidate-3/result.json": "65af9c56f043532bbdaac443d5161432a0ff75dd9793baa1a57082675b37fc40",
+    "vless-tls-tun-full-duplex-1-candidate-4/result.json": "362e84cca667e81ac869c2bf2c37c2c640b1b0f33782ffc055777ac799fb0783",
+    "vless-tls-tun-full-duplex-1-candidate-5/result.json": "79508fd3932695ed95881547b8758b04f6b80cf113d68f7ac6df52cf41298c5c",
+    "vless-tls-tun-full-duplex-8-baseline-1/result.json": "21534de8c8acbefd506e59fc432b2e2f1136863f27af43594e275ac5a9cc3477",
+    "vless-tls-tun-full-duplex-8-baseline-2/result.json": "d10d69f796499f108050ebb850f74f328bcb3cabfec831317fb7a44ab338cc5b",
+    "vless-tls-tun-full-duplex-8-baseline-3/result.json": "01da70341dd38ecf8c91742f922172b007961a9f1affe76f65a488f967d17cb8",
+    "vless-tls-tun-full-duplex-8-baseline-4/result.json": "e93968c77d28d42565400d19ee6b581570a91a3be325f6620fbb3c82da6b417a",
+    "vless-tls-tun-full-duplex-8-baseline-5/result.json": "06eb9c3288f78a5ce2320aa2e3a54a74faf0b972b03ad48d511eb3f96e122db3",
+    "vless-tls-tun-full-duplex-8-candidate-1/result.json": "f4ddddba7376dca1e87575e71a2f3e795c77fa445d0f3399cbbd5ee13e53f5d2",
+    "vless-tls-tun-full-duplex-8-candidate-2/result.json": "8b98d9e758765b2fbd8c2e4a9c39f312e5d2bbff1c18a653c6c53ebd21298dad",
+    "vless-tls-tun-full-duplex-8-candidate-3/result.json": "eb5167d4baa085fdd695a9a79f7469a184e178c2522d39ec401b337cabc374b6",
+    "vless-tls-tun-full-duplex-8-candidate-4/result.json": "8a158a1f0c91093e0a9d18d7888ea1a09d205ab4619899a66ec4f26063f13db3",
+    "vless-tls-tun-full-duplex-8-candidate-5/result.json": "2e76861b0b736b8fde15d6522ae42b31371f94bd085f0daf2ae0252840925e55",
+    "vless-tls-tun-upload-1-baseline-1/result.json": "0ce474d88716ac4cff796b4bfd0ff88e8bc7eb8221ea72a053bb6922b045a82f",
+    "vless-tls-tun-upload-1-baseline-2/result.json": "5be3f1d23c91bc49c19ae33347d3c093e8c0eb592c146123d7251d91771bedce",
+    "vless-tls-tun-upload-1-baseline-3/result.json": "3b9a8e1339dcb9b92b034c30680bc2d59aa025ff33086d2696f6a835c472c653",
+    "vless-tls-tun-upload-1-baseline-4/result.json": "bc9cf275b38cc6e2e778238603fb22081d36f7e2efb23e00e3a69768d825a73b",
+    "vless-tls-tun-upload-1-baseline-5/result.json": "706dfc898708be0dba533fcf8d9b070cafac137cf04dc96521d486bfb31cc0ee",
+    "vless-tls-tun-upload-1-candidate-1/result.json": "71847a837dbe0f828117498d512e73ce0efe13c72d015243cdecfe38bb648ca0",
+    "vless-tls-tun-upload-1-candidate-2/result.json": "aead1c5781b517d89047e5c68f179e6e053d45e5fa02c37a433e921997936eb5",
+    "vless-tls-tun-upload-1-candidate-3/result.json": "c7874ea4b0e0239fc18bd3acc7e14baf094d31b59c8058631662eebcb6c850b0",
+    "vless-tls-tun-upload-1-candidate-4/result.json": "d9994c035cf920e7ef68f2bb9eb4694fbd0c54695b98ae4e38face67d89077fc",
+    "vless-tls-tun-upload-1-candidate-5/result.json": "52297f8fa50bee7bb6ae89683874c6afc5106cb55f18f33900491088750fb96d",
+    "vless-tls-tun-upload-8-baseline-1/result.json": "c25a57638cf00205b19713d985de904dac479c9a8cc07ebb08f34c8ced9b2ffc",
+    "vless-tls-tun-upload-8-baseline-2/result.json": "442c477f7fe0dcd8424eddf2bc2e20dbb049dea73204fd63422d8004e344d75f",
+    "vless-tls-tun-upload-8-baseline-3/result.json": "df0a73d8afa12087113538d0880cfb44712e9b33b36d11c95c8f229fd544abaa",
+    "vless-tls-tun-upload-8-baseline-4/result.json": "e25859bc7ebf6e58d5189637eb3961972b8d043a9d79dad900c1468150769605",
+    "vless-tls-tun-upload-8-baseline-5/result.json": "77a74d5e15f65c3c87841d4ffd607094691e209bc3362796ea00b2b3b0c505d7",
+    "vless-tls-tun-upload-8-candidate-1/result.json": "22015faacaba9c45b17e55fdb1f36ee2098cf3427e2886787c028e2d8c4e9c43",
+    "vless-tls-tun-upload-8-candidate-2/result.json": "952d7de9b1585ad927f0d71f059e2a2402429a27cee3e7ae31344ee27734c96a",
+    "vless-tls-tun-upload-8-candidate-3/result.json": "f37c15f0c34983c426e0ff80c93b6d3d4c292b00844e36425825cc55d612344f",
+    "vless-tls-tun-upload-8-candidate-4/result.json": "eaac293a64a915c991e0c559c91550e5d8fd4c4556e690b1526a556fbdf92ab1",
+    "vless-tls-tun-upload-8-candidate-5/result.json": "b9e99a62e059396ba489625ce243d6d5b0a80c3dc4ec8a3a41f07097b1b64dbf",
+    "xhttp-h1-tun-download-1-baseline-1/result.json": "579d131c87afd098261c61ba68bc2f28c938dadc671ec2ccca649d1636ec3bd7",
+    "xhttp-h1-tun-download-1-baseline-2/result.json": "8898137219449a5a623ec640a7e350fd96c3d3a2fbab7cd7546bdea2a109e609",
+    "xhttp-h1-tun-download-1-baseline-3/result.json": "de89329e8171e037a76950a779635af8782c5fd01b12b98e0512f4fa5a390d81",
+    "xhttp-h1-tun-download-1-baseline-4/result.json": "ba7b44d8f353d70427d44fc6a759d54839ffcdcad50000f2e6427dbf32b018e6",
+    "xhttp-h1-tun-download-1-baseline-5/result.json": "2a35c3a8ee22138a6a77219b47b4cb16d5d57d3610a97142b88ad871914002fa",
+    "xhttp-h1-tun-download-1-candidate-1/result.json": "8a18ae1e564e45c8d9c5107b42dcbd1d09f9775171ebb8383ce95f264ffb9201",
+    "xhttp-h1-tun-download-1-candidate-2/result.json": "16d6daad236087871e2699d3fdb33c336409a1c40f937b81cc629dbce065d0d2",
+    "xhttp-h1-tun-download-1-candidate-3/result.json": "7e669aa75ba666896afd1d06dfa2250ca768b7520d9ae70a70cb3b419d097932",
+    "xhttp-h1-tun-download-1-candidate-4/result.json": "184ff79e9aac836a6d0674dc91d0b0b78889fc42e0adc643494056c42e8223b7",
+    "xhttp-h1-tun-download-1-candidate-5/result.json": "5df26fef8a53d0b4751fb1cfd5b920f48cf1284362c9800150e26ec537789959",
+    "xhttp-h1-tun-download-8-baseline-1/result.json": "93b0a37267db8e91d96e87b3270d22179049fbc8dd42e61a3290e7f1735e2226",
+    "xhttp-h1-tun-download-8-baseline-2/result.json": "4b13c009002ab17033acbd88ea21e314f012c292105b4de226c559d84a758ae2",
+    "xhttp-h1-tun-download-8-baseline-3/result.json": "4868e9c2823263df9b17104baea559d4f2df7e874edefa6dd10756166a5325d5",
+    "xhttp-h1-tun-download-8-baseline-4/result.json": "6f5131e9a05fbf9b870d69ca3557d0a3ea026c40ac3ea6276e80b87a4ba308a7",
+    "xhttp-h1-tun-download-8-baseline-5/result.json": "e5e9cf206377bb0e0ba2fb8d3029e1e7d2271cef3e0592434cf3fa6c3e226665",
+    "xhttp-h1-tun-download-8-candidate-1/result.json": "25ecbfb76d0599dca2aabb175b932d0528432b4e9c7ff0e77517033c9496fc4e",
+    "xhttp-h1-tun-download-8-candidate-2/result.json": "b5037a2e4da68ffb4bc027279147705de0abc97c6334ed32f0d9556c061fa4ed",
+    "xhttp-h1-tun-download-8-candidate-3/result.json": "935b4f4c85cd4ab42a12753145231367b0b7603c8139ba1522902dc40f3399cf",
+    "xhttp-h1-tun-download-8-candidate-4/result.json": "336c641ebbe12782c4461937417918672860f8fc1e0c6f0345386b62bf94157e",
+    "xhttp-h1-tun-download-8-candidate-5/result.json": "2156a94f14ecd08d5305ad8d66e8154c1f6323ed1344e44314daadf8410d4b85",
+    "xhttp-h1-tun-full-duplex-1-baseline-1/result.json": "3021df1d9c7531d1c85b8fd86bac3b4c44be51933f01e554749c2718a2c336c2",
+    "xhttp-h1-tun-full-duplex-1-baseline-2/result.json": "fd89c42b0fcc65210775b52dac21df7d347e517d949e990ca8b73b08acd44386",
+    "xhttp-h1-tun-full-duplex-1-baseline-3/result.json": "b16c1df8d3f0b101d7fc86c006e1ca63ff5678cd620ff0107dddcdcf8f8eb1fb",
+    "xhttp-h1-tun-full-duplex-1-baseline-4/result.json": "7f737589c7894bebbe161c63a3086dc84ee52479930c196aeacfcd438c357304",
+    "xhttp-h1-tun-full-duplex-1-baseline-5/result.json": "d42f50ac70cfe55d363513aad554a24b137c6b03f68b1f886adc101fb3bf173d",
+    "xhttp-h1-tun-full-duplex-1-candidate-1/result.json": "0f6279faae8dfcaf1831832c17b0fe8763544103cf36f0afb6da0e35d52a8513",
+    "xhttp-h1-tun-full-duplex-1-candidate-2/result.json": "71d9433e1e47ac2ad559cfbf868b43f0f1a633e03a3a40687b00da3882eb60d8",
+    "xhttp-h1-tun-full-duplex-1-candidate-3/result.json": "98afa03e2afa9e7ea6aa74b7e4d7a746ddf0e10706d9a7daaaf4dbe1aef45678",
+    "xhttp-h1-tun-full-duplex-1-candidate-4/result.json": "1697fac92c9459a6af81ef77c91536afc832602014e6f6cc16dba38538c98479",
+    "xhttp-h1-tun-full-duplex-1-candidate-5/result.json": "0a258c1b625079cc0f9aad85aaeeac37c120dfdc9d67328d223161a6c9a90824",
+    "xhttp-h1-tun-full-duplex-8-baseline-1/result.json": "3af982a1487b9c8d2918eb7de9958a8e342a385448e3c52765ecbff3f4091b5b",
+    "xhttp-h1-tun-full-duplex-8-baseline-2/result.json": "d44a3f55d4eacfbe8cb5b5b390814e4b80ec5b443d5bd22082f5346bdcbe74aa",
+    "xhttp-h1-tun-full-duplex-8-baseline-3/result.json": "995cdcacf2e4bd770c8cebe881f87548d4a594566dca8e6c497ad2764ee9c536",
+    "xhttp-h1-tun-full-duplex-8-baseline-4/result.json": "2016c9ff4de018fdab970eb3051face9ed492d8efbf08ecef1cd08e7d56575a0",
+    "xhttp-h1-tun-full-duplex-8-baseline-5/result.json": "c570199aaaeab100881ea90abfca48f74d1ef0f958717c58884ab2342bc98c4d",
+    "xhttp-h1-tun-full-duplex-8-candidate-1/result.json": "bc0c143931784361a4716ed4091704e7dd499b9dc17b8f1d3a19bd3e1b39d2e5",
+    "xhttp-h1-tun-full-duplex-8-candidate-2/result.json": "8224e2024c84f88d582514ed581382ebe944daed7a8105abf3002772b77b442e",
+    "xhttp-h1-tun-full-duplex-8-candidate-3/result.json": "f1c4cf2a40a5658c7a36ff6f9af79a376ccc72b144f775d0cd6566d5eab899d2",
+    "xhttp-h1-tun-full-duplex-8-candidate-4/result.json": "8285882b80c412f6001344fc3c54539a64fb1a8b6ad626c7382c423ab397bf46",
+    "xhttp-h1-tun-full-duplex-8-candidate-5/result.json": "b65894ac6ab07277a554759240d9a9e95764b628511c135afdc8d8a044dac7dc",
+    "xhttp-h1-tun-upload-1-baseline-1/result.json": "96119ad16ac32c02a02157b83c1bae555826a5879f1aafe10c3455801bae5655",
+    "xhttp-h1-tun-upload-1-baseline-2/result.json": "ad7aae2994aeabcce98f0fdf3725c832ecffd080e403eff92d6cd917b1ac6986",
+    "xhttp-h1-tun-upload-1-baseline-3/result.json": "ae6bc06791cfaabcd57661a0f9579ec6161062f99e89438726af6683bc3fe14d",
+    "xhttp-h1-tun-upload-1-baseline-4/result.json": "dc489a46f3696028531f7cf7749c74bf48f0d868a4c6d2d31a59bf5b8b64023f",
+    "xhttp-h1-tun-upload-1-baseline-5/result.json": "9999beffdb59f1df5d47bc1d0a2809db2ee3856badefa27cdffa191288ec259f",
+    "xhttp-h1-tun-upload-1-candidate-1/result.json": "12b179ef3858c65a50b05bede5bb45e6b2a4156071c0eee539b5a0f8adc8acda",
+    "xhttp-h1-tun-upload-1-candidate-2/result.json": "c20e42b15d35e9ed64a50be6640e5f88dbb1fde8764dd6acbf369adc52414f39",
+    "xhttp-h1-tun-upload-1-candidate-3/result.json": "139dd06c1603c7186a97883f3e8bf94dc5a7e0cbb4f4ae710ff632d48232c90c",
+    "xhttp-h1-tun-upload-1-candidate-4/result.json": "b6da0e7bdbb4c9dea31e33b89f0a1f4095d784189274b3c16bda6561e1795cc1",
+    "xhttp-h1-tun-upload-1-candidate-5/result.json": "fd7f4faac77ca5f196cf2c1f48b1e05493e7b5cd8dd06e7c4944f4f0fb615aa3",
+    "xhttp-h1-tun-upload-8-baseline-1/result.json": "63050a4bf55384a87510784ab9003434a8c9d00e9092a8811985273a3ae3f761",
+    "xhttp-h1-tun-upload-8-baseline-2/result.json": "c9070f729f2178626956da8557f74035d788e7a10acb99c4514d0a0229eaef63",
+    "xhttp-h1-tun-upload-8-baseline-3/result.json": "b400851ce3249391d71b8cccde718f5877d63e80077ce9c6d40502d7c13064f8",
+    "xhttp-h1-tun-upload-8-baseline-4/result.json": "76a57d2805dcf5f530c7db653a1c84006bfb75066bef490d56b2cf5fb8b2cc90",
+    "xhttp-h1-tun-upload-8-baseline-5/result.json": "49d4cb7a734c0a67fb47337e5d0c1bcdc9c95fe026ec91d6167d4d98a4e11abb",
+    "xhttp-h1-tun-upload-8-candidate-1/result.json": "cfd42084c35e4c6c67f19d7767b6b7424c8c3f03beab7db4300df0b730a35a9a",
+    "xhttp-h1-tun-upload-8-candidate-2/result.json": "7b9331951aefa532c963eca109a34df2a59593e0a3862d9c7336a307844c86e6",
+    "xhttp-h1-tun-upload-8-candidate-3/result.json": "ace5f8f737e617d768ec493b6cf657ee955add0a1726d0299c2541c0ac9ad9e5",
+    "xhttp-h1-tun-upload-8-candidate-4/result.json": "ae306c398ff594b55c8c18528837889f25780f61f1096243fcbd0e947e209be8",
+    "xhttp-h1-tun-upload-8-candidate-5/result.json": "1c8205dd106db5e0d3bc99e43e93e66ee03fe886cb581ff730f4e191195df7be",
+    "xhttp-h2-tun-download-1-baseline-1/result.json": "8723562a908a28891f11a72dbb30462d8b3c82d049caf0df240efa0bb040a800",
+    "xhttp-h2-tun-download-1-baseline-2/result.json": "4eaccee210eb0878a52c93b31a2f8a424ade005d816bb247484dc41e15694a3b",
+    "xhttp-h2-tun-download-1-baseline-3/result.json": "165589453f1fd937b8444fc327d634022388130f9138308ed1858d4f5538a945",
+    "xhttp-h2-tun-download-1-baseline-4/result.json": "29e9fa6eb626ff399deca29edbababdbbae53f5f389bb31fa4cfd90ebce922e7",
+    "xhttp-h2-tun-download-1-baseline-5/result.json": "24e9b4c3e65135a1cab32af5b214fe44a260026e3d7eab68e334e81455d6e447",
+    "xhttp-h2-tun-download-1-candidate-1/result.json": "bbb6ca46c1cda6c36b6326d016efe6d06c3cbb9f2f6f512ddb0d129984c9f641",
+    "xhttp-h2-tun-download-1-candidate-2/result.json": "99a1855c3bac9a2c89adfb1a22f52bbcc4ce461ffa63f870c5cfd3d969dd149e",
+    "xhttp-h2-tun-download-1-candidate-3/result.json": "b6e0e4fde021038d3fd2196e380f00838375dd9dc0ed1eb47756615c9585a14c",
+    "xhttp-h2-tun-download-1-candidate-4/result.json": "63d71d76785a152782fd7c9bf71c4ba753485a24966e8acf16b6b60ea8b6c2f9",
+    "xhttp-h2-tun-download-1-candidate-5/result.json": "ce0e95539918682c7e405040390e91417581f9b81c88576230af5ac8900cd5e2",
+    "xhttp-h2-tun-download-8-baseline-1/result.json": "678e07736e6568414139aa7ed9b7fcc27d1e3d7696467a91f9230bca83e43705",
+    "xhttp-h2-tun-download-8-baseline-2/result.json": "4466050a7f8d88f26d0f82af98f3dfaebf0f246254429c69181ec5bf798753c3",
+    "xhttp-h2-tun-download-8-baseline-3/result.json": "d0ea74869b5156358349a01e4ac127b7b4a9977737f3779b4c3cd7eca8772af0",
+    "xhttp-h2-tun-download-8-baseline-4/result.json": "9aa94722574fe9221d7934612e5b05b82ad98305200b959c1f3d83e88d687139",
+    "xhttp-h2-tun-download-8-baseline-5/result.json": "cae5d4ff6c3db89909a1c2d7800dca2c5244b3605c5e5068fab0fc785ae5705c",
+    "xhttp-h2-tun-download-8-candidate-1/result.json": "a32d1a10b7bb6c83cb12f8b8e5828015fdad80d324c9fd569afbdacd2404de27",
+    "xhttp-h2-tun-download-8-candidate-2/result.json": "ef5e52c012969b9deb2c985fb3305deb65d1a8fc1c11a6defdc76170384b7a0e",
+    "xhttp-h2-tun-download-8-candidate-3/result.json": "39da2df6e2ce1b8e570df62efb73a82d485922b23aa71be4237a5e35ba0771ee",
+    "xhttp-h2-tun-download-8-candidate-4/result.json": "281038442db3d1c5664c1bd6a275cae67e774200dbe6851eca752eba52df4ebb",
+    "xhttp-h2-tun-download-8-candidate-5/result.json": "f3483b878982181e5f47e6a513676d965b18ca6adc3eddaac1a8ee2e509bcb42",
+    "xhttp-h2-tun-full-duplex-1-baseline-1/result.json": "eaa468177da3e0b345672986ac292678e16f89bf1baab83cefe7179c8008d649",
+    "xhttp-h2-tun-full-duplex-1-baseline-2/result.json": "59d4fe7ce13a834e081f9a493328a6a132c940ff0de0c9d9e97d0e5d5fce05b0",
+    "xhttp-h2-tun-full-duplex-1-baseline-3/result.json": "e2aba14251965fa07f97cf170eb5f3a0f68d62a6b048b4bd28c980ae1fec9802",
+    "xhttp-h2-tun-full-duplex-1-baseline-4/result.json": "685ca5dc668117c9efd80d17a947216ca62d2dc64bbc2af83e4121161476cd30",
+    "xhttp-h2-tun-full-duplex-1-baseline-5/result.json": "49ddc70ea4f9d5ae95fb1cd08b7241f2a3ca537f4bc196dadc5f88509217c16d",
+    "xhttp-h2-tun-full-duplex-1-candidate-1/result.json": "ae0f7e2925705f3bb6e91423d5596b8ce0cef01d0fa27919349408784e621355",
+    "xhttp-h2-tun-full-duplex-1-candidate-2/result.json": "434321d163cb23927cf470536b8757e3493f6e911bc3d1359726e88df41f9247",
+    "xhttp-h2-tun-full-duplex-1-candidate-3/result.json": "ca1ea82156f6fabd7902f4d526e60b627edb6e0fd81af067ee4330e1c998d7fd",
+    "xhttp-h2-tun-full-duplex-1-candidate-4/result.json": "5ce6fd5695edb1b12fe63c26a102351690ffea4f24d04775a947ce756b9ed9a4",
+    "xhttp-h2-tun-full-duplex-1-candidate-5/result.json": "dce57a7b3691a803e2362d074ac23f753f790eb353452b85fb4a1b1aaca22bb3",
+    "xhttp-h2-tun-full-duplex-8-baseline-1/result.json": "98daea625ad0c28eb6f0c0effbab25bffbb84d47276255bf8d95a4976a892a3c",
+    "xhttp-h2-tun-full-duplex-8-baseline-2/result.json": "99451246de13f34a4028c5c0758bba69ab781e8b3be03edbf1576784c379410a",
+    "xhttp-h2-tun-full-duplex-8-baseline-3/result.json": "9b7f8bfe854552c88dd9c0800de1437e28c39bda8ed52903a28222b21ee94b4d",
+    "xhttp-h2-tun-full-duplex-8-baseline-4/result.json": "ef9129b015f9b46b629140dbad1c750023b616fcdf411bbeaf1f77e0a68ccbec",
+    "xhttp-h2-tun-full-duplex-8-baseline-5/result.json": "126e361195c6369dfa52c426db96f1abf4b7be8fe10769b58d7d1eba802431f2",
+    "xhttp-h2-tun-full-duplex-8-candidate-1/result.json": "544d2fdecf96b0233682bed075d7cc55a989aab12315ed0b4fdb99218f50440d",
+    "xhttp-h2-tun-full-duplex-8-candidate-2/result.json": "8179b704c11722caff08458936f0df6f2ea09f30369788e92372d214557e1a8f",
+    "xhttp-h2-tun-full-duplex-8-candidate-3/result.json": "d1058f548bd052309f528ed339eee7c11011a8c92f7725c4e770d1eca862b7ce",
+    "xhttp-h2-tun-full-duplex-8-candidate-4/result.json": "4e30f2440ac1d61261413fd3ef16cb157d873067a6466274253f056811201d2e",
+    "xhttp-h2-tun-full-duplex-8-candidate-5/result.json": "a295bdc6010e70ca089336b958d0d8ab89eac3634985d0b822694fa3753f82e7",
+    "xhttp-h2-tun-upload-1-baseline-1/result.json": "0b80c5405def8ac36c6f7f0f013d8a3538b369509e468bbff402da7828904439",
+    "xhttp-h2-tun-upload-1-baseline-2/result.json": "aef600c7479452d697fbe8f6acbc273ede23517835c0d921a17ce07043798688",
+    "xhttp-h2-tun-upload-1-baseline-3/result.json": "7804ecba1573314d855a10c3e1599de64638aa6d59a661ff8986b2c572240670",
+    "xhttp-h2-tun-upload-1-baseline-4/result.json": "d6c5e32cd4711afc012cae951cdb77217bf5cd3c38a2f73179c8ebac1a0f2cb3",
+    "xhttp-h2-tun-upload-1-baseline-5/result.json": "4bd94a35ba0b7cabf29c67541268e5fde60fdb9e16ebc1f9bdee4daa1e34fe23",
+    "xhttp-h2-tun-upload-1-candidate-1/result.json": "25223d0111a02da0270d26ca40e4a3751c9b1b1081fbe5cee36468b02c375226",
+    "xhttp-h2-tun-upload-1-candidate-2/result.json": "74e8e703bf8225a4d8d993c3fa139a907f9b04a387ae6e18c10102411c7c8a5e",
+    "xhttp-h2-tun-upload-1-candidate-3/result.json": "05ce70fe519e43c836fce99f821bcf6ce2b9b7a804617f3a8f29a76b45aadc37",
+    "xhttp-h2-tun-upload-1-candidate-4/result.json": "1ed4a2ed2b7c2e32d1f789cec332d5181d587e6d16b143815029c3025e128d8a",
+    "xhttp-h2-tun-upload-1-candidate-5/result.json": "cb8dfd3694404d3b608da6aab1fce94f281602c5fcece230f9c1c393b909f968",
+    "xhttp-h2-tun-upload-8-baseline-1/result.json": "218731f212c2c05390b2cefa72a85c2f69795370d11da62607f34c9d3d27b7c7",
+    "xhttp-h2-tun-upload-8-baseline-2/result.json": "aa223a8229ed5dde7ec9df128bdd67b5115494a81b86b6c34ebaad3adfd17bbb",
+    "xhttp-h2-tun-upload-8-baseline-3/result.json": "f4a1be4eee1c260e65ffbc34f5c9bca7e861d6eabd11112bf8aef1df33e9edf3",
+    "xhttp-h2-tun-upload-8-baseline-4/result.json": "db684c9fa38aece46fc969239286db6c949aa1a5ad74e84915242d419ff3ee7b",
+    "xhttp-h2-tun-upload-8-baseline-5/result.json": "ffdd17e13a8c0413a8ad4a57fc6b3cc1be1ec1c51fe90773f2cc7d2fa428d142",
+    "xhttp-h2-tun-upload-8-candidate-1/result.json": "0683e597d9ecc3a4820a2a523075a32289315d52984a058cbaf1ba6e2f28dacb",
+    "xhttp-h2-tun-upload-8-candidate-2/result.json": "d795b4ca10085d10190db35de11ae19f74866fbb80fa4a28b2f460755daec7dd",
+    "xhttp-h2-tun-upload-8-candidate-3/result.json": "a399e0b0728c949c43d4dba564f92adc58c404fe5ccb975177aab472b7a7146f",
+    "xhttp-h2-tun-upload-8-candidate-4/result.json": "3645d976c1cb0a9843a02a4d2bdac870804f1c4a8ebb37b6ff0ce7df0b4264f3",
+    "xhttp-h2-tun-upload-8-candidate-5/result.json": "8a1c80cf0b51b19e61f3ab96acbc33250e09ee71b4e2e89675d94b806a7bd7f9",
+    "xhttp-h3-tun-download-1-baseline-1/result.json": "de23bd0239bb661e6573cca3b42b41b851ca30a8ac61e8a660c180b69cf5450c",
+    "xhttp-h3-tun-download-1-baseline-2/result.json": "1c62223d0fa95932a0cf54bba81e9b3a59646b1825eb81b140415b54d7b6c2dc",
+    "xhttp-h3-tun-download-1-baseline-3/result.json": "6f64aeb3603b999fc19a9ab8e1bbe87471b9a267549e79a5fd853a478e1af86a",
+    "xhttp-h3-tun-download-1-baseline-4/result.json": "47586783096f8271879a8c4b509bb42594b470a8fb42ba6797693747c81e1a75",
+    "xhttp-h3-tun-download-1-baseline-5/result.json": "ee99bf66dee5614da4341f22e75ebcaee9fa36f2344ac817b9e38f0d72ddd907",
+    "xhttp-h3-tun-download-1-candidate-1/result.json": "c4f3c4f4bc2772d9ddbc12e223da419e8cf2025042a622aa2425daf6477c53dd",
+    "xhttp-h3-tun-download-1-candidate-2/result.json": "79c939f37c6f09716145e0eaa531bdd8886486ecc6808f7511f405b7753fa2d7",
+    "xhttp-h3-tun-download-1-candidate-3/result.json": "3eb478617f061ac2d9c05e93469898baaa49179928314743bdc9b7c75f7955b0",
+    "xhttp-h3-tun-download-1-candidate-4/result.json": "4f3e5b6b1f5a0c2596135d5d35c2e893448aad9f0c4f37a4ae1cb96a956fef76",
+    "xhttp-h3-tun-download-1-candidate-5/result.json": "ad512815717d938ae39e764ca68ece5a034f451e8708528b8538b2574ed7b7f2",
+    "xhttp-h3-tun-download-8-baseline-1/result.json": "eff530e42907759ee9d7a9b08b2433b157de2a0c67086bc135e3e33d9d16029f",
+    "xhttp-h3-tun-download-8-baseline-2/result.json": "a3d7b6a230aec964cd3723064844d2dd8ef49d1901817120e7447ff51f9efffd",
+    "xhttp-h3-tun-download-8-baseline-3/result.json": "9cc9df034c88131ff54a72be3c113ea2647bf140979c8b6b46b0064f2bdfdaa3",
+    "xhttp-h3-tun-download-8-baseline-4/result.json": "377811335310db9db76e607fb48707c3a39cf75f5691095356ae6c9dc46ac8d5",
+    "xhttp-h3-tun-download-8-baseline-5/result.json": "e0e280136cabcdbe3ef7fdf63e27ff29d3f8b85c72559ce8d272d498459174b5",
+    "xhttp-h3-tun-download-8-candidate-1/result.json": "09fc31852e03ed5808985780974f586f30b02e0849607213e8e510c62892b75d",
+    "xhttp-h3-tun-download-8-candidate-2/result.json": "cec65af959743482810b4c1b123ddd188dbbb497f792363409aa0172fb7df1de",
+    "xhttp-h3-tun-download-8-candidate-3/result.json": "719cde2560f4895c329c9ba45636f9055deb05c861880f1cc2eeac2621cdc4f0",
+    "xhttp-h3-tun-download-8-candidate-4/result.json": "9177ef141f60860e7071c3be766109ddb6d2573008564fecabfa9d367053a658",
+    "xhttp-h3-tun-download-8-candidate-5/result.json": "fa172510c288fcf397792a9efba5014ed492186e4add733ead88458c0d82cf29",
+    "xhttp-h3-tun-full-duplex-1-baseline-1/result.json": "88ab516a5874b4703f044025f837a839857fbc15ca206641f51e5561818a0c50",
+    "xhttp-h3-tun-full-duplex-1-baseline-2/result.json": "5de7d7f179878d81ce5434a54810410301c04acd6916f9edca97ebb3c9aec246",
+    "xhttp-h3-tun-full-duplex-1-baseline-3/result.json": "c9a56ee438ab66da4dc225605b762f6a0c52e3fd66818ae57827ae4c82ca5a92",
+    "xhttp-h3-tun-full-duplex-1-baseline-4/result.json": "c740f4d97dd412605a4b2f5fbd9409dad53eeb6789c8b26bf45d91d0ffba0372",
+    "xhttp-h3-tun-full-duplex-1-baseline-5/result.json": "05520494bff2a0ffada6f79a7e9bdaccf1b627e2b7bd9730c514283536bdb7f3",
+    "xhttp-h3-tun-full-duplex-1-candidate-1/result.json": "a6187d5d108354fa28e50b1455d4c9921b960e015d605e6db2434dbc07b75230",
+    "xhttp-h3-tun-full-duplex-1-candidate-2/result.json": "bb9a185fd06a40ec9cd8ac495b8ddc7b1aea44d12b53d54cfa98a258c301d287",
+    "xhttp-h3-tun-full-duplex-1-candidate-3/result.json": "10d23309b55afdcab58aab4dfe44f45eddcb8a1fd00b863381b55f04de919b71",
+    "xhttp-h3-tun-full-duplex-1-candidate-4/result.json": "350bf34158c1ffc9769a1492da91b50c6e268903573866c5f233adc37efcb957",
+    "xhttp-h3-tun-full-duplex-1-candidate-5/result.json": "9d02a49120080f953a5c6a62eb9d9bcf069bc3baf0f4a5b1d68e3e4e7c3cdcc1",
+    "xhttp-h3-tun-full-duplex-8-baseline-1/result.json": "aaea1caae4f6e5fd5dfeb27e0f616aefbfda5368b2c3beaa314fbf7da6f80323",
+    "xhttp-h3-tun-full-duplex-8-baseline-2/result.json": "d97d413b0cbe28391bafc4e8ce4b66e44fe16d7b032d0c8713f60bf5aa60774d",
+    "xhttp-h3-tun-full-duplex-8-baseline-3/result.json": "e090d0281e524d0969e09ca392f75ecbb64f0277ce467384f11f4083a5a77ccf",
+    "xhttp-h3-tun-full-duplex-8-baseline-4/result.json": "348f20cb77406cfaccd5b21b7053630b507f37ee7adf6f52133de95bf6101e85",
+    "xhttp-h3-tun-full-duplex-8-baseline-5/result.json": "b4c7579db60c91732c446ab7158b6ad4fa3bcded4fd70c80506059289a35b56b",
+    "xhttp-h3-tun-full-duplex-8-candidate-1/result.json": "1fdad61cc589ef72eab64e025cbe1005a8ead440fba174e03126037c496a28f1",
+    "xhttp-h3-tun-full-duplex-8-candidate-2/result.json": "cc76fd07d5d3ca3cc0b250c403f62b9e03564263b360ff534aff97de035c2411",
+    "xhttp-h3-tun-full-duplex-8-candidate-3/result.json": "c7ae9c73f4dc7a0f947795c1fba25d16885f04c3adb839acefd2b9ebe15e6015",
+    "xhttp-h3-tun-full-duplex-8-candidate-4/result.json": "f0222a963f6a879e4183772cefa96b4b9275c8a974485ee0f9c00b15ebaf36e9",
+    "xhttp-h3-tun-full-duplex-8-candidate-5/result.json": "50c27cb9ae22a3a004d6e309bce555680aa1e1a0a2de40c2653995cbcc869876",
+    "xhttp-h3-tun-upload-1-baseline-1/result.json": "177b69095bd287d0fd59c978d09fff5e688a7a2b6436fda559a950264613c897",
+    "xhttp-h3-tun-upload-1-baseline-2/result.json": "b9e6f6f586915ed9597de84f1d8564173bf535178696819a16efe8b3e679c4a9",
+    "xhttp-h3-tun-upload-1-baseline-3/result.json": "e12650b8451be789c1f113fe96fc5f8304aa5418326e177e9a0353c0000ac9dd",
+    "xhttp-h3-tun-upload-1-baseline-4/result.json": "1466d3d6814e7274622632e3d0d9c8e1f1de08d99f286e12a16a71352a4c3ba2",
+    "xhttp-h3-tun-upload-1-baseline-5/result.json": "fb0b679e6c455f41be68d993e5a69a60303c760ce3c2053d51c02fc80d21fc6d",
+    "xhttp-h3-tun-upload-1-candidate-1/result.json": "91ebdc4a0a17646958df64acf25f475803a148fbe1091a31ffd03f7257bd92ae",
+    "xhttp-h3-tun-upload-1-candidate-2/result.json": "4fdc143e81bdeb3a6a00d99a372a653a79934b883afc884bcbd1213c594c632a",
+    "xhttp-h3-tun-upload-1-candidate-3/result.json": "2defa1ac72e1385149688fc6f730ec6c0886f3a13fc1b57bf7e2d3e0b562c9f9",
+    "xhttp-h3-tun-upload-1-candidate-4/result.json": "1bc31293086209b09846f53fb1be7c55cf3fd8c038f8ffa71c703762d83162e7",
+    "xhttp-h3-tun-upload-1-candidate-5/result.json": "8be941d9beb41a46a0d14fb0a4b58182f17a9d18aec71705709569f94c251588",
+    "xhttp-h3-tun-upload-8-baseline-1/result.json": "3fafae5f055d38da798524a74b491e038d8c2b98ac345d95df551ab058e669eb",
+    "xhttp-h3-tun-upload-8-baseline-2/result.json": "cd4c433375243e562a6c65a54b801fab653afc3716e1c42cfd1bd4f0f1241ee3",
+    "xhttp-h3-tun-upload-8-baseline-3/result.json": "e8afd6ed313e1a756744a9b5d57bdd20777d20fa2c7058356f74098967cf8a52",
+    "xhttp-h3-tun-upload-8-baseline-4/result.json": "bfdb23302335a094c04eb54765455d6ab727179daefd6c8a17c1496cbf56e83a",
+    "xhttp-h3-tun-upload-8-baseline-5/result.json": "65e12b1929dec43de9c3274a0a9134942b8bb369b5b80dc57a4910894af5f4e3",
+    "xhttp-h3-tun-upload-8-candidate-1/result.json": "8dc32875bcf0c2d754887f3db7594030d814656348d864cb4610533f9e26ad0c",
+    "xhttp-h3-tun-upload-8-candidate-2/result.json": "3b09c5084dc4f120b02670d2f9fd53819efdd7edc8c4e2486451f8d3d56c85a9",
+    "xhttp-h3-tun-upload-8-candidate-3/result.json": "bf96214ffd159c309e7e2441b5c59dfff7bcab5ae58c89b902bd230ba945fdd1",
+    "xhttp-h3-tun-upload-8-candidate-4/result.json": "a54a3006bad6cd0d3cf5a750b27eb262d6c730e6c68b0f5a7487674d13f4f47c",
+    "xhttp-h3-tun-upload-8-candidate-5/result.json": "adc4ddaf6a0e9e6ce473f3bd617b08bd3273a341a4d84b0b75eb71af36506e9f"
+  },
+  "failures": [],
+  "manifest_sha256": "08bbfa51644054c15daf05f201e4d982d8341cd91b1b343fbed58d2b2e10038d",
+  "rows": [
+    {
+      "case": "freedom-tun-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0628272251308901,
+        "throughput_mib_s": 1.0112437166678747
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 20,
+              "median": 20,
+              "min": 10,
+              "samples": [
+                20,
+                10,
+                20,
+                10,
+                20
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.0,
+              "median": 5.0,
+              "min": 2.5,
+              "samples": [
+                5.0,
+                2.5,
+                5.0,
+                2.5,
+                5.0
+              ]
+            },
+            "rss_mib": {
+              "max": 6.078125,
+              "median": 5.96875,
+              "min": 5.890625,
+              "samples": [
+                5.890625,
+                5.90625,
+                6.078125,
+                5.96875,
+                6.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 300.20733068775627,
+              "median": 274.89047332703376,
+              "min": 244.88421568177293,
+              "samples": [
+                300.20733068775627,
+                274.89047332703376,
+                244.88421568177293,
+                296.5049479263185,
+                251.39314223390335
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 20,
+              "median": 20,
+              "min": 10,
+              "samples": [
+                20,
+                20,
+                20,
+                10,
+                10
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.0,
+              "median": 5.0,
+              "min": 2.5,
+              "samples": [
+                5.0,
+                5.0,
+                5.0,
+                2.5,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 6.46875,
+              "median": 6.34375,
+              "min": 6.03125,
+              "samples": [
+                6.34375,
+                6.375,
+                6.03125,
+                6.46875,
+                6.328125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 304.19791603133666,
+              "median": 277.9812639238209,
+              "min": 234.09267143630487,
+              "samples": [
+                234.09267143630487,
+                266.99892012286756,
+                284.4090513180582,
+                304.19791603133666,
+                277.9812639238209
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "freedom-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0626631853785902,
+        "throughput_mib_s": 0.9805694358456
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 10,
+              "median": 10,
+              "min": 10,
+              "samples": [
+                10,
+                10,
+                10,
+                10,
+                10
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.5,
+              "median": 2.5,
+              "min": 2.5,
+              "samples": [
+                2.5,
+                2.5,
+                2.5,
+                2.5,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 6.03125,
+              "median": 5.984375,
+              "min": 5.96875,
+              "samples": [
+                5.96875,
+                5.984375,
+                6.03125,
+                5.96875,
+                6.015625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 214.3742431919296,
+              "median": 206.16652317476652,
+              "min": 197.04109301846955,
+              "samples": [
+                206.98443088983902,
+                199.89213820222608,
+                197.04109301846955,
+                214.3742431919296,
+                206.16652317476652
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 20,
+              "median": 10,
+              "min": 10,
+              "samples": [
+                10,
+                20,
+                20,
+                10,
+                10
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.0,
+              "median": 2.5,
+              "min": 2.5,
+              "samples": [
+                2.5,
+                5.0,
+                5.0,
+                2.5,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 6.40625,
+              "median": 6.359375,
+              "min": 6.3125,
+              "samples": [
+                6.359375,
+                6.40625,
+                6.3125,
+                6.359375,
+                6.3125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 213.30679228019255,
+              "median": 202.16059131972963,
+              "min": 180.85942136288878,
+              "samples": [
+                213.30679228019255,
+                180.85942136288878,
+                202.16059131972963,
+                212.4683548304388,
+                184.82224051038293
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "freedom-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.3333333333333333,
+        "cpu_ms_per_mib": 1.3333333333333333,
+        "rss_mib": 1.0464037122969838,
+        "throughput_mib_s": 0.9620369697622577
+      },
+      "review": [
+        "cpu_ms",
+        "cpu_ms_per_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 40,
+              "median": 30,
+              "min": 30,
+              "samples": [
+                30,
+                30,
+                40,
+                30,
+                40
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.0,
+              "median": 3.75,
+              "min": 3.75,
+              "samples": [
+                3.75,
+                3.75,
+                5.0,
+                3.75,
+                5.0
+              ]
+            },
+            "rss_mib": {
+              "max": 6.78125,
+              "median": 6.734375,
+              "min": 6.65625,
+              "samples": [
+                6.65625,
+                6.78125,
+                6.71875,
+                6.75,
+                6.734375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 310.0489780495013,
+              "median": 303.7662227300518,
+              "min": 292.14896047374293,
+              "samples": [
+                292.14896047374293,
+                306.2489211903237,
+                303.7662227300518,
+                310.0489780495013,
+                293.29141710163924
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 40,
+              "median": 40,
+              "min": 30,
+              "samples": [
+                40,
+                30,
+                40,
+                40,
+                30
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.0,
+              "median": 5.0,
+              "min": 3.75,
+              "samples": [
+                5.0,
+                3.75,
+                5.0,
+                5.0,
+                3.75
+              ]
+            },
+            "rss_mib": {
+              "max": 7.046875,
+              "median": 7.046875,
+              "min": 7.03125,
+              "samples": [
+                7.03125,
+                7.046875,
+                7.046875,
+                7.046875,
+                7.03125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 309.9313591144827,
+              "median": 292.2343364313461,
+              "min": 279.0158233012322,
+              "samples": [
+                287.46388330719867,
+                293.5784341392379,
+                309.9313591144827,
+                279.0158233012322,
+                292.2343364313461
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "freedom-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0630797773654916,
+        "throughput_mib_s": 0.8802978705906227
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 90,
+              "min": 80,
+              "samples": [
+                90,
+                80,
+                100,
+                90,
+                90
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.125,
+              "median": 2.8125,
+              "min": 2.5,
+              "samples": [
+                2.8125,
+                2.5,
+                3.125,
+                2.8125,
+                2.8125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.53125,
+              "median": 8.421875,
+              "min": 8.21875,
+              "samples": [
+                8.28125,
+                8.21875,
+                8.53125,
+                8.515625,
+                8.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 574.7100632630062,
+              "median": 574.0322175582105,
+              "min": 546.7698188937746,
+              "samples": [
+                574.7100632630062,
+                574.0322175582105,
+                549.5020558331523,
+                574.1476526906209,
+                546.7698188937746
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 90,
+              "min": 80,
+              "samples": [
+                90,
+                90,
+                90,
+                90,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.8125,
+              "min": 2.5,
+              "samples": [
+                2.8125,
+                2.8125,
+                2.8125,
+                2.8125,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 9.1875,
+              "median": 8.953125,
+              "min": 8.71875,
+              "samples": [
+                8.96875,
+                8.796875,
+                8.953125,
+                9.1875,
+                8.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 583.1443899951594,
+              "median": 505.3193387669058,
+              "min": 471.68565358650903,
+              "samples": [
+                577.0769698950667,
+                505.3193387669058,
+                477.3234089841215,
+                471.68565358650903,
+                583.1443899951594
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "freedom-tun-download-8",
+      "ratios": {
+        "cpu_ms": 0.8571428571428571,
+        "cpu_ms_per_mib": 0.8571428571428571,
+        "rss_mib": 1.0292479108635098,
+        "throughput_mib_s": 1.0588904031754927
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 70,
+              "min": 70,
+              "samples": [
+                70,
+                70,
+                70,
+                80,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.5,
+              "median": 2.1875,
+              "min": 2.1875,
+              "samples": [
+                2.1875,
+                2.1875,
+                2.1875,
+                2.5,
+                2.1875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.28125,
+              "median": 11.21875,
+              "min": 11.078125,
+              "samples": [
+                11.28125,
+                11.21875,
+                11.078125,
+                11.1875,
+                11.21875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 384.49888884627364,
+              "median": 368.8055803695762,
+              "min": 360.32401145839367,
+              "samples": [
+                369.12766193673787,
+                362.59305157496374,
+                368.8055803695762,
+                360.32401145839367,
+                384.49888884627364
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                60,
+                60,
+                70,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.1875,
+              "median": 1.875,
+              "min": 1.875,
+              "samples": [
+                1.875,
+                1.875,
+                2.1875,
+                1.875,
+                1.875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.59375,
+              "median": 11.546875,
+              "min": 9.625,
+              "samples": [
+                9.625,
+                11.546875,
+                11.59375,
+                11.546875,
+                11.59375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 529.9826592986269,
+              "median": 390.5246896909121,
+              "min": 372.2616621173771,
+              "samples": [
+                529.9826592986269,
+                388.20366493860234,
+                372.2616621173771,
+                392.1887040461312,
+                390.5246896909121
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "freedom-tun-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 0.9090909090909091,
+        "cpu_ms_per_mib": 0.9090909090909091,
+        "rss_mib": 0.9645232815964523,
+        "throughput_mib_s": 1.0038690513528261
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 120,
+              "median": 110,
+              "min": 90,
+              "samples": [
+                110,
+                100,
+                90,
+                120,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.875,
+              "median": 1.71875,
+              "min": 1.40625,
+              "samples": [
+                1.71875,
+                1.5625,
+                1.40625,
+                1.875,
+                1.71875
+              ]
+            },
+            "rss_mib": {
+              "max": 14.140625,
+              "median": 14.09375,
+              "min": 13.484375,
+              "samples": [
+                13.484375,
+                14.09375,
+                13.953125,
+                14.109375,
+                14.140625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 609.3876607130222,
+              "median": 595.9889515195674,
+              "min": 567.6274944567627,
+              "samples": [
+                577.0479207552353,
+                567.6274944567627,
+                606.138330673633,
+                609.3876607130222,
+                595.9889515195674
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 110,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                100,
+                100,
+                110,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.71875,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.71875,
+                1.71875
+              ]
+            },
+            "rss_mib": {
+              "max": 14.46875,
+              "median": 13.59375,
+              "min": 12.15625,
+              "samples": [
+                12.15625,
+                13.59375,
+                14.46875,
+                13.53125,
+                13.671875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 663.6947315341848,
+              "median": 598.2948633787136,
+              "min": 566.425567034032,
+              "samples": [
+                663.6947315341848,
+                637.7784073403591,
+                566.425567034032,
+                593.8862197518205,
+                598.2948633787136
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "vless-tls-tun-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0169491525423728,
+        "throughput_mib_s": 1.0486718908453951
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 50,
+              "min": 30,
+              "samples": [
+                70,
+                60,
+                50,
+                30,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 17.5,
+              "median": 12.5,
+              "min": 7.5,
+              "samples": [
+                17.5,
+                15.0,
+                12.5,
+                7.5,
+                12.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.328125,
+              "median": 8.296875,
+              "min": 7.953125,
+              "samples": [
+                8.3125,
+                8.0625,
+                8.328125,
+                7.953125,
+                8.296875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 508.94632206759445,
+              "median": 468.8667771316793,
+              "min": 334.5927124201568,
+              "samples": [
+                470.25164576319725,
+                468.8667771316793,
+                421.2447635326724,
+                508.94632206759445,
+                334.5927124201568
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                60,
+                50,
+                50,
+                50,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 12.5,
+              "min": 12.5,
+              "samples": [
+                15.0,
+                12.5,
+                12.5,
+                12.5,
+                12.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.765625,
+              "median": 8.4375,
+              "min": 8.375,
+              "samples": [
+                8.375,
+                8.421875,
+                8.4375,
+                8.625,
+                8.765625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 516.0652399355022,
+              "median": 491.68740972926463,
+              "min": 453.7526764318024,
+              "samples": [
+                500.09633105576967,
+                453.7526764318024,
+                516.0652399355022,
+                489.04490508127435,
+                491.68740972926463
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "vless-tls-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.2,
+        "cpu_ms_per_mib": 1.2,
+        "rss_mib": 1.0522388059701493,
+        "throughput_mib_s": 1.2920995584304051
+      },
+      "review": [
+        "cpu_ms",
+        "cpu_ms_per_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                50,
+                50,
+                50,
+                60,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 12.5,
+              "min": 12.5,
+              "samples": [
+                12.5,
+                12.5,
+                12.5,
+                15.0,
+                12.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.421875,
+              "median": 8.375,
+              "min": 8.21875,
+              "samples": [
+                8.375,
+                8.375,
+                8.21875,
+                8.375,
+                8.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 513.5282601020638,
+              "median": 369.56478757138836,
+              "min": 347.1682182771569,
+              "samples": [
+                480.1753023994,
+                369.56478757138836,
+                347.1682182771569,
+                513.5282601020638,
+                357.3369357660951
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 50,
+              "samples": [
+                60,
+                60,
+                50,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 12.5,
+              "samples": [
+                15.0,
+                15.0,
+                12.5,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 8.875,
+              "median": 8.8125,
+              "min": 8.796875,
+              "samples": [
+                8.796875,
+                8.8125,
+                8.796875,
+                8.875,
+                8.828125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 495.289548746645,
+              "median": 477.51449883241736,
+              "min": 452.57403177725934,
+              "samples": [
+                457.23649917788873,
+                452.57403177725934,
+                495.289548746645,
+                477.51449883241736,
+                490.7298072351976
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "vless-tls-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0415944540727904,
+        "throughput_mib_s": 0.98502677947683
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                60,
+                70,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 7.5,
+              "min": 7.5,
+              "samples": [
+                7.5,
+                8.75,
+                7.5,
+                7.5,
+                7.5
+              ]
+            },
+            "rss_mib": {
+              "max": 9.0625,
+              "median": 9.015625,
+              "min": 8.921875,
+              "samples": [
+                8.984375,
+                8.921875,
+                9.015625,
+                9.0625,
+                9.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 619.0972463250968,
+              "median": 504.33014712256005,
+              "min": 488.1149203124936,
+              "samples": [
+                609.4019291379819,
+                488.1149203124936,
+                619.0972463250968,
+                491.4495457931151,
+                504.33014712256005
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                70,
+                60,
+                60,
+                60,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 7.5,
+              "min": 7.5,
+              "samples": [
+                8.75,
+                7.5,
+                7.5,
+                7.5,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 9.65625,
+              "median": 9.390625,
+              "min": 9.359375,
+              "samples": [
+                9.359375,
+                9.40625,
+                9.65625,
+                9.375,
+                9.390625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 619.5826692504296,
+              "median": 496.7787006132112,
+              "min": 281.55877979463804,
+              "samples": [
+                619.5826692504296,
+                281.55877979463804,
+                516.658190243233,
+                496.7787006132112,
+                496.57185413350754
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "vless-tls-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0539473684210525,
+        "throughput_mib_s": 1.053968766052389
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 120,
+              "median": 110,
+              "min": 110,
+              "samples": [
+                110,
+                120,
+                120,
+                110,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.4375,
+              "min": 3.4375,
+              "samples": [
+                3.4375,
+                3.75,
+                3.75,
+                3.4375,
+                3.4375
+              ]
+            },
+            "rss_mib": {
+              "max": 12.125,
+              "median": 11.875,
+              "min": 11.6875,
+              "samples": [
+                11.8125,
+                11.6875,
+                11.875,
+                12.125,
+                12.125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 879.9579270116147,
+              "median": 862.0834806620531,
+              "min": 684.7025154793586,
+              "samples": [
+                684.7025154793586,
+                862.0834806620531,
+                868.3126763556613,
+                879.9579270116147,
+                819.3949137289823
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 110,
+              "min": 100,
+              "samples": [
+                120,
+                100,
+                130,
+                110,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.0625,
+              "median": 3.4375,
+              "min": 3.125,
+              "samples": [
+                3.75,
+                3.125,
+                4.0625,
+                3.4375,
+                3.4375
+              ]
+            },
+            "rss_mib": {
+              "max": 12.703125,
+              "median": 12.515625,
+              "min": 12.453125,
+              "samples": [
+                12.515625,
+                12.53125,
+                12.453125,
+                12.484375,
+                12.703125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 934.6954572340317,
+              "median": 908.6090623475328,
+              "min": 711.6395746592531,
+              "samples": [
+                908.6090623475328,
+                934.6954572340317,
+                711.6395746592531,
+                871.3855370423948,
+                914.113756429362
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "vless-tls-tun-download-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0337837837837838,
+        "throughput_mib_s": 0.9578402191808421
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 120,
+              "median": 110,
+              "min": 100,
+              "samples": [
+                110,
+                120,
+                100,
+                110,
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.4375,
+              "min": 3.125,
+              "samples": [
+                3.4375,
+                3.75,
+                3.125,
+                3.4375,
+                3.75
+              ]
+            },
+            "rss_mib": {
+              "max": 14.171875,
+              "median": 13.875,
+              "min": 13.703125,
+              "samples": [
+                13.921875,
+                13.703125,
+                14.171875,
+                13.875,
+                13.734375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 593.845816210547,
+              "median": 550.6236785354346,
+              "min": 524.554330854153,
+              "samples": [
+                593.845816210547,
+                524.554330854153,
+                550.6236785354346,
+                532.949902525961,
+                572.2136587865276
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 120,
+              "median": 110,
+              "min": 110,
+              "samples": [
+                110,
+                110,
+                110,
+                110,
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.4375,
+              "min": 3.4375,
+              "samples": [
+                3.4375,
+                3.4375,
+                3.4375,
+                3.4375,
+                3.75
+              ]
+            },
+            "rss_mib": {
+              "max": 14.453125,
+              "median": 14.34375,
+              "min": 13.90625,
+              "samples": [
+                13.90625,
+                14.453125,
+                14.265625,
+                14.34375,
+                14.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 565.6875199062345,
+              "median": 527.4095049345422,
+              "min": 520.4708335301364,
+              "samples": [
+                565.6875199062345,
+                532.4876364690931,
+                527.4095049345422,
+                520.4708335301364,
+                525.4299905586798
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "vless-tls-tun-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0766902119071644,
+        "throughput_mib_s": 0.9647365616600808
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 170,
+              "median": 160,
+              "min": 160,
+              "samples": [
+                160,
+                160,
+                160,
+                160,
+                170
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.65625,
+              "median": 2.5,
+              "min": 2.5,
+              "samples": [
+                2.5,
+                2.5,
+                2.5,
+                2.5,
+                2.65625
+              ]
+            },
+            "rss_mib": {
+              "max": 16.21875,
+              "median": 15.484375,
+              "min": 15.3125,
+              "samples": [
+                15.484375,
+                15.96875,
+                15.4375,
+                16.21875,
+                15.3125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 857.388782273487,
+              "median": 779.8929747996351,
+              "min": 698.1434228322657,
+              "samples": [
+                739.6919876332746,
+                845.8317418370331,
+                857.388782273487,
+                779.8929747996351,
+                698.1434228322657
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 180,
+              "median": 160,
+              "min": 150,
+              "samples": [
+                160,
+                160,
+                150,
+                150,
+                180
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.5,
+              "min": 2.34375,
+              "samples": [
+                2.5,
+                2.5,
+                2.34375,
+                2.34375,
+                2.8125
+              ]
+            },
+            "rss_mib": {
+              "max": 17.3125,
+              "median": 16.671875,
+              "min": 16.28125,
+              "samples": [
+                16.671875,
+                16.796875,
+                16.28125,
+                16.671875,
+                17.3125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 816.622087394513,
+              "median": 752.391266971052,
+              "min": 721.4370069273959,
+              "samples": [
+                782.5599185648584,
+                752.391266971052,
+                721.4370069273959,
+                816.622087394513,
+                721.9683763863006
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 0.999117387466902,
+        "throughput_mib_s": 5.658786929050685
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                50,
+                50,
+                50,
+                50,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 12.5,
+              "min": 12.5,
+              "samples": [
+                12.5,
+                12.5,
+                12.5,
+                12.5,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 19.8125,
+              "median": 17.703125,
+              "min": 17.296875,
+              "samples": [
+                19.8125,
+                17.296875,
+                17.53125,
+                17.703125,
+                19.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 21.360199793910382,
+              "median": 3.684574902169677,
+              "min": 3.683902159953527,
+              "samples": [
+                3.683902159953527,
+                21.360199793910382,
+                3.687935080165028,
+                3.6842103658587324,
+                3.684574902169677
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                50,
+                50,
+                50,
+                50,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 12.5,
+              "min": 12.5,
+              "samples": [
+                12.5,
+                12.5,
+                12.5,
+                12.5,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 18.78125,
+              "median": 17.6875,
+              "min": 17.640625,
+              "samples": [
+                17.6875,
+                18.78125,
+                17.6875,
+                17.640625,
+                18.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 21.061989420847052,
+              "median": 20.850224295505978,
+              "min": 20.65118791983155,
+              "samples": [
+                20.903110201463495,
+                21.061989420847052,
+                20.784713882175353,
+                20.850224295505978,
+                20.65118791983155
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "ratios": {
+        "cpu_ms": 0.8333333333333334,
+        "cpu_ms_per_mib": 0.8333333333333334,
+        "rss_mib": 1.0575296108291032,
+        "throughput_mib_s": 1.0686968743283163
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 50,
+              "samples": [
+                60,
+                50,
+                60,
+                50,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 12.5,
+              "samples": [
+                15.0,
+                12.5,
+                15.0,
+                12.5,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 9.3125,
+              "median": 9.234375,
+              "min": 9.125,
+              "samples": [
+                9.21875,
+                9.234375,
+                9.3125,
+                9.125,
+                9.265625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 504.2043711745857,
+              "median": 441.5417489866065,
+              "min": 434.7314332454125,
+              "samples": [
+                441.5417489866065,
+                481.8696542585231,
+                440.4882239327604,
+                504.2043711745857,
+                434.7314332454125
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 50,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                50,
+                50,
+                50,
+                50,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 12.5,
+              "median": 12.5,
+              "min": 12.5,
+              "samples": [
+                12.5,
+                12.5,
+                12.5,
+                12.5,
+                12.5
+              ]
+            },
+            "rss_mib": {
+              "max": 9.859375,
+              "median": 9.765625,
+              "min": 9.671875,
+              "samples": [
+                9.765625,
+                9.859375,
+                9.796875,
+                9.671875,
+                9.75
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 482.4508503196237,
+              "median": 471.8742870274444,
+              "min": 412.300320377964,
+              "samples": [
+                482.4508503196237,
+                480.0192007680307,
+                412.300320377964,
+                471.8742870274444,
+                449.70772370766923
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0156985871271587,
+        "throughput_mib_s": 1.0077360392183723
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                60,
+                60,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 7.5,
+              "median": 7.5,
+              "min": 7.5,
+              "samples": [
+                7.5,
+                7.5,
+                7.5,
+                7.5,
+                7.5
+              ]
+            },
+            "rss_mib": {
+              "max": 19.984375,
+              "median": 19.90625,
+              "min": 18.734375,
+              "samples": [
+                19.90625,
+                18.734375,
+                19.15625,
+                19.984375,
+                19.9375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 42.294633819166684,
+              "median": 41.42893578126558,
+              "min": 41.319655163925454,
+              "samples": [
+                41.37256055423717,
+                41.42893578126558,
+                41.84833639785214,
+                41.319655163925454,
+                42.294633819166684
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 40,
+              "samples": [
+                60,
+                50,
+                60,
+                40,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 7.5,
+              "median": 7.5,
+              "min": 5.0,
+              "samples": [
+                7.5,
+                6.25,
+                7.5,
+                5.0,
+                7.5
+              ]
+            },
+            "rss_mib": {
+              "max": 20.484375,
+              "median": 20.21875,
+              "min": 18.40625,
+              "samples": [
+                20.484375,
+                19.78125,
+                20.21875,
+                18.40625,
+                20.390625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 42.20005581062881,
+              "median": 41.749431653244876,
+              "min": 40.92882860413509,
+              "samples": [
+                41.39926943226723,
+                41.749431653244876,
+                42.20005581062881,
+                40.92882860413509,
+                42.19610515391773
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0681238615664845,
+        "throughput_mib_s": 0.991999782023887
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 150,
+              "median": 140,
+              "min": 130,
+              "samples": [
+                140,
+                140,
+                130,
+                150,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.6875,
+              "median": 4.375,
+              "min": 4.0625,
+              "samples": [
+                4.375,
+                4.375,
+                4.0625,
+                4.6875,
+                4.0625
+              ]
+            },
+            "rss_mib": {
+              "max": 88.96875,
+              "median": 85.78125,
+              "min": 76.421875,
+              "samples": [
+                80.484375,
+                85.78125,
+                76.421875,
+                88.359375,
+                88.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 171.1933716066431,
+              "median": 170.10569618432672,
+              "min": 166.16539327461876,
+              "samples": [
+                169.6964176693807,
+                170.42704623965372,
+                170.10569618432672,
+                171.1933716066431,
+                166.16539327461876
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 140,
+              "median": 140,
+              "min": 130,
+              "samples": [
+                140,
+                140,
+                140,
+                130,
+                140
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.375,
+              "median": 4.375,
+              "min": 4.0625,
+              "samples": [
+                4.375,
+                4.375,
+                4.375,
+                4.0625,
+                4.375
+              ]
+            },
+            "rss_mib": {
+              "max": 94.625,
+              "median": 91.625,
+              "min": 84.40625,
+              "samples": [
+                84.40625,
+                94.625,
+                92.484375,
+                88.15625,
+                91.625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 169.42702559605553,
+              "median": 168.74481353587365,
+              "min": 168.2365458408443,
+              "samples": [
+                168.45175074668214,
+                168.2365458408443,
+                169.42702559605553,
+                168.74481353587365,
+                169.09640051573135
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-download-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0353535353535352,
+        "throughput_mib_s": 1.002411420677377
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 130,
+              "min": 120,
+              "samples": [
+                120,
+                130,
+                130,
+                130,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.0625,
+              "median": 4.0625,
+              "min": 3.75,
+              "samples": [
+                3.75,
+                4.0625,
+                4.0625,
+                4.0625,
+                4.0625
+              ]
+            },
+            "rss_mib": {
+              "max": 15.53125,
+              "median": 15.46875,
+              "min": 15.125,
+              "samples": [
+                15.171875,
+                15.125,
+                15.46875,
+                15.53125,
+                15.53125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 557.9043717037877,
+              "median": 512.4848106308568,
+              "min": 500.64569213625487,
+              "samples": [
+                513.2279862322744,
+                500.64569213625487,
+                505.2259307208942,
+                512.4848106308568,
+                557.9043717037877
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 130,
+              "min": 100,
+              "samples": [
+                100,
+                130,
+                130,
+                120,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.0625,
+              "median": 4.0625,
+              "min": 3.125,
+              "samples": [
+                3.125,
+                4.0625,
+                4.0625,
+                3.75,
+                4.0625
+              ]
+            },
+            "rss_mib": {
+              "max": 16.34375,
+              "median": 16.015625,
+              "min": 15.53125,
+              "samples": [
+                16.015625,
+                15.890625,
+                16.140625,
+                16.34375,
+                15.53125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 569.9760586900073,
+              "median": 513.7206271000538,
+              "min": 487.6199764190027,
+              "samples": [
+                569.9760586900073,
+                513.7206271000538,
+                542.1492861257747,
+                487.6199764190027,
+                506.6026553103238
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 0.9523809523809523,
+        "cpu_ms_per_mib": 0.9523809523809523,
+        "rss_mib": 0.884709006417349,
+        "throughput_mib_s": 0.9924442719392618
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 210,
+              "median": 210,
+              "min": 200,
+              "samples": [
+                210,
+                210,
+                210,
+                200,
+                200
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.28125,
+              "median": 3.28125,
+              "min": 3.125,
+              "samples": [
+                3.28125,
+                3.28125,
+                3.28125,
+                3.125,
+                3.125
+              ]
+            },
+            "rss_mib": {
+              "max": 77.96875,
+              "median": 70.609375,
+              "min": 63.171875,
+              "samples": [
+                69.578125,
+                70.609375,
+                77.96875,
+                63.171875,
+                71.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 341.3788505134018,
+              "median": 340.3756686899394,
+              "min": 335.1482834778442,
+              "samples": [
+                341.3788505134018,
+                337.3859910135449,
+                335.1482834778442,
+                340.3756686899394,
+                340.7918541545477
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 210,
+              "median": 200,
+              "min": 190,
+              "samples": [
+                210,
+                200,
+                200,
+                190,
+                200
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.28125,
+              "median": 3.125,
+              "min": 2.96875,
+              "samples": [
+                3.28125,
+                3.125,
+                3.125,
+                2.96875,
+                3.125
+              ]
+            },
+            "rss_mib": {
+              "max": 66.78125,
+              "median": 62.46875,
+              "min": 61.359375,
+              "samples": [
+                64.234375,
+                62.46875,
+                61.359375,
+                66.78125,
+                61.765625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 338.34760429780334,
+              "median": 337.80388269882627,
+              "min": 336.2825929752405,
+              "samples": [
+                337.92955724263487,
+                337.80388269882627,
+                337.37887683187574,
+                338.34760429780334,
+                336.2825929752405
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0507131537242471,
+        "throughput_mib_s": 0.9906489809411065
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                60,
+                60,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 15.0,
+              "samples": [
+                15.0,
+                15.0,
+                15.0,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 10.640625,
+              "median": 9.859375,
+              "min": 9.359375,
+              "samples": [
+                9.359375,
+                9.984375,
+                9.546875,
+                10.640625,
+                9.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 375.15533775704,
+              "median": 371.07758239615373,
+              "min": 295.990264288227,
+              "samples": [
+                371.07758239615373,
+                375.15533775704,
+                371.27707712121037,
+                295.990264288227,
+                343.11446890555146
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                60,
+                60,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 15.0,
+              "samples": [
+                15.0,
+                15.0,
+                15.0,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 10.796875,
+              "median": 10.359375,
+              "min": 10.09375,
+              "samples": [
+                10.09375,
+                10.125,
+                10.40625,
+                10.359375,
+                10.796875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 372.4235968335801,
+              "median": 367.6076288508392,
+              "min": 310.79224517405686,
+              "samples": [
+                310.79224517405686,
+                370.15187794241825,
+                367.6076288508392,
+                372.4235968335801,
+                321.9866576778725
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0508241758241759,
+        "throughput_mib_s": 1.009662869088104
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 60,
+              "min": 50,
+              "samples": [
+                70,
+                50,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 17.5,
+              "median": 15.0,
+              "min": 12.5,
+              "samples": [
+                17.5,
+                12.5,
+                15.0,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 11.71875,
+              "median": 11.375,
+              "min": 10.828125,
+              "samples": [
+                10.828125,
+                11.390625,
+                11.375,
+                11.15625,
+                11.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 461.0862246225347,
+              "median": 429.7243790805016,
+              "min": 392.89512038011816,
+              "samples": [
+                429.7243790805016,
+                432.57272628960743,
+                423.29910219318674,
+                392.89512038011816,
+                461.0862246225347
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 30,
+              "samples": [
+                60,
+                30,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 7.5,
+              "samples": [
+                15.0,
+                7.5,
+                15.0,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 12.03125,
+              "median": 11.953125,
+              "min": 11.5,
+              "samples": [
+                11.5,
+                11.953125,
+                11.984375,
+                12.03125,
+                11.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 503.41117706217034,
+              "median": 433.8767494995232,
+              "min": 428.3706451304753,
+              "samples": [
+                440.81181225780836,
+                503.41117706217034,
+                429.46102641185314,
+                428.3706451304753,
+                433.8767494995232
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 0.8984018264840182,
+        "throughput_mib_s": 1.0547577148569018
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 70,
+              "min": 60,
+              "samples": [
+                70,
+                60,
+                70,
+                70,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 8.75,
+              "min": 7.5,
+              "samples": [
+                8.75,
+                7.5,
+                8.75,
+                8.75,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 15.421875,
+              "median": 13.6875,
+              "min": 11.5,
+              "samples": [
+                14.0625,
+                13.6875,
+                15.421875,
+                11.5,
+                11.8125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 510.0630986307738,
+              "median": 485.4946046074288,
+              "min": 450.2233614374011,
+              "samples": [
+                450.2233614374011,
+                485.4946046074288,
+                464.12351347765366,
+                510.0630986307738,
+                486.2815418164135
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 70,
+              "min": 70,
+              "samples": [
+                70,
+                70,
+                70,
+                70,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 8.75,
+              "min": 8.75,
+              "samples": [
+                8.75,
+                8.75,
+                8.75,
+                8.75,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 14.1875,
+              "median": 12.296875,
+              "min": 11.53125,
+              "samples": [
+                11.703125,
+                11.53125,
+                14.1875,
+                13.0625,
+                12.296875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 526.7908716624177,
+              "median": 512.0791797310867,
+              "min": 477.95198530202055,
+              "samples": [
+                481.6979757304905,
+                526.7908716624177,
+                477.95198530202055,
+                512.0791797310867,
+                515.5787932646333
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0921680993314231,
+        "throughput_mib_s": 1.1989583580706555
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 170,
+              "median": 150,
+              "min": 150,
+              "samples": [
+                150,
+                150,
+                170,
+                160,
+                150
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.3125,
+              "median": 4.6875,
+              "min": 4.6875,
+              "samples": [
+                4.6875,
+                4.6875,
+                5.3125,
+                5.0,
+                4.6875
+              ]
+            },
+            "rss_mib": {
+              "max": 36.109375,
+              "median": 32.71875,
+              "min": 24.09375,
+              "samples": [
+                36.109375,
+                32.71875,
+                33.578125,
+                24.09375,
+                27.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 706.700124500686,
+              "median": 592.3603982861014,
+              "min": 575.0284859228624,
+              "samples": [
+                599.3963853625754,
+                587.7297600931199,
+                706.700124500686,
+                575.0284859228624,
+                592.3603982861014
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 160,
+              "median": 150,
+              "min": 140,
+              "samples": [
+                150,
+                150,
+                150,
+                160,
+                140
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.0,
+              "median": 4.6875,
+              "min": 4.375,
+              "samples": [
+                4.6875,
+                4.6875,
+                4.6875,
+                5.0,
+                4.375
+              ]
+            },
+            "rss_mib": {
+              "max": 39.171875,
+              "median": 35.734375,
+              "min": 30.75,
+              "samples": [
+                30.75,
+                35.734375,
+                37.109375,
+                39.171875,
+                32.140625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 742.757395844291,
+              "median": 710.2154505151836,
+              "min": 572.7355539627143,
+              "samples": [
+                727.3216396529939,
+                572.7355539627143,
+                710.2154505151836,
+                702.4880700512323,
+                742.757395844291
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-download-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 0.9844171411447408,
+        "throughput_mib_s": 0.9742802709683178
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 140,
+              "median": 130,
+              "min": 110,
+              "samples": [
+                140,
+                130,
+                130,
+                130,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.375,
+              "median": 4.0625,
+              "min": 3.4375,
+              "samples": [
+                4.375,
+                4.0625,
+                4.0625,
+                4.0625,
+                3.4375
+              ]
+            },
+            "rss_mib": {
+              "max": 53.25,
+              "median": 52.140625,
+              "min": 50.046875,
+              "samples": [
+                50.90625,
+                52.140625,
+                53.25,
+                52.796875,
+                50.046875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 564.2503398197672,
+              "median": 509.8761902701155,
+              "min": 494.91073240988663,
+              "samples": [
+                494.91073240988663,
+                515.9982932711451,
+                503.6851652913701,
+                509.8761902701155,
+                564.2503398197672
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 140,
+              "median": 130,
+              "min": 130,
+              "samples": [
+                140,
+                130,
+                130,
+                140,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.375,
+              "median": 4.0625,
+              "min": 4.0625,
+              "samples": [
+                4.375,
+                4.0625,
+                4.0625,
+                4.375,
+                4.0625
+              ]
+            },
+            "rss_mib": {
+              "max": 56.21875,
+              "median": 51.328125,
+              "min": 47.421875,
+              "samples": [
+                51.640625,
+                50.03125,
+                56.21875,
+                51.328125,
+                47.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 537.1343015526019,
+              "median": 496.7623128166617,
+              "min": 481.52251399895044,
+              "samples": [
+                481.52251399895044,
+                537.1343015526019,
+                496.7623128166617,
+                494.41975461545854,
+                534.1586797146498
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 0.9042012309339043,
+        "throughput_mib_s": 0.9482693276721669
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 240,
+              "median": 230,
+              "min": 220,
+              "samples": [
+                230,
+                220,
+                240,
+                230,
+                220
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.59375,
+              "min": 3.4375,
+              "samples": [
+                3.59375,
+                3.4375,
+                3.75,
+                3.59375,
+                3.4375
+              ]
+            },
+            "rss_mib": {
+              "max": 62.328125,
+              "median": 58.390625,
+              "min": 55.46875,
+              "samples": [
+                59.34375,
+                62.328125,
+                58.390625,
+                56.9375,
+                55.46875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 743.6715295812782,
+              "median": 728.2040174606028,
+              "min": 679.7997246280022,
+              "samples": [
+                743.6715295812782,
+                728.2040174606028,
+                679.7997246280022,
+                733.5068436131204,
+                684.0030590754311
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 240,
+              "median": 230,
+              "min": 210,
+              "samples": [
+                210,
+                230,
+                230,
+                240,
+                220
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.59375,
+              "min": 3.28125,
+              "samples": [
+                3.28125,
+                3.59375,
+                3.59375,
+                3.75,
+                3.4375
+              ]
+            },
+            "rss_mib": {
+              "max": 55.015625,
+              "median": 52.796875,
+              "min": 45.8125,
+              "samples": [
+                55.015625,
+                53.546875,
+                50.390625,
+                45.8125,
+                52.796875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 729.0272888469566,
+              "median": 690.5335340455367,
+              "min": 654.2595877142317,
+              "samples": [
+                711.1331641406791,
+                729.0272888469566,
+                681.8224141533378,
+                654.2595877142317,
+                690.5335340455367
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "ratios": {
+        "cpu_ms": 1.1666666666666667,
+        "cpu_ms_per_mib": 1.1666666666666667,
+        "rss_mib": 1.0,
+        "throughput_mib_s": 1.343882524225193
+      },
+      "review": [
+        "cpu_ms",
+        "cpu_ms_per_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 60,
+              "min": 30,
+              "samples": [
+                50,
+                60,
+                30,
+                90,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 22.5,
+              "median": 15.0,
+              "min": 7.5,
+              "samples": [
+                12.5,
+                15.0,
+                7.5,
+                22.5,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 16.171875,
+              "median": 15.40625,
+              "min": 14.671875,
+              "samples": [
+                16.171875,
+                14.671875,
+                16.0625,
+                15.40625,
+                14.875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 98.01649411761362,
+              "median": 57.997491608487934,
+              "min": 56.570318645613796,
+              "samples": [
+                57.997491608487934,
+                56.570318645613796,
+                67.79593910460277,
+                98.01649411761362,
+                57.48441062304435
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 70,
+              "min": 50,
+              "samples": [
+                80,
+                50,
+                60,
+                80,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 20.0,
+              "median": 17.5,
+              "min": 12.5,
+              "samples": [
+                20.0,
+                12.5,
+                15.0,
+                20.0,
+                17.5
+              ]
+            },
+            "rss_mib": {
+              "max": 16.609375,
+              "median": 15.40625,
+              "min": 13.953125,
+              "samples": [
+                16.609375,
+                15.40625,
+                15.03125,
+                13.953125,
+                16.546875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 103.03801136638063,
+              "median": 77.94181542154422,
+              "min": 55.113404441107015,
+              "samples": [
+                55.113404441107015,
+                64.00029900939697,
+                77.94181542154422,
+                103.03801136638063,
+                92.26927634936608
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0563758389261746,
+        "throughput_mib_s": 1.0046326117926956
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 150,
+              "median": 140,
+              "min": 140,
+              "samples": [
+                140,
+                150,
+                140,
+                140,
+                140
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 37.5,
+              "median": 35.0,
+              "min": 35.0,
+              "samples": [
+                35.0,
+                37.5,
+                35.0,
+                35.0,
+                35.0
+              ]
+            },
+            "rss_mib": {
+              "max": 11.796875,
+              "median": 11.640625,
+              "min": 11.59375,
+              "samples": [
+                11.703125,
+                11.59375,
+                11.796875,
+                11.609375,
+                11.640625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 78.03704219398492,
+              "median": 76.6545398545829,
+              "min": 74.59821912044485,
+              "samples": [
+                78.03704219398492,
+                74.59821912044485,
+                77.12670923392585,
+                76.6545398545829,
+                75.32554807386641
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 140,
+              "median": 140,
+              "min": 140,
+              "samples": [
+                140,
+                140,
+                140,
+                140,
+                140
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 35.0,
+              "median": 35.0,
+              "min": 35.0,
+              "samples": [
+                35.0,
+                35.0,
+                35.0,
+                35.0,
+                35.0
+              ]
+            },
+            "rss_mib": {
+              "max": 12.359375,
+              "median": 12.296875,
+              "min": 12.21875,
+              "samples": [
+                12.28125,
+                12.296875,
+                12.21875,
+                12.34375,
+                12.359375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 79.71991841622989,
+              "median": 77.00965057987689,
+              "min": 76.65062375499026,
+              "samples": [
+                79.71991841622989,
+                77.77687707833184,
+                76.98396087290189,
+                77.00965057987689,
+                76.65062375499026
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.083404255319149,
+        "throughput_mib_s": 1.0039918742860827
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 160,
+              "median": 160,
+              "min": 140,
+              "samples": [
+                160,
+                160,
+                160,
+                140,
+                150
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 20.0,
+              "median": 20.0,
+              "min": 17.5,
+              "samples": [
+                20.0,
+                20.0,
+                20.0,
+                17.5,
+                18.75
+              ]
+            },
+            "rss_mib": {
+              "max": 20.8125,
+              "median": 18.359375,
+              "min": 16.8125,
+              "samples": [
+                20.625,
+                20.8125,
+                16.8125,
+                18.359375,
+                17.359375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 122.13181075675922,
+              "median": 120.16221839402083,
+              "min": 105.74061433420032,
+              "samples": [
+                122.13181075675922,
+                117.25462999326828,
+                121.54814289479238,
+                105.74061433420032,
+                120.16221839402083
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 170,
+              "median": 160,
+              "min": 150,
+              "samples": [
+                170,
+                170,
+                160,
+                150,
+                160
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 21.25,
+              "median": 20.0,
+              "min": 18.75,
+              "samples": [
+                21.25,
+                21.25,
+                20.0,
+                18.75,
+                20.0
+              ]
+            },
+            "rss_mib": {
+              "max": 20.828125,
+              "median": 19.890625,
+              "min": 18.5625,
+              "samples": [
+                19.875,
+                20.078125,
+                18.5625,
+                19.890625,
+                20.828125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 124.4337293177532,
+              "median": 120.64189086378659,
+              "min": 107.4949149866387,
+              "samples": [
+                120.64189086378659,
+                120.24048156433108,
+                121.10317422773073,
+                124.4337293177532,
+                107.4949149866387
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 0.9591836734693877,
+        "cpu_ms_per_mib": 0.9591836734693877,
+        "rss_mib": 0.8597213426219126,
+        "throughput_mib_s": 1.0112516008001216
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 520,
+              "median": 490,
+              "min": 440,
+              "samples": [
+                450,
+                490,
+                520,
+                500,
+                440
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 16.25,
+              "median": 15.3125,
+              "min": 13.75,
+              "samples": [
+                14.0625,
+                15.3125,
+                16.25,
+                15.625,
+                13.75
+              ]
+            },
+            "rss_mib": {
+              "max": 55.671875,
+              "median": 49.34375,
+              "min": 34.53125,
+              "samples": [
+                50.1875,
+                55.671875,
+                49.34375,
+                34.53125,
+                40.03125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 216.61199560407616,
+              "median": 200.04401968653204,
+              "min": 178.67603780793894,
+              "samples": [
+                200.04401968653204,
+                185.30949375339938,
+                178.67603780793894,
+                210.00745644599579,
+                216.61199560407616
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 510,
+              "median": 470,
+              "min": 450,
+              "samples": [
+                450,
+                450,
+                470,
+                490,
+                510
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.9375,
+              "median": 14.6875,
+              "min": 14.0625,
+              "samples": [
+                14.0625,
+                14.0625,
+                14.6875,
+                15.3125,
+                15.9375
+              ]
+            },
+            "rss_mib": {
+              "max": 54.328125,
+              "median": 42.421875,
+              "min": 40.890625,
+              "samples": [
+                54.328125,
+                42.421875,
+                46.296875,
+                40.890625,
+                42.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 220.36385860559602,
+              "median": 202.29483513849655,
+              "min": 194.15080180580145,
+              "samples": [
+                194.15080180580145,
+                199.36923561236958,
+                202.29483513849655,
+                220.36385860559602,
+                206.03831731931632
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-download-8",
+      "ratios": {
+        "cpu_ms": 0.9436619718309859,
+        "cpu_ms_per_mib": 0.9436619718309859,
+        "rss_mib": 1.055198973042362,
+        "throughput_mib_s": 1.0261846725316672
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 730,
+              "median": 710,
+              "min": 650,
+              "samples": [
+                700,
+                730,
+                650,
+                710,
+                730
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 22.8125,
+              "median": 22.1875,
+              "min": 20.3125,
+              "samples": [
+                21.875,
+                22.8125,
+                20.3125,
+                22.1875,
+                22.8125
+              ]
+            },
+            "rss_mib": {
+              "max": 12.359375,
+              "median": 12.171875,
+              "min": 12.03125,
+              "samples": [
+                12.0625,
+                12.265625,
+                12.359375,
+                12.03125,
+                12.171875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 187.4389091931762,
+              "median": 173.93151519423049,
+              "min": 166.5391601221981,
+              "samples": [
+                175.19618893540255,
+                173.93151519423049,
+                187.4389091931762,
+                166.5391601221981,
+                172.2149942751969
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 700,
+              "median": 670,
+              "min": 650,
+              "samples": [
+                700,
+                650,
+                670,
+                680,
+                670
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 21.875,
+              "median": 20.9375,
+              "min": 20.3125,
+              "samples": [
+                21.875,
+                20.3125,
+                20.9375,
+                21.25,
+                20.9375
+              ]
+            },
+            "rss_mib": {
+              "max": 13.265625,
+              "median": 12.84375,
+              "min": 12.8125,
+              "samples": [
+                12.84375,
+                12.8125,
+                12.8125,
+                13.265625,
+                13.015625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 180.76542861177802,
+              "median": 178.48585496252812,
+              "min": 176.1796414833487,
+              "samples": [
+                176.1796414833487,
+                180.76542861177802,
+                178.48585496252812,
+                180.35031572210812,
+                178.41138599163975
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0404040404040404,
+        "cpu_ms_per_mib": 1.0404040404040404,
+        "rss_mib": 0.7371509510319708,
+        "throughput_mib_s": 1.0187127550677084
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1040,
+              "median": 990,
+              "min": 900,
+              "samples": [
+                1040,
+                900,
+                990,
+                960,
+                1000
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 16.25,
+              "median": 15.46875,
+              "min": 14.0625,
+              "samples": [
+                16.25,
+                14.0625,
+                15.46875,
+                15.0,
+                15.625
+              ]
+            },
+            "rss_mib": {
+              "max": 86.859375,
+              "median": 77.21875,
+              "min": 62.265625,
+              "samples": [
+                62.265625,
+                86.3125,
+                77.21875,
+                86.859375,
+                66.53125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 245.4380242680835,
+              "median": 239.9545583055777,
+              "min": 237.38461471069414,
+              "samples": [
+                245.4380242680835,
+                238.28228259534083,
+                242.2662114403798,
+                237.38461471069414,
+                239.9545583055777
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1040,
+              "median": 1030,
+              "min": 1000,
+              "samples": [
+                1000,
+                1030,
+                1030,
+                1020,
+                1040
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 16.25,
+              "median": 16.09375,
+              "min": 15.625,
+              "samples": [
+                15.625,
+                16.09375,
+                16.09375,
+                15.9375,
+                16.25
+              ]
+            },
+            "rss_mib": {
+              "max": 67.453125,
+              "median": 56.921875,
+              "min": 52.203125,
+              "samples": [
+                63.859375,
+                52.203125,
+                55.90625,
+                67.453125,
+                56.921875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 251.92226033311795,
+              "median": 244.44476918253014,
+              "min": 240.63833047051426,
+              "samples": [
+                243.81289074944368,
+                251.17373782027641,
+                251.92226033311795,
+                240.63833047051426,
+                244.44476918253014
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "tun"
+}

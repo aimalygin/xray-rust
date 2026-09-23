@@ -1,0 +1,16 @@
+{
+  "selected": "bin/h3-read-batch",
+  "selected_source": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "selected_batch_bytes": 16384,
+  "selected_batch_chunks": 16,
+  "rejected_control": "bin/h3-read-batch64",
+  "reason": "64 KiB did not show a substantial repeatable speed/CPU/RSS advantage in duplex; download RSS was 10.672 MiB versus 9.953 MiB at 16 KiB. Keep the smaller bounded per-handoff work and memory.",
+  "evidence": [
+    "evidence/h3-read-batch-focus",
+    "evidence/h3-read-batch64-focus"
+  ],
+  "total_timed_runs": 36,
+  "all_functional_passed": true,
+  "compiler_interference": false,
+  "legacy_caveat": "H3 duplex RSS remains a small positive point difference versus v0.6.1. Passing the historical 15% review threshold is not a strict memory-parity claim."
+}

@@ -1,0 +1,8 @@
+{
+  "commit": "61373052dc8b6784162c81650faa6bd92f0604aa",
+  "tree": "de25a855c181144f67c8b4559b6c0caa2ad9d1e2",
+  "sha256": {
+    "xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "xray-bench": "cc028e57522d039194eac50e9eda7f78234315aaae79f0ee329f981e1895a6e1"
+  }
+}

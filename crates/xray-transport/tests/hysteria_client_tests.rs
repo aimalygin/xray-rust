@@ -407,6 +407,29 @@ async fn config_validation_happens_before_opening_a_socket() {
 }
 
 #[tokio::test]
+async fn dedicated_endpoint_advertises_zero_length_local_cid() {
+    let (server, tls) = Mock::start(Mode::Good);
+    let capture = tokio::net::UdpSocket::bind(support::localhost())
+        .await
+        .unwrap();
+    let mut config = server.config();
+    config.remote_addr = capture.local_addr().unwrap();
+    let connecting = tokio::spawn(async move { HysteriaClient::connect(config, &tls).await });
+    let mut packet = [0u8; 2048];
+    let (len, _) = timeout(DEADLINE, capture.recv_from(&mut packet))
+        .await
+        .unwrap()
+        .unwrap();
+    connecting.abort();
+    assert!(len >= 1200, "QUIC Initial minimum datagram size");
+    assert_eq!(packet[0] & 0xc0, 0xc0, "QUIC long header");
+    assert_eq!(&packet[1..5], &1u32.to_be_bytes(), "QUIC v1");
+    let destination_len = packet[5] as usize;
+    assert!(destination_len >= 8, "initial server CID remains nonempty");
+    assert_eq!(packet[6 + destination_len], 0, "empty client source CID");
+}
+
+#[tokio::test]
 async fn rebind_from_host_thread_preserves_connection_and_protects_each_socket() {
     #[derive(Default)]
     struct Count(AtomicUsize);

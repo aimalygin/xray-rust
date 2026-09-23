@@ -1,0 +1,2190 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "reality-vision-socks-upload-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "reality-vision-socks-download-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "reality-vision-socks-full-duplex-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 8,
+      "id": "reality-vision-socks-upload-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "reality-vision-socks-download-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "reality-vision-socks-full-duplex-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "reality-vision-tun-upload-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "reality-vision-tun-download-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "reality-vision-tun-full-duplex-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 8,
+      "id": "reality-vision-tun-upload-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "reality-vision-tun-download-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "reality-vision-tun-full-duplex-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "reality-vision",
+      "traffic": "full-duplex"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+    "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance.py": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d"
+  },
+  "finished_unix": 1789886512.81644,
+  "harness_sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 5,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-1",
+      "output_relative": "reality-vision-socks-upload-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.6945888996124268,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-1",
+      "output_relative": "reality-vision-socks-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7195210456848145,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-2",
+      "output_relative": "reality-vision-socks-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7117040157318115,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-2",
+      "output_relative": "reality-vision-socks-upload-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.6971559524536133,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-3",
+      "output_relative": "reality-vision-socks-upload-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.726789951324463,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-3",
+      "output_relative": "reality-vision-socks-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.6618688106536865,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-4",
+      "output_relative": "reality-vision-socks-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.710731029510498,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-4",
+      "output_relative": "reality-vision-socks-upload-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.702570915222168,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-baseline-5",
+      "output_relative": "reality-vision-socks-upload-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7086451053619385,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-1-candidate-5",
+      "output_relative": "reality-vision-socks-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.683156967163086,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-1",
+      "output_relative": "reality-vision-socks-download-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7073988914489746,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-1",
+      "output_relative": "reality-vision-socks-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.689939022064209,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-2",
+      "output_relative": "reality-vision-socks-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7129857540130615,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-2",
+      "output_relative": "reality-vision-socks-download-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7066762447357178,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-3",
+      "output_relative": "reality-vision-socks-download-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7073068618774414,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-3",
+      "output_relative": "reality-vision-socks-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7196691036224365,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-4",
+      "output_relative": "reality-vision-socks-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7221128940582275,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-4",
+      "output_relative": "reality-vision-socks-download-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7603278160095215,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-baseline-5",
+      "output_relative": "reality-vision-socks-download-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7008659839630127,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-1-candidate-5",
+      "output_relative": "reality-vision-socks-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.746138095855713,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-1",
+      "output_relative": "reality-vision-socks-full-duplex-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.6948812007904053,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-1",
+      "output_relative": "reality-vision-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7413840293884277,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-2",
+      "output_relative": "reality-vision-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7222261428833008,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-2",
+      "output_relative": "reality-vision-socks-full-duplex-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7265419960021973,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-3",
+      "output_relative": "reality-vision-socks-full-duplex-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7146339416503906,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-3",
+      "output_relative": "reality-vision-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7055230140686035,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-4",
+      "output_relative": "reality-vision-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7144670486450195,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-4",
+      "output_relative": "reality-vision-socks-full-duplex-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7076771259307861,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-baseline-5",
+      "output_relative": "reality-vision-socks-full-duplex-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7267587184906006,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-1-candidate-5",
+      "output_relative": "reality-vision-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.704606056213379,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-1",
+      "output_relative": "reality-vision-socks-upload-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7856147289276123,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-1",
+      "output_relative": "reality-vision-socks-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7770788669586182,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-2",
+      "output_relative": "reality-vision-socks-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.802150011062622,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-2",
+      "output_relative": "reality-vision-socks-upload-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.759382724761963,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-3",
+      "output_relative": "reality-vision-socks-upload-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7713851928710938,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-3",
+      "output_relative": "reality-vision-socks-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7599539756774902,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-4",
+      "output_relative": "reality-vision-socks-upload-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.749084234237671,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-4",
+      "output_relative": "reality-vision-socks-upload-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.043114185333252,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-baseline-5",
+      "output_relative": "reality-vision-socks-upload-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7497899532318115,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-upload-8-candidate-5",
+      "output_relative": "reality-vision-socks-upload-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7194180488586426,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-1",
+      "output_relative": "reality-vision-socks-download-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7625839710235596,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-1",
+      "output_relative": "reality-vision-socks-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7732276916503906,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-2",
+      "output_relative": "reality-vision-socks-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.798454999923706,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-2",
+      "output_relative": "reality-vision-socks-download-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7799172401428223,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-3",
+      "output_relative": "reality-vision-socks-download-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7753229141235352,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-3",
+      "output_relative": "reality-vision-socks-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7832629680633545,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-4",
+      "output_relative": "reality-vision-socks-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7906279563903809,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-4",
+      "output_relative": "reality-vision-socks-download-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7731740474700928,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-baseline-5",
+      "output_relative": "reality-vision-socks-download-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8242771625518799,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-download-8-candidate-5",
+      "output_relative": "reality-vision-socks-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7740888595581055,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-1",
+      "output_relative": "reality-vision-socks-full-duplex-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9611170291900635,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-1",
+      "output_relative": "reality-vision-socks-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.123854160308838,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-2",
+      "output_relative": "reality-vision-socks-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.5497469902038574,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-2",
+      "output_relative": "reality-vision-socks-full-duplex-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.0262739658355713,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-3",
+      "output_relative": "reality-vision-socks-full-duplex-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.077436923980713,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-3",
+      "output_relative": "reality-vision-socks-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.012089252471924,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-4",
+      "output_relative": "reality-vision-socks-full-duplex-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.1926159858703613,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-4",
+      "output_relative": "reality-vision-socks-full-duplex-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.012707233428955,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-baseline-5",
+      "output_relative": "reality-vision-socks-full-duplex-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9891700744628906,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-socks-full-duplex-8-candidate-5",
+      "output_relative": "reality-vision-socks-full-duplex-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.0055348873138428,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-1",
+      "output_relative": "reality-vision-tun-upload-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3156359195709229,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-1",
+      "output_relative": "reality-vision-tun-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2980139255523682,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-2",
+      "output_relative": "reality-vision-tun-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3138110637664795,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-2",
+      "output_relative": "reality-vision-tun-upload-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2968158721923828,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-3",
+      "output_relative": "reality-vision-tun-upload-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3143928050994873,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-3",
+      "output_relative": "reality-vision-tun-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2856659889221191,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-4",
+      "output_relative": "reality-vision-tun-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3004519939422607,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-4",
+      "output_relative": "reality-vision-tun-upload-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3050658702850342,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-baseline-5",
+      "output_relative": "reality-vision-tun-upload-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2989890575408936,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-1-candidate-5",
+      "output_relative": "reality-vision-tun-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2897028923034668,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-1",
+      "output_relative": "reality-vision-tun-download-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3051319122314453,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-1",
+      "output_relative": "reality-vision-tun-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.302025318145752,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-2",
+      "output_relative": "reality-vision-tun-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.29951810836792,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-2",
+      "output_relative": "reality-vision-tun-download-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2907288074493408,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-3",
+      "output_relative": "reality-vision-tun-download-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3265268802642822,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-3",
+      "output_relative": "reality-vision-tun-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2820851802825928,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-4",
+      "output_relative": "reality-vision-tun-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3267128467559814,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-4",
+      "output_relative": "reality-vision-tun-download-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.309164047241211,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-baseline-5",
+      "output_relative": "reality-vision-tun-download-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.297456979751587,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-1-candidate-5",
+      "output_relative": "reality-vision-tun-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2871899604797363,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-1",
+      "output_relative": "reality-vision-tun-full-duplex-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2933650016784668,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-1",
+      "output_relative": "reality-vision-tun-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.262850046157837,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-2",
+      "output_relative": "reality-vision-tun-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2928550243377686,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-2",
+      "output_relative": "reality-vision-tun-full-duplex-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3050041198730469,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-3",
+      "output_relative": "reality-vision-tun-full-duplex-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3030619621276855,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-3",
+      "output_relative": "reality-vision-tun-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3136329650878906,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-4",
+      "output_relative": "reality-vision-tun-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.30161714553833,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-4",
+      "output_relative": "reality-vision-tun-full-duplex-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.317755937576294,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-baseline-5",
+      "output_relative": "reality-vision-tun-full-duplex-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.319364070892334,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-1-candidate-5",
+      "output_relative": "reality-vision-tun-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2688078880310059,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-1",
+      "output_relative": "reality-vision-tun-upload-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.312027931213379,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-1",
+      "output_relative": "reality-vision-tun-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2962381839752197,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-2",
+      "output_relative": "reality-vision-tun-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.309709072113037,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-2",
+      "output_relative": "reality-vision-tun-upload-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3209059238433838,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-3",
+      "output_relative": "reality-vision-tun-upload-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2948801517486572,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-3",
+      "output_relative": "reality-vision-tun-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.302177906036377,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-4",
+      "output_relative": "reality-vision-tun-upload-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.284956932067871,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-4",
+      "output_relative": "reality-vision-tun-upload-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3565492630004883,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-baseline-5",
+      "output_relative": "reality-vision-tun-upload-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3366961479187012,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-upload-8-candidate-5",
+      "output_relative": "reality-vision-tun-upload-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.357064962387085,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-1",
+      "output_relative": "reality-vision-tun-download-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3207061290740967,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-1",
+      "output_relative": "reality-vision-tun-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.358003854751587,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-2",
+      "output_relative": "reality-vision-tun-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.362579107284546,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-2",
+      "output_relative": "reality-vision-tun-download-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.34128999710083,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-3",
+      "output_relative": "reality-vision-tun-download-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.320953130722046,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-3",
+      "output_relative": "reality-vision-tun-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3419079780578613,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-4",
+      "output_relative": "reality-vision-tun-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3403589725494385,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-4",
+      "output_relative": "reality-vision-tun-download-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3166980743408203,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-baseline-5",
+      "output_relative": "reality-vision-tun-download-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3367722034454346,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-download-8-candidate-5",
+      "output_relative": "reality-vision-tun-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3525378704071045,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-1",
+      "output_relative": "reality-vision-tun-full-duplex-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3659980297088623,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-1",
+      "output_relative": "reality-vision-tun-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3956668376922607,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-2",
+      "output_relative": "reality-vision-tun-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3487520217895508,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-2",
+      "output_relative": "reality-vision-tun-full-duplex-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.362349033355713,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-3",
+      "output_relative": "reality-vision-tun-full-duplex-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.4003148078918457,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-3",
+      "output_relative": "reality-vision-tun-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3539869785308838,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-4",
+      "output_relative": "reality-vision-tun-full-duplex-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.346665859222412,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-4",
+      "output_relative": "reality-vision-tun-full-duplex-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.41780686378479,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-baseline-5",
+      "output_relative": "reality-vision-tun-full-duplex-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3641340732574463,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-reality/reality-vision-tun-full-duplex-8-candidate-5",
+      "output_relative": "reality-vision-tun-full-duplex-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3678419589996338,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "61373052dc8b6784162c81650faa6bd92f0604aa",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_unix": 1789886311.406821,
+  "status": "pass",
+  "suite": "reality",
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+      "engine_sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+    }
+  }
+}

@@ -37,6 +37,7 @@ pub struct HysteriaTcpStream {
     recv: RecvStream,
     prefix: Bytes,
     send_finished: bool,
+    bytes_since_window_sample: usize,
     _connection: Arc<Shared>,
     _slot: OwnedSemaphorePermit,
 }
@@ -104,6 +105,7 @@ impl HysteriaClient {
                 recv,
                 prefix,
                 send_finished: false,
+                bytes_since_window_sample: 0,
                 _connection: Arc::clone(&self.shared),
                 _slot: slot,
             })
@@ -139,11 +141,16 @@ impl AsyncWrite for HysteriaTcpStream {
         cx: &mut Context<'_>,
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
-        redact_io(AsyncWrite::poll_write(
-            Pin::new(&mut self.get_mut().send),
-            cx,
-            input,
-        ))
+        let this = self.get_mut();
+        let result = redact_io(AsyncWrite::poll_write(Pin::new(&mut this.send), cx, input));
+        if let Poll::Ready(Ok(written)) = result {
+            this.bytes_since_window_sample += written;
+            if this.bytes_since_window_sample >= 1024 * 1024 {
+                this.bytes_since_window_sample = 0;
+                this._connection.grow_send_window();
+            }
+        }
+        result
     }
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         redact_io(AsyncWrite::poll_flush(

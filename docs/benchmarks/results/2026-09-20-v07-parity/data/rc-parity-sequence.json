@@ -1,0 +1,56 @@
+{
+  "phases": [
+    {
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-campaign.py",
+        "-smoke"
+      ],
+      "returncode": 0,
+      "seconds": 10.188473224639893
+    },
+    {
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-cold-stress.py",
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust"
+      ],
+      "returncode": 0,
+      "seconds": 336.5407929420471
+    },
+    {
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-campaign.py",
+        "-local-bulk"
+      ],
+      "returncode": 0,
+      "seconds": 975.8242061138153
+    },
+    {
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-sensitivity.py"
+      ],
+      "returncode": 0,
+      "seconds": 764.6258141994476
+    },
+    {
+      "command": [
+        "python3",
+        "-u",
+        "run-rc-parity-campaign.py",
+        "-local-echo"
+      ],
+      "returncode": 1,
+      "seconds": 303.9204378128052
+    }
+  ],
+  "planned_phases": 11,
+  "complete": false,
+  "checkpoint_requested": false
+}

@@ -3523,19 +3523,18 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
 ) -> Result<BoxedTransportStream, CoreError> {
     match outbound {
         TcpOutbound::Wireguard(outbound) => {
-            outbound
-                .open_tcp(
-                    target,
-                    destination_resolver,
-                    bootstrap_resolver,
-                    transport_dialer,
-                )
-                .await
+            // Cold protocol setup contains large async state. Keep it out of
+            // every TCP task, including long-lived Freedom/VLESS connections.
+            Box::pin(outbound.open_tcp(
+                target,
+                destination_resolver,
+                bootstrap_resolver,
+                transport_dialer,
+            ))
+            .await
         }
         TcpOutbound::Hysteria(outbound) => {
-            outbound
-                .open_tcp(target, bootstrap_resolver, transport_dialer)
-                .await
+            Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             let candidates = if requires_local_resolution {
@@ -8129,5 +8128,39 @@ mod tests {
                 "{network}"
             );
         }
+    }
+}
+
+#[cfg(all(test, target_pointer_width = "64"))]
+mod future_layout_tests {
+    use super::*;
+    #[test]
+    fn common_tcp_open_future_stays_within_legacy_task_budget() {
+        let target = Target::new(
+            RoutingTargetAddr::Ip("127.0.0.1".parse().unwrap()),
+            80,
+            RoutingNetwork::Tcp,
+        );
+        let dialer = TransportDialer::system().unwrap();
+        let outbound = TcpOutbound::Freedom;
+        let plain = open_plain_tcp_stream_with_resolvers_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &SystemDnsResolver,
+            &dialer,
+            true,
+        );
+        let routed = open_tcp_stream_with_resolvers_and_dialer(
+            &outbound,
+            &target,
+            &SystemDnsResolver,
+            &SystemDnsResolver,
+            &dialer,
+        );
+        // Without isolating new protocol setup, even idle Freedom tasks keep
+        // a 9.8 KiB future and exceed the 100/1000-flow RSS release budgets.
+        assert!(std::mem::size_of_val(&plain) <= 4096);
+        assert!(std::mem::size_of_val(&routed) <= 4352);
     }
 }

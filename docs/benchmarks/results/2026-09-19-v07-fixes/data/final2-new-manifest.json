@@ -1,0 +1,3797 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-upload-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-download-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-full-duplex-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-socks-udp-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "hysteria2",
+      "traffic": "udp"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-upload-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-download-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-full-duplex-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-tcp-latency-8",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-socks-udp-8",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "hysteria2",
+      "traffic": "udp"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-tun-upload-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-tun-download-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-tun-full-duplex-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-tun-tcp-latency-1",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "hysteria2-tun-udp-1",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1200,
+      "protocol": "hysteria2",
+      "traffic": "udp"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-upload-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-download-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-full-duplex-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-tcp-latency-8",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1024,
+      "protocol": "hysteria2",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-udp-8",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1200,
+      "protocol": "hysteria2",
+      "traffic": "udp"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-upload-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-download-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-full-duplex-1",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-udp-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "wireguard",
+      "traffic": "udp"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-upload-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-download-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-full-duplex-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-tcp-latency-8",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-udp-8",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "wireguard",
+      "traffic": "udp"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-tun-upload-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-tun-download-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "download"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-tun-full-duplex-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-tun-tcp-latency-1",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-tun-udp-1",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1200,
+      "protocol": "wireguard",
+      "traffic": "udp"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-tun-upload-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-tun-download-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-tun-full-duplex-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-tun-tcp-latency-8",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-tun-udp-8",
+      "iterations": 1000,
+      "path": "tun",
+      "payload_size": 1200,
+      "protocol": "wireguard",
+      "traffic": "udp"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance.py": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d"
+  },
+  "finished_unix": 1789885560.721592,
+  "harness_sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 5,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "case": "hysteria2-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-1",
+      "output_relative": "hysteria2-socks-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.2703540325164795,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-2",
+      "output_relative": "hysteria2-socks-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7887260913848877,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-3",
+      "output_relative": "hysteria2-socks-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.79069185256958,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-4",
+      "output_relative": "hysteria2-socks-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8905022144317627,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-1-candidate-5",
+      "output_relative": "hysteria2-socks-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8041589260101318,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-1",
+      "output_relative": "hysteria2-socks-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7288379669189453,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-2",
+      "output_relative": "hysteria2-socks-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7387230396270752,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-3",
+      "output_relative": "hysteria2-socks-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.733436107635498,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-4",
+      "output_relative": "hysteria2-socks-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.739542007446289,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-1-candidate-5",
+      "output_relative": "hysteria2-socks-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.736881971359253,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-1",
+      "output_relative": "hysteria2-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.8419420719146729,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-2",
+      "output_relative": "hysteria2-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8305630683898926,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-3",
+      "output_relative": "hysteria2-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.8192431926727295,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-4",
+      "output_relative": "hysteria2-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.888430118560791,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-1-candidate-5",
+      "output_relative": "hysteria2-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.874574899673462,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-1",
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2125487327575684,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-2",
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.211169958114624,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-3",
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2201731204986572,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-4",
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.1937439441680908,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-1-candidate-5",
+      "output_relative": "hysteria2-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2075719833374023,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-1",
+      "output_relative": "hysteria2-socks-udp-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.252202033996582,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-2",
+      "output_relative": "hysteria2-socks-udp-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2438700199127197,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-3",
+      "output_relative": "hysteria2-socks-udp-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2621808052062988,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-4",
+      "output_relative": "hysteria2-socks-udp-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.261132001876831,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-1-candidate-5",
+      "output_relative": "hysteria2-socks-udp-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2620232105255127,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-1",
+      "output_relative": "hysteria2-socks-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.87225604057312,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-2",
+      "output_relative": "hysteria2-socks-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.811539888381958,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-3",
+      "output_relative": "hysteria2-socks-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.824976921081543,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-4",
+      "output_relative": "hysteria2-socks-upload-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.025754928588867,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-upload-8-candidate-5",
+      "output_relative": "hysteria2-socks-upload-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.8126800060272217,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-1",
+      "output_relative": "hysteria2-socks-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.7260589599609375,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-2",
+      "output_relative": "hysteria2-socks-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.66577410697937,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-3",
+      "output_relative": "hysteria2-socks-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.654921054840088,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-4",
+      "output_relative": "hysteria2-socks-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.6103718280792236,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-download-8-candidate-5",
+      "output_relative": "hysteria2-socks-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.7077088356018066,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-1",
+      "output_relative": "hysteria2-socks-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.780143976211548,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-2",
+      "output_relative": "hysteria2-socks-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.448326826095581,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-3",
+      "output_relative": "hysteria2-socks-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.5625951290130615,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-4",
+      "output_relative": "hysteria2-socks-full-duplex-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.4253199100494385,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-full-duplex-8-candidate-5",
+      "output_relative": "hysteria2-socks-full-duplex-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.7360479831695557,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-1",
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.4671339988708496,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-2",
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.4050240516662598,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-3",
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3916630744934082,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-4",
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.387270212173462,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-tcp-latency-8-candidate-5",
+      "output_relative": "hysteria2-socks-tcp-latency-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3591878414154053,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-1",
+      "output_relative": "hysteria2-socks-udp-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.452009916305542,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-2",
+      "output_relative": "hysteria2-socks-udp-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.449927806854248,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-3",
+      "output_relative": "hysteria2-socks-udp-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.469238042831421,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-4",
+      "output_relative": "hysteria2-socks-udp-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.4600849151611328,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-socks-udp-8-candidate-5",
+      "output_relative": "hysteria2-socks-udp-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.4665069580078125,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-1",
+      "output_relative": "hysteria2-tun-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2586472034454346,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-2",
+      "output_relative": "hysteria2-tun-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.257889747619629,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-3",
+      "output_relative": "hysteria2-tun-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2461540699005127,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-4",
+      "output_relative": "hysteria2-tun-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2450170516967773,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-1-candidate-5",
+      "output_relative": "hysteria2-tun-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2535169124603271,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-1",
+      "output_relative": "hysteria2-tun-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.264920949935913,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-2",
+      "output_relative": "hysteria2-tun-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2406249046325684,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-3",
+      "output_relative": "hysteria2-tun-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2659640312194824,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-4",
+      "output_relative": "hysteria2-tun-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2665951251983643,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-1-candidate-5",
+      "output_relative": "hysteria2-tun-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2516601085662842,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-1",
+      "output_relative": "hysteria2-tun-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3087382316589355,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-2",
+      "output_relative": "hysteria2-tun-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2566101551055908,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-3",
+      "output_relative": "hysteria2-tun-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.257270097732544,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-4",
+      "output_relative": "hysteria2-tun-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2595551013946533,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-1-candidate-5",
+      "output_relative": "hysteria2-tun-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.255431890487671,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-1",
+      "output_relative": "hysteria2-tun-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.636392831802368,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-2",
+      "output_relative": "hysteria2-tun-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.6471140384674072,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-3",
+      "output_relative": "hysteria2-tun-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.671311855316162,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-4",
+      "output_relative": "hysteria2-tun-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.591032028198242,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-1-candidate-5",
+      "output_relative": "hysteria2-tun-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.642604112625122,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-1",
+      "output_relative": "hysteria2-tun-udp-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3519060611724854,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-2",
+      "output_relative": "hysteria2-tun-udp-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3678970336914062,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-3",
+      "output_relative": "hysteria2-tun-udp-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.375830888748169,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-4",
+      "output_relative": "hysteria2-tun-udp-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.361314058303833,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-1-candidate-5",
+      "output_relative": "hysteria2-tun-udp-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3465569019317627,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-1",
+      "output_relative": "hysteria2-tun-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.469980001449585,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-2",
+      "output_relative": "hysteria2-tun-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.5271847248077393,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-3",
+      "output_relative": "hysteria2-tun-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.4744839668273926,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-4",
+      "output_relative": "hysteria2-tun-upload-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.453658103942871,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-upload-8-candidate-5",
+      "output_relative": "hysteria2-tun-upload-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.5609209537506104,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-1",
+      "output_relative": "hysteria2-tun-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.4136857986450195,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-2",
+      "output_relative": "hysteria2-tun-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.410991907119751,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-3",
+      "output_relative": "hysteria2-tun-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.4072871208190918,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-4",
+      "output_relative": "hysteria2-tun-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.411569356918335,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-download-8-candidate-5",
+      "output_relative": "hysteria2-tun-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.410811185836792,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-1",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.5615079402923584,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-2",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.5597550868988037,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-3",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.5126500129699707,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-4",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.5569789409637451,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-full-duplex-8-candidate-5",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.5234858989715576,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-1",
+      "output_relative": "hysteria2-tun-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 20.61910915374756,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-2",
+      "output_relative": "hysteria2-tun-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 20.6768856048584,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-3",
+      "output_relative": "hysteria2-tun-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 21.032079935073853,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-4",
+      "output_relative": "hysteria2-tun-tcp-latency-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 21.136412858963013,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-tcp-latency-8-candidate-5",
+      "output_relative": "hysteria2-tun-tcp-latency-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 21.89886212348938,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-1",
+      "output_relative": "hysteria2-tun-udp-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.52675199508667,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-2",
+      "output_relative": "hysteria2-tun-udp-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.5345160961151123,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-3",
+      "output_relative": "hysteria2-tun-udp-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.521414041519165,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-4",
+      "output_relative": "hysteria2-tun-udp-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.5405569076538086,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/hysteria2-tun-udp-8-candidate-5",
+      "output_relative": "hysteria2-tun-udp-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.5225579738616943,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-1",
+      "output_relative": "wireguard-socks-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.852675199508667,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-2",
+      "output_relative": "wireguard-socks-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.853532075881958,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-3",
+      "output_relative": "wireguard-socks-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.8058969974517822,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-4",
+      "output_relative": "wireguard-socks-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8020281791687012,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-1-candidate-5",
+      "output_relative": "wireguard-socks-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8038511276245117,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-1",
+      "output_relative": "wireguard-socks-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7918970584869385,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-2",
+      "output_relative": "wireguard-socks-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8194880485534668,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-3",
+      "output_relative": "wireguard-socks-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.8123860359191895,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-4",
+      "output_relative": "wireguard-socks-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8000156879425049,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-1-candidate-5",
+      "output_relative": "wireguard-socks-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.7972471714019775,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-1",
+      "output_relative": "wireguard-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9499309062957764,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-2",
+      "output_relative": "wireguard-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.9581491947174072,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-3",
+      "output_relative": "wireguard-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9534919261932373,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-4",
+      "output_relative": "wireguard-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.984283208847046,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-1-candidate-5",
+      "output_relative": "wireguard-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9564390182495117,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-1",
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2251830101013184,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-2",
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2143809795379639,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-3",
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2182860374450684,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-4",
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2172789573669434,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-1-candidate-5",
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2217538356781006,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-1",
+      "output_relative": "wireguard-socks-udp-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2653110027313232,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-2",
+      "output_relative": "wireguard-socks-udp-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2161359786987305,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-3",
+      "output_relative": "wireguard-socks-udp-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2147469520568848,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-4",
+      "output_relative": "wireguard-socks-udp-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2202911376953125,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-1-candidate-5",
+      "output_relative": "wireguard-socks-udp-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2549259662628174,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-1",
+      "output_relative": "wireguard-socks-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.427947759628296,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-2",
+      "output_relative": "wireguard-socks-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.4264378547668457,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-3",
+      "output_relative": "wireguard-socks-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.412645101547241,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-4",
+      "output_relative": "wireguard-socks-upload-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.364812135696411,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-upload-8-candidate-5",
+      "output_relative": "wireguard-socks-upload-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.367607831954956,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-1",
+      "output_relative": "wireguard-socks-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.225285053253174,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-2",
+      "output_relative": "wireguard-socks-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.1906051635742188,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-3",
+      "output_relative": "wireguard-socks-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.2043237686157227,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-4",
+      "output_relative": "wireguard-socks-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.202810049057007,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-download-8-candidate-5",
+      "output_relative": "wireguard-socks-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.198410987854004,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-1",
+      "output_relative": "wireguard-socks-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.7292890548706055,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-2",
+      "output_relative": "wireguard-socks-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.74033784866333,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-3",
+      "output_relative": "wireguard-socks-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.789380788803101,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-4",
+      "output_relative": "wireguard-socks-full-duplex-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.748482942581177,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-full-duplex-8-candidate-5",
+      "output_relative": "wireguard-socks-full-duplex-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 4.728173017501831,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-1",
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3185200691223145,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-2",
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3117198944091797,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-3",
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3146939277648926,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-4",
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3048980236053467,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-tcp-latency-8-candidate-5",
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3153290748596191,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-1",
+      "output_relative": "wireguard-socks-udp-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.358731985092163,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-2",
+      "output_relative": "wireguard-socks-udp-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3605070114135742,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-3",
+      "output_relative": "wireguard-socks-udp-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3510768413543701,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-4",
+      "output_relative": "wireguard-socks-udp-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.359823226928711,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-socks-udp-8-candidate-5",
+      "output_relative": "wireguard-socks-udp-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3706231117248535,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-1",
+      "output_relative": "wireguard-tun-upload-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2753410339355469,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-2",
+      "output_relative": "wireguard-tun-upload-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2739641666412354,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-3",
+      "output_relative": "wireguard-tun-upload-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2791199684143066,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-4",
+      "output_relative": "wireguard-tun-upload-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2769010066986084,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-1-candidate-5",
+      "output_relative": "wireguard-tun-upload-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2736411094665527,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-1",
+      "output_relative": "wireguard-tun-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2699332237243652,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-2",
+      "output_relative": "wireguard-tun-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2799160480499268,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-3",
+      "output_relative": "wireguard-tun-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2551417350769043,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-4",
+      "output_relative": "wireguard-tun-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2840790748596191,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-1-candidate-5",
+      "output_relative": "wireguard-tun-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2664148807525635,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-1",
+      "output_relative": "wireguard-tun-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.273380994796753,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-2",
+      "output_relative": "wireguard-tun-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.318302869796753,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-3",
+      "output_relative": "wireguard-tun-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.321578025817871,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-4",
+      "output_relative": "wireguard-tun-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2744269371032715,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-1-candidate-5",
+      "output_relative": "wireguard-tun-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2762548923492432,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-1",
+      "output_relative": "wireguard-tun-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.18486475944519,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-2",
+      "output_relative": "wireguard-tun-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.915466070175171,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-3",
+      "output_relative": "wireguard-tun-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.9993069171905518,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-4",
+      "output_relative": "wireguard-tun-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.002307891845703,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-1-candidate-5",
+      "output_relative": "wireguard-tun-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.9159066677093506,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-1",
+      "output_relative": "wireguard-tun-udp-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3697271347045898,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-2",
+      "output_relative": "wireguard-tun-udp-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3653450012207031,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-3",
+      "output_relative": "wireguard-tun-udp-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3505260944366455,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-4",
+      "output_relative": "wireguard-tun-udp-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3664250373840332,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-1-candidate-5",
+      "output_relative": "wireguard-tun-udp-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3634278774261475,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-1",
+      "output_relative": "wireguard-tun-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.5160949230194092,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-2",
+      "output_relative": "wireguard-tun-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.5113389492034912,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-3",
+      "output_relative": "wireguard-tun-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.4867699146270752,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-4",
+      "output_relative": "wireguard-tun-upload-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.4876182079315186,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-upload-8-candidate-5",
+      "output_relative": "wireguard-tun-upload-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.5134589672088623,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-1",
+      "output_relative": "wireguard-tun-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.4556238651275635,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-2",
+      "output_relative": "wireguard-tun-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.4937100410461426,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-3",
+      "output_relative": "wireguard-tun-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.482464075088501,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-4",
+      "output_relative": "wireguard-tun-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.4725792407989502,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-download-8-candidate-5",
+      "output_relative": "wireguard-tun-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.477332353591919,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-1",
+      "output_relative": "wireguard-tun-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.6839570999145508,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-2",
+      "output_relative": "wireguard-tun-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.7065379619598389,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-3",
+      "output_relative": "wireguard-tun-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7096569538116455,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-4",
+      "output_relative": "wireguard-tun-full-duplex-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.6874728202819824,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-full-duplex-8-candidate-5",
+      "output_relative": "wireguard-tun-full-duplex-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.6716558933258057,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-1",
+      "output_relative": "wireguard-tun-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 22.675384044647217,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-2",
+      "output_relative": "wireguard-tun-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 22.16997003555298,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-3",
+      "output_relative": "wireguard-tun-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 22.22672986984253,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-4",
+      "output_relative": "wireguard-tun-tcp-latency-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 23.04684853553772,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-tcp-latency-8-candidate-5",
+      "output_relative": "wireguard-tun-tcp-latency-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 22.07205605506897,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-1",
+      "output_relative": "wireguard-tun-udp-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.507863998413086,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-2",
+      "output_relative": "wireguard-tun-udp-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.5255351066589355,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-3",
+      "output_relative": "wireguard-tun-udp-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.4949817657470703,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-4",
+      "output_relative": "wireguard-tun-udp-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.5121588706970215,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "wireguard-tun-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-new/wireguard-tun-udp-8-candidate-5",
+      "output_relative": "wireguard-tun-udp-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.507688045501709,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "61373052dc8b6784162c81650faa6bd92f0604aa",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_unix": 1789884750.728919,
+  "status": "pass",
+  "suite": "new",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+      "engine_sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+    }
+  }
+}

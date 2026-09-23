@@ -1,0 +1,1876 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "vless-tls-tun-full-duplex-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "vless-tls",
+      "traffic": "full-duplex"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity-workers12/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4"
+  },
+  "finished_unix": 1790000833.814862,
+  "harness_sha256": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 10,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 30.7,
+                "executable": "/usr/libexec/assetsubscriptiond",
+                "pid": 34207
+              },
+              {
+                "cpu": 65.3,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 18.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 316.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000759.524471
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.7,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 47.9,
+                "executable": "/usr/libexec/assetsubscriptiond",
+                "pid": 34207
+              },
+              {
+                "cpu": 59.9,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 39056
+              },
+              {
+                "cpu": 25.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 16.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000760.848465
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-1.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-1",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2809629440307617,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 10.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 14.8,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 24.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 17.2,
+                "executable": "/System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd",
+                "pid": 47436
+              },
+              {
+                "cpu": 35.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 16.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000762.017138
+          },
+          {
+            "processes": [
+              {
+                "cpu": 24.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 15.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000763.357022
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-1.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-1",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2935070991516113,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 31.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000764.523856
+          },
+          {
+            "processes": [
+              {
+                "cpu": 22.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 10.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000765.856999
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-1.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-1",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.288649082183838,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 35.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 17.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000767.011745
+          },
+          {
+            "processes": [
+              {
+                "cpu": 11.8,
+                "executable": "/System/Library/Frameworks/Security.framework/Versions/A/XPCServices/authd.xpc/Contents/MacOS/authd",
+                "pid": 452
+              },
+              {
+                "cpu": 26.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 11.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000768.384908
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-2.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-2",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3314049243927002,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 33.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 13.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000769.554313
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000770.885399
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-2.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-2",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.289322853088379,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 27.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 22.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000772.048655
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 10.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000773.38915
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-2.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-2",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2954139709472656,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 33.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000774.556017
+          },
+          {
+            "processes": [
+              {
+                "cpu": 23.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000775.9089239
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-3.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-3",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3077712059020996,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 19.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34947
+              },
+              {
+                "cpu": 31.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 13.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000777.075454
+          },
+          {
+            "processes": [
+              {
+                "cpu": 21.1,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 28.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000778.452888
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-3.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-3",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.329685926437378,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 50.5,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 38.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 20.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000779.613059
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000780.9552362
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-3.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-3",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.299022912979126,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 25.6,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 35.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 16.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000782.1219242
+          },
+          {
+            "processes": [
+              {
+                "cpu": 30.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000783.4494631
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-4.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-4",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2815289497375488,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 34.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000784.622141
+          },
+          {
+            "processes": [
+              {
+                "cpu": 28.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000785.949754
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-4.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-4",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.286902904510498,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 34.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 18.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000787.109393
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 11.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000788.464936
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-4.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-4",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.309800148010254,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 32.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000789.626724
+          },
+          {
+            "processes": [
+              {
+                "cpu": 23.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 61.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000790.964566
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-5.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-5",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2964951992034912,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 30.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 23.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000792.136584
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 11.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000793.4770901
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-5.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-5",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2961862087249756,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 27.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 22.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000794.65697
+          },
+          {
+            "processes": [
+              {
+                "cpu": 24.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000795.986638
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-5.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-5",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2872228622436523,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 29.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 17.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000797.1596549
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000798.517843
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-6.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-6",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-6",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 6,
+      "returncode": 0,
+      "seconds": 1.3062231540679932,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 34.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 22.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000799.6783721
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 10.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000801.045606
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-6.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-6",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-6",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 6,
+      "returncode": 0,
+      "seconds": 1.3175718784332275,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 27.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 21.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000802.213204
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 18.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000803.586578
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-6.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-6",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-6",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 6,
+      "returncode": 0,
+      "seconds": 1.3310799598693848,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 32.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 15.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000804.757388
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 11.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000806.0879989
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-7.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-7",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-7",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 7,
+      "returncode": 0,
+      "seconds": 1.2864649295806885,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 14.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 36183
+              },
+              {
+                "cpu": 31.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 18.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000807.2530339
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000808.581034
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-7.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-7",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-7",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 7,
+      "returncode": 0,
+      "seconds": 1.2841811180114746,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 33.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 17.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000809.749032
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 11.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000811.068969
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-7.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-7",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-7",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 7,
+      "returncode": 0,
+      "seconds": 1.2789649963378906,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 31.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 16.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000812.237542
+          },
+          {
+            "processes": [
+              {
+                "cpu": 24.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 19.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000813.587639
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-8.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-8",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-8",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 8,
+      "returncode": 0,
+      "seconds": 1.3063859939575195,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 33.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000814.755216
+          },
+          {
+            "processes": [
+              {
+                "cpu": 20.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 21.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000816.098637
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-8.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-8",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-8",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 8,
+      "returncode": 0,
+      "seconds": 1.2969977855682373,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 32.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000817.263561
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 10.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000818.598701
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-8.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-8",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-8",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 8,
+      "returncode": 0,
+      "seconds": 1.2905547618865967,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 30.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 19.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000819.765669
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.6,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 28.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 12.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000821.1526139
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-9.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-9",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-9",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 9,
+      "returncode": 0,
+      "seconds": 1.3365519046783447,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 32.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 13.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000822.3292139
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 20.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000823.655479
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-9.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-9",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-9",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 9,
+      "returncode": 0,
+      "seconds": 1.2853801250457764,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 32.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 15.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000824.826588
+          },
+          {
+            "processes": [
+              {
+                "cpu": 30.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 10.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000826.157633
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-9.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-9",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-9",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 9,
+      "returncode": 0,
+      "seconds": 1.2871439456939697,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 35.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 18.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000827.315787
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000828.647732
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-10.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-baseline-10",
+      "output_relative": "vless-tls-tun-full-duplex-1-baseline-10",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 10,
+      "returncode": 0,
+      "seconds": 1.289654016494751,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 27.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 14.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000829.815371
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 70.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000831.146796
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-10.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": "12"
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-workers12-10",
+      "output_relative": "vless-tls-tun-full-duplex-1-workers12-10",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 10,
+      "returncode": 0,
+      "seconds": 1.305711269378662,
+      "surviving_process_group": false,
+      "version": "workers12"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 30.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 24.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000832.392029
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Service).app/Contents/MacOS/Codex (Service)",
+                "pid": 96352
+              },
+              {
+                "cpu": 15.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1790000833.74059
+          }
+        ]
+      },
+      "case": "vless-tls-tun-full-duplex-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-10.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-regression-vless-short-confirmation/vless-tls-tun-full-duplex-1-candidate-10",
+      "output_relative": "vless-tls-tun-full-duplex-1-candidate-10",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 10,
+      "returncode": 0,
+      "seconds": 1.304447889328003,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_unix": 1790000758.2902532,
+  "status": "pass",
+  "suite": "tun",
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "workers12": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity-workers12/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    }
+  }
+}

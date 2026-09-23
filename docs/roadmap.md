@@ -617,7 +617,10 @@ are recorded in [stable promotion](v06-stable-promotion.md).
 
 ## Phase 4: `v0.7` Hysteria 2 and WireGuard clients
 
-Status: implementation started on 2026-09-08. The
+Status: `0.7.0-rc.1` preparation started on 2026-09-22; final CI/device and
+application acceptance remain pending. See the [RC sequence](v07-release-candidate.md)
+and [versioned evidence contract](v07-release-evidence.md). Implementation started
+on 2026-09-08. The
 [upstream support check](v07-upstream-protocol-support.md) confirms both protocols
 in pinned Xray-core `v26.7.28`. The
 [implementation increments](v07-protocol-implementation.md) now include Hysteria
@@ -676,6 +679,34 @@ Hysteria smoke cycles passed on the same build. Bounded host reproductions and
 regressions pass; the report preserves the failed intermediate trial. This is
 bounded device acceptance, not universal loss-free handover. Broader recovery-
 latency, load, carrier/fault and Android device coverage remain pending.
+
+The [initial performance campaign](benchmarks/results/2026-09-19-v07/README.md)
+found idle-RSS budget failures, repeatable H1 TUN stalls and WireGuard load
+timeouts. The [fix campaign](benchmarks/results/2026-09-19-v07-fixes/README.md)
+passes both unchanged historical gates and all 990 primary runs against frozen
+`v0.6.1` / original-v0.7 controls. Shared async setup allocation, TUN capacity
+wakeups, engine lock/queue ownership, TCP window advertisement and smoltcp loss
+recovery are corrected. H1 TUN throughput returns to the v0.6.1 level;
+Hysteria2's long eight-flow TUN upload improves from 72 to 211 MiB/s while RSS
+falls from 104 to 47 MiB. WireGuard completes all 100 protocol runs and 40
+additional eight/sixteen-flow duplex stress runs. The report retains initial
+review flags, follow-up controls, rejected large-window variants and the
+remaining memory/throughput tradeoffs. These host results do not establish
+physical-device or unrestricted network acceptance for the revised runtime.
+The [competitor investigation](benchmarks/results/2026-09-20-v07-parity/README.md)
+adds pinned Xray, sing-box, native Hysteria and official wireguard-go comparisons.
+Its user-approved Mac target requires strictly lower process RSS and allows up
+to 3% lower speed or higher latency/CPU/startup, with no reliability allowance.
+Quality flags and uncertain intervals remain visible; the historical 15%
+review thresholds do not establish parity.
+Accepted changes, fresh regression checks and remaining deficits are recorded
+separately from the earlier candidate's counts above.
+On 2026-09-21 the owner deferred further H2/TUN RSS work to a future release
+while keeping the current implementation. The [allocation-lifetime investigation](benchmarks/results/2026-09-21-h2-allocation-lifetime/README.md)
+retains both rejected arena-reuse prototypes and the measured memory limitation.
+No future version is assigned; the separate Hysteria2 gaps and uncertain parity
+results remain open.
+See the [reproduction method](v07-performance.md).
 
 Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
 matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed

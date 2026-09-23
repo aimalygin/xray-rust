@@ -1,0 +1,91 @@
+/private/tmp/xray-v07-opt-20260919/bin/hysteria-native: go1.26.5
+	path	github.com/apernet/hysteria/app/v2
+	mod	github.com/apernet/hysteria/app/v2	(devel)	
+	dep	github.com/andybalholm/brotli	v1.1.0	h1:eLKJA0d02Lf0mVpIDgYnqXcUn0GqVmEFny3VuID1U3M=
+	dep	github.com/apernet/hysteria/core/v2	v2.0.0-00010101000000-000000000000
+	=>	../core	(devel)	
+	
+	dep	github.com/apernet/hysteria/extras/v2	v2.0.0-00010101000000-000000000000
+	=>	../extras	(devel)	
+	
+	dep	github.com/apernet/quic-go	v0.61.1-0.20260806010916-184d081eef3e	h1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=
+	dep	github.com/apernet/sing-tun	v0.2.6-0.20250920121535-299f04629986	h1:w62V0oOO2Do0vXeZkx7mgZ2YFuUaRcO6rNZewI3xzuE=
+	dep	github.com/caddyserver/certmagic	v0.25.4	h1:8eIXh0HC3MsGnNo8One+BCxMGTbe5zb/oz+2KsxBFQg=
+	dep	github.com/caddyserver/zerossl	v0.1.5	h1:dkvOjBAEEtY6LIGAHei7sw2UgqSD6TrWweXpV7lvEvE=
+	dep	github.com/database64128/netx-go	v0.1.1	h1:dT5LG7Gs7zFZBthFBbzWE6K8wAHjSNAaK7wCYZT7NzM=
+	dep	github.com/database64128/tfo-go/v2	v2.3.3	h1:M0X1SgOirhSvMKI8VQfgUtNVM53L6Rzg9Z+DN6fLA50=
+	dep	github.com/davecgh/go-spew	v1.1.1	h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+	dep	github.com/fsnotify/fsnotify	v1.9.0	h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=
+	dep	github.com/go-viper/mapstructure/v2	v2.5.0	h1:vM5IJoUAy3d7zRSVtIwQgBj7BiWtMPfmPEgAXnvj1Ro=
+	dep	github.com/google/go-querystring	v1.1.0	h1:AnCroh3fv4ZBgVIf1Iwtovgjaw/GiKJo8M8yD/fhyJ8=
+	dep	github.com/google/gopacket	v1.1.19	h1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=
+	dep	github.com/hashicorp/go-cleanhttp	v0.5.2	h1:035FKYIWjmULyFRBKPs8TBQoi0x6d9G4xc9neXJWAZQ=
+	dep	github.com/hashicorp/go-retryablehttp	v0.7.7	h1:C8hUCYzor8PIfXHa4UrZkU4VvK8o9ISHxT2Q8+VepXU=
+	dep	github.com/hashicorp/golang-lru/v2	v2.0.7	h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
+	dep	github.com/huin/goupnp	v1.2.0	h1:uOKW26NG1hsSSbXIZ1IR7XP9Gjd1U8pnLaCMgntmkmY=
+	dep	github.com/jackpal/go-nat-pmp	v1.0.2	h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
+	dep	github.com/klauspost/compress	v1.17.9	h1:6KIumPrER1LHsvBVuDa0r5xaG0Es51mhhB9BQB2qeMA=
+	dep	github.com/klauspost/cpuid/v2	v2.3.0	h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=
+	dep	github.com/koron/go-ssdp	v0.0.4	h1:1IDwrghSKYM7yLf7XCzbByg2sJ/JcNOZRXS2jczTwz0=
+	dep	github.com/libdns/cloudflare	v0.2.2	h1:XWHv+C1dDcApqazlh08Q6pjytYLgR2a+Y3xrXFu0vsI=
+	dep	github.com/libdns/duckdns	v0.3.0	h1:YsNlEDrA/F6dOjOCPewS9wqA9OKE5Rduk5eVpAPdcQA=
+	dep	github.com/libdns/gandi	v1.1.0	h1:gBBbx23xejvOpbUX7HRqCYsROYag5+OUMGhQXzAkol4=
+	dep	github.com/libdns/godaddy	v1.1.0	h1:mxB107yFulEGApacljrCfaR4faR/9d9SyrGmjD2VubU=
+	dep	github.com/libdns/libdns	v1.1.1	h1:wPrHrXILoSHKWJKGd0EiAVmiJbFShguILTg9leS/P/U=
+	dep	github.com/libdns/namecheap	v1.0.0	h1:cZK8w4Y1AJQCtL5bjqnFpYBnI1k/mzJhljcKAP5vPd8=
+	dep	github.com/libdns/njalla	v0.0.0-20250815081032-a55a87a8f20f	h1:BG7UdnPkQGW4jK9mB73cFfRbxnYARF4BtRvD8gj2sxY=
+	dep	github.com/libdns/porkbun	v1.1.0	h1:X763NqXjW26VEl7GvBtF/3CGeuGt9JqoQ35mwIlx40E=
+	dep	github.com/libdns/vultr/v2	v2.0.4	h1:4V1OSiUnYvFfpFBicdM27JEnAF0D694cmmQ3AyNqobA=
+	dep	github.com/libp2p/go-nat	v1.0.1-0.20250821073202-01afc089f138	h1:YohuNPT/1k3VcThCQlBZ43PCPWPfMRS1zcxWBF2SLK8=
+	dep	github.com/libp2p/go-netroute	v0.2.1	h1:V8kVrpD8GK0Riv15/7VN6RbUQ3URNZVosw7H2v9tksU=
+	dep	github.com/mdp/qrterminal/v3	v3.2.1	h1:6+yQjiiOsSuXT5n9/m60E54vdgFsw0zhADHhHLrFet4=
+	dep	github.com/mholt/acmez/v3	v3.1.6	h1:eGVQNObP0pBN4sxqrXeg7MYqTOWyoiYpQqITVWlrevk=
+	dep	github.com/miekg/dns	v1.1.72	h1:vhmr+TF2A3tuoGNkLDFK9zi36F2LS+hKTRW0Uf8kbzI=
+	dep	github.com/patrickmn/go-cache	v2.1.0+incompatible	h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
+	dep	github.com/pelletier/go-toml/v2	v2.2.4	h1:mye9XuhQ6gvn5h28+VilKrrPoQVanw5PMw/TB0t5Ec4=
+	dep	github.com/pion/dtls/v3	v3.1.4	h1:QhvtMflMfu9Kf0RcDC5BJBle4caPskByrKQR6uuYqpY=
+	dep	github.com/pion/logging	v0.2.4	h1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=
+	dep	github.com/pion/stun/v3	v3.1.6	h1:WnhsD0eHCiwCfKNkVx0VJJwr2Y3eV4Ueih3KJ+dfZy8=
+	dep	github.com/pion/transport/v4	v4.0.2	h1:ifYlPqNwsy6aKQ9y8yzxXlHae5431ZrH2avkD/Rn6Tk=
+	dep	github.com/pmezard/go-difflib	v1.0.0	h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
+	dep	github.com/quic-go/qpack	v0.6.0	h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
+	dep	github.com/refraction-networking/utls	v1.8.2	h1:j4Q1gJj0xngdeH+Ox/qND11aEfhpgoEvV+S9iJ2IdQo=
+	dep	github.com/sagernet/sing	v0.3.2	h1:CwWcxUBPkMvwgfe2/zUgY5oHG9qOL8Aob/evIFYK9jo=
+	dep	github.com/sagikazarmark/locafero	v0.12.0	h1:/NQhBAkUb4+fH1jivKHWusDYFjMOOKU88eegjfxfHb4=
+	dep	github.com/spf13/afero	v1.15.0	h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=
+	dep	github.com/spf13/cast	v1.10.0	h1:h2x0u2shc1QuLHfxi+cTJvs30+ZAHOGRic8uyGTDWxY=
+	dep	github.com/spf13/cobra	v1.10.2	h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
+	dep	github.com/spf13/pflag	v1.0.10	h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
+	dep	github.com/spf13/viper	v1.21.0	h1:x5S+0EU27Lbphp4UKm1C+1oQO+rKx36vfCoaVebLFSU=
+	dep	github.com/stretchr/objx	v0.5.2	h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=
+	dep	github.com/stretchr/testify	v1.11.1	h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
+	dep	github.com/subosito/gotenv	v1.6.0	h1:9NlTDc1FTs4qu0DDq7AEtTPNw6SVm7uBMsUCUjABIf8=
+	dep	github.com/txthinking/runnergroup	v0.0.0-20210608031112-152c7c4432bf	h1:7PflaKRtU4np/epFxRXlFhlzLXZzKFrH5/I4so5Ove0=
+	dep	github.com/txthinking/socks5	v0.0.0-20230325130024-4230056ae301	h1:d/Wr/Vl/wiJHc3AHYbYs5I3PucJvRuw3SvbmlIRf+oM=
+	dep	github.com/vultr/govultr/v3	v3.20.0	h1:O+Om6gXpN6ehwAIIKq5DyGuekpyHaoRlwrxTb44bDzA=
+	dep	github.com/wlynxg/anet	v0.0.5	h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=
+	dep	github.com/zeebo/blake3	v0.2.4	h1:KYQPkhpRtcqh0ssGYcKLG1JYvddkEA8QwCM/yBqhaZI=
+	dep	go.uber.org/multierr	v1.11.0	h1:blXXJkSxSSfBVBlC76pxqeO+LN3aDfLQo+309xJstO0=
+	dep	go.uber.org/zap	v1.28.0	h1:IZzaP1Fv73/T/pBMLk4VutPl36uNC+OSUh3JLG3FIjo=
+	dep	go.uber.org/zap/exp	v0.3.0	h1:6JYzdifzYkGmTdRR59oYH+Ng7k49H9qVpWwNSsGJj3U=
+	dep	go.yaml.in/yaml/v3	v3.0.4	h1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=
+	dep	go4.org/netipx	v0.0.0-20231129151722-fdeea329fbba	h1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=
+	dep	golang.org/x/crypto	v0.54.0	h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=
+	dep	golang.org/x/exp	v0.0.0-20240506185415-9bf2ced13842	h1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=
+	dep	golang.org/x/net	v0.57.0	h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=
+	dep	golang.org/x/oauth2	v0.30.0	h1:dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=
+	dep	golang.org/x/sync	v0.22.0	h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=
+	dep	golang.org/x/sys	v0.47.0	h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
+	dep	golang.org/x/term	v0.45.0	h1:NwWyBmoJCbfTHpxrWoZ9C6/VxOf7ic219I8xZZFdrf0=
+	dep	golang.org/x/text	v0.40.0	h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=
+	dep	google.golang.org/protobuf	v1.36.11	h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=
+	dep	gopkg.in/yaml.v3	v3.0.1	h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
+	dep	rsc.io/qr	v0.2.0	h1:6vBLea5/NRMVTz8V66gipeLycZMl/+UlFmk8DvqQ6WY=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	-trimpath=true
+	build	DefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,urlstrictcolons=0
+	build	CGO_ENABLED=0
+	build	GOARCH=arm64
+	build	GOOS=darwin
+	build	GOARM64=v8.0

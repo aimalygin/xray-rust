@@ -7,7 +7,7 @@ use super::{
     pacing::Pacer,
     spaces::{PacketSpace, SentPacket},
 };
-use crate::{Duration, Instant, TIMER_GRANULARITY, TransportConfig, congestion, packet::SpaceId};
+use crate::{congestion, packet::SpaceId, Duration, Instant, TransportConfig, TIMER_GRANULARITY};
 
 #[cfg(feature = "qlog")]
 use qlog::events::quic::MetricsUpdated;
@@ -294,6 +294,11 @@ pub struct RttEstimator {
 }
 
 impl RttEstimator {
+    #[cfg(test)]
+    pub(crate) fn test_initial(initial_rtt: Duration) -> Self {
+        Self::new(initial_rtt)
+    }
+
     fn new(initial_rtt: Duration) -> Self {
         Self {
             latest: initial_rtt,

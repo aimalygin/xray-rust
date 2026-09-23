@@ -38,8 +38,8 @@ mod websocket_frame;
 mod xhttp;
 
 pub(crate) use xhttp::{
-    connect_h2, connect_quic_transport, connect_quic_transport_with_datagrams, H3ConnectConfig,
-    H3Error,
+    configure_quic_datagram_socket, connect_h2, connect_quic_transport,
+    connect_quic_transport_with_datagrams, H3ConnectConfig, H3Error,
 };
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here

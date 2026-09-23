@@ -15,6 +15,7 @@ use tracing::warn;
 pub(super) struct Pacer {
     capacity: u64,
     last_window: u64,
+    last_rate: Option<u64>,
     last_mtu: u16,
     tokens: u64,
     prev: Instant,
@@ -27,10 +28,62 @@ impl Pacer {
         Self {
             capacity,
             last_window: window,
+            last_rate: None,
             last_mtu: mtu,
             tokens: capacity,
             prev: now,
         }
+    }
+
+    pub(super) fn delay_with_rate(
+        &mut self,
+        rtt: Duration,
+        bytes: u64,
+        mtu: u16,
+        window: u64,
+        rate: Option<u64>,
+        now: Instant,
+    ) -> Option<Instant> {
+        let Some(rate) = rate.filter(|rate| *rate > 0) else {
+            if self.last_rate.take().is_some() {
+                self.capacity = optimal_capacity(rtt, window, mtu);
+                self.tokens = self.tokens.min(self.capacity);
+                self.last_window = window;
+                self.last_mtu = mtu;
+            }
+            return self.delay(rtt, bytes, mtu, window, now);
+        };
+        if self.last_rate != Some(rate) || self.last_mtu != mtu {
+            self.capacity = ((u128::from(rate) * RATE_BURST_INTERVAL_NANOS / 1_000_000_000)
+                .min(u128::from(u64::MAX)) as u64)
+                .clamp(
+                    MIN_BURST_SIZE * u64::from(mtu),
+                    MAX_BURST_SIZE * u64::from(mtu),
+                );
+            self.tokens = self.tokens.min(self.capacity);
+            self.last_rate = Some(rate);
+            self.last_mtu = mtu;
+        }
+        if self.tokens >= bytes {
+            return None;
+        }
+        let elapsed = now.saturating_duration_since(self.prev).as_nanos();
+        let refill = elapsed.saturating_mul(u128::from(rate)) / 1_000_000_000;
+        self.tokens = self
+            .tokens
+            .saturating_add(refill.min(u128::from(u64::MAX)) as u64)
+            .min(self.capacity);
+        self.prev = now.max(self.prev);
+        if self.tokens >= bytes {
+            return None;
+        }
+        // Packet sizes and the bounded burst capacity keep this duration small.
+        // Round upward so the next wakeup always has the requested credit.
+        let missing = bytes - self.tokens;
+        let nanos = (u128::from(missing) * 1_000_000_000).div_ceil(u128::from(rate));
+        let delay = Duration::from_nanos(nanos.min(u128::from(u64::MAX)) as u64)
+            .max(Duration::from_millis(1));
+        Some(self.prev + delay)
     }
 
     /// Record that a packet has been transmitted.
@@ -144,6 +197,11 @@ fn optimal_capacity(smoothed_rtt: Duration, window: u64, mtu: u16) -> u64 {
 /// more applicable.
 const BURST_INTERVAL_NANOS: u128 = 2_000_000; // 2ms
 
+// BBR supplies an explicit wire rate. Preserve up to four milliseconds of
+// credit when receive processing or the scheduler delays a one-ms wakeup.
+// The common 256-packet ceiling still bounds every burst.
+const RATE_BURST_INTERVAL_NANOS: u128 = 4_000_000;
+
 /// Allows some usage of GSO, and doesn't slow down the handshake.
 const MIN_BURST_SIZE: u64 = 10;
 
@@ -160,21 +218,15 @@ mod tests {
         let new_instant = old_instant + Duration::from_micros(15);
         let rtt = Duration::from_micros(400);
 
-        assert!(
-            Pacer::new(rtt, 30000, 1500, new_instant)
-                .delay(Duration::from_micros(0), 0, 1500, 1, old_instant)
-                .is_none()
-        );
-        assert!(
-            Pacer::new(rtt, 30000, 1500, new_instant)
-                .delay(Duration::from_micros(0), 1600, 1500, 1, old_instant)
-                .is_none()
-        );
-        assert!(
-            Pacer::new(rtt, 30000, 1500, new_instant)
-                .delay(Duration::from_micros(0), 1500, 1500, 3000, old_instant)
-                .is_none()
-        );
+        assert!(Pacer::new(rtt, 30000, 1500, new_instant)
+            .delay(Duration::from_micros(0), 0, 1500, 1, old_instant)
+            .is_none());
+        assert!(Pacer::new(rtt, 30000, 1500, new_instant)
+            .delay(Duration::from_micros(0), 1600, 1500, 1, old_instant)
+            .is_none());
+        assert!(Pacer::new(rtt, 30000, 1500, new_instant)
+            .delay(Duration::from_micros(0), 1500, 1500, 3000, old_instant)
+            .is_none());
     }
 
     #[test]
@@ -304,5 +356,138 @@ mod tests {
             None
         );
         assert_eq!(pacer.tokens, pacer.capacity);
+    }
+}
+
+#[cfg(test)]
+mod controller_pacing_tests {
+    use super::*;
+
+    #[test]
+    fn requested_rate_refills_at_its_own_rate_not_cwnd_over_rtt() {
+        let now = Instant::now();
+        let rtt = Duration::from_millis(50);
+        let mut p = Pacer::new(rtt, 2_000_000, 1000, now);
+        for _ in 0..10 {
+            assert_eq!(
+                p.delay_with_rate(rtt, 1000, 1000, 2_000_000, Some(100_000), now),
+                None
+            );
+            p.on_transmit(1000);
+        }
+        assert_eq!(
+            p.delay_with_rate(rtt, 1000, 1000, 2_000_000, Some(100_000), now),
+            Some(now + Duration::from_millis(10))
+        );
+        assert_eq!(
+            p.delay_with_rate(
+                rtt,
+                1000,
+                1000,
+                2_000_000,
+                Some(100_000),
+                now + Duration::from_millis(50)
+            ),
+            None
+        );
+        assert_eq!(p.tokens, 5000);
+    }
+
+    #[test]
+    fn rate_reduction_clamps_burst_credit_even_if_cwnd_is_unchanged() {
+        let now = Instant::now();
+        let rtt = Duration::from_millis(50);
+        let mut p = Pacer::new(rtt, 2_000_000, 1000, now);
+        p.delay_with_rate(rtt, 1000, 1000, 2_000_000, Some(20_000_000), now);
+        assert_eq!(p.capacity, 80_000);
+        p.delay_with_rate(rtt, 1000, 1000, 2_000_000, Some(100_000), now);
+        assert_eq!((p.capacity, p.tokens), (10_000, 10_000));
+    }
+
+    #[test]
+    fn controllers_without_a_rate_keep_legacy_pacing() {
+        let now = Instant::now();
+        let rtt = Duration::from_millis(50);
+        for rate in [None, Some(0)] {
+            let mut a = Pacer::new(rtt, 500_000, 1200, now);
+            let mut b = Pacer::new(rtt, 500_000, 1200, now);
+            for step in 0..100 {
+                let time = now + Duration::from_micros(step * 100);
+                assert_eq!(
+                    a.delay_with_rate(rtt, 1200, 1200, 500_000, rate, time),
+                    b.delay(rtt, 1200, 1200, 500_000, time)
+                );
+                assert_eq!((a.tokens, a.capacity), (b.tokens, b.capacity));
+                a.on_transmit(1200);
+                b.on_transmit(1200);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod packet_wakeup_regression {
+    use super::*;
+    #[test]
+    fn coarse_timer_does_not_discard_a_quarter_of_the_requested_rate() {
+        let start = Instant::now();
+        let rtt = Duration::from_millis(50);
+        let rate = 12_500_000;
+        let mut p = Pacer::new(rtt, 2_000_000, 1000, start);
+        let mut now = start;
+        let mut sent = 0_u64;
+        while now < start + Duration::from_millis(200) {
+            if let Some(ready) = p.delay_with_rate(rtt, 1000, 1000, 2_000_000, Some(rate), now) {
+                // The timer may only wake at 1.25 ms boundaries. A bucket
+                // with 2 ms of credit must not always sleep until it is full.
+                let ticks = ready.duration_since(start).as_micros().div_ceil(1250);
+                now = start + Duration::from_micros(ticks as u64 * 1250);
+            } else {
+                p.on_transmit(1000);
+                sent += 1000;
+            }
+        }
+        assert!(
+            sent >= rate / 5 * 9 / 10,
+            "coarse timer lost too much delivery capacity: {sent} bytes in 200 ms"
+        );
+        assert!(
+            sent <= rate / 5 + p.capacity,
+            "pacer must still honor its rate plus initial burst"
+        );
+    }
+}
+
+#[cfg(test)]
+mod scheduling_jitter_regression {
+    use super::*;
+    #[test]
+    fn delayed_driver_preserves_delivery_rate_with_a_bounded_burst() {
+        let start = Instant::now();
+        let rtt = Duration::from_millis(50);
+        let rate = 12_500_000;
+        let mut p = Pacer::new(rtt, 2_000_000, 1000, start);
+        let mut now = start;
+        let mut sent = 0_u64;
+        while now < start + Duration::from_millis(200) {
+            if let Some(ready) = p.delay_with_rate(rtt, 1000, 1000, 2_000_000, Some(rate), now) {
+                // Driver scheduling under simultaneous receive/transmit can
+                // miss the timer tick even when the requested wakeup is 1 ms.
+                let ticks = ready.duration_since(start).as_micros().div_ceil(3250);
+                now = start + Duration::from_micros(ticks as u64 * 3250);
+            } else {
+                p.on_transmit(1000);
+                sent += 1000;
+            }
+        }
+        assert!(
+            sent >= rate / 5 * 95 / 100,
+            "scheduling jitter discarded delivery credit: {sent}"
+        );
+        assert!(
+            sent <= rate / 5 + p.capacity,
+            "rate plus bounded initial credit was exceeded"
+        );
+        assert!(p.capacity <= 256 * 1000);
     }
 }

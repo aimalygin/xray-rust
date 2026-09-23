@@ -1,0 +1,34 @@
+{
+  "runtime_source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+  "runtime_source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f",
+  "integration_parent": "962dc970937017ed1d54b3e8441a36a9e9188a03",
+  "delivery_commit": "ebb93d7938091ee26d311a2bc8f9980541247282",
+  "delivery_tree": "a3ba84fcb44ea2796cc3945102b42c3de689b1ad",
+  "changed_files": [
+    "docs/roadmap.md",
+    "docs/v07-performance.md",
+    "scripts/summarize-v07-protocol-parity.py",
+    "scripts/tests/test_v07_protocol_parity.py"
+  ],
+  "patch_sha256": "83eae17e1165aba69422d75221d6021e2bf9a9f3d8a144fd766fc1dd961a6210",
+  "max_regression_pct": 3,
+  "memory_target": "strictly lower client RSS",
+  "policy_source": "User explicitly accepts 1\u20133% performance differences on this Mac",
+  "validation": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts/tests",
+      "-v"
+    ],
+    "returncode": 0,
+    "tests": 43,
+    "log": "analysis-allowance-tests.log",
+    "log_sha256": "e88c664e2b41c6694e08761a2cb5243d1891d0ba2dcebeb57f79be9608a1f4a0",
+    "scope": "All Python script tests passed before documentation-only follow-up; tested Python files unchanged."
+  },
+  "measured_runtime_unchanged": true
+}

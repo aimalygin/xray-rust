@@ -1,0 +1,89 @@
+{
+  "artifact_sha256": {
+    "wireguard-socks-full-duplex-8-candidate-1/result.json": "d7b331b157be622a7847a81b721102d95c3986653f4a6b61f40a71452d1391d4"
+  },
+  "failures": [],
+  "manifest_sha256": "eae4361bb74a0b8d23d623a6522c49739166add64763d21b3d86342e0ef54131",
+  "parity": {
+    "complete": false,
+    "environmental_interference_detected": false,
+    "metrics_without_supporting_interval": 0,
+    "point_deficit_metrics": 0,
+    "reference_comparisons": 0,
+    "scope": "observed workload and host only; no practical regression allowance",
+    "status": "not_met"
+  },
+  "rows": [
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "comparisons": {},
+      "review": [],
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "client_cpu_total_millis": {
+              "max": 110,
+              "median": 110,
+              "min": 110,
+              "samples": [
+                110
+              ]
+            },
+            "client_startup_cpu_millis": {
+              "max": 10,
+              "median": 10,
+              "min": 10,
+              "samples": [
+                10
+              ]
+            },
+            "client_startup_seconds": {
+              "max": 1.24433025,
+              "median": 1.24433025,
+              "min": 1.24433025,
+              "samples": [
+                1.24433025
+              ]
+            },
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 25.0,
+              "median": 25.0,
+              "min": 25.0,
+              "samples": [
+                25.0
+              ]
+            },
+            "rss_mib": {
+              "max": 11.484375,
+              "median": 11.484375,
+              "min": 11.484375,
+              "samples": [
+                11.484375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 11.443636158171078,
+              "median": 11.443636158171078,
+              "min": 11.443636158171078,
+              "samples": [
+                11.443636158171078
+              ]
+            }
+          },
+          "passed_repeats": 1
+        }
+      }
+    }
+  ],
+  "smoke": true,
+  "suite": "new"
+}

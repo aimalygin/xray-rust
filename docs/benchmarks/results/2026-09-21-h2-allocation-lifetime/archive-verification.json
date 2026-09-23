@@ -1,0 +1,11 @@
+{
+  "all_member_hashes_verified": true,
+  "analysis_reproduced_from_archive_only": true,
+  "archive_bytes": 18469825,
+  "archive_sha256": "71664ef5f4b2c0e5a9c45b1c21d57262e263b6f68d510c1d645c28addd5d888f",
+  "lifetime_arithmetic_verified": true,
+  "lifetime_observations_require_private_original_trace_to_reinspect": true,
+  "members": 444,
+  "native_attribution_reproduced_from_archive_only": true,
+  "unrelated_inherited_environment_not_delivered": true
+}

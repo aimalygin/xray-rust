@@ -27,6 +27,8 @@ patch --directory "$SOURCE" -p1 --fuzz=0 --batch --forward \
   < "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/patches/gotatun-psk-hygiene.patch"
 patch --directory "$SOURCE" -p1 --fuzz=0 --batch --forward \
   < "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/patches/gotatun-mobile-build.patch"
+patch --directory "$SOURCE" -p1 --fuzz=0 --batch --forward \
+  < "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/patches/gotatun-mobile-progress.patch"
 python3 "$WORKSPACE_ROOT/tools/wireguard-adapter-prototype/prepare_vendor.py" \
   "$SOURCE" "$TEST_ROOT/vendor"
 diff -ruN --exclude XRAY-PATCH.md "$TEST_ROOT/vendor" "$WORKSPACE_ROOT/vendor/gotatun"

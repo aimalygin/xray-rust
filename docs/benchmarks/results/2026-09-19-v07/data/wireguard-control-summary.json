@@ -1,0 +1,140 @@
+{
+  "artifact_sha256": {
+    "wireguard-socks-full-duplex-8-reference-client-1/result.json": "bfea2b77f789e66d3f88b204475d228ee20ffec82f3ab3425e6d869cd56d8c36",
+    "wireguard-socks-full-duplex-8-reference-client-2/result.json": "4c5eec3950ee73de21de2a19f6883f9cf5cb537559d3fa7081b621f45eefd484",
+    "wireguard-socks-full-duplex-8-reference-client-3/result.json": "3e49dbc546ebab3aefb0b00cc17c8210a13473c6748de14b6c31741ef146c18e",
+    "wireguard-socks-full-duplex-8-reference-client-4/result.json": "fb6084b529247969ed6412a9b67c2e1c8eaa0b142a1798764c1d844755ecf5f2",
+    "wireguard-socks-full-duplex-8-reference-client-5/result.json": "1910fd1a1c6e6a89b73a8d06dcc65386b69c90f2c7f57fedd051a43cd2394eef",
+    "wireguard-socks-upload-8-reference-client-1/result.json": "a021fb614b1926cec3e1fd5efeab3e738901ca48dc477e478d56e4cc409693f0",
+    "wireguard-socks-upload-8-reference-client-2/result.json": "2ffb8e5ec7d59a1ef0154058244e7c19e2fac6aa2bfb6cd7553481ca3528e01c",
+    "wireguard-socks-upload-8-reference-client-3/result.json": "33981b1464a2e9c06a484c278727608ef99ad060236b810aa5a555712e76ab90",
+    "wireguard-socks-upload-8-reference-client-4/result.json": "c23b23aadd86679e59caad4607ae798272f29326dcfab2f4b35aaa69b2fe5324",
+    "wireguard-socks-upload-8-reference-client-5/result.json": "1baa915e6899bd8e84d3a0240113b908ac96ab4a5a7e6841f480f1013f60ded7"
+  },
+  "failures": [],
+  "manifest_sha256": "4fd7385a8c854b1bb0a57e902133442972b41b0524e251b48a877b9d22378510",
+  "rows": [
+    {
+      "case": "wireguard-socks-upload-8",
+      "review": [],
+      "versions": {
+        "reference-client": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 12120,
+              "median": 11480,
+              "min": 10810,
+              "samples": [
+                10810,
+                11480,
+                12120,
+                11360,
+                11670
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 47.34375,
+              "median": 44.84375,
+              "min": 42.2265625,
+              "samples": [
+                42.2265625,
+                44.84375,
+                47.34375,
+                44.375,
+                45.5859375
+              ]
+            },
+            "rss_mib": {
+              "max": 261.96875,
+              "median": 197.4375,
+              "min": 179.90625,
+              "samples": [
+                179.90625,
+                213.96875,
+                191.046875,
+                197.4375,
+                261.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 97.98543289610204,
+              "median": 91.3663063675991,
+              "min": 20.589983386072703,
+              "samples": [
+                91.3663063675991,
+                97.98543289610204,
+                95.19589958477401,
+                89.30042275552675,
+                20.589983386072703
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "review": [],
+      "versions": {
+        "reference-client": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 19050,
+              "median": 16990,
+              "min": 15730,
+              "samples": [
+                17000,
+                19050,
+                16990,
+                15730,
+                16700
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 37.20703125,
+              "median": 33.18359375,
+              "min": 30.72265625,
+              "samples": [
+                33.203125,
+                37.20703125,
+                33.18359375,
+                30.72265625,
+                32.6171875
+              ]
+            },
+            "rss_mib": {
+              "max": 320.984375,
+              "median": 280.40625,
+              "min": 257.359375,
+              "samples": [
+                280.40625,
+                259.84375,
+                305.375,
+                257.359375,
+                320.984375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 139.73668981590066,
+              "median": 133.05934311278565,
+              "min": 121.02435416146442,
+              "samples": [
+                133.05934311278565,
+                121.02435416146442,
+                122.01902281284356,
+                137.5025875328232,
+                139.73668981590066
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

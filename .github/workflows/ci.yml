@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, codex/v06-candidate]
+    branches: [main, codex/v06-candidate, codex/v0.7.0-rc.1]
     tags: ["v*"]
   workflow_dispatch:
   schedule:
@@ -24,7 +24,7 @@ env:
 
 jobs:
   release-metadata:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/codex/v06-candidate'
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/codex/v06-candidate' || github.ref == 'refs/heads/codex/v0.7.0-rc.1')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -57,7 +57,7 @@ jobs:
           else
             echo "is_rc=false" >>"$GITHUB_OUTPUT"
           fi
-          if [[ "$GITHUB_REF" == refs/tags/* || "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/heads/codex/v06-candidate ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/* || "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/heads/codex/v06-candidate || "$GITHUB_REF" == refs/heads/codex/v0.7.0-rc.1 ]]; then
             echo "run_release_gates=true" >>"$GITHUB_OUTPUT"
           else
             echo "run_release_gates=false" >>"$GITHUB_OUTPUT"
@@ -120,7 +120,7 @@ jobs:
           retention-days: 14
 
   release-evidence:
-    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0'
+    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.')
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -135,31 +135,41 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Select versioned evidence contract
+        id: evidence
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          profile="$(bash scripts/release-evidence-profile.sh "$RELEASE_TAG")"
+          echo "profile=$profile" >>"$GITHUB_OUTPUT"
+
       - name: Download validated exact-candidate evidence
         env:
           CANDIDATE_COMMIT: ${{ needs.release-metadata.outputs.candidate_commit }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPOSITORY: ${{ github.repository }}
+          EVIDENCE_PROFILE: ${{ steps.evidence.outputs.profile }}
         run: |
           run_id="$(
             gh api \
-              "repos/$RELEASE_REPOSITORY/actions/workflows/v06-release-evidence.yml/runs?event=workflow_dispatch&status=success&head_sha=$CANDIDATE_COMMIT&per_page=100" \
+              "repos/$RELEASE_REPOSITORY/actions/workflows/$EVIDENCE_PROFILE-release-evidence.yml/runs?event=workflow_dispatch&status=success&head_sha=$CANDIDATE_COMMIT&per_page=100" \
               --jq '.workflow_runs | sort_by(.created_at) | last | .id // empty'
           )"
           [[ "$run_id" =~ ^[1-9][0-9]*$ ]]
           gh run download "$run_id" \
             --repo "$RELEASE_REPOSITORY" \
-            --name "v06-release-evidence-$CANDIDATE_COMMIT" \
-            --dir "$RUNNER_TEMP/v06-release-evidence"
+            --name "$EVIDENCE_PROFILE-release-evidence-$CANDIDATE_COMMIT" \
+            --dir "$RUNNER_TEMP/release-evidence"
 
       - name: Revalidate evidence at the release boundary
         env:
           CANDIDATE_COMMIT: ${{ needs.release-metadata.outputs.candidate_commit }}
           CANDIDATE_TREE: ${{ needs.release-metadata.outputs.candidate_tree }}
+          EVIDENCE_PROFILE: ${{ steps.evidence.outputs.profile }}
         run: |
-          archive="$RUNNER_TEMP/v06-release-evidence/v06-release-evidence.zip"
+          archive="$RUNNER_TEMP/release-evidence/$EVIDENCE_PROFILE-release-evidence.zip"
           test -f "$archive"
-          bash scripts/check-v06-release-evidence.sh \
+          bash scripts/check-release-evidence.sh \
             "$archive" "$CANDIDATE_COMMIT" "$CANDIDATE_TREE"
 
   secrets:
@@ -231,7 +241,7 @@ jobs:
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
-          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion
+          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28

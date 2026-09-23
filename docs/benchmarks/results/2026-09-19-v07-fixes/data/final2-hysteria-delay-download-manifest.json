@@ -1,0 +1,556 @@
+{
+  "cases": [
+    {
+      "connections": 1,
+      "id": "hysteria2-tun-download-1",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-download-8",
+      "iterations": 64,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "download"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/candidate/xray-rust": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564",
+    "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance.py": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d"
+  },
+  "finished_unix": 1789887644.088108,
+  "link_mbps_per_direction": 100,
+  "one_way_delay_ms": 25,
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "relay_policy": "one endpoint per run, 32 MiB userspace cap, no intentional loss; kernel UDP loss is not counted",
+  "repeats": 5,
+  "runs": [
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-baseline-1.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-baseline-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4917,
+        "peak_queued_bytes": 978576,
+        "receive_buffer_bytes": 2097152,
+        "received": 4917,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9158499240875244,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4884,
+        "peak_queued_bytes": 983124,
+        "receive_buffer_bytes": 2097152,
+        "received": 4884,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9233338832855225,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4890,
+        "peak_queued_bytes": 980383,
+        "receive_buffer_bytes": 2097152,
+        "received": 4890,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.9376697540283203,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-baseline-2.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-baseline-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4642,
+        "peak_queued_bytes": 983724,
+        "receive_buffer_bytes": 2097152,
+        "received": 4642,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.9549951553344727,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-baseline-3.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-baseline-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4640,
+        "peak_queued_bytes": 992052,
+        "receive_buffer_bytes": 2097152,
+        "received": 4640,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9168777465820312,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4818,
+        "peak_queued_bytes": 990801,
+        "receive_buffer_bytes": 2097152,
+        "received": 4818,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9338459968566895,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-candidate-4.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4831,
+        "peak_queued_bytes": 994145,
+        "receive_buffer_bytes": 2097152,
+        "received": 4831,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.9476139545440674,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-baseline-4.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-baseline-4",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4773,
+        "peak_queued_bytes": 980811,
+        "receive_buffer_bytes": 2097152,
+        "received": 4773,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.9168148040771484,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-baseline-5.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-baseline-5",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4769,
+        "peak_queued_bytes": 972672,
+        "receive_buffer_bytes": 2097152,
+        "received": 4769,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8976292610168457,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-1-candidate-5.json"
+      ],
+      "output_relative": "hysteria2-tun-download-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 4770,
+        "peak_queued_bytes": 995376,
+        "receive_buffer_bytes": 2097152,
+        "received": 4770,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9348878860473633,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-baseline-1.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30246,
+        "peak_queued_bytes": 995779,
+        "receive_buffer_bytes": 2097152,
+        "received": 30246,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.333367824554443,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-candidate-1.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30560,
+        "peak_queued_bytes": 1012760,
+        "receive_buffer_bytes": 2097152,
+        "received": 30560,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.322154998779297,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-candidate-2.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 29986,
+        "peak_queued_bytes": 969795,
+        "receive_buffer_bytes": 2097152,
+        "received": 29986,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.296510934829712,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-baseline-2.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30177,
+        "peak_queued_bytes": 974602,
+        "receive_buffer_bytes": 2097152,
+        "received": 30177,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.343573093414307,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-baseline-3.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30076,
+        "peak_queued_bytes": 1009183,
+        "receive_buffer_bytes": 2097152,
+        "received": 30076,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.296679973602295,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-candidate-3.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30316,
+        "peak_queued_bytes": 1004513,
+        "receive_buffer_bytes": 2097152,
+        "received": 30316,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.31713604927063,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-candidate-4.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 31786,
+        "peak_queued_bytes": 1006607,
+        "receive_buffer_bytes": 2097152,
+        "received": 31786,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.320827960968018,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-baseline-4.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-baseline-4",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30322,
+        "peak_queued_bytes": 997807,
+        "receive_buffer_bytes": 2097152,
+        "received": 30322,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.3380889892578125,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-baseline-5.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-baseline-5",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 31351,
+        "peak_queued_bytes": 991082,
+        "receive_buffer_bytes": 2097152,
+        "received": 31351,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 4.325606107711792,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-delay-download/hysteria2-tun-download-8-candidate-5.json"
+      ],
+      "output_relative": "hysteria2-tun-download-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 30182,
+        "peak_queued_bytes": 1008648,
+        "receive_buffer_bytes": 2097152,
+        "received": 30182,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 4.312626123428345,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "started_unix": 1789887558.441482,
+  "status": "pass",
+  "suite": "new",
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/candidate/xray-rust",
+      "engine_sha256": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+      "engine_sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+    }
+  }
+}

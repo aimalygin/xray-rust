@@ -1,0 +1,98 @@
+{
+  "repeats": 5,
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-bench",
+      "sha256": "7bff0957e927a8865f18d6c3698dbd068768777ae26ee5583383d307599f9b4d"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-bench",
+      "sha256": "cc028e57522d039194eac50e9eda7f78234315aaae79f0ee329f981e1895a6e1"
+    }
+  },
+  "connections": [
+    256
+  ],
+  "runs": [
+    {
+      "name": "close-256-baseline-1",
+      "version": "baseline",
+      "connections": 256,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 0.26769208908081055
+    },
+    {
+      "name": "close-256-candidate-1",
+      "version": "candidate",
+      "connections": 256,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 0.32997584342956543
+    },
+    {
+      "name": "close-256-candidate-2",
+      "version": "candidate",
+      "connections": 256,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 0.24055981636047363
+    },
+    {
+      "name": "close-256-baseline-2",
+      "version": "baseline",
+      "connections": 256,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 0.2609579563140869
+    },
+    {
+      "name": "close-256-baseline-3",
+      "version": "baseline",
+      "connections": 256,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 0.2643570899963379
+    },
+    {
+      "name": "close-256-candidate-3",
+      "version": "candidate",
+      "connections": 256,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 0.25115203857421875
+    },
+    {
+      "name": "close-256-candidate-4",
+      "version": "candidate",
+      "connections": 256,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 0.25780510902404785
+    },
+    {
+      "name": "close-256-baseline-4",
+      "version": "baseline",
+      "connections": 256,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 0.2597630023956299
+    },
+    {
+      "name": "close-256-baseline-5",
+      "version": "baseline",
+      "connections": 256,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 0.25893712043762207
+    },
+    {
+      "name": "close-256-candidate-5",
+      "version": "candidate",
+      "connections": 256,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 0.25731778144836426
+    }
+  ]
+}
