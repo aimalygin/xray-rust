@@ -9,16 +9,17 @@ use xray_ffi::{xray_error_free, xray_profile_import_json, XrayStatus};
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(text) = std::str::from_utf8(data) {
-        for result in [
+        for profile in [
             import_request(text),
             import_profile(ProfileFormat::Hysteria2, text, None, &[]),
             import_profile(ProfileFormat::Wireguard, text, None, &[]),
-        ] {
-            if let Ok(profile) = result {
-                let config = xray_config::parse_xray_json(&profile.config_json).unwrap();
-                assert!(config.diagnostics.is_empty());
-                assert!(profile.to_json().unwrap().len() <= MAX_RESULT_BYTES);
-            }
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let config = xray_config::parse_xray_json(&profile.config_json).unwrap();
+            assert!(config.diagnostics.is_empty());
+            assert!(profile.to_json().unwrap().len() <= MAX_RESULT_BYTES);
         }
     }
     // Valid request seeds reach crypto validation and both output phases;
