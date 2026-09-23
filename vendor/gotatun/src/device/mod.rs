@@ -16,7 +16,7 @@ mod builder;
 pub mod configure;
 #[cfg(feature = "daita")]
 pub mod daita;
-#[cfg(test)]
+#[cfg(all(test, feature = "tun"))]
 mod integration_tests;
 mod peer;
 mod peer_state;

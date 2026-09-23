@@ -31,6 +31,7 @@ const WAIT: Duration = Duration::from_secs(5);
 struct Probe {
     binds: AtomicUsize,
     sent: AtomicUsize,
+    ip_send_blocked: AtomicUsize,
     reject: AtomicBool,
     socket: Mutex<Weak<UdpSocket>>,
     last_data: Mutex<Vec<u8>>,
@@ -86,14 +87,21 @@ impl UdpRecv for Udp {
         }
     }
 }
-struct IpTx(mpsc::Sender<Packet<Ip>>);
+struct IpTx(mpsc::Sender<Packet<Ip>>, Arc<Probe>);
 struct IpRx(mpsc::Receiver<Packet<Ip>>);
 impl IpSend for IpTx {
     async fn send(&mut self, packet: Packet<Ip>) -> io::Result<()> {
-        self.0
-            .send(packet)
-            .await
-            .map_err(|_| io::Error::other("IP sink closed"))
+        match self.0.try_send(packet) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(packet)) => {
+                self.1.ip_send_blocked.fetch_add(1, Ordering::SeqCst);
+                self.0
+                    .send(packet)
+                    .await
+                    .map_err(|_| io::Error::other("IP sink closed"))
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(io::Error::other("IP sink closed")),
+        }
     }
 }
 impl IpRecv for IpRx {
@@ -112,7 +120,9 @@ impl IpRecv for IpRx {
         MtuWatcher::new(MTU as u16)
     }
 }
-fn ip_pair() -> (
+fn ip_pair(
+    probe: Arc<Probe>,
+) -> (
     IpTx,
     IpRx,
     mpsc::Sender<Packet<Ip>>,
@@ -120,7 +130,7 @@ fn ip_pair() -> (
 ) {
     let (input, rx) = mpsc::channel(8);
     let (tx, output) = mpsc::channel(8);
-    (IpTx(tx), IpRx(rx), input, output)
+    (IpTx(tx, probe), IpRx(rx), input, output)
 }
 
 struct Reference {
@@ -257,7 +267,7 @@ async fn run() {
         .with_endpoint(reference.address)
         .with_allowed_ip("0.0.0.0/0".parse().unwrap());
     let probe = Arc::new(Probe::default());
-    let (tx, rx, input, mut output) = ip_pair();
+    let (tx, rx, input, mut output) = ip_pair(probe.clone());
     let device = DeviceBuilder::new()
         .with_limits(DeviceLimits::mobile())
         .with_udp(Factory(probe.clone()))
@@ -316,12 +326,19 @@ async fn run() {
     })
     .await
     .is_err();
+    // Observe the full receive queue directly. Once receive delivery no longer
+    // holds the peer encryption lock, outgoing traffic may keep progressing
+    // without exhausting packet admission; that is expected behavior.
+    timeout(WAIT, async {
+        while probe.ip_send_blocked.load(Ordering::SeqCst) == 0 {
+            sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("flood reaches the undrained application receive queue");
+    assert_eq!(output.len(), output.max_capacity());
     let pressure = device.memory_snapshot().await.unwrap();
     assert!(pressure.peak_reservations <= 64, "{pressure:?}");
-    assert!(
-        stalled || pressure.admission_drops > 0,
-        "flood must exercise queue or admission pressure: {pressure:?}"
-    );
     timeout(WAIT, async {
         loop {
             // Do not wait for input capacity while the output queue needs draining.
@@ -336,7 +353,7 @@ async fn run() {
     })
     .await
     .expect("encrypted tunnel recovers after backpressure");
-    println!("WireGuard pressure counters: {pressure:?}");
+    println!("WireGuard pressure counters: {pressure:?}; producer stalled: {stalled}");
     device.suspend().await;
     let sent = probe.sent.load(Ordering::SeqCst);
     sleep(Duration::from_millis(30)).await;
@@ -379,7 +396,7 @@ async fn run() {
 
     let rejection = Arc::new(Probe::default());
     rejection.reject.store(true, Ordering::SeqCst);
-    let (tx, rx, _input, _output) = ip_pair();
+    let (tx, rx, _input, _output) = ip_pair(rejection.clone());
     let refused = DeviceBuilder::new()
         .with_limits(DeviceLimits::mobile())
         .with_udp(Factory(rejection.clone()))

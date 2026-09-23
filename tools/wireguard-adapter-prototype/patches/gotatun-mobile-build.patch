@@ -1,3 +1,14 @@
+--- a/gotatun/src/device/mod.rs
++++ b/gotatun/src/device/mod.rs
+@@ -16,7 +16,7 @@
+ pub mod configure;
+ #[cfg(feature = "daita")]
+ pub mod daita;
+-#[cfg(test)]
++#[cfg(all(test, feature = "tun"))]
+ mod integration_tests;
+ mod peer;
+ mod peer_state;
 --- a/gotatun/src/udp/socket/mod.rs
 +++ b/gotatun/src/udp/socket/mod.rs
 @@ -230,7 +230,7 @@

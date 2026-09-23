@@ -19,7 +19,10 @@ changed by the PSK patch. Cryptographic algorithms remain upstream's.
 The build patch compiles the batched-send size helper only on Linux, Android
 and Windows, where it is used. The generic iOS/tvOS implementation does not
 call it; the upstream macOS-only exclusion otherwise fails `-D warnings` on
-those targets. No socket or packet behavior changes.
+those targets. It also gates privileged kernel-TUN integration tests on the
+`tun` feature they require, so the `ring,device` library tests compile on Linux
+without kernel-TUN support. The device, memory and protocol tests remain enabled.
+No socket or packet behavior changes.
 The progress patch releases the peer/device locks after authenticated source
 validation and before waiting for inner IP receive capacity. This prevents a
 stalled receiver from blocking outgoing encryption for the same peer. Its

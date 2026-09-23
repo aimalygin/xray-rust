@@ -207,6 +207,9 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
           chmod 0755 "$RUNNER_TEMP/gitleaks"
 
+      - name: Verify scoped evidence exceptions and leak detection
+        run: GITLEAKS_BINARY="$RUNNER_TEMP/gitleaks" python3 scripts/tests/check-gitleaks-allowlists.test.py
+
       - name: Scan complete Git history for common secrets
         run: |
           "$RUNNER_TEMP/gitleaks" git \

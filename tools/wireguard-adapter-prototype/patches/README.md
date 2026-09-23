@@ -65,6 +65,9 @@ Apply [gotatun-mobile-build.patch](gotatun-mobile-build.patch) after the PSK pat
 limit helper is used only by the Linux, Android and Windows implementations.
 Restrict its compilation to those platforms so `-D warnings` does not fail an
 `aarch64-apple-ios` build on an unused helper. Socket behavior is unchanged.
+Privileged kernel-TUN integration tests also require the `tun` feature. Gate
+that module accordingly so Linux can compile the production `ring,device`
+feature set, retaining all device, memory and protocol library tests.
 
 ## Receive backpressure patch
 

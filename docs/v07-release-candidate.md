@@ -44,3 +44,11 @@ Long soak tests remain outside the checklist. No device report, public tag,
 canonical Apple checksum or successful CI run is fabricated as a placeholder.
 Release readiness is recorded with the actual CI/evidence identifiers as they
 become available; remaining physical or application checks block that stage.
+
+For repeated device campaigns, keep the test VPS connection instructions in a
+durable private local record: endpoint or SSH alias, user, existing key reference,
+reserved test port and service restoration procedure. Keep that record separate
+from temporary protocol credentials and SSH helper scripts. Campaign cleanup
+removes temporary credentials and services, while retaining the connection
+instructions for the next run; neither credentials nor private connection details
+belong in published evidence.
