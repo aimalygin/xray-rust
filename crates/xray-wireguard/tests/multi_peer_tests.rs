@@ -114,7 +114,7 @@ async fn overlapping_peers_route_and_reject_authenticated_source_spoofing_in_bot
         );
         client.shutdown().await;
         assert_eq!(client.available_tcp_slots(), 16);
-        assert_eq!(client.available_udp_slots(), 16);
+        assert_eq!(client.available_udp_slots(), 512);
         for peer in &mut peers {
             peer.shutdown().await;
         }
@@ -154,16 +154,16 @@ async fn unavailable_specific_peer_never_falls_back_to_broader_peer_and_budgets_
             .await
             .unwrap();
             let mut sessions = Vec::new();
-            for i in 0..15 {
+            for i in 0..511 {
                 let session = client
                     .open_udp(
-                        format!("198.51.100.{}:443", 7 + i % dead_peer_count)
+                        format!("198.51.100.{}:443", 7 + i % usize::from(dead_peer_count))
                             .parse()
                             .unwrap(),
                     )
                     .await
                     .unwrap();
-                for _ in 0..32 {
+                for _ in 0..if i < 16 { 32 } else { 1 } {
                     session.send(b"private!").await.unwrap();
                 }
                 sessions.push(session);
@@ -191,7 +191,7 @@ async fn unavailable_specific_peer_never_falls_back_to_broader_peer_and_budgets_
                 Err(xray_wireguard::Error::Busy)
             ));
             client.shutdown().await;
-            assert_eq!(client.available_udp_slots(), 16);
+            assert_eq!(client.available_udp_slots(), 512);
             healthy.shutdown().await;
         })
         .await

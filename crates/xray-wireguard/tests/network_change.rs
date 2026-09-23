@@ -78,7 +78,7 @@ async fn rebind_protection_failure_closes_client_and_releases_flows() {
     client.shutdown().await;
     assert_eq!(protector.calls.load(Ordering::SeqCst), 2);
     assert!(!client.rebind());
-    assert_eq!(client.available_udp_slots(), 16);
+    assert_eq!(client.available_udp_slots(), 512);
 }
 
 #[tokio::test]
@@ -173,7 +173,7 @@ async fn native_rebind_preserves_existing_tcp_udp_flows_in_both_outer_families()
             );
             client.shutdown().await;
             assert_eq!(client.available_tcp_slots(), 16);
-            assert_eq!(client.available_udp_slots(), 16);
+            assert_eq!(client.available_udp_slots(), 512);
             tcp_task.abort();
             udp_task.abort();
         }

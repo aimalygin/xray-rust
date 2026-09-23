@@ -128,7 +128,7 @@ configured endpoint set; network-transition acceptance remains release work.
 | Peers / total configured prefixes | 8 / 256 |
 | Outer UDP sockets / receive packet buffers | Up to 2 / 1 |
 | TCP flows, including pending opens | 16 |
-| UDP flows, including internal DNS | 16 |
+| UDP flows, including internal DNS | 512 |
 | TCP smoltcp buffers | 16 KiB receive + 16 KiB send per flow |
 | TCP application bridge | 8 KiB in each direction per flow |
 | UDP smoltcp buffers | 8 packet metadata slots and `8 × MTU` bytes in each direction per flow |
@@ -139,6 +139,14 @@ configured endpoint set; network-transition acceptance remains release work.
 The [engine's separate limits](v07-wireguard-adapter.md#implemented-bounded-memory-increment)
 remain enabled. These are bounds on requested storage and counts, not measured
 RSS. Runtime metadata, keys, tasks, sockets and allocator overhead are additional.
+
+The UDP limit was raised from 16 to 512 after physical RC testing found that
+short requests with fresh source ports exhausted the old budget before the
+TUN's 60-second idle timeout. Buffers are allocated per opened flow, not for all
+512 permits at startup. At MTU 1420 the maximum smoltcp UDP payload storage is
+11.1 MiB (512 × 2 × 8 × 1420 bytes), before metadata and queued application
+payloads; a lower TUN profile flow limit remains an additional bound. This is a
+capacity correction, not evidence that loaded RSS stays unchanged.
 
 TCP supports segmentation, backpressure and half-close. Unexpected RST is reported
 as a connection-reset error. UDP is unfragmented: maximum payload is `MTU − 28`
@@ -213,7 +221,7 @@ Controlled authenticated peers additionally send correctly checksummed replies
 with the exact victim flow tuple under the wrong peer key. Every pair is tested
 in both families, followed by successful legitimate replies. An unreachable
 specific peer is flooded while a default peer progresses; no application payload
-falls back to the default peer, and the 16-slot UDP limit remains shared.
+falls back to the default peer, and the 512-slot UDP limit remains shared.
 Core JSON tests cover two bootstrap-resolved peers, concurrent opens, mixed
 endpoint families, SOCKS TCP/UDP, shared accounting, host close and stop.
 Validation tests cover the final peer, normalized duplicate keys, the eight-peer

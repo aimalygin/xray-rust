@@ -21,6 +21,9 @@ Release candidate preparation; publication and final device acceptance are pendi
 - Add protected carrier rebinding and bounded mobile network-change recovery.
   Preserve active WireGuard sessions and keep TUN download/cancellation
   responsive while an upload is blocked.
+- Allow up to 512 WireGuard UDP sessions, allocated on demand, so short requests
+  using fresh source ports do not exhaust the old 16-session budget before
+  TUN idle cleanup. Retain bounded queues and verify budget reclamation.
 - Reduce shared async setup allocations, bound packet-protocol TUN upload
   queues, reuse WireGuard TCP receive storage and improve QUIC ACK handling.
   The CLI defaults to two Tokio workers and preserves the explicit override.

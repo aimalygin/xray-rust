@@ -19,7 +19,12 @@ use tokio::{
 use xray_transport::{SocketProtector, TransportStream};
 
 pub(crate) const TCP_LIMIT: usize = 16;
-pub(crate) const UDP_LIMIT: usize = 16;
+// Match the normal mobile TUN UDP budget. A TUN cannot observe a caller closing
+// a UDP socket, so one-shot requests retain slots until the 60-second idle
+// timeout. Sixteen slots caused ordinary source-port churn to reject new flows.
+// The semaphore allocates no per-slot packet storage: sockets and their bounded
+// queues are allocated only on open, and lower TUN profile budgets still apply.
+pub(crate) const UDP_LIMIT: usize = 512;
 pub(crate) const PACKET_QUEUE: usize = 8;
 pub(crate) const IP_PACKET_QUEUE: usize = 32;
 pub(crate) const COMMAND_QUEUE: usize = 32;

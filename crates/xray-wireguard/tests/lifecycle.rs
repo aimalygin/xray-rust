@@ -37,6 +37,32 @@ async fn wait_slots(client: &Client, tcp: usize, udp: usize) {
     .await
     .expect("flow permits returned");
 }
+
+#[tokio::test]
+async fn short_udp_requests_do_not_exhaust_capacity_while_tun_retains_idle_flows() {
+    // A TUN does not observe DatagramSocket::close. Its completed UDP requests
+    // remain live until the 60-second flow idle timeout. One fresh source port
+    // per second must not exhaust WireGuard after just sixteen requests.
+    timeout(Duration::from_secs(5), async {
+        let blackhole = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let client = Client::start(config(blackhole.local_addr().unwrap()), None)
+            .await
+            .unwrap();
+        let capacity = client.available_udp_slots();
+        let mut idle = Vec::new();
+        for _ in 0..64 {
+            let session = client.open_udp(target()).await.unwrap();
+            session.send(b"one short request").await.unwrap();
+            idle.push(session);
+        }
+        assert_eq!(client.available_udp_slots(), capacity - idle.len());
+        drop(idle);
+        wait_slots(&client, 16, capacity).await;
+        client.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
 #[tokio::test]
 async fn pending_tcp_cancellation_udp_pressure_and_shutdown_release_all_slots() {
     timeout(Duration::from_secs(10), async {
@@ -49,17 +75,17 @@ async fn pending_tcp_cancellation_udp_pressure_and_shutdown_release_all_slots() 
             let client = client.clone();
             opens.spawn(async move { client.connect(target()).await });
         }
-        wait_slots(&client, 0, 16).await;
+        wait_slots(&client, 0, 512).await;
         assert!(matches!(client.connect(target()).await, Err(Error::Busy)));
         opens.abort_all();
         while let Some(result) = opens.join_next().await {
             assert!(matches!(result, Err(error) if error.is_cancelled()));
         }
-        wait_slots(&client, 16, 16).await;
+        wait_slots(&client, 16, 512).await;
         let mut sessions = Vec::new();
-        for _ in 0..16 {
+        for index in 0..512 {
             let session = client.open_udp(target()).await.unwrap();
-            for _ in 0..32 {
+            for _ in 0..if index < 16 { 32 } else { 1 } {
                 session.send(b"unreachable peer").await.unwrap();
             }
             sessions.push(session);
@@ -72,7 +98,7 @@ async fn pending_tcp_cancellation_udp_pressure_and_shutdown_release_all_slots() 
         timeout(Duration::from_secs(2), client.shutdown())
             .await
             .expect("stop cannot wait on blocked packet queues");
-        wait_slots(&client, 16, 16).await;
+        wait_slots(&client, 16, 512).await;
         assert!(matches!(sessions[0].recv().await, Err(Error::Closed)));
         assert!(matches!(
             sessions[0].send(b"closed").await,

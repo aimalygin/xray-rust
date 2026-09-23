@@ -120,6 +120,26 @@ async fn roundtrip(psk: Option<[u8; 32]>) {
                 Err(xray_wireguard::Error::PacketTooLarge)
             ));
         }
+        // Keep completed one-shot sessions alive as a TUN does until its UDP
+        // idle timeout. The old 16-slot budget rejected the seventeenth port.
+        // Stay below the native oracle's shared 32-flow forwarding budget,
+        // which also retains the earlier UDP requests until its idle timeout.
+        let mut idle_udp = Vec::new();
+        for index in 0..24 {
+            let ip = if index % 2 == 0 {
+                "198.51.100.7"
+            } else {
+                "2001:db8::7"
+            };
+            let session = client
+                .open_udp(SocketAddr::new(ip.parse().unwrap(), udp_port))
+                .await
+                .unwrap();
+            let payload = vec![index as u8; 128];
+            session.send(&payload).await.unwrap();
+            assert_eq!(&session.recv().await.unwrap()[..], payload);
+            idle_udp.push(session);
+        }
         assert_eq!(
             protector.0.load(Ordering::SeqCst),
             1,
@@ -130,7 +150,7 @@ async fn roundtrip(psk: Option<[u8; 32]>) {
             .expect("shutdown while workers wait");
         assert!(!client.is_live());
         assert_eq!(client.available_tcp_slots(), 16);
-        assert_eq!(client.available_udp_slots(), 16);
+        assert_eq!(client.available_udp_slots(), 512);
         echo_tcp.abort();
         echo_udp.abort();
         let _ = tokio::join!(echo_tcp, echo_udp);
@@ -173,7 +193,7 @@ async fn pinned_reference_wrong_keys_or_psk_never_deliver_application_data_and_r
             }
             timeout(Duration::from_secs(2),client.shutdown()).await.unwrap();
             assert_eq!(client.available_tcp_slots(),16);
-            assert_eq!(client.available_udp_slots(),16);
+            assert_eq!(client.available_udp_slots(),512);
         }
         // A fresh device with the matching key works; failed-device pending
         // packets must not be replayed into the new authenticated session.
