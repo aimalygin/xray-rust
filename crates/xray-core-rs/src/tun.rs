@@ -3432,6 +3432,7 @@ where
     let mut pending_download: Option<PendingDownload<'_>> = None;
     let mut remote_read_end = None;
     let mut upload_open = true;
+    let mut active_idle_timeout = idle_timeout;
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
     let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
@@ -3508,10 +3509,16 @@ where
                 wrote = &mut upload, if upload_open => {
                     match wrote {
                         Ok(true) => {},
-                        Ok(false) => upload_open = false,
+                        Ok(false) => {
+                            upload_open = false;
+                            // Packet-up transports may leave their independent
+                            // download open after upload EOF. Apply the configured
+                            // one-direction inactivity bound, refreshed by replies.
+                            active_idle_timeout = idle_timeout.min(context.inbound_policy.downlink_only);
+                        },
                         Err(()) => break 'bridge TcpBridgeTermination::Graceful,
                     }
-                    idle_sleep.as_mut().reset(TokioInstant::now() + idle_timeout);
+                    idle_sleep.as_mut().reset(TokioInstant::now() + active_idle_timeout);
                     break;
                 }
                 delivered = async { pending_download.as_mut().expect("pending download").await }, if pending_download.is_some() => {
@@ -3519,7 +3526,7 @@ where
                     if !matches!(delivered, Some(Ok(()))) {
                         break 'bridge TcpBridgeTermination::Graceful;
                     }
-                    idle_sleep.as_mut().reset(TokioInstant::now() + idle_timeout);
+                    idle_sleep.as_mut().reset(TokioInstant::now() + active_idle_timeout);
                 }
                 (read, end) = read_remote_batch(remote_reader, &mut read_buffer), if pending_download.is_none() => {
                     remote_read_end = end;
@@ -3540,7 +3547,7 @@ where
                     )));
                     idle_sleep
                         .as_mut()
-                        .reset(TokioInstant::now() + idle_timeout);
+                        .reset(TokioInstant::now() + active_idle_timeout);
                 }
             }
         }

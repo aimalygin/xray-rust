@@ -187,3 +187,36 @@ async fn client_fin_drains_upload_and_preserves_reply_until_remote_eof() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn client_fin_bounds_an_idle_download_without_remote_eof() {
+    timeout(Duration::from_secs(5), async {
+        let (mut core, mut client, mut peer) = blocked_upload().await;
+        client
+            .sockets
+            .get_mut::<smol_tcp::Socket>(client.tcp)
+            .close();
+        let (eof, observed) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let mut tail = Vec::new();
+            peer.read_to_end(&mut tail).await.unwrap();
+            assert_eq!(tail, vec![0x51; 8192 - 32]);
+            eof.send(()).unwrap();
+            // Like an independent packet-up download, leave this direction open.
+            std::future::pending::<()>().await;
+            drop(peer);
+        });
+        timeout(Duration::from_secs(3), async {
+            while !core.connection_snapshot().connections.is_empty() {
+                pump_tun_once(&mut client, core.tun()).await;
+            }
+        })
+        .await
+        .expect("half-close must use downlinkOnly, not 300-second connIdle");
+        observed.await.unwrap();
+        server.abort();
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
