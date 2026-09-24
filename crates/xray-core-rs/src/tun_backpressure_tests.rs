@@ -95,7 +95,7 @@ fn add_flow(
         handle,
         TcpFlow {
             generation: 1,
-            to_remote,
+            to_remote: Some(to_remote),
             task: None,
             remote_open: false,
             upload_queue_packets: None,

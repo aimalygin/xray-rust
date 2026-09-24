@@ -21,6 +21,8 @@ Release candidate preparation; publication and final device acceptance are pendi
 - Add protected carrier rebinding and bounded mobile network-change recovery.
   Preserve active WireGuard sessions and keep TUN download/cancellation
   responsive while an upload is blocked.
+- Forward client TCP FIN through TUN after draining buffered upload, preserving
+  server replies after half-close and releasing naturally closed connections.
 - Allow up to 512 WireGuard UDP sessions, allocated on demand, so short requests
   using fresh source ports do not exhaust the old 16-session budget before
   TUN idle cleanup. Retain bounded queues and verify budget reclamation.

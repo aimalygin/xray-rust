@@ -1558,7 +1558,7 @@ impl TunRuntimeContext {
 #[derive(Debug)]
 struct TcpFlow {
     generation: u64,
-    to_remote: mpsc::Sender<StackToRemoteData>,
+    to_remote: Option<mpsc::Sender<StackToRemoteData>>,
     task: Option<AbortHandle>,
     remote_open: bool,
     upload_queue_packets: Option<usize>,
@@ -1572,9 +1572,10 @@ struct TcpFlow {
 
 impl TcpFlow {
     fn upload_queue_full(&self) -> bool {
-        self.upload_queue_packets.is_some_and(|limit| {
-            !self.to_remote.is_closed()
-                && self.to_remote.max_capacity() - self.to_remote.capacity() >= limit
+        self.to_remote.as_ref().is_some_and(|sender| {
+            self.upload_queue_packets.is_some_and(|limit| {
+                !sender.is_closed() && sender.max_capacity() - sender.capacity() >= limit
+            })
         })
     }
 }
@@ -1974,7 +1975,7 @@ fn open_ready_tcp_flows(
             handle,
             TcpFlow {
                 generation,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: false,
                 upload_queue_packets: None,
@@ -2074,7 +2075,7 @@ fn insert_aborted_tcp_flow(
         handle,
         TcpFlow {
             generation,
-            to_remote,
+            to_remote: Some(to_remote),
             task: None,
             remote_open: false,
             upload_queue_packets: None,
@@ -2515,6 +2516,9 @@ fn read_socket_data_to_remote(
         if !flow.remote_open {
             continue;
         }
+        let Some(to_remote) = flow.to_remote.as_ref() else {
+            continue;
+        };
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         while socket.can_recv() {
             if flow.upload_queue_full() {
@@ -2545,13 +2549,13 @@ fn read_socket_data_to_remote(
                 tun.record_tcp_stack_to_remote_backpressure();
                 break;
             }
-            let permit = match flow.to_remote.try_reserve().or_else(|error| {
+            let permit = match to_remote.try_reserve().or_else(|error| {
                 if matches!(error, mpsc::error::TrySendError::Full(_)) {
                     flow_budget_state
                         .tcp_upload
                         .capacity_waiting
                         .store(true, Ordering::SeqCst);
-                    flow.to_remote.try_reserve()
+                    to_remote.try_reserve()
                 } else {
                     Err(error)
                 }
@@ -2586,6 +2590,20 @@ fn read_socket_data_to_remote(
             };
             tun.record_tcp_stack_to_remote(data.len());
             permit.send(StackToRemoteData::tracked(data, reservation));
+        }
+        // may_recv remains true while bytes preceding FIN are buffered. Drop
+        // the sole sender only after draining them, including under pressure;
+        // the bridge then consumes the queued tail before shutting down upload.
+        if !socket.may_recv()
+            && matches!(
+                socket.state(),
+                tcp::State::CloseWait
+                    | tcp::State::Closing
+                    | tcp::State::LastAck
+                    | tcp::State::TimeWait
+            )
+        {
+            flow.to_remote = None;
         }
     }
 }
@@ -3413,6 +3431,7 @@ where
     let mut read_buffer = vec![0; TCP_DOWNLOAD_CHUNK_SIZE];
     let mut pending_download: Option<PendingDownload<'_>> = None;
     let mut remote_read_end = None;
+    let mut upload_open = true;
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
     let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
@@ -3425,10 +3444,23 @@ where
     let termination = 'bridge: loop {
         let upload = async {
             let Some(data) = from_stack.recv().await else {
-                return false;
+                // Half-close the transport after its queued upload drains. Keep
+                // reading: a server may generate its response only after EOF.
+                return match await_with_optional_timeout(
+                    operation_timeout,
+                    remote_writer.shutdown(),
+                )
+                .await
+                {
+                    Some(Ok(())) => Ok(false),
+                    _ => {
+                        context.tun.record_tcp_remote_write_error();
+                        Err(())
+                    }
+                };
             };
             if !client_upload_allowed {
-                return false;
+                return Err(());
             }
             let write = await_with_optional_timeout(
                 operation_timeout,
@@ -3448,9 +3480,9 @@ where
             .await;
             if !matches!(write, Some(Ok(()))) {
                 context.tun.record_tcp_remote_write_error();
-                return false;
+                return Err(());
             }
-            true
+            Ok(true)
         };
         tokio::pin!(upload);
         loop {
@@ -3473,9 +3505,11 @@ where
                     break 'bridge TcpBridgeTermination::HostClosed;
                 }
                 () = &mut idle_sleep => break 'bridge TcpBridgeTermination::Graceful,
-                wrote = &mut upload => {
-                    if !wrote {
-                        break 'bridge TcpBridgeTermination::Graceful;
+                wrote = &mut upload, if upload_open => {
+                    match wrote {
+                        Ok(true) => {},
+                        Ok(false) => upload_open = false,
+                        Err(()) => break 'bridge TcpBridgeTermination::Graceful,
                     }
                     idle_sleep.as_mut().reset(TokioInstant::now() + idle_timeout);
                     break;
@@ -6973,7 +7007,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upload_tcp_data_backpressures_when_combined_budget_is_full() {
+    async fn upload_tcp_data_and_fin_backpressure_when_combined_budget_is_full() {
         let client_ip = Ipv4Addr::new(10, 10, 0, 2);
         let server_ip = Ipv4Addr::new(203, 0, 113, 7);
         let client_port = 49_152;
@@ -7026,7 +7060,7 @@ mod tests {
             server_port,
             client_seq + 1,
             server_seq + 1,
-            TCP_ACK,
+            TCP_ACK | 0x01,
             &payload,
         )));
         iface.poll(Instant::now(), &mut device, &mut sockets);
@@ -7044,7 +7078,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
@@ -7064,6 +7098,18 @@ mod tests {
         let stats = tun.stats().await;
         assert_eq!(stats.tcp_stack_to_remote_bytes, 0);
         assert_eq!(stats.tcp_stack_to_remote_backpressure_events, 1);
+        assert!(tcp_flows[&handle].to_remote.is_some());
+        assert!(sockets.get::<tcp::Socket>(handle).can_recv());
+        flow_budget_state
+            .record_pending_remote_remove_flow(MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes);
+        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        assert!(tcp_flows[&handle].to_remote.is_none());
+        assert_eq!(from_stack.recv().await.unwrap().data.as_ref(), &payload);
+        assert!(
+            from_stack.recv().await.is_none(),
+            "EOF must follow the queued tail"
+        );
+        assert_eq!(flow_budget_state.pending_upload_bytes(), 0);
     }
 
     #[test]
@@ -7081,7 +7127,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
@@ -7136,7 +7182,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
@@ -7186,7 +7232,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 2,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: false,
                 upload_queue_packets: None,
@@ -7254,7 +7300,7 @@ mod tests {
         let (to_remote, _from_stack) = mpsc::channel(1);
         let flow = TcpFlow {
             generation: 1,
-            to_remote,
+            to_remote: Some(to_remote),
             task: Some(task),
             remote_open: false,
             upload_queue_packets: None,
@@ -7309,7 +7355,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
@@ -7366,7 +7412,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
@@ -7427,7 +7473,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
@@ -7524,7 +7570,7 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,

@@ -144,3 +144,46 @@ async fn stalled_tun_upload_allows_host_close() {
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn client_fin_drains_upload_and_preserves_reply_until_remote_eof() {
+    timeout(Duration::from_secs(5), async {
+        let (mut core, mut client, mut peer) = blocked_upload().await;
+        // FIN follows an upload already stalled in a 32-byte transport. The
+        // server only replies after receiving EOF, as with half-closed requests.
+        client
+            .sockets
+            .get_mut::<smol_tcp::Socket>(client.tcp)
+            .close();
+        let server = tokio::spawn(async move {
+            let mut tail = Vec::new();
+            peer.read_to_end(&mut tail).await.unwrap();
+            assert_eq!(tail, vec![0x51; 8192 - 32]);
+            peer.write_all(b"response after client FIN").await.unwrap();
+            peer.shutdown().await.unwrap();
+        });
+        let mut received = Vec::new();
+        pump_tun_until_with_timeout(&mut client, core.tun(), Duration::from_secs(2), |client| {
+            received.extend(client.recv_available());
+            received.len() == b"response after client FIN".len()
+                && !client
+                    .sockets
+                    .get::<smol_tcp::Socket>(client.tcp)
+                    .may_recv()
+        })
+        .await;
+        assert_eq!(received, b"response after client FIN");
+        server.await.unwrap();
+        timeout(Duration::from_secs(1), async {
+            while !core.connection_snapshot().connections.is_empty() {
+                pump_tun_once(&mut client, core.tun()).await;
+            }
+        })
+        .await
+        .expect("natural close must remove the connection without host cancellation");
+        assert_eq!(core.tun().stats().await.tcp_pending_upload_bytes, 0);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
