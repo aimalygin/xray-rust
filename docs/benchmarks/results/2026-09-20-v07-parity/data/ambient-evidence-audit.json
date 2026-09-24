@@ -1,0 +1,470 @@
+{
+  "purpose": "Supplement the original explicit compiler set with Xcode build-controller and Apple neural-model compiler observations. These indicate potentially confounding activity, not proof of a specific project compilation or cause of performance differences.",
+  "threshold_cpu_percent": 10,
+  "additional_process_names": [
+    "ANECompilerService",
+    "xcodebuild"
+  ],
+  "original_quality_records_unchanged": true,
+  "groups": {
+    "bbr-margin-wan-bulk-1": {
+      "complete": true,
+      "runs": 45,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "probe-round-long-duplex-8": {
+      "complete": true,
+      "runs": 15,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "quic-ack-wan-duplex-1": {
+      "complete": true,
+      "runs": 25,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-cold-stress-16": {
+      "complete": true,
+      "runs": 20,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-local-bulk-1": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-local-bulk-8": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-local-echo": {
+      "complete": true,
+      "runs": 48,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-local-echo-followup": {
+      "complete": true,
+      "runs": 80,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-smoke": {
+      "complete": true,
+      "runs": 1,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-wan-bulk-1": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-workers-6": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-workers-rust6-go6": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-hysteria2-workers-stock": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-cold-stress-16": {
+      "complete": true,
+      "runs": 20,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-cold-stress-8": {
+      "complete": true,
+      "runs": 20,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-local-bulk-1": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-local-bulk-8": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-local-echo": {
+      "complete": true,
+      "runs": 48,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-long-tcp-8": {
+      "complete": true,
+      "runs": 20,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-smoke": {
+      "complete": true,
+      "runs": 1,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-workers-6": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-workers-rust6-go6": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "rc-parity-wireguard-workers-stock": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-local-bulk-1": {
+      "complete": true,
+      "runs": 45,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-local-bulk-8": {
+      "complete": true,
+      "runs": 45,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-local-echo": {
+      "complete": true,
+      "runs": 48,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-local-stress-16": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-long-tcp-8": {
+      "complete": true,
+      "runs": 25,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-smoke": {
+      "complete": true,
+      "runs": 1,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-wan-bulk-1": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-wan-bulk-8": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-hysteria2-wan-echo": {
+      "complete": true,
+      "runs": 48,
+      "additional_activity_observed": true,
+      "observations": [
+        {
+          "case": "hysteria2-socks-tcp-latency-8",
+          "version": "singbox",
+          "repeat": 1,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 12.8
+          }
+        }
+      ]
+    },
+    "reviewed-parity-hysteria2-wan-sustained": {
+      "complete": true,
+      "runs": 12,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-regression-legacy": {
+      "complete": true,
+      "runs": 222,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-regression-new-tun": {
+      "complete": true,
+      "runs": 72,
+      "additional_activity_observed": true,
+      "observations": [
+        {
+          "case": "hysteria2-tun-download-8",
+          "version": "before",
+          "repeat": 1,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 54.2
+          }
+        }
+      ]
+    },
+    "reviewed-parity-regression-quiet-confirmation-legacy": {
+      "complete": true,
+      "runs": 15,
+      "additional_activity_observed": true,
+      "observations": [
+        {
+          "case": "xhttp-h2-download-8",
+          "version": "baseline",
+          "repeat": 4,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 19.5
+          }
+        }
+      ]
+    },
+    "reviewed-parity-regression-quiet-confirmation-tun": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-regression-reality": {
+      "complete": true,
+      "runs": 72,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-regression-steady-confirmation-legacy": {
+      "complete": true,
+      "runs": 27,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-regression-steady-confirmation-tun": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": true,
+      "observations": [
+        {
+          "case": "vless-tls-tun-full-duplex-1",
+          "version": "candidate",
+          "repeat": 1,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 59.9
+          }
+        },
+        {
+          "case": "vless-tls-tun-full-duplex-1",
+          "version": "workers12",
+          "repeat": 1,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 55.6
+          }
+        },
+        {
+          "case": "xhttp-h1-tun-download-1",
+          "version": "baseline",
+          "repeat": 2,
+          "maximum_observed_cpu_percent": {
+            "xcodebuild": 73.0
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-full-duplex-1",
+          "version": "candidate",
+          "repeat": 1,
+          "maximum_observed_cpu_percent": {
+            "xcodebuild": 54.8
+          }
+        }
+      ]
+    },
+    "reviewed-parity-regression-tun": {
+      "complete": true,
+      "runs": 180,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-regression-vless-short-confirmation": {
+      "complete": true,
+      "runs": 30,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-idle-wan": {
+      "complete": true,
+      "runs": 18,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-local-bulk-1": {
+      "complete": true,
+      "runs": 45,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-local-bulk-8": {
+      "complete": true,
+      "runs": 45,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-local-echo": {
+      "complete": true,
+      "runs": 48,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-local-stress-16": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-long-echo": {
+      "complete": true,
+      "runs": 80,
+      "additional_activity_observed": true,
+      "observations": [
+        {
+          "case": "wireguard-socks-tcp-latency-8",
+          "version": "singbox",
+          "repeat": 5,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 91.3
+          }
+        },
+        {
+          "case": "wireguard-socks-tcp-latency-8",
+          "version": "xray",
+          "repeat": 5,
+          "maximum_observed_cpu_percent": {
+            "xcodebuild": 65.4
+          }
+        },
+        {
+          "case": "wireguard-socks-udp-1",
+          "version": "native",
+          "repeat": 1,
+          "maximum_observed_cpu_percent": {
+            "xcodebuild": 30.1
+          }
+        },
+        {
+          "case": "wireguard-socks-udp-1",
+          "version": "native",
+          "repeat": 3,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 14.4
+          }
+        },
+        {
+          "case": "wireguard-socks-udp-1",
+          "version": "xray",
+          "repeat": 3,
+          "maximum_observed_cpu_percent": {
+            "ANECompilerService": 69.1
+          }
+        }
+      ]
+    },
+    "reviewed-parity-wireguard-long-echo-ambient-confirmation": {
+      "complete": true,
+      "runs": 80,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-smoke": {
+      "complete": true,
+      "runs": 1,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-stress-16-confirmation": {
+      "complete": true,
+      "runs": 40,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-upload-8-confirmation": {
+      "complete": true,
+      "runs": 25,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-wan-bulk-1": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-wan-bulk-8": {
+      "complete": true,
+      "runs": 36,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "reviewed-parity-wireguard-wan-echo": {
+      "complete": true,
+      "runs": 48,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "wg-rx-reuse-long-tcp-8": {
+      "complete": true,
+      "runs": 25,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "zero-cid-wan-bulk-1": {
+      "complete": true,
+      "runs": 45,
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "zero-cid-wan-sustained-1": {
+      "complete": true,
+      "runs": 15,
+      "additional_activity_observed": false,
+      "observations": []
+    }
+  },
+  "historical_gates": {
+    "v05": {
+      "additional_activity_observed": false,
+      "observations": []
+    },
+    "v06": {
+      "additional_activity_observed": false,
+      "observations": []
+    }
+  }
+}

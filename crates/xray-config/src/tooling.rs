@@ -126,6 +126,10 @@ pub fn configuration_examples() -> Value {
     json!({
         "socks-direct": {"inbounds": [socks], "outbounds": [{"tag": "direct", "protocol": "freedom"}]},
         "vless-tls": {"inbounds": [socks], "outbounds": [vless]},
+        "wireguard": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/wireguard.json")).expect("canonical WireGuard example"),
+        "wireguard-psk": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/wireguard-psk.json")).expect("canonical WireGuard PSK example"),
+        "wireguard-multi-peer": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/wireguard-multi-peer.json")).expect("canonical multi-peer WireGuard example"),
+        "hysteria2": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/hysteria2.json")).expect("canonical Hysteria example"),
         "xhttp-download": {"inbounds": [socks], "outbounds": [download]},
         "dns-routing": {
             "inbounds": [socks],

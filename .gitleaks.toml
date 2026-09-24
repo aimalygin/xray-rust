@@ -19,3 +19,140 @@ paths = [
   '''^docs/benchmarks/results/2026-08-31-v26\.7\.28/commands\.sh$''',
   '''^docs/benchmarks/results/2026-09-01-v05-pre-device/README\.md$''',
 ]
+
+# Reviewed against the JSON evidence records: these values are file/binary
+# SHA-256 digests, including digests of ephemeral fixture key files. They are
+# not the fixture contents. Restrict this exception to the reviewed files and
+# the complete hexadecimal digest; keep every other rule/value scanned.
+[[allowlists]]
+description = "Reviewed v0.7 benchmark and device evidence SHA-256 digests"
+targetRules = ["generic-api-key", "jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^[0-9a-f]{64}$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-h1\-long\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-hysteria\-delay\-download\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-hysteria\-long\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-hysteria\-short\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-legacy\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-new\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-reality\-long\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-reality\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-reality\-repeat\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-reality\-threeway\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-tun\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-tun\-screen\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/final2\-wireguard\-original\-delay\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/legacy\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/new\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/reality\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/tun\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-19\-v07\-fixes/data/v06\-build\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/acceptance\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/bbr\-margin\-wan\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/delivery\-runtime\-decision\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/delivery\-runtime\-integration\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/probe\-round\-long\-duplex\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/quic\-ack\-wan\-duplex\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-cold\-stress\-16\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-cold\-stress\-16\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-local\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-local\-bulk\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-local\-echo\-followup\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-local\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-smoke\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-wan\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-workers\-6\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-workers\-rust6\-go6\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-hysteria2\-workers\-stock\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-cold\-stress\-16\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-cold\-stress\-16\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-cold\-stress\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-cold\-stress\-8\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-local\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-local\-bulk\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-local\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-long\-tcp\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-smoke\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-workers\-6\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-workers\-rust6\-go6\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/rc\-parity\-wireguard\-workers\-stock\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/remaining\-controls\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-confirmation\-sequence\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-local\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-local\-bulk\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-local\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-local\-stress\-16\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-long\-tcp\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-smoke\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-wan\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-wan\-bulk\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-wan\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-hysteria2\-wan\-sustained\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-legacy\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-legacy\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-new\-tun\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-new\-tun\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-quiet\-confirmation\-legacy\-control\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-quiet\-confirmation\-legacy\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-quiet\-confirmation\-tun\-control\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-quiet\-confirmation\-tun\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-reality\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-reality\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-steady\-confirmation\-legacy\-control\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-steady\-confirmation\-legacy\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-steady\-confirmation\-tun\-control\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-steady\-confirmation\-tun\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-tun\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-tun\-selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-vless\-short\-confirmation\-control\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-regression\-vless\-short\-confirmation\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-idle\-wan\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-local\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-local\-bulk\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-local\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-local\-stress\-16\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-long\-echo\-ambient\-confirmation\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-long\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-smoke\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-stress\-16\-confirmation\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-upload\-8\-confirmation\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-wan\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-wan\-bulk\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-parity\-wireguard\-wan\-echo\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/reviewed\-sequence\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/selected\-build\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/wg\-rx\-reuse\-long\-tcp\-8\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/zero\-cid\-wan\-bulk\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/data/zero\-cid\-wan\-sustained\-1\-manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-09\-20\-v07\-parity/evidence\-index\.json$''',
+  '''^docs/device\-results/2026\-09\-13\-iphone13\-v07/manifest\.json$''',
+  '''^docs/device\-results/2026\-09\-13\-iphone17\-v07/manifest\.json$''',
+  '''^docs/device\-results/2026\-09\-14\-iphone17\-hysteria\-rebind/manifest\.json$''',
+  '''^docs/device\-results/2026\-09\-14\-iphone17\-wireguard\-rebind/manifest\.json$''',
+  '''^docs/device\-results/2026\-09\-15\-iphone17\-hysteria\-udp/manifest\.json$''',
+  '''^docs/device\-results/2026\-09\-15\-iphone17\-wireguard\-observer/manifest\.json$''',
+  '''^docs/device\-results/2026\-09\-15\-iphone17\-wireguard\-recovery/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Fixed public loopback REALITY benchmark fixture and its archived source"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks$''']
+paths = [
+  '''^scripts/run-v07-performance\.py$''',
+  '''^docs/benchmarks/results/2026-09-19-v07/benchmark-source\.patch$''',
+  '''^docs/benchmarks/results/2026-09-20-v07-parity/selected-source\.patch$''',
+]
+
+[[allowlists]]
+description = "Go module checksum for golang.org/x/oauth2 v0.30.0 in reference build metadata"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*dep\tgolang\.org/x/oauth2\tv0\.30\.0\th1:dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=$''']
+paths = ['''^docs/benchmarks/results/2026-09-20-v07-parity/data/reference-native-hysteria-build\.txt$''']

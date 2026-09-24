@@ -1,0 +1,264 @@
+{
+  "cases": [
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-upload-8",
+      "iterations": 512,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "hysteria2-tun-full-duplex-8",
+      "iterations": 512,
+      "path": "tun",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/candidate/xray-rust": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564",
+    "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-opt-20260919/source/scripts/run-v07-performance.py": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d"
+  },
+  "finished_unix": 1789887696.5699341,
+  "harness_sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 3,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-baseline-1",
+      "output_relative": "hysteria2-tun-upload-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.969248056411743,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-candidate-1",
+      "output_relative": "hysteria2-tun-upload-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.394495964050293,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-candidate-2",
+      "output_relative": "hysteria2-tun-upload-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.482736110687256,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-baseline-2",
+      "output_relative": "hysteria2-tun-upload-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.766002893447876,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-baseline-3",
+      "output_relative": "hysteria2-tun-upload-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.7731969356536865,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-upload-8-candidate-3",
+      "output_relative": "hysteria2-tun-upload-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.4401609897613525,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-baseline-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-baseline-1",
+      "output_relative": "hysteria2-tun-full-duplex-8-baseline-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.9495599269866943,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-candidate-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-candidate-1",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.939352035522461,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-candidate-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-candidate-2",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.946610927581787,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-baseline-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-baseline-2",
+      "output_relative": "hysteria2-tun-full-duplex-8-baseline-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.9663498401641846,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-baseline-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-baseline-3",
+      "output_relative": "hysteria2-tun-full-duplex-8-baseline-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.940976142883301,
+      "surviving_process_group": false,
+      "version": "baseline"
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-candidate-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-opt-20260919/evidence/final2-hysteria-long/hysteria2-tun-full-duplex-8-candidate-3",
+      "output_relative": "hysteria2-tun-full-duplex-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.9375598430633545,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "61373052dc8b6784162c81650faa6bd92f0604aa",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_unix": 1789887644.2391832,
+  "status": "pass",
+  "suite": "new",
+  "versions": {
+    "baseline": {
+      "binary": "/private/tmp/xray-v07-bench-20260919/bin/candidate/xray-rust",
+      "engine_sha256": "ebfb46b8ecdc4a1c8644e510e79ab06d023a9b94a0c09396102028889f63f564"
+    },
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+      "engine_sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+    }
+  }
+}

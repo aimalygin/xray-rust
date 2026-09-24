@@ -1,0 +1,1971 @@
+{
+  "cases": [
+    {
+      "connections": 16,
+      "id": "hysteria2-socks-full-duplex-16",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "hysteria2",
+      "traffic": "full-duplex"
+    }
+  ],
+  "diagnostic": true,
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench": "76a325733bf82ca92dc5a8e77ed2799c0cd2ef232c45e56b290e93fcd861d569",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4"
+  },
+  "finished_unix": 1789982219.5563588,
+  "harness_sha256": "76a325733bf82ca92dc5a8e77ed2799c0cd2ef232c45e56b290e93fcd861d569",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 20,
+  "review_thresholds": {
+    "latency_cpu_rss_ratio_max": 1.15,
+    "throughput_ratio_min": 0.85
+  },
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 49.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 51.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 97.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 10.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982113.876365
+          },
+          {
+            "processes": [
+              {
+                "cpu": 37.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 38.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 376.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 8054
+              },
+              {
+                "cpu": 109.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 8057
+              },
+              {
+                "cpu": 130.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 8058
+              },
+              {
+                "cpu": 68.2,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982115.905041
+          },
+          {
+            "processes": [
+              {
+                "cpu": 33.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 46.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 97.8,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982117.970044
+          },
+          {
+            "processes": [
+              {
+                "cpu": 34.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 53.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 98.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982118.065366
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-1.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-1",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.153599977493286,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 36.3,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 32.1,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 91.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982119.245078
+          },
+          {
+            "processes": [
+              {
+                "cpu": 25.3,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 18.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 363.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 8366
+              },
+              {
+                "cpu": 103.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 8373
+              },
+              {
+                "cpu": 132.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 8374
+              },
+              {
+                "cpu": 72.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982121.273899
+          },
+          {
+            "processes": [
+              {
+                "cpu": 36.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 31.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 97.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982123.3390532
+          },
+          {
+            "processes": [
+              {
+                "cpu": 38.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 32.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 98.8,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982123.44622
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-2.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-2",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.1626691818237305,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 39.3,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 30.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 98.4,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982124.624759
+          },
+          {
+            "processes": [
+              {
+                "cpu": 21.1,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 44.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdsync",
+                "pid": 5734
+              },
+              {
+                "cpu": 358.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 8677
+              },
+              {
+                "cpu": 106.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 8679
+              },
+              {
+                "cpu": 130.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 8680
+              },
+              {
+                "cpu": 71.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982126.6528141
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 52.6,
+                "executable": "/System/Library/ExtensionKit/Extensions/AssetMetricsExtension.appex/Contents/MacOS/AssetMetricsExtension",
+                "pid": 8915
+              },
+              {
+                "cpu": 21.0,
+                "executable": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/biomed",
+                "pid": 28392
+              },
+              {
+                "cpu": 98.4,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982128.719866
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.3,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 66.8,
+                "executable": "/System/Library/ExtensionKit/Extensions/AssetMetricsExtension.appex/Contents/MacOS/AssetMetricsExtension",
+                "pid": 8915
+              },
+              {
+                "cpu": 14.1,
+                "executable": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/biomed",
+                "pid": 28392
+              },
+              {
+                "cpu": 98.2,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982128.845408
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-3.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-3",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.179468154907227,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 36.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 98.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982130.034614
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 371.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 8987
+              },
+              {
+                "cpu": 106.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 8989
+              },
+              {
+                "cpu": 130.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 8990
+              },
+              {
+                "cpu": 73.6,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982132.068091
+          },
+          {
+            "processes": [
+              {
+                "cpu": 28.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 98.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982134.13142
+          },
+          {
+            "processes": [
+              {
+                "cpu": 27.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 99.3,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982134.22844
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-4.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-4",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.160116910934448,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 37.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 99.4,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982135.3806632
+          },
+          {
+            "processes": [
+              {
+                "cpu": 20.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 340.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 9323
+              },
+              {
+                "cpu": 100.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 9325
+              },
+              {
+                "cpu": 131.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 9326
+              },
+              {
+                "cpu": 76.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982137.408566
+          },
+          {
+            "processes": [
+              {
+                "cpu": 31.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 10.0,
+                "executable": "/usr/libexec/ContinuityCaptureAgent",
+                "pid": 649
+              },
+              {
+                "cpu": 13.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 9323
+              },
+              {
+                "cpu": 97.6,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 15.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982139.472307
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds",
+                "pid": 369
+              },
+              {
+                "cpu": 98.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 57.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mds_stores",
+                "pid": 54285
+              }
+            ],
+            "time_unix": 1789982139.727224
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-5.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-5",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 4.303524017333984,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 98.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982140.895065
+          },
+          {
+            "processes": [
+              {
+                "cpu": 406.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 9659
+              },
+              {
+                "cpu": 109.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 9661
+              },
+              {
+                "cpu": 125.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 9662
+              },
+              {
+                "cpu": 71.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 37.2,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982142.927119
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982144.976555
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.2,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982145.139412
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-6.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-6",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-6",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 6,
+      "returncode": 0,
+      "seconds": 4.202709913253784,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982146.298663
+          },
+          {
+            "processes": [
+              {
+                "cpu": 343.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 9969
+              },
+              {
+                "cpu": 100.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 9971
+              },
+              {
+                "cpu": 132.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 9972
+              },
+              {
+                "cpu": 75.6,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 11.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              },
+              {
+                "cpu": 23.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 41981
+              }
+            ],
+            "time_unix": 1789982148.326345
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982150.3943691
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982150.440238
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-7.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-7",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-7",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 7,
+      "returncode": 0,
+      "seconds": 4.112111806869507,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982151.602722
+          },
+          {
+            "processes": [
+              {
+                "cpu": 385.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 10269
+              },
+              {
+                "cpu": 108.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 10271
+              },
+              {
+                "cpu": 126.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 10272
+              },
+              {
+                "cpu": 75.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982153.6305761
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982155.692449
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982155.719424
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-8.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-8",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-8",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 8,
+      "returncode": 0,
+      "seconds": 4.0875420570373535,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982156.88115
+          },
+          {
+            "processes": [
+              {
+                "cpu": 348.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 10571
+              },
+              {
+                "cpu": 98.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 10573
+              },
+              {
+                "cpu": 131.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 10574
+              },
+              {
+                "cpu": 80.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982158.911595
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.9,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 98.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982160.9741619
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.9,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 98.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982161.024381
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-9.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-9",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-9",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 9,
+      "returncode": 0,
+      "seconds": 4.111164331436157,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 99.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982162.189871
+          },
+          {
+            "processes": [
+              {
+                "cpu": 377.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 10872
+              },
+              {
+                "cpu": 105.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 10874
+              },
+              {
+                "cpu": 129.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 10875
+              },
+              {
+                "cpu": 76.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982164.21738
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.3,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982166.273916
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.3,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982166.340939
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-10.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-10",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-10",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 10,
+      "returncode": 0,
+      "seconds": 4.119908094406128,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982167.504622
+          },
+          {
+            "processes": [
+              {
+                "cpu": 361.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 11181
+              },
+              {
+                "cpu": 101.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11183
+              },
+              {
+                "cpu": 132.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 11184
+              },
+              {
+                "cpu": 77.2,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982169.531945
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.3,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982171.5875819
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.3,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982171.631299
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-11.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-11",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-11",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 11,
+      "returncode": 0,
+      "seconds": 4.097966194152832,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982172.796881
+          },
+          {
+            "processes": [
+              {
+                "cpu": 405.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 11483
+              },
+              {
+                "cpu": 112.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11485
+              },
+              {
+                "cpu": 127.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 11486
+              },
+              {
+                "cpu": 74.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982174.833898
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982176.89686
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.3,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982176.924225
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-12.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-12",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-12",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 12,
+      "returncode": 0,
+      "seconds": 4.07646107673645,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 98.5,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982178.087927
+          },
+          {
+            "processes": [
+              {
+                "cpu": 375.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 11782
+              },
+              {
+                "cpu": 107.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11784
+              },
+              {
+                "cpu": 129.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 11785
+              },
+              {
+                "cpu": 74.8,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982180.115634
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982182.1704772
+          },
+          {
+            "processes": [
+              {
+                "cpu": 98.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982182.197004
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-13.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-13",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-13",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 13,
+      "returncode": 0,
+      "seconds": 4.0583860874176025,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982183.361738
+          },
+          {
+            "processes": [
+              {
+                "cpu": 377.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 12083
+              },
+              {
+                "cpu": 106.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12085
+              },
+              {
+                "cpu": 129.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 12086
+              },
+              {
+                "cpu": 76.8,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982185.388871
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.4,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982187.446551
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982187.526247
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-14.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-14",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-14",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 14,
+      "returncode": 0,
+      "seconds": 4.127948045730591,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 29.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982188.6900759
+          },
+          {
+            "processes": [
+              {
+                "cpu": 343.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 12385
+              },
+              {
+                "cpu": 98.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12389
+              },
+              {
+                "cpu": 131.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 12390
+              },
+              {
+                "cpu": 79.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982190.7171829
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982192.772492
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982192.812646
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-15.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-15",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-15",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 15,
+      "returncode": 0,
+      "seconds": 4.095026969909668,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 99.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982193.974556
+          },
+          {
+            "processes": [
+              {
+                "cpu": 354.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 12688
+              },
+              {
+                "cpu": 100.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12690
+              },
+              {
+                "cpu": 131.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 12691
+              },
+              {
+                "cpu": 79.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982196.002937
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 40.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982198.0481439
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.8,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              },
+              {
+                "cpu": 25.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789982198.12428
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-16.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-16",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-16",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 16,
+      "returncode": 0,
+      "seconds": 4.118559837341309,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 35.2,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 13002
+              },
+              {
+                "cpu": 99.7,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982199.287125
+          },
+          {
+            "processes": [
+              {
+                "cpu": 374.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 13000
+              },
+              {
+                "cpu": 105.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13005
+              },
+              {
+                "cpu": 128.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 13006
+              },
+              {
+                "cpu": 15.2,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared",
+                "pid": 13146
+              },
+              {
+                "cpu": 74.8,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982201.315339
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 13000
+              },
+              {
+                "cpu": 99.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982203.378721
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982203.489254
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-17.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-17",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-17",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 17,
+      "returncode": 0,
+      "seconds": 4.165555953979492,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 99.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982204.656066
+          },
+          {
+            "processes": [
+              {
+                "cpu": 332.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 13333
+              },
+              {
+                "cpu": 97.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13335
+              },
+              {
+                "cpu": 132.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 13336
+              },
+              {
+                "cpu": 81.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982206.6924741
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.2,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982208.758671
+          },
+          {
+            "processes": [
+              {
+                "cpu": 98.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982208.8281631
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-18.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-18",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-18",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 18,
+      "returncode": 0,
+      "seconds": 4.140138149261475,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982209.9970078
+          },
+          {
+            "processes": [
+              {
+                "cpu": 400.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 13634
+              },
+              {
+                "cpu": 111.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13636
+              },
+              {
+                "cpu": 126.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 13637
+              },
+              {
+                "cpu": 75.4,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982212.0278919
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.6,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982214.0949
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.3,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 97.9,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982214.207944
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-19.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-19",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-19",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 19,
+      "returncode": 0,
+      "seconds": 4.172414064407349,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 35.5,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982215.37233
+          },
+          {
+            "processes": [
+              {
+                "cpu": 343.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/xray-core",
+                "pid": 13940
+              },
+              {
+                "cpu": 98.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13942
+              },
+              {
+                "cpu": 135.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 13943
+              },
+              {
+                "cpu": 79.1,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982217.3999202
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982219.455668
+          },
+          {
+            "processes": [
+              {
+                "cpu": 100.0,
+                "executable": "/System/Library/Frameworks/CoreSpotlight.framework/spotlightknowledged",
+                "pid": 30978
+              }
+            ],
+            "time_unix": 1789982219.497408
+          }
+        ]
+      },
+      "case": "hysteria2-socks-full-duplex-16",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-20.json"
+      ],
+      "controlled_environment": {
+        "GOMAXPROCS": null,
+        "TOKIO_WORKER_THREADS": null
+      },
+      "output": "/private/tmp/xray-v07-parity-20260920/evidence/rc-parity-hysteria2-cold-stress-16/hysteria2-socks-full-duplex-16-candidate-20",
+      "output_relative": "hysteria2-socks-full-duplex-16-candidate-20",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 20,
+      "returncode": 0,
+      "seconds": 4.096357107162476,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "started_unix": 1789982112.709646,
+  "status": "pass",
+  "suite": "new",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+      "engine_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4"
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "artifact_sha256": {
+    "hysteria2-socks-full-duplex-16-candidate-1/result.json": "e244ebef3bb5ba864959be381287372b11215e2eafe186b199b0595ad61c673e",
+    "hysteria2-socks-full-duplex-16-candidate-10/result.json": "4f7579c973f90335e814a12209eceffa59c3431dbdc82003b95136be9c846e1e",
+    "hysteria2-socks-full-duplex-16-candidate-11/result.json": "f91eeccd70c1a733bc58001eb62e1bf2778ad6fd05f22a3626657908a2068799",
+    "hysteria2-socks-full-duplex-16-candidate-12/result.json": "0fbf06b04415f72e4fadc5a64985e095fe3d2aa38dfcdb7d78606b94081aff87",
+    "hysteria2-socks-full-duplex-16-candidate-13/result.json": "236e57a59d6f8fedf030a9f2b0b4556a3c309b025cd554115d70a07696d9b6a7",
+    "hysteria2-socks-full-duplex-16-candidate-14/result.json": "737c3e6e7ef4ffa75074db28a06726e469d53d62352eb85dab4e0dbc1cea85ba",
+    "hysteria2-socks-full-duplex-16-candidate-15/result.json": "219f92295324e8bd5a707f3600cd4005948bbfc939380335df42beb463d10302",
+    "hysteria2-socks-full-duplex-16-candidate-16/result.json": "0f33e8faa161977922a2cabc2ec7666c113259b2c2101f749a282480ee566de6",
+    "hysteria2-socks-full-duplex-16-candidate-17/result.json": "5737ce2e5fcf4d65b4bf14496a074ab2b01402466810416e8d3945ca724abb4e",
+    "hysteria2-socks-full-duplex-16-candidate-18/result.json": "1d6b5c9169d50e090712bc67d0d17584412322d2282c0209a65af749c05feb00",
+    "hysteria2-socks-full-duplex-16-candidate-19/result.json": "3fe3c20c5d96b6a70aaa47aed6dace29076f235075411df07c42b570770d7396",
+    "hysteria2-socks-full-duplex-16-candidate-2/result.json": "912f295da96e0bc8dc738688c85918504b654a9fb98d0fbba5ab47f37220b46e",
+    "hysteria2-socks-full-duplex-16-candidate-20/result.json": "a384b7270ab25717a81fa78098feeda28fc72dee94013806068da07c397207b7",
+    "hysteria2-socks-full-duplex-16-candidate-3/result.json": "c04185c0833ba38a4dd9d41524837558f2de69872f31caa83649a3d9c08558ce",
+    "hysteria2-socks-full-duplex-16-candidate-4/result.json": "b928e8f619b3d5ac430c09e13607ac79cdd575d08c3460e32b5f52a7bc5dabb6",
+    "hysteria2-socks-full-duplex-16-candidate-5/result.json": "baa657a4cc9f5ad0d70bab051fe25e9ff7139d9bd99fee4d544fb1b7ac8a786d",
+    "hysteria2-socks-full-duplex-16-candidate-6/result.json": "8e83eea6a008bed2cbd8ba7b0236457d5e82c9cb6cbec2e449cd81a4649a95a4",
+    "hysteria2-socks-full-duplex-16-candidate-7/result.json": "120d763e7f871b3dfd00d792a87cf11ab0e5d706557db76b332feab9d36e2799",
+    "hysteria2-socks-full-duplex-16-candidate-8/result.json": "1230860056ca598f8265548542267991d886188334e4ec6d52c7d2ea43078627",
+    "hysteria2-socks-full-duplex-16-candidate-9/result.json": "6c020cdee2516cbc75488dcca4d26b964d4edad70556061c52479cb44441c82b"
+  },
+  "failures": [],
+  "manifest_sha256": "cbdf28891adc7141aa82c8ca63edd478e86b81badcd59f31e7122343de7fb09d",
+  "rows": [
+    {
+      "case": "hysteria2-socks-full-duplex-16",
+      "review": [],
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 3710,
+              "median": 3450.0,
+              "min": 3380,
+              "samples": [
+                3520,
+                3490,
+                3540,
+                3530,
+                3710,
+                3520,
+                3450,
+                3420,
+                3430,
+                3460,
+                3440,
+                3410,
+                3380,
+                3420,
+                3440,
+                3440,
+                3480,
+                3450,
+                3500,
+                3420
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.623046875,
+              "median": 3.369140625,
+              "min": 3.30078125,
+              "samples": [
+                3.4375,
+                3.408203125,
+                3.45703125,
+                3.447265625,
+                3.623046875,
+                3.4375,
+                3.369140625,
+                3.33984375,
+                3.349609375,
+                3.37890625,
+                3.359375,
+                3.330078125,
+                3.30078125,
+                3.33984375,
+                3.359375,
+                3.359375,
+                3.3984375,
+                3.369140625,
+                3.41796875,
+                3.33984375
+              ]
+            },
+            "rss_mib": {
+              "max": 19.640625,
+              "median": 18.1328125,
+              "min": 17.5625,
+              "samples": [
+                18.171875,
+                17.640625,
+                18.09375,
+                18.046875,
+                18.671875,
+                17.75,
+                18.078125,
+                18.453125,
+                17.8125,
+                18.21875,
+                17.75,
+                19.640625,
+                18.203125,
+                18.265625,
+                18.171875,
+                17.65625,
+                17.5625,
+                18.34375,
+                18.75,
+                17.84375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 419.53274551939376,
+              "median": 411.6842628461816,
+              "min": 382.11035087590824,
+              "samples": [
+                405.7831428905005,
+                408.0706058873671,
+                399.8305471286127,
+                401.30098864817245,
+                382.11035087590824,
+                401.6696158558688,
+                412.77248677888514,
+                411.34848478006063,
+                414.61160383034945,
+                408.8130621640468,
+                413.73706715402784,
+                414.1028021432389,
+                419.53274551939376,
+                413.752475117611,
+                412.11093704624597,
+                412.7518973134548,
+                408.50731776352313,
+                412.0200409123025,
+                404.95184800622127,
+                416.81885083149473
+              ]
+            }
+          },
+          "passed_repeats": 20
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

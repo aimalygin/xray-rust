@@ -7,6 +7,7 @@ members = [
     "crates/xray-proxy",
     "crates/xray-vless-encryption",
     "crates/xray-transport",
+    "crates/xray-wireguard",
     "crates/xray-runtime",
     "crates/xray-core-rs",
     "crates/xray-ffi",
@@ -15,9 +16,10 @@ members = [
     "fuzz",
 ]
 resolver = "2"
+exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn"]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0-rc.1"
 edition = "2021"
 rust-version = "1.96"
 license = "MPL-2.0"
@@ -58,7 +60,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.10"
 sha2 = "0.10"
-smoltcp = { version = "0.13.1", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
+smoltcp = { version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
 thiserror = "2"
 tokio = { version = "1.52.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
@@ -79,6 +81,9 @@ strip = "symbols"
 panic = "unwind"
 
 [patch.crates-io]
+quinn = { path = "vendor/quinn" }
+smoltcp = { path = "vendor/smoltcp" }
 blake3 = { path = "vendor/blake3" }
 h3-quinn = { path = "vendor/h3-quinn" }
+quinn-proto = { path = "vendor/quinn-proto" }
 rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "3a131beaef0183b0cb61e5a9070a703b6be39ed3" }

@@ -1,0 +1,62 @@
+{
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_tree": "0296e27d7dc2fb30683c80f8a0801557f84bc2eb",
+  "clean": true,
+  "binary_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+  "binary_hashes": {
+    "xray-rust": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+    "xray-bench": "76a325733bf82ca92dc5a8e77ed2799c0cd2ef232c45e56b290e93fcd861d569"
+  },
+  "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+  "patch_sha256": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe",
+  "isolated_target": "/private/tmp/xray-v07-parity-20260920/h3-read-batch-build",
+  "profile": "release",
+  "preceding_validated_build": {
+    "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+    "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53",
+    "clean": true,
+    "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+    "binary_hashes": {
+      "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+      "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf"
+    },
+    "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+    "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+    "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+    "preceding_runtime_build": {
+      "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+      "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+      "clean": true,
+      "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+      "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+      "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+      "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+      "experimental": true,
+      "vendor_provenance_not_regenerated": true
+    },
+    "byte_identical_cli_to_focus": true,
+    "profile": "release",
+    "canonical_vendor_verified": true,
+    "performance_acceptance": "pending"
+  },
+  "focused_build": {
+    "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+    "source_tree": "0296e27d7dc2fb30683c80f8a0801557f84bc2eb",
+    "clean": true,
+    "binary_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+    "patch_base": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+    "patch_sha256": "1fc7ff3984feb4bee7fbd89e3a7874b8e544c6663f105583d9da262e3806ae3e",
+    "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/h3-read-batch-build",
+    "experimental": true,
+    "performance_acceptance": "pending",
+    "change": "Coalesce immediately ready H3 response fragments into at most 16 KiB per one-slot channel handoff, without awaiting future data or changing QUIC flow-control windows"
+  },
+  "canonical_vendor_verified": true,
+  "canonical_vendor_basis": {
+    "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+    "vendor_tree": "7d2f5c2636b9d97b1179c868f69efb8a500ee9f3",
+    "log": "accepted-canonical-vendor.log",
+    "unchanged": true
+  },
+  "performance_acceptance": "pending final comparison"
+}

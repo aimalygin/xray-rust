@@ -1,0 +1,824 @@
+{
+  "environment_items_removed_from_delivered_toc": 63,
+  "files": {
+    "traces/candidate2-512m-signed/allocations.trace/Trace1.run/RunIssues.storedata": {
+      "bytes": 53248,
+      "sha256": "438549f91340c049cf02ac941ba4fe168e7d7d1e2383711008da7d08f89909d3"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/Trace1.run/event_data_67352.oa": {
+      "bytes": 297275392,
+      "sha256": "9a7aedca862f89a92fa7251ee57904e1459b0abd0647851615a27dd6bab46267"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/UI_state_metadata.bin": {
+      "bytes": 5506,
+      "sha256": "e3ba5eb49283aade62f0706caa1f3cc728da51f5f5b71faa830fc9fc69251b63"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/MANIFEST.plist": {
+      "bytes": 2587,
+      "sha256": "eb40eab3330ddbcd33c4fbb57f93ebfa79b4944dff1b0b124eb1199d1e546dc4"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-0/bulkstore": {
+      "bytes": 49,
+      "sha256": "d2725713f9d719b618db54f6f299792c4946ab68a3e983cab67bf1bd073b9e46"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-1/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-10/bulkstore": {
+      "bytes": 50,
+      "sha256": "1c634713f7ecf6c91ed0ff0c71f397f9ed71935eefdc96149fd8fcc6eaf43b32"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-11/bulkstore": {
+      "bytes": 50,
+      "sha256": "c4b2bc95c3d700934461bc3a4d2c7498d500c003c4cc91c0fec69eea148083d5"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-12/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-13/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-14/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-15/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-16/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-17/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-18/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-19/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-2/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-20/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-21/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-22/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-23/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-24/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-25/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-3/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-4/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-5/bulkstore": {
+      "bytes": 47,
+      "sha256": "de61dc3d74ec1b31a40c8e634ead79efb5d65421536daa1888686d6ac56cf0e5"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-6/bulkstore": {
+      "bytes": 47,
+      "sha256": "dbf3b08c96a2690ca80d447d0aa39359b19d87c5d7c84bab984e42f3fb14a1c1"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-7/bulkstore": {
+      "bytes": 49,
+      "sha256": "806d3adc6fc56e7e2e2180005d69f403856e29fab08c1fbecd0854bc0432d505"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-8/bulkstore": {
+      "bytes": 47,
+      "sha256": "de61dc3d74ec1b31a40c8e634ead79efb5d65421536daa1888686d6ac56cf0e5"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/stores/indexed-store-9/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/uniquing/arrayUniquer/integeruniquer.data": {
+      "bytes": 101947,
+      "sha256": "7ec09fb365c9a3c7455ab6cf59fb45b1ebf7d6dc9962114d87341f38700af6d6"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/uniquing/arrayUniquer/integeruniquer.index": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/uniquing/typedArrayUniquer/integeruniquer.data": {
+      "bytes": 101947,
+      "sha256": "7ec09fb365c9a3c7455ab6cf59fb45b1ebf7d6dc9962114d87341f38700af6d6"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/currentRun/core/uniquing/typedArrayUniquer/integeruniquer.index": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/core-config/exposedTableInfo.plist": {
+      "bytes": 2843,
+      "sha256": "4b70563aff7ae9bda9e392ee595a53d4452f19fe66419524a2bf7d4f48b361e0"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-0/bulkstore": {
+      "bytes": 7524,
+      "sha256": "ddb27fd1f48e410412858a711fe0e2a1249bf2c1eff8f8dc032cbc6e1ddf3c39"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-0/bulkstore_descriptor": {
+      "bytes": 1678,
+      "sha256": "002d89dbbd4973a9e0c1dd391e331d3740adab92098edcd4d1adcbfaeae74202"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-0/schema.xml": {
+      "bytes": 399,
+      "sha256": "73dd276d35a85fabcd46f2ef6838d035ef328df6f598d4f8e9b905855f2b731f"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-0/spec.plist": {
+      "bytes": 531,
+      "sha256": "421b3a9c4a9c01b740de2837d2b74c996c95c006115c50e1aa67ddb04e0ae0a0"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-0/spindex.0": {
+      "bytes": 9048,
+      "sha256": "9bf9a20b31e31188f7a6c715a000769787592fea90e96b216559d589470ca951"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-1/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-1/bulkstore_descriptor": {
+      "bytes": 1979,
+      "sha256": "9d94d35bfd6a40433b4eb87fe29102ccc5449f1f5d94de26e287411a78e5dc96"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-1/schema.xml": {
+      "bytes": 494,
+      "sha256": "8682483bd7bc569bc1829fdf222cd726071949f8bf40564b83bf817efe80cbe8"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-1/spec.plist": {
+      "bytes": 581,
+      "sha256": "717bd97c9337281474e7cdc7df0f91fc2a9a2aee19a66d8fd3817c423aae9f60"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-10/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-10/bulkstore_descriptor": {
+      "bytes": 1792,
+      "sha256": "75053eadba0d97412399eca4648c0e6780feff3b9b65c270ac4f76c6d81d1ae8"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-10/schema.xml": {
+      "bytes": 532,
+      "sha256": "54d2549d12439638de9b2b23c3a0dab677a08d156621b149f26498a9b0e28b37"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-10/spec.plist": {
+      "bytes": 505,
+      "sha256": "4f93fb959eae80ce6b6e525cb8eb16e9a5beabbf7afec9f17f9d3b0cd3177d7c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-11/bulkstore": {
+      "bytes": 1847,
+      "sha256": "2e5395becb7af9d3434187a1400eb2f68f730d1f95595e530d352b0e9fc933b8"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-11/bulkstore_descriptor": {
+      "bytes": 1078,
+      "sha256": "3c5145a996a5517f8fd3d00308dfe33437f93aa3baa72022e7a50ed4370a2524"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-11/schema.xml": {
+      "bytes": 351,
+      "sha256": "014009df985a50a5a1f44a440177f98bb1d36b584aa99e29ba47e35ec033a642"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-11/spec.plist": {
+      "bytes": 449,
+      "sha256": "044d5005ebfbcfc92eb5c373306ec4ad20d4a32727ecc5ddd1ea744f98a0b04a"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-11/spindex.0": {
+      "bytes": 1871,
+      "sha256": "1211c81d384278cb42de28061b4bb7bde07dae99b426579682a7173f6542d875"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-12/bulkstore": {
+      "bytes": 15523,
+      "sha256": "a10febd6aa9678d2db9bde2224d75b7bf0cd20ddba1f771bfe02ee92cfc3ea09"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-12/bulkstore_descriptor": {
+      "bytes": 1287,
+      "sha256": "406deeb11a0484cd4f89282d2ca9f58f640e9747ac2e618bbbd6fb138b3920bd"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-12/schema.xml": {
+      "bytes": 315,
+      "sha256": "571aac4a2d180181e01ba213cca4342deaacab1ee1ff39bfd50b62a1d746297d"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-12/spec.plist": {
+      "bytes": 390,
+      "sha256": "70516c68fae18cace10236faa456c1175658858c72889c184432c9479d2eecfe"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-12/spindex.0": {
+      "bytes": 18256,
+      "sha256": "fc939a6216132f5188e86255243b9bd3017532c15943546c8a5a8e0dfaa8b42e"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-13/bulkstore": {
+      "bytes": 17028,
+      "sha256": "ddd66a31a0adc264a0be7fbb87ab5972bed9a8a6961cd73cf2a06907d1a4cff7"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-13/bulkstore_descriptor": {
+      "bytes": 2035,
+      "sha256": "2943e73abcec1b4f08821b6ee05e844dc6d8529b958aa1a81cad9a252ad8ee94"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-13/schema.xml": {
+      "bytes": 452,
+      "sha256": "14870cd7b81332ec77c5a020f778385213f49af57215d008c3d94aa1b1feeca4"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-13/spec.plist": {
+      "bytes": 543,
+      "sha256": "ba53365edb448193a64fb9100755603682852664921961c5e71e3e1738765849"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-13/spindex.0": {
+      "bytes": 7139,
+      "sha256": "476caa005bf39e9be02b4908856023ab1d14042f7acbd3ec3d3c51a94126ec18"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-2/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-2/bulkstore_descriptor": {
+      "bytes": 1979,
+      "sha256": "9d94d35bfd6a40433b4eb87fe29102ccc5449f1f5d94de26e287411a78e5dc96"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-2/schema.xml": {
+      "bytes": 494,
+      "sha256": "8682483bd7bc569bc1829fdf222cd726071949f8bf40564b83bf817efe80cbe8"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-2/spec.plist": {
+      "bytes": 614,
+      "sha256": "1208ffa91e524ba3bcaa4658605b7098ad4a1d24832321079c9af7d680844169"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-3/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-3/bulkstore_descriptor": {
+      "bytes": 1979,
+      "sha256": "9d94d35bfd6a40433b4eb87fe29102ccc5449f1f5d94de26e287411a78e5dc96"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-3/schema.xml": {
+      "bytes": 494,
+      "sha256": "8682483bd7bc569bc1829fdf222cd726071949f8bf40564b83bf817efe80cbe8"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-3/spec.plist": {
+      "bytes": 534,
+      "sha256": "b3ec79bbeb958d4a8a417fb4ae88a6b8a81583afc371bd36bbee3f290f605ccb"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-4/bulkstore": {
+      "bytes": 50,
+      "sha256": "1c634713f7ecf6c91ed0ff0c71f397f9ed71935eefdc96149fd8fcc6eaf43b32"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-4/bulkstore_descriptor": {
+      "bytes": 1840,
+      "sha256": "7ac545558bc63730814473631af35793434fd230fcaa0e867e220bffcb28e743"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-4/schema.xml": {
+      "bytes": 404,
+      "sha256": "ea18d628c2b8185f0457a430df841b416f727ec0b3cfe0410aadf2fcc061f70b"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-4/spec.plist": {
+      "bytes": 429,
+      "sha256": "8d419db660c4ee59e058e27156627f172d7b3ecb5a82af69708446ae49e9d9a0"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-5/bulkstore": {
+      "bytes": 47,
+      "sha256": "de61dc3d74ec1b31a40c8e634ead79efb5d65421536daa1888686d6ac56cf0e5"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-5/bulkstore_descriptor": {
+      "bytes": 1749,
+      "sha256": "e9be5f2a8fa07f9312d6328a7907298c196cacbd1b8d68d2b5f23f3f0d07e267"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-5/schema.xml": {
+      "bytes": 436,
+      "sha256": "56851457678caa0d4c659cf7045ef72eb112d55610dd54d0ac1e597a823b81fb"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-5/spec.plist": {
+      "bytes": 505,
+      "sha256": "b7849c5dce925187258a87f412f8dcb1331cf53815c05e35b05ad1fc971f5e67"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-6/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-6/bulkstore_descriptor": {
+      "bytes": 1614,
+      "sha256": "77445bd9bff9dc3607050c663d748e547e96edd6370a6128c14a344ce9e31a61"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-6/schema.xml": {
+      "bytes": 351,
+      "sha256": "da1c1bd97c1a6b732b53aaa5007919fe7bb84a997bbde40d19b6366ab3075234"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-6/spec.plist": {
+      "bytes": 545,
+      "sha256": "d06c51171610c6f4a866c2eb16fbbcd609237c5fb2422374058bfcd5edcf4afd"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-7/bulkstore": {
+      "bytes": 64458,
+      "sha256": "eb15d5092a338ca06b173136942074384ab75a3bd2c616d6be9120b38d56fa86"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-7/bulkstore_descriptor": {
+      "bytes": 1414,
+      "sha256": "faca109022f41f57b7cbfdd2cc615577c97aa0d1fd49bf8a4f162dc7ad8ff8b2"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-7/schema.xml": {
+      "bytes": 330,
+      "sha256": "927ffbca235a8d8cfcf9beac4a8ea8875a9a7c51ddbc9eb21a90abfef909d715"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-7/spec.plist": {
+      "bytes": 391,
+      "sha256": "e1603925a708bb07ed70ba45f5264bc8c0f6481fffcf220d2acf7c10a813e0cb"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-7/spindex.0": {
+      "bytes": 55761,
+      "sha256": "371b707cf0c2bb455889d461a11b558005146c43067905cbb493941247e6c57f"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-8/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-8/bulkstore_descriptor": {
+      "bytes": 2215,
+      "sha256": "2d491c0cfa222d54bc9cbf0905f9560fa4f3b05b5d4ddce2214a672584af6655"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-8/schema.xml": {
+      "bytes": 488,
+      "sha256": "f2df8f8753d6b2dd048e74a1fdc2750544257d39b3f86c712360eff6eb2cd328"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-8/spec.plist": {
+      "bytes": 591,
+      "sha256": "c804ff857143a3d241e5efe5cb6226f6b19abe660efff9199f356895f8e06994"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-9/bulkstore": {
+      "bytes": 47,
+      "sha256": "de61dc3d74ec1b31a40c8e634ead79efb5d65421536daa1888686d6ac56cf0e5"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-9/bulkstore_descriptor": {
+      "bytes": 1757,
+      "sha256": "697d2bab1edb9030f8b1d691dc4ff1e4a55071196445c9d8366e6ece66f58d46"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-9/schema.xml": {
+      "bytes": 433,
+      "sha256": "964add3b9b2c78c1517e781d5b2a220e72e7709960744e2235c66d40956f032c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/stores/indexed-store-9/spec.plist": {
+      "bytes": 530,
+      "sha256": "d7842c36da2b37cb4b59a7f596e566973c8046227a66fc4ef73d2f5436fe9579"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/table-manager/tables.plist": {
+      "bytes": 4313,
+      "sha256": "f8ae116c4d90c73fc8414fcbb9c600a08a824c78664b03ac0a14d13dc519befe"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/EngineeringTypes.etypes": {
+      "bytes": 7769,
+      "sha256": "11b4fedc3bbdd1d9ee4537a94acc8fd3d891d7e8f94737ad5dc867dc9cca3139"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/TOC": {
+      "bytes": 344,
+      "sha256": "28bb5344b4c59bce7a3535796580fa23c79eb51ac6edbbbc6576069075596ee9"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/arrayUniquer/integeruniquer.data": {
+      "bytes": 30868,
+      "sha256": "102f84967d8b6755c31cc684b005def664f6a067bcb03e7b194e4de976800b0d"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/arrayUniquer/integeruniquer.index": {
+      "bytes": 11889,
+      "sha256": "27abeb37bb618fd0950e9959b2c6b94e81a9574d36fd3e2b80a6b4ce22c3c99d"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/strings": {
+      "bytes": 11320,
+      "sha256": "a5d6e9ff9f7a7de6df243d566b335fd02c2b2ef27ef89bc28f57e5838900d97d"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/typedArrayUniquer/integeruniquer.data": {
+      "bytes": 1070,
+      "sha256": "396fac001f45a6d5611755cfdbd8e7452feb0ed76548a471e2f282d33b25d19d"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/corespace/run1/core/uniquing/typedArrayUniquer/integeruniquer.index": {
+      "bytes": 31,
+      "sha256": "a7ec01eaab991ac0ddd1dd6c5ba2965044247bf333c899b0863bb59d69066d64"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/form.template": {
+      "bytes": 8439462,
+      "sha256": "25e78d1e7295e69a08568ee166532f35256d8f884c98a7a653d90996c82cd060"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/instrument_data/B23B28C8-D76B-4F7D-8F3B-BE8B0393A7F1/run_data/1.run.zip": {
+      "bytes": 1304,
+      "sha256": "f9cbb9084247cec72301a24ca1d6ddd11ab882611d12b44dae9bb0af8b98d351"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/instrument_data/C907F37C-D485-4419-BF88-E23E8671A102/run_data/1.run.zip": {
+      "bytes": 548,
+      "sha256": "9a5a30a97ae23c1dd53df3297dc86279ac2cba5b1e5626870469dbbe97d42772"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/instrument_data/EF4DC038-8A17-421A-8050-39DD0980C06F/run_data/1.run.zip": {
+      "bytes": 2722,
+      "sha256": "d7272adafc54cc6f49889cdbee6150a5938738ff2770350f5d1a75513bb8b36f"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/open.creq": {
+      "bytes": 9119,
+      "sha256": "f18915b003fd297bdc16fbd123756bfafb432030e83dfa8fe402843afbd9beca"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/shared_data/1.run/6FC4F993-0DA7-4891-BC73-8606751E23AE.zip": {
+      "bytes": 3762330,
+      "sha256": "c56bd39d12ec47404863e04c7b6b922ebf96578d666445b01b3351fff73beedb"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/MANIFEST.plist": {
+      "bytes": 290,
+      "sha256": "35365bc545a73b5662fa33a5933919dc76c024b737002465a1449b9ac30a94fb"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/03BD9E32-CF0A-37B0-898A-3CE8DE06D842.symbolsarchive": {
+      "bytes": 2737,
+      "sha256": "e5e0f20f047694e235c8dffdcf0f2cba5e25f5c4b22646d8625fe4a8ee9ce7da"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/88B3D42B-6DA3-3AD4-8BF3-0BF1378CEB9E.symbolsarchive": {
+      "bytes": 6640836,
+      "sha256": "a443558e1d4e8e9f50701c5341df3066642a3748bdd368fd201305eb14d1dbc2"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/91DACE39-FA28-3191-818D-1FCC6A0E615A.symbolsarchive": {
+      "bytes": 3703,
+      "sha256": "2731592928ecf8e8f448338daef7b51633cd764a3e575d7283ccb8672144ad77"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/9B672762-7B1F-30BC-96DE-F176B372D66D.symbolsarchive": {
+      "bytes": 3007,
+      "sha256": "49d71978e4d41eba1dd69ed907dc87eb8301e12cbe8ab53e61de75644fa36e37"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/A373F0B0-9880-326A-88B4-DD8BE4E33072.symbolsarchive": {
+      "bytes": 1221,
+      "sha256": "99c5ac4827b6d816b66f76e2fc44ef5d5b590bf30b12f0230abbfdafc16afc0c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/C6A4A4CB-92E6-3BAF-AAE0-E8306259209A.symbolsarchive": {
+      "bytes": 927,
+      "sha256": "ce929ea6b202ee4de9407cc4cd91c6f6be32bad4b9a69caac4b85af5b472f41c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/D969A907-3E43-3951-9365-8C2DB3812E9D.symbolsarchive": {
+      "bytes": 1988,
+      "sha256": "34ab6fdfc6f33e181e64d6cf386f03b5df6ca347ac1c24597c67cb3c5ed7363c"
+    },
+    "traces/candidate2-512m-signed/allocations.trace/symbols/stores/EDB83A19-EC17-32DE-9350-6145970A85D6.symbolsarchive": {
+      "bytes": 1087,
+      "sha256": "0038e90ad35b3548c394b32f93074b19cecfae21a64d872d9b862980bbe1a8b4"
+    },
+    "traces/candidate2-512m-signed/toc.xml": {
+      "bytes": 11209,
+      "sha256": "d1578a615763073e3a1518c14c2d9b8b1e93947ca6f0e09759478875f728ca51"
+    },
+    "traces/candidate2-512m/allocations.trace/Trace1.run/RunIssues.storedata": {
+      "bytes": 53248,
+      "sha256": "f81d65012a436da8ae598ef193657edf7dfc01fddb6f1e16cea5ace3b7cad3af"
+    },
+    "traces/candidate2-512m/allocations.trace/Trace1.run/event_data_65870.oa": {
+      "bytes": 4096,
+      "sha256": "06850d6c6f37d64d1dd9b155751c2b5630938b25ff098a6a167e49a3496a8413"
+    },
+    "traces/candidate2-512m/allocations.trace/UI_state_metadata.bin": {
+      "bytes": 490,
+      "sha256": "086954972f39a55195b818eaa7bee012f7b9927a05b02f46c8285d7b0530de92"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/MANIFEST.plist": {
+      "bytes": 2233,
+      "sha256": "6ee6a586e3842eba170a73c09e8aaa293a9da2ceca776d74f2897b254a6bf105"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/currentRun/core/uniquing/arrayUniquer/integeruniquer.data": {
+      "bytes": 101947,
+      "sha256": "7ec09fb365c9a3c7455ab6cf59fb45b1ebf7d6dc9962114d87341f38700af6d6"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/currentRun/core/uniquing/arrayUniquer/integeruniquer.index": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/currentRun/core/uniquing/typedArrayUniquer/integeruniquer.data": {
+      "bytes": 101947,
+      "sha256": "7ec09fb365c9a3c7455ab6cf59fb45b1ebf7d6dc9962114d87341f38700af6d6"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/currentRun/core/uniquing/typedArrayUniquer/integeruniquer.index": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/core-config/exposedTableInfo.plist": {
+      "bytes": 2835,
+      "sha256": "19996a62ff494dbf1cdea421ecb53f743d39053bea8d893411379b0068190ea4"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-0/bulkstore": {
+      "bytes": 5324,
+      "sha256": "ab818b1d4b74d92accd69b00d49a7e29e4a889d36c271ab27dc0a35372abf1c5"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-0/bulkstore_descriptor": {
+      "bytes": 2034,
+      "sha256": "cf1122c19662d839635e41a7c4e1fed110e662a4e42df3b3243f49b4444f2102"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-0/schema.xml": {
+      "bytes": 452,
+      "sha256": "14870cd7b81332ec77c5a020f778385213f49af57215d008c3d94aa1b1feeca4"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-0/spec.plist": {
+      "bytes": 543,
+      "sha256": "ba53365edb448193a64fb9100755603682852664921961c5e71e3e1738765849"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-0/spindex.0": {
+      "bytes": 211,
+      "sha256": "620a5592b88869c6ad2d930aa8297a946637a3dea528928eb990224ef365da43"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-1/bulkstore": {
+      "bytes": 50,
+      "sha256": "fad053ab9be24f150fffd04f9f9c10e3753c256b7f2d5f9ef9cdd5e68812dbe9"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-1/bulkstore_descriptor": {
+      "bytes": 2215,
+      "sha256": "2d491c0cfa222d54bc9cbf0905f9560fa4f3b05b5d4ddce2214a672584af6655"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-1/schema.xml": {
+      "bytes": 488,
+      "sha256": "f2df8f8753d6b2dd048e74a1fdc2750544257d39b3f86c712360eff6eb2cd328"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-1/spec.plist": {
+      "bytes": 592,
+      "sha256": "a0a4a34eee567ac4238dbb906919ebf12b65a039d4667cca96004e4d8c8fcbe6"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-10/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-10/bulkstore_descriptor": {
+      "bytes": 1979,
+      "sha256": "9d94d35bfd6a40433b4eb87fe29102ccc5449f1f5d94de26e287411a78e5dc96"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-10/schema.xml": {
+      "bytes": 494,
+      "sha256": "8682483bd7bc569bc1829fdf222cd726071949f8bf40564b83bf817efe80cbe8"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-10/spec.plist": {
+      "bytes": 581,
+      "sha256": "1ae653d16345b8d55d58fceaa8d6afea6ad098d44ac69d11e342042e221b8079"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-11/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-11/bulkstore_descriptor": {
+      "bytes": 1979,
+      "sha256": "9d94d35bfd6a40433b4eb87fe29102ccc5449f1f5d94de26e287411a78e5dc96"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-11/schema.xml": {
+      "bytes": 494,
+      "sha256": "8682483bd7bc569bc1829fdf222cd726071949f8bf40564b83bf817efe80cbe8"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-11/spec.plist": {
+      "bytes": 534,
+      "sha256": "b3ec79bbeb958d4a8a417fb4ae88a6b8a81583afc371bd36bbee3f290f605ccb"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-12/bulkstore": {
+      "bytes": 49,
+      "sha256": "48836cee49c33f15ac3c31cd707f6cc63b75b484eb95b25039964d6dea429f61"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-12/bulkstore_descriptor": {
+      "bytes": 1614,
+      "sha256": "77445bd9bff9dc3607050c663d748e547e96edd6370a6128c14a344ce9e31a61"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-12/schema.xml": {
+      "bytes": 351,
+      "sha256": "da1c1bd97c1a6b732b53aaa5007919fe7bb84a997bbde40d19b6366ab3075234"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-12/spec.plist": {
+      "bytes": 546,
+      "sha256": "58ec07840c8241823ea03236e8b685487788a1734c20e830b0d4a6019f24b554"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-13/bulkstore": {
+      "bytes": 2067,
+      "sha256": "8ddf9054a871f12a90636ae153444607034e3749b9cb3e3133657ddaf2b8622b"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-13/bulkstore_descriptor": {
+      "bytes": 1078,
+      "sha256": "b6089aac91a869ab64ef9bee0a4dd246dfdd4e9ea88e443cbb5fd099b1fe1fb9"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-13/schema.xml": {
+      "bytes": 351,
+      "sha256": "014009df985a50a5a1f44a440177f98bb1d36b584aa99e29ba47e35ec033a642"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-13/spec.plist": {
+      "bytes": 449,
+      "sha256": "044d5005ebfbcfc92eb5c373306ec4ad20d4a32727ecc5ddd1ea744f98a0b04a"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-13/spindex.0": {
+      "bytes": 2370,
+      "sha256": "51ac1830cd82abf1f857a00cce06fd1f8d5535cb6795d2cbceb33dc04e84f023"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-2/bulkstore": {
+      "bytes": 15339,
+      "sha256": "3529a66c359934df8685164d36b4b9657fd49b42a2a0b3aa537ddb338a0ec3df"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-2/bulkstore_descriptor": {
+      "bytes": 1287,
+      "sha256": "fb78761c79fffacd0fa19e50f3b246dfe8005972cac411681cf6d9d19e3e395d"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-2/schema.xml": {
+      "bytes": 315,
+      "sha256": "571aac4a2d180181e01ba213cca4342deaacab1ee1ff39bfd50b62a1d746297d"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-2/spec.plist": {
+      "bytes": 390,
+      "sha256": "70516c68fae18cace10236faa456c1175658858c72889c184432c9479d2eecfe"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-2/spindex.0": {
+      "bytes": 17997,
+      "sha256": "71de7328b4efa2d83ab9c6d6a8b4be96957e397601b424da9e3e410f097abe2b"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-3/bulkstore": {
+      "bytes": 47,
+      "sha256": "de61dc3d74ec1b31a40c8e634ead79efb5d65421536daa1888686d6ac56cf0e5"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-3/bulkstore_descriptor": {
+      "bytes": 1757,
+      "sha256": "697d2bab1edb9030f8b1d691dc4ff1e4a55071196445c9d8366e6ece66f58d46"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-3/schema.xml": {
+      "bytes": 433,
+      "sha256": "964add3b9b2c78c1517e781d5b2a220e72e7709960744e2235c66d40956f032c"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-3/spec.plist": {
+      "bytes": 530,
+      "sha256": "d7842c36da2b37cb4b59a7f596e566973c8046227a66fc4ef73d2f5436fe9579"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-4/bulkstore": {
+      "bytes": 49,
+      "sha256": "18c5730fe4721c6cb38510d0245dc43fc525032f012cd32cb8971883ef518d81"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-4/bulkstore_descriptor": {
+      "bytes": 1792,
+      "sha256": "75053eadba0d97412399eca4648c0e6780feff3b9b65c270ac4f76c6d81d1ae8"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-4/schema.xml": {
+      "bytes": 532,
+      "sha256": "54d2549d12439638de9b2b23c3a0dab677a08d156621b149f26498a9b0e28b37"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-4/spec.plist": {
+      "bytes": 506,
+      "sha256": "8db8670998a3884b21a823d52203a2e03c3aad2e2d9caeae6584a69ae09336f4"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-5/bulkstore": {
+      "bytes": 49,
+      "sha256": "806d3adc6fc56e7e2e2180005d69f403856e29fab08c1fbecd0854bc0432d505"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-5/bulkstore_descriptor": {
+      "bytes": 1674,
+      "sha256": "3bbd6ca14554859bb4a8967e95baae80f3116257d55065e28a2e0f16f2b27c85"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-5/schema.xml": {
+      "bytes": 399,
+      "sha256": "73dd276d35a85fabcd46f2ef6838d035ef328df6f598d4f8e9b905855f2b731f"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-5/spec.plist": {
+      "bytes": 531,
+      "sha256": "421b3a9c4a9c01b740de2837d2b74c996c95c006115c50e1aa67ddb04e0ae0a0"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-6/bulkstore": {
+      "bytes": 47,
+      "sha256": "de61dc3d74ec1b31a40c8e634ead79efb5d65421536daa1888686d6ac56cf0e5"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-6/bulkstore_descriptor": {
+      "bytes": 1749,
+      "sha256": "e9be5f2a8fa07f9312d6328a7907298c196cacbd1b8d68d2b5f23f3f0d07e267"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-6/schema.xml": {
+      "bytes": 436,
+      "sha256": "56851457678caa0d4c659cf7045ef72eb112d55610dd54d0ac1e597a823b81fb"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-6/spec.plist": {
+      "bytes": 505,
+      "sha256": "b7849c5dce925187258a87f412f8dcb1331cf53815c05e35b05ad1fc971f5e67"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-7/bulkstore": {
+      "bytes": 66488,
+      "sha256": "ef0d3e7d09947b69869b0a1f9f1f969349c91953490470032147740afdd7e2eb"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-7/bulkstore_descriptor": {
+      "bytes": 1414,
+      "sha256": "285206675763b35ca41ff287e98369390665fcb5e149e98cf6720cfd26270dcd"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-7/schema.xml": {
+      "bytes": 330,
+      "sha256": "927ffbca235a8d8cfcf9beac4a8ea8875a9a7c51ddbc9eb21a90abfef909d715"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-7/spec.plist": {
+      "bytes": 391,
+      "sha256": "e1603925a708bb07ed70ba45f5264bc8c0f6481fffcf220d2acf7c10a813e0cb"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-7/spindex.0": {
+      "bytes": 57754,
+      "sha256": "95ed6ff6c4c0980383a43840197adb0e7a5067e8f2f3198e3f372b1b3f022ee1"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-8/bulkstore": {
+      "bytes": 50,
+      "sha256": "1c634713f7ecf6c91ed0ff0c71f397f9ed71935eefdc96149fd8fcc6eaf43b32"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-8/bulkstore_descriptor": {
+      "bytes": 1840,
+      "sha256": "7ac545558bc63730814473631af35793434fd230fcaa0e867e220bffcb28e743"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-8/schema.xml": {
+      "bytes": 404,
+      "sha256": "ea18d628c2b8185f0457a430df841b416f727ec0b3cfe0410aadf2fcc061f70b"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-8/spec.plist": {
+      "bytes": 429,
+      "sha256": "8d419db660c4ee59e058e27156627f172d7b3ecb5a82af69708446ae49e9d9a0"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-9/bulkstore": {
+      "bytes": 50,
+      "sha256": "be3f9541e9f3c5d70efd91b6233e6f13da13bb844ecea553d3632bcd792a6f3c"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-9/bulkstore_descriptor": {
+      "bytes": 1979,
+      "sha256": "9d94d35bfd6a40433b4eb87fe29102ccc5449f1f5d94de26e287411a78e5dc96"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-9/schema.xml": {
+      "bytes": 494,
+      "sha256": "8682483bd7bc569bc1829fdf222cd726071949f8bf40564b83bf817efe80cbe8"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/stores/indexed-store-9/spec.plist": {
+      "bytes": 614,
+      "sha256": "1208ffa91e524ba3bcaa4658605b7098ad4a1d24832321079c9af7d680844169"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/table-manager/tables.plist": {
+      "bytes": 4322,
+      "sha256": "96f9e293f8f199090ab27f6625b4a664af3ac77be94774b74e6a3d209156dbb3"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/EngineeringTypes.etypes": {
+      "bytes": 7769,
+      "sha256": "11b4fedc3bbdd1d9ee4537a94acc8fd3d891d7e8f94737ad5dc867dc9cca3139"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/TOC": {
+      "bytes": 344,
+      "sha256": "28bb5344b4c59bce7a3535796580fa23c79eb51ac6edbbbc6576069075596ee9"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/arrayUniquer/integeruniquer.data": {
+      "bytes": 29885,
+      "sha256": "e63dedf996788983d51fa13b5880c40f8e99b3970975c07ec22e4732a7ece68c"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/arrayUniquer/integeruniquer.index": {
+      "bytes": 12221,
+      "sha256": "f4d707d9ecf02008de33afc603272a43a109a559a4b991f0cde253478a18595f"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/strings": {
+      "bytes": 8100,
+      "sha256": "9dae9dfac088a1c2607be902ecd25aad24137c789760225273765d774dfeae36"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/typedArrayUniquer/integeruniquer.data": {
+      "bytes": 1069,
+      "sha256": "ef29c55555ad0be4d09ba3fe531062373322aefc2d0ac5938c8c2f42e519eb9c"
+    },
+    "traces/candidate2-512m/allocations.trace/corespace/run1/core/uniquing/typedArrayUniquer/integeruniquer.index": {
+      "bytes": 31,
+      "sha256": "a7ec01eaab991ac0ddd1dd6c5ba2965044247bf333c899b0863bb59d69066d64"
+    },
+    "traces/candidate2-512m/allocations.trace/form.template": {
+      "bytes": 6972041,
+      "sha256": "f7ef84097741f6585bf3c1ae1566e380565f56629096c8b00f1a82760af470b1"
+    },
+    "traces/candidate2-512m/allocations.trace/instrument_data/B23B28C8-D76B-4F7D-8F3B-BE8B0393A7F1/run_data/1.run.zip": {
+      "bytes": 1304,
+      "sha256": "acbcc1a2ddd8114fd52d24bcd3f428e65ff4e00fd5c6a9eba79bec3b419cd206"
+    },
+    "traces/candidate2-512m/allocations.trace/instrument_data/C907F37C-D485-4419-BF88-E23E8671A102/run_data/1.run.zip": {
+      "bytes": 548,
+      "sha256": "f1e9e5a65a8529c4ba741db4f7a5235994c558f26f9ec5f9cfec45c110fa9db9"
+    },
+    "traces/candidate2-512m/allocations.trace/instrument_data/EF4DC038-8A17-421A-8050-39DD0980C06F/run_data/1.run.zip": {
+      "bytes": 635,
+      "sha256": "6eb76cd3dd5a5e32f8466eceaaf36ba03313591ad3690eb74fb1449d0350ae22"
+    },
+    "traces/candidate2-512m/allocations.trace/open.creq": {
+      "bytes": 9119,
+      "sha256": "f18915b003fd297bdc16fbd123756bfafb432030e83dfa8fe402843afbd9beca"
+    },
+    "traces/candidate2-512m/allocations.trace/shared_data/1.run/15BD8D8A-F461-4739-BA43-CAB0C9054FCE.zip": {
+      "bytes": 1028,
+      "sha256": "c23c1959f744b51e46c461784bec1d4f9103b129ae1f409695db540bf9b3d148"
+    },
+    "traces/candidate2-512m/allocations.trace/symbols/MANIFEST.plist": {
+      "bytes": 290,
+      "sha256": "35365bc545a73b5662fa33a5933919dc76c024b737002465a1449b9ac30a94fb"
+    }
+  },
+  "not_embedded_in_report": true,
+  "private_root": "/private/tmp/xray-h2-allocation-lifetime-20260921",
+  "reason": "Raw trace/TOC may contain unrelated inherited environment; retain privately. Sanitized TOC, safe allocation-list export and lifetime observations are archived."
+}

@@ -1029,7 +1029,7 @@ pub(super) async fn bridge_fake_ip_tcp_flow(
     let opened = tokio::select! {
         biased;
         () = wait_for_tun_shutdown(&mut shutdown) => false,
-        result = context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }) => {
+        result = context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }) => {
             result.is_ok()
         }
     };
@@ -1119,7 +1119,7 @@ pub(super) async fn bridge_dns_outbound_tcp_flow(
             () = wait_for_tun_shutdown(&mut shutdown) => false,
             result = timeout(
                 DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-                context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+                context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }),
             ) => matches!(result, Ok(Ok(()))),
         }
     };
@@ -2151,7 +2151,7 @@ pub(super) async fn bridge_raw_dns_tcp_flow(
         () = wait_for_tun_shutdown(&mut shutdown) => false,
         result = timeout(
             DNS_TCP_PROXY_ATTEMPT_TIMEOUT,
-            context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+            context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }),
         ) => matches!(result, Ok(Ok(()))),
     };
     if !opened {
@@ -3260,6 +3260,9 @@ async fn open_raw_dns_tcp_candidate(
         return RawDnsTcpOpenResult::TimedOut;
     }
     let policy_timeout = match outbound.primary() {
+        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
+            effective_policy_for_level(&context.config, Some(0)).handshake
+        }
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             context.inbound_policy.handshake
         }
@@ -3502,7 +3505,9 @@ async fn proxy_udp_payload(
                 };
                 let outbound_timeout = match &outbound {
                     UdpOutbound::Freedom => DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT,
-                    UdpOutbound::Vless(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
+                    UdpOutbound::Vless(_)
+                    | UdpOutbound::Hysteria(_)
+                    | UdpOutbound::Wireguard(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
                 };
                 let outbound_label = crate::debug_log::udp_outbound_label(&outbound);
                 let attempt = timeout(
@@ -3920,6 +3925,49 @@ async fn exchange_udp_candidate(
     failure_phase: &mut DnsUdpFailurePhase,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let response = match outbound {
+        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+            if upstream
+                .socket_addr()
+                .is_some_and(socket_addr_has_nonzero_scope)
+            {
+                return Err(std::io::Error::other(
+                    "scoped IPv6 DNS target is unsupported by this outbound",
+                )
+                .into());
+            }
+            *failure_phase = DnsUdpFailurePhase::Open;
+            let session = crate::outbound::datagram::open(
+                &outbound,
+                target,
+                context.bootstrap_dns_resolver(),
+                context.bootstrap_dns_resolver(),
+                &context.transport_dialer,
+            )
+            .await?;
+            context.tun.record_udp_remote_open(false);
+            *failure_phase = DnsUdpFailurePhase::Write;
+            session.send(target, query).await?;
+            context.tun.record_udp_remote_written(query.len());
+            *failure_phase = DnsUdpFailurePhase::Read;
+            let reply = loop {
+                let reply = session.recv().await?;
+                if dns_response_matches_query(query, &reply.payload) {
+                    break reply;
+                }
+            };
+            if reply.payload.len() <= max_payload {
+                DnsUpstreamResponse::Payload(Bytes::from(reply.payload))
+            } else {
+                let prefix_len = reply
+                    .payload
+                    .len()
+                    .min(MAX_DNS_RESPONSE_VALIDATION_PREFIX_SIZE);
+                DnsUpstreamResponse::Oversized {
+                    observed_len: reply.payload.len(),
+                    prefix: Bytes::copy_from_slice(&reply.payload[..prefix_len]),
+                }
+            }
+        }
         UdpOutbound::Freedom => {
             let upstream = resolve_freedom_dns_upstream(upstream, context).await?;
             exchange_udp_freedom(upstream, query, max_payload, context, failure_phase).await?

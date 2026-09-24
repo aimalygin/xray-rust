@@ -1390,6 +1390,197 @@
           }
         ]
       }
+    },
+    {
+      "name": "hysteria2",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "hysteria",
+            "settings": {
+              "version": 2,
+              "address": "server.example",
+              "port": 443
+            },
+            "streamSettings": {
+              "network": "hysteria",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "server.example",
+                "alpn": [
+                  "h3"
+                ]
+              },
+              "hysteriaSettings": {
+                "version": 2,
+                "auth": "synthetic-example-auth"
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "HYSTERIA": "/outbounds/0/settings",
+        "HYSTERIA_TRANSPORT": "/outbounds/0/streamSettings/hysteriaSettings"
+      }
+    },
+    {
+      "name": "wireguard",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "wireguard",
+            "settings": {
+              "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+              "address": [
+                "10.44.0.2/32",
+                "fd44::2/128"
+              ],
+              "mtu": 1420,
+              "peers": [
+                {
+                  "publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+                  "endpoint": "server.example:51820",
+                  "allowedIPs": [
+                    "0.0.0.0/0",
+                    "::/0"
+                  ],
+                  "keepAlive": 0
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "objects": {
+        "WIREGUARD": "/outbounds/0/settings",
+        "WIREGUARD_PEER": "/outbounds/0/settings/peers/0"
+      }
+    },
+    {
+      "name": "wireguard-psk",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "wireguard",
+            "settings": {
+              "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+              "address": [
+                "10.44.0.2/32",
+                "fd44::2/128"
+              ],
+              "mtu": 1420,
+              "peers": [
+                {
+                  "publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+                  "endpoint": "server.example:51820",
+                  "allowedIPs": [
+                    "0.0.0.0/0",
+                    "::/0"
+                  ],
+                  "keepAlive": 0,
+                  "preSharedKey": "6464646464646464646464646464646464646464646464646464646464646464"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "wireguard-multi-peer",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "wireguard",
+            "settings": {
+              "secretKey": "4242424242424242424242424242424242424242424242424242424242424242",
+              "address": [
+                "10.44.0.2/32",
+                "fd44::2/128"
+              ],
+              "mtu": 1420,
+              "peers": [
+                {
+                  "publicKey": "5353535353535353535353535353535353535353535353535353535353535353",
+                  "endpoint": "server.example:51820",
+                  "allowedIPs": [
+                    "0.0.0.0/0",
+                    "::/0"
+                  ],
+                  "keepAlive": 0
+                },
+                {
+                  "publicKey": "6464646464646464646464646464646464646464646464646464646464646464",
+                  "endpoint": "second.example:51820",
+                  "allowedIPs": [
+                    "198.51.100.7/24",
+                    "2001:db8:b::7/64"
+                  ],
+                  "keepAlive": 0,
+                  "preSharedKey": "6464646464646464646464646464646464646464646464646464646464646464"
+                }
+              ]
+            }
+          }
+        ]
+      }
     }
   ]
 }

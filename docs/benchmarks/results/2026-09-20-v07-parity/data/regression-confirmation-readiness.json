@@ -1,0 +1,29 @@
+[
+  {
+    "series": "reviewed-parity-regression-vless-short-confirmation",
+    "runs": 30,
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "compiler_load_detected": false
+  },
+  {
+    "series": "reviewed-parity-regression-steady-confirmation-legacy",
+    "runs": 27,
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "compiler_load_detected": false
+  },
+  {
+    "series": "reviewed-parity-regression-steady-confirmation-tun",
+    "runs": 36,
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "compiler_load_detected": true
+  }
+]

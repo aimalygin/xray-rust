@@ -1,0 +1,982 @@
+--- a/src/iface/interface/mod.rs
++++ b/src/iface/interface/mod.rs
+@@ -116,6 +116,8 @@
+     pub(crate) inner: InterfaceInner,
+     fragments: FragmentsBuffer,
+     fragmenter: Fragmenter,
++    egress_cursor: Option<usize>,
++    tcp_egress_burst: usize,
+ }
+ 
+ /// The device independent part of an Ethernet network interface.
+@@ -199,6 +201,21 @@
+ }
+ 
+ impl Interface {
++    /// Select fair socket scheduling when a bounded device becomes full.
++    /// Disabled by default. When enabled, resume at the socket whose packet
++    /// could not fit in the device, so busy early sockets cannot starve later
++    /// sockets' data or TCP acknowledgements. Socket handles remain stable.
++    pub fn set_round_robin_egress(&mut self, enabled: bool) {
++        self.egress_cursor = enabled.then_some(0);
++    }
++    /// Limit consecutive TCP datagrams emitted per socket in one egress scan.
++    /// One preserves the upstream scheduler. Larger bounded bursts can reduce
++    /// receiver wakeups while round-robin scheduling retains progress for peers.
++    /// Panics unless the burst is between one and thirty-two packets.
++    pub fn set_tcp_egress_burst(&mut self, packets: usize) {
++        assert!((1..=32).contains(&packets));
++        self.tcp_egress_burst = packets;
++    }
+     /// Create a network interface using the previously provided configuration.
+     ///
+     /// # Panics
+@@ -269,6 +286,8 @@
+                 reassembly_timeout: Duration::from_secs(60),
+             },
+             fragmenter: Fragmenter::new(),
++            egress_cursor: None,
++            tcp_egress_burst: 1,
+             inner: InterfaceInner {
+                 now,
+                 caps,
+@@ -722,7 +741,7 @@
+         }
+ 
+         let mut result = PollResult::None;
+-        for item in sockets.items_mut() {
++        for (index, item) in sockets.items_mut_from(self.egress_cursor.unwrap_or(0)) {
+             if !item
+                 .meta
+                 .egress_permitted(self.inner.now, |ip_addr| self.inner.has_neighbor(&ip_addr))
+@@ -731,6 +750,7 @@
+             }
+ 
+             let mut neighbor_addr = None;
++            let mut sent_packets = 0;
+             let mut respond = |inner: &mut InterfaceInner, meta: PacketMeta, response: Packet| {
+                 neighbor_addr = Some(response.ip_repr().dst_addr());
+                 let t = device.transmit(inner.now).ok_or_else(|| {
+@@ -743,6 +763,7 @@
+                     .map_err(|_| EgressError::Dispatch)?;
+ 
+                 result = PollResult::SocketStateChanged;
++                sent_packets += 1;
+ 
+                 Ok(())
+             };
+@@ -783,9 +804,19 @@
+                 }
+                 #[cfg(feature = "socket-tcp")]
+                 Socket::Tcp(socket) => {
+-                    socket.dispatch(&mut self.inner, |inner, meta, (ip, tcp)| {
+-                        respond(inner, meta, Packet::new(ip, IpPayload::Tcp(tcp)))
+-                    })
++                    let mut status = Ok(());
++                    for _ in 0..self.tcp_egress_burst {
++                        let mut emitted = false;
++                        status = socket.dispatch(&mut self.inner, |inner, meta, (ip, tcp)| {
++                            respond(inner, meta, Packet::new(ip, IpPayload::Tcp(tcp)))?;
++                            emitted = true;
++                            Ok(())
++                        });
++                        if status.is_err() || !emitted {
++                            break;
++                        }
++                    }
++                    status
+                 }
+                 #[cfg(feature = "socket-dhcpv4")]
+                 Socket::Dhcpv4(socket) => {
+@@ -808,7 +839,14 @@
+             };
+ 
+             match result {
+-                Err(EgressError::Exhausted) => break, // Device buffer full.
++                Err(EgressError::Exhausted) => {
++                    if let Some(cursor) = &mut self.egress_cursor {
++                        // A socket that already sent part of its burst yields
++                        // its next turn. With no progress retry this same socket.
++                        *cursor = if sent_packets != 0 { index + 1 } else { index };
++                    }
++                    break; // Device buffer full: preserve bounded round-robin progress.
++                }
+                 Err(EgressError::Dispatch) => {
+                     // `NeighborCache` already takes care of rate limiting the neighbor discovery
+                     // requests from the socket. However, without an additional rate limiting
+--- a/src/iface/socket_set.rs
++++ b/src/iface/socket_set.rs
+@@ -148,4 +148,19 @@
+     pub(crate) fn items_mut(&mut self) -> impl Iterator<Item = &mut Item<'a>> + '_ {
+         self.sockets.iter_mut().filter_map(|x| x.inner.as_mut())
+     }
++
++    /// Visit every occupied storage slot once, starting at a resumable index.
++    pub(crate) fn items_mut_from(
++        &mut self,
++        start: usize,
++    ) -> impl Iterator<Item = (usize, &mut Item<'a>)> + '_ {
++        let start = start % self.sockets.len().max(1);
++        let (before, after) = self.sockets.split_at_mut(start);
++        after
++            .iter_mut()
++            .enumerate()
++            .map(move |(index, slot)| (start + index, slot))
++            .chain(before.iter_mut().enumerate())
++            .filter_map(|(index, slot)| slot.inner.as_mut().map(|item| (index, item)))
++    }
+ }
+--- a/src/socket/tcp/congestion/reno.rs
++++ b/src/socket/tcp/congestion/reno.rs
+@@ -12,6 +12,10 @@
+     ssthresh: usize,
+     rwnd: usize,
+ 
++    initial_window_segments: Option<usize>,
++    appropriate_byte_counting: bool,
++    bytes_acked: usize,
++    post_rto_slow_start: bool,
+     in_fast_recovery: bool,
+     // Set on RTO, cleared when new data is ACKed. While set, further RTOs
+     // are retransmissions of the same segment and must not reduce ssthresh
+@@ -26,8 +30,31 @@
+             mss: DEFAULT_MSS,
+             ssthresh: usize::MAX,
+             rwnd: 64 * DEFAULT_MSS,
++            initial_window_segments: None,
++            appropriate_byte_counting: false,
++            bytes_acked: 0,
++            post_rto_slow_start: false,
+             in_fast_recovery: false,
+             in_rto_recovery: false,
++        }
++    }
++    pub(crate) fn set_initial_window(&mut self, segments: usize) {
++        self.initial_window_segments = Some(segments);
++        self.update_initial_window();
++    }
++
++    pub(crate) fn set_appropriate_byte_counting(&mut self, enabled: bool) {
++        self.appropriate_byte_counting = enabled;
++        self.bytes_acked = 0;
++    }
++
++    fn update_initial_window(&mut self) {
++        if let Some(segments) = self.initial_window_segments {
++            // RFC 6928: IW <= min(10*MSS, max(2*MSS, 14600)).
++            self.cwnd = self
++                .mss
++                .saturating_mul(segments)
++                .min(self.mss.saturating_mul(2).max(14600));
+         }
+     }
+ }
+@@ -46,6 +73,8 @@
+             return;
+         }
+ 
++        self.initial_window_segments = None;
++
+         // New data was ACKed: a timer-based loss episode, if any, is over.
+         self.in_rto_recovery = false;
+ 
+@@ -57,10 +86,25 @@
+         }
+ 
+         let inc = if self.cwnd < self.ssthresh {
+-            // Slow start: increase `cwnd` by 1 MSS per ACK.
+-            len.min(self.mss)
++            // RFC 3465: compensate delayed ACKs, but never exceed two MSS
++            // per ACK. The entire slow-start phase after RTO keeps L=1 MSS.
++            let limit = if self.appropriate_byte_counting && !self.post_rto_slow_start {
++                self.mss.saturating_mul(2)
++            } else {
++                self.mss
++            };
++            len.min(limit)
++        } else if self.appropriate_byte_counting {
++            self.post_rto_slow_start = false;
++            self.bytes_acked = self.bytes_acked.saturating_add(len);
++            if self.bytes_acked >= self.cwnd {
++                self.bytes_acked -= self.cwnd;
++                self.mss
++            } else {
++                0
++            }
+         } else {
+-            // Congestion avoidance: increase by ~1 MSS per RTT.
++            // Default congestion avoidance remains unchanged.
+             (self.mss * self.mss / self.cwnd).max(1)
+         };
+ 
+@@ -74,6 +118,8 @@
+     }
+ 
+     fn on_loss(&mut self, _now: Instant, in_flight: usize) {
++        self.initial_window_segments = None;
++        self.bytes_acked = 0;
+         // Only cut window size on first entrance to fast recovery.
+         if !self.in_fast_recovery {
+             self.ssthresh = (in_flight >> 1).max(2 * self.mss);
+@@ -84,6 +130,9 @@
+     }
+ 
+     fn on_rto(&mut self, _now: Instant, in_flight: usize) {
++        self.initial_window_segments = None;
++        self.bytes_acked = 0;
++        self.post_rto_slow_start = true;
+         // RFC 5681: when the retransmission timer fires for a segment that has
+         // already been retransmitted by the timer (no new data was ACKed since
+         // the previous RTO), ssthresh is held constant.
+@@ -101,6 +150,7 @@
+ 
+     fn set_mss(&mut self, mss: usize) {
+         self.mss = mss;
++        self.update_initial_window();
+     }
+ 
+     fn set_remote_window(&mut self, remote_window: usize) {
+@@ -124,6 +174,108 @@
+ 
+     fn rtte() -> RttEstimator {
+         RttEstimator::default()
++    }
++
++    #[test]
++    fn opt_in_initial_window_uses_negotiated_mss_and_rfc_bound() {
++        let mut reno = Reno::new();
++        assert_eq!(reno.window(), 2048);
++        reno.set_initial_window(10);
++        for mss in [512, 1380, 1440, 1500, 9000] {
++            reno.set_mss(mss);
++            assert_eq!(reno.window(), (10 * mss).min((2 * mss).max(14600)));
++        }
++    }
++
++    #[test]
++    fn opt_in_initial_window_is_never_restored_after_ack_or_loss() {
++        for event in 0..3 {
++            let mut reno = Reno::new();
++            reno.set_initial_window(10);
++            reno.set_mss(1380);
++            ack(&mut reno, 0, Instant::from_millis(0));
++            assert_eq!(reno.window(), 13800);
++            match event {
++                0 => ack(&mut reno, 1380, Instant::from_millis(1)),
++                1 => reno.on_loss(Instant::from_millis(1), 13800),
++                _ => reno.on_rto(Instant::from_millis(1), 13800),
++            }
++            let window = reno.window();
++            reno.set_mss(1400);
++            assert_eq!(reno.window(), window);
++            if event == 2 {
++                assert_eq!(window, 1380);
++            }
++        }
++    }
++
++    #[test]
++    fn abc_slow_start_counts_delayed_bytes_but_caps_stretch_acks() {
++        let mut reno = Reno::new();
++        reno.set_appropriate_byte_counting(true);
++        for (len, growth) in [
++            (0, 0),
++            (MSS / 2, MSS / 2),
++            (MSS, MSS),
++            (2 * MSS, 2 * MSS),
++            (20 * MSS, 2 * MSS),
++        ] {
++            let before = reno.window();
++            ack(&mut reno, len, Instant::from_millis(0));
++            assert_eq!(reno.window(), before + growth);
++        }
++    }
++
++    #[test]
++    fn abc_ca_grows_once_per_window_independent_of_ack_division() {
++        for ack_size in [1, MSS / 2, MSS, 2 * MSS] {
++            let mut reno = Reno::new();
++            reno.set_appropriate_byte_counting(true);
++            reno.cwnd = 10 * MSS;
++            reno.ssthresh = reno.cwnd;
++            for _ in 0..(10 * MSS / ack_size - 1) {
++                ack(&mut reno, ack_size, Instant::from_millis(0));
++                assert_eq!(reno.window(), 10 * MSS);
++            }
++            ack(&mut reno, ack_size, Instant::from_millis(0));
++            assert_eq!(reno.window(), 11 * MSS);
++            assert_eq!(reno.bytes_acked, 0);
++        }
++    }
++
++    #[test]
++    fn abc_after_rto_keeps_one_segment_cap_until_ca_and_clears_credit() {
++        let mut reno = Reno::new();
++        reno.set_appropriate_byte_counting(true);
++        reno.cwnd = 16 * MSS;
++        reno.ssthresh = reno.cwnd;
++        ack(&mut reno, 8 * MSS, Instant::from_millis(0));
++        assert_eq!(reno.bytes_acked, 8 * MSS);
++        reno.on_rto(Instant::from_millis(1), 16 * MSS);
++        assert_eq!(reno.bytes_acked, 0);
++        for expected in 2..=8 {
++            ack(&mut reno, 8 * MSS, Instant::from_millis(2));
++            assert_eq!(reno.window(), expected * MSS);
++        }
++        assert!(reno.post_rto_slow_start);
++        ack(&mut reno, 8 * MSS, Instant::from_millis(3));
++        assert_eq!(reno.window(), 9 * MSS);
++        assert!(!reno.post_rto_slow_start);
++    }
++
++    #[test]
++    fn abc_fast_loss_discards_old_ca_credit() {
++        let mut reno = Reno::new();
++        reno.set_appropriate_byte_counting(true);
++        reno.cwnd = 16 * MSS;
++        reno.ssthresh = reno.cwnd;
++        ack(&mut reno, 8 * MSS, Instant::from_millis(0));
++        reno.on_loss(Instant::from_millis(1), 16 * MSS);
++        assert_eq!(reno.bytes_acked, 0);
++        ack(&mut reno, MSS, Instant::from_millis(2));
++        assert_eq!(reno.window(), 8 * MSS);
++        ack(&mut reno, MSS, Instant::from_millis(3));
++        assert_eq!(reno.window(), 8 * MSS);
+     }
+ 
+     #[test]
+--- a/src/socket/tcp.rs
++++ b/src/socket/tcp.rs
+@@ -500,6 +500,9 @@
+     remote_last_ack: Option<TcpSeqNumber>,
+     /// The last window length sent.
+     remote_last_win: u16,
++    receive_window_limit: Option<usize>,
++    // Actual receive credit sent on the wire; SYN windows are unscaled.
++    receive_window_end: Option<TcpSeqNumber>,
+     /// The sending window scaling factor advertised to remotes which support RFC 1323.
+     /// It is zero if the window <= 64KiB and/or the remote does not support it.
+     remote_win_shift: u8,
+@@ -604,6 +607,8 @@
+             remote_last_seq: TcpSeqNumber::default(),
+             remote_last_ack: None,
+             remote_last_win: 0,
++            receive_window_limit: None,
++            receive_window_end: None,
+             remote_win_len: 0,
+             remote_win_shift: rx_cap_log2.saturating_sub(16) as u8,
+             remote_win_scale: None,
+@@ -676,6 +681,39 @@
+         }
+     }
+ 
++    /// Opt into a bounded Reno initial congestion window before opening a socket.
++    /// Returns false unless the socket is closed, Reno is selected, and `segments`
++    /// is in 1..=10. The window follows the negotiated MSS and RFC 6928 byte cap;
++    /// loss recovery still uses the ordinary Reno loss window.
++    #[cfg(feature = "socket-tcp-reno")]
++    pub fn set_reno_initial_window(&mut self, segments: usize) -> bool {
++        if self.state != State::Closed || !(1..=10).contains(&segments) {
++            return false;
++        }
++        if let congestion::AnyController::Reno(reno) = &mut self.congestion_controller {
++            reno.set_initial_window(segments);
++            true
++        } else {
++            false
++        }
++    }
++
++    /// Opt into RFC 3465 byte counting on a closed Reno socket. Slow start
++    /// grows by at most two MSS per ACK, or one MSS after an RTO; congestion
++    /// avoidance grows by one MSS per acknowledged window. Disabled by default.
++    #[cfg(feature = "socket-tcp-reno")]
++    pub fn set_reno_appropriate_byte_counting(&mut self, enabled: bool) -> bool {
++        if self.state != State::Closed {
++            return false;
++        }
++        if let congestion::AnyController::Reno(reno) = &mut self.congestion_controller {
++            reno.set_appropriate_byte_counting(enabled);
++            true
++        } else {
++            false
++        }
++    }
++
+     /// Return the current congestion control algorithm.
+     pub fn congestion_control(&self) -> CongestionControl {
+         use congestion::*;
+@@ -757,12 +795,51 @@
+         self.synack_paused = pause;
+     }
+ 
++    /// Limit the receive window independently of backing storage.
++    ///
++    /// Set the initial limit before connecting. Decreases on active connections
++    /// take effect as previously advertised credit drains; backing storage and
++    /// normal window-scale rounding still bound every advertisement.
++    /// Returns true only if the effective limit changed. Other sockets retain
++    /// their full buffer window unless this method is called.
++    pub fn set_receive_window_limit(&mut self, bytes: usize) -> bool {
++        let bytes = bytes.min(self.rx_buffer.capacity());
++        let old = self
++            .receive_window_limit
++            .unwrap_or(self.rx_buffer.capacity());
++        if bytes == old {
++            return false;
++        }
++        self.receive_window_limit = Some(bytes);
++        true
++    }
++
++    fn receive_window(&self) -> usize {
++        let Some(limit) = self.receive_window_limit else {
++            return self.rx_buffer.window();
++        };
++        let next_ack = self.remote_seq_no + self.rx_buffer.len();
++        let promised = self
++            .receive_window_end
++            .filter(|end| *end > next_ack)
++            .map(|end| end - next_ack)
++            .unwrap_or(0);
++        // Round remaining credit upward when it fits the physical buffer, so
++        // rebalancing does not move the advertised right edge backward merely
++        // because the next ACK is not aligned to the window scale.
++        let unit = 1_usize << self.remote_win_shift;
++        let promised = promised.div_ceil(unit) * unit;
++        self.rx_buffer
++            .window()
++            .min(limit.saturating_sub(self.rx_buffer.len()).max(promised))
++    }
++
+     /// Return the current window field value, including scaling according to RFC 1323.
+     ///
+     /// Used in internal calculations as well as packet generation.
+     #[inline]
+     fn scaled_window(&self) -> u16 {
+-        u16::try_from(self.rx_buffer.window() >> self.remote_win_shift).unwrap_or(u16::MAX)
++        u16::try_from(self.receive_window() >> self.remote_win_shift).unwrap_or(u16::MAX)
+     }
+ 
+     /// Return the last window field value, including scaling according to RFC 1323.
+@@ -919,6 +996,7 @@
+         self.remote_last_seq = TcpSeqNumber::default();
+         self.remote_last_ack = None;
+         self.remote_last_win = 0;
++        self.receive_window_end = None;
+         self.remote_win_len = 0;
+         self.remote_win_scale = None;
+         self.remote_win_shift = rx_cap_log2.saturating_sub(16) as u8;
+@@ -1491,6 +1569,14 @@
+         // segments, is right-shifted by [advertised scale value] bits[...]
+         reply_repr.window_len = self.scaled_window();
+         self.remote_last_win = reply_repr.window_len;
++        if let Some(ack) = reply_repr.ack_number {
++            let shift = if reply_repr.control == TcpControl::Syn {
++                0
++            } else {
++                self.remote_win_shift
++            };
++            self.receive_window_end = Some(ack + ((reply_repr.window_len as usize) << shift));
++        }
+ 
+         // If the remote supports selective acknowledgement, add the option to the outgoing
+         // segment.
+@@ -1510,24 +1596,24 @@
+                     .assembler
+                     .iter_data()
+                     .map(|(left, right)| (ack + left, ack + right))
+-                    .find(|&(left, right)| left <= last_seg_seq && right >= last_seg_seq)
++                    .find(|&(left, right)| left <= last_seg_seq && last_seg_seq < right)
+                     .map(|(left, right)| (left.0 as u32, right.0 as u32));
+             }
+ 
+-            if reply_repr.sack_ranges[0].is_none() {
+-                // The matching segment was removed from the assembler, meaning the acknowledgement
+-                // number has advanced, or there was no previous sACK.
+-                //
+-                // While the RFC says we SHOULD keep a list of reported sACK ranges, and iterate
+-                // through those, that is currently infeasible. Instead, we offer the range with
+-                // the lowest sequence number (if one exists) to hint at what segments would
+-                // most quickly advance the acknowledgement number.
+-                reply_repr.sack_ranges[0] = self
+-                    .assembler
+-                    .iter_data()
+-                    .map(|(left, right)| (ack + left, ack + right))
+-                    .next()
+-                    .map(|(left, right)| (left.0 as u32, right.0 as u32));
++            // Repeat other retained ranges as well (RFC 2018 section 4), so a
++            // lost ACK does not hide all evidence of later delivered segments.
++            // Keep the triggering range first, then prefer ranges nearest the
++            // cumulative ACK. Never report discarded data or allocate history.
++            let mut next = usize::from(reply_repr.sack_ranges[0].is_some());
++            for (left, right) in self.assembler.iter_data() {
++                if next == reply_repr.sack_ranges.len() {
++                    break;
++                }
++                let range = Some(((ack + left).0 as u32, (ack + right).0 as u32));
++                if !reply_repr.sack_ranges[..next].contains(&range) {
++                    reply_repr.sack_ranges[next] = range;
++                    next += 1;
++                }
+             }
+         }
+ 
+@@ -1601,6 +1687,7 @@
+             _ => (false, false),
+         };
+         let control_len = (sent_syn as usize) + (sent_fin as usize);
++        let stale_ack = repr.ack_number.is_some_and(|ack| ack < self.local_seq_no);
+ 
+         // Reject unacceptable acknowledgements.
+         match (self.state, repr.control, repr.ack_number) {
+@@ -1688,7 +1775,9 @@
+                         ack_min,
+                         ack_max
+                     );
+-                    return None;
++                    // RFC 9293 section 3.10.7.4: ignore a stale ACK, but
++                    // continue processing valid reverse-direction data.
++                    // Its old window and ACK must not rewind sender state.
+                 }
+ 
+                 if ack_number > ack_max {
+@@ -2065,7 +2154,11 @@
+             TcpControl::Syn => 0,
+             _ => self.remote_win_scale.unwrap_or(0),
+         };
+-        let new_remote_win_len = (repr.window_len as usize) << (scale as usize);
++        let new_remote_win_len = if stale_ack {
++            self.remote_win_len
++        } else {
++            (repr.window_len as usize) << (scale as usize)
++        };
+         let is_window_update = new_remote_win_len != self.remote_win_len;
+         self.remote_win_len = new_remote_win_len;
+ 
+@@ -2088,7 +2181,7 @@
+             self.tx_waker.wake();
+         }
+ 
+-        if let Some(ack_number) = repr.ack_number {
++        if let Some(ack_number) = repr.ack_number.filter(|_| !stale_ack) {
+             // TODO: When flow control is implemented,
+             // refractor the following block within that implementation
+ 
+@@ -2209,6 +2302,12 @@
+         }
+ 
+         let assembler_was_empty = self.assembler.is_empty();
++        if assembler_was_empty && self.rx_buffer.is_empty() {
++            // Reuse the beginning of drained storage, so small exchanges do
++            // not gradually fault in the whole receive buffer. Reassembly
++            // may still own bytes beyond a hole even when the queue is empty.
++            self.rx_buffer.clear();
++        }
+ 
+         // Try adding payload octets to the assembler.
+         let Ok(contig_len) = self
+@@ -2220,7 +2319,10 @@
+                 payload_len,
+                 payload_offset
+             );
+-            return None;
++            // We still received a segment beyond a hole. Signal the missing
++            // sequence immediately even when reassembly storage is exhausted,
++            // rather than leaving the sender to discover the loss by timeout.
++            return Some(self.ack_reply(ip_repr, repr));
+         };
+ 
+         // Place payload octets into the buffer.
+@@ -2601,7 +2703,7 @@
+                 repr.control = TcpControl::Syn;
+                 repr.seq_number = self.local_seq_no;
+                 // window len must NOT be scaled in SYNs.
+-                repr.window_len = u16::try_from(self.rx_buffer.window()).unwrap_or(u16::MAX);
++                repr.window_len = u16::try_from(self.receive_window()).unwrap_or(u16::MAX);
+                 if self.state == State::SynSent {
+                     repr.ack_number = None;
+                     repr.window_scale = Some(self.remote_win_shift);
+@@ -2826,6 +2928,14 @@
+             .max(repr.seq_number + repr.segment_len());
+         self.remote_last_ack = repr.ack_number;
+         self.remote_last_win = repr.window_len;
++        if let Some(ack) = repr.ack_number {
++            let shift = if repr.control == TcpControl::Syn {
++                0
++            } else {
++                self.remote_win_shift
++            };
++            self.receive_window_end = Some(ack + ((repr.window_len as usize) << shift));
++        }
+ 
+         if repr.segment_len() > 0 {
+             self.rtte
+@@ -4531,6 +4641,82 @@
+     }
+ 
+     #[test]
++    fn test_established_recv_reuses_empty_storage() {
++        let mut s = socket_established_with_buffer_sizes(64, 64);
++        let mut first = None;
++        for offset in (0..192).step_by(6) {
++            let payload = [offset as u8; 6];
++            send(
++                &mut s,
++                Instant::ZERO,
++                &TcpRepr {
++                    seq_number: REMOTE_SEQ + 1 + offset,
++                    ack_number: Some(LOCAL_SEQ + 1),
++                    payload: &payload,
++                    ..SEND_TEMPL
++                },
++            );
++            let received = s.rx_buffer.get_allocated(0, 6);
++            let base = *first.get_or_insert(received.as_ptr());
++            assert_eq!(received.as_ptr(), base, "empty RX storage moved");
++            assert_eq!(received, payload);
++            let mut read = [0; 6];
++            assert_eq!(s.recv_slice(&mut read).unwrap(), 6);
++            assert_eq!(read, payload);
++            assert!(s.rx_buffer.is_empty());
++            assert_eq!(s.rx_buffer.capacity(), 64);
++            assert_eq!(s.remote_seq_no, REMOTE_SEQ + 1 + offset + 6);
++            assert_eq!(s.scaled_window(), 64);
++            recv(&mut s, Instant::ZERO, |reply| {
++                let reply = reply.unwrap();
++                assert_eq!(reply.ack_number, Some(REMOTE_SEQ + 1 + offset + 6));
++                assert_eq!(reply.window_len, 64);
++            });
++        }
++    }
++
++    #[test]
++    fn test_established_recv_empty_storage_preserves_reassembly() {
++        let mut s = socket_established_with_buffer_sizes(64, 64);
++        let put = |s: &mut TestSocket, offset, payload| {
++            send(
++                s,
++                Instant::ZERO,
++                &TcpRepr {
++                    seq_number: REMOTE_SEQ + 1 + offset,
++                    ack_number: Some(LOCAL_SEQ + 1),
++                    payload,
++                    ..SEND_TEMPL
++                },
++            );
++        };
++        put(&mut s, 0, b"abcdef");
++        let base = s.rx_buffer.get_allocated(0, 6).as_ptr();
++        let mut read = [0; 3];
++        assert_eq!(s.recv_slice(&mut read).unwrap(), 3);
++        assert_eq!(&read, b"abc");
++        put(&mut s, 12, b"mno");
++        assert!(!s.assembler.is_empty());
++        assert_eq!(s.recv_slice(&mut read).unwrap(), 3);
++        assert_eq!(&read, b"def");
++        assert!(s.rx_buffer.is_empty());
++        assert!(!s.assembler.is_empty());
++        put(&mut s, 6, b"ghijkl");
++        let mut reassembled = [0; 9];
++        assert_eq!(s.recv_slice(&mut reassembled).unwrap(), 9);
++        assert_eq!(&reassembled, b"ghijklmno");
++        assert!(s.rx_buffer.is_empty());
++        assert!(s.assembler.is_empty());
++        put(&mut s, 15, b"pqrs");
++        assert_eq!(s.rx_buffer.get_allocated(0, 4).as_ptr(), base);
++        let mut read = [0; 4];
++        assert_eq!(s.recv_slice(&mut read).unwrap(), 4);
++        assert_eq!(&read, b"pqrs");
++        assert_eq!(s.remote_seq_no, REMOTE_SEQ + 1 + 19);
++        assert_eq!(s.scaled_window(), 64);
++    }
++
++    #[test]
+     fn test_peek_slice() {
+         const BUF_SIZE: usize = 10;
+ 
+@@ -4580,6 +4766,68 @@
+             &mut peeked_buf[..actually_peeked],
+             &mut recv_buf[..actually_recvd]
+         );
++    }
++
++    #[test]
++    fn test_out_of_order_overflow_still_replies_with_duplicate_ack() {
++        let count = crate::config::ASSEMBLER_MAX_SEGMENT_COUNT;
++        let mut s = socket_established_with_buffer_sizes(64, count * 4 + 64);
++        s.remote_has_sack = true;
++        for n in 0..count {
++            let repr = TcpRepr {
++                seq_number: REMOTE_SEQ + 1 + 2 * n + 1,
++                ack_number: Some(LOCAL_SEQ + 1),
++                payload: b"a",
++                ..SEND_TEMPL
++            };
++            assert!(send(&mut s, Instant::ZERO, &repr).is_some());
++        }
++        let before: Vec<_> = s.assembler.iter_data().collect();
++        let repr = TcpRepr {
++            seq_number: REMOTE_SEQ + 1 + 2 * count + 1,
++            ack_number: Some(LOCAL_SEQ + 1),
++            payload: b"b",
++            ..SEND_TEMPL
++        };
++        let reply = send(&mut s, Instant::ZERO, &repr)
++            .expect("even discarded out-of-order data must trigger loss feedback");
++        assert_eq!(reply.ack_number, Some(REMOTE_SEQ + 1));
++        assert_eq!(s.assembler.iter_data().collect::<Vec<_>>(), before);
++        for (left, right) in reply.sack_ranges.into_iter().flatten() {
++            assert!(before.iter().any(|&(a, b)| {
++                left == (REMOTE_SEQ + 1 + a).0 as u32 && right == (REMOTE_SEQ + 1 + b).0 as u32
++            }));
++        }
++    }
++
++    #[test]
++    fn test_out_of_order_ack_reports_three_distinct_sack_blocks() {
++        for start in [REMOTE_SEQ + 1, TcpSeqNumber(-4)] {
++            let mut s = socket_established_with_buffer_sizes(64, 128);
++            s.remote_has_sack = true;
++            s.remote_seq_no = start;
++            s.remote_last_ack = Some(start);
++            for offset in [20, 40, 60] {
++                let repr = TcpRepr {
++                    seq_number: start + offset,
++                    ack_number: Some(LOCAL_SEQ + 1),
++                    payload: b"abc",
++                    ..SEND_TEMPL
++                };
++                let reply = send(&mut s, Instant::ZERO, &repr).unwrap();
++                assert_eq!(
++                    reply.sack_ranges[0],
++                    Some(((start + offset).0 as u32, (start + offset + 3).0 as u32))
++                );
++                if offset == 60 {
++                    assert_eq!(
++                        reply.sack_ranges,
++                        [60, 20, 40]
++                            .map(|n| Some(((start + n).0 as u32, (start + n + 3).0 as u32)))
++                    );
++                }
++            }
++        }
+     }
+ 
+     fn setup_rfc2018_cases() -> (TestSocket, Vec<u8>) {
+@@ -5014,6 +5262,41 @@
+     }
+ 
+     #[test]
++    fn test_reordered_data_with_old_ack_is_delivered_without_rewinding_sender() {
++        let mut s = socket_established();
++        s.send_slice(b"abcdef").unwrap();
++        recv!(s, time 0, Ok(TcpRepr {
++            seq_number: LOCAL_SEQ + 1,
++            ack_number: Some(REMOTE_SEQ + 1),
++            payload: &b"abcdef"[..],
++            ..RECV_TEMPL
++        }));
++        send!(s, time 1, TcpRepr {
++            seq_number: REMOTE_SEQ + 1,
++            ack_number: Some(LOCAL_SEQ + 7),
++            window_len: 42,
++            ..SEND_TEMPL
++        });
++        // Reverse-direction data was queued before the fresh ACK above. Its
++        // ACK and window are old, but its receive sequence is still valid.
++        send!(s, time 2, TcpRepr {
++            seq_number: REMOTE_SEQ + 1,
++            ack_number: Some(LOCAL_SEQ + 1),
++            window_len: 0,
++            payload: &b"xyz"[..],
++            ..SEND_TEMPL
++        });
++        let mut buf = [0; 3];
++        assert_eq!(s.recv_slice(&mut buf), Ok(3));
++        assert_eq!(&buf, b"xyz");
++        assert_eq!(s.local_seq_no, LOCAL_SEQ + 7);
++        assert_eq!(s.remote_last_seq, LOCAL_SEQ + 7);
++        assert_eq!(s.remote_win_len, 42);
++        assert_eq!(s.send_queue(), 0);
++        assert!(!s.timer.is_zero_window_probe());
++    }
++
++    #[test]
+     fn test_established_bad_ack() {
+         let mut s = socket_established();
+         // Already acknowledged data.
+@@ -9872,4 +10155,173 @@
+         recv_nothing!(s);
+         assert_eq!(s.state, State::Closed);
+     }
++
++    #[test]
++    fn opt_in_receive_window_starts_small_and_counts_queued_data() {
++        let mut s = socket_with_buffer_sizes(64, 1024 * 1024);
++        assert_eq!(s.receive_window(), 1024 * 1024);
++        assert!(s.set_receive_window_limit(64 * 1024));
++        assert_eq!(s.receive_window(), 64 * 1024);
++        s.rx_buffer.enqueue_slice(&[0; 1024]);
++        assert_eq!(s.receive_window(), 63 * 1024);
++        assert_eq!(s.rx_buffer.capacity(), 1024 * 1024);
++    }
++
++    #[test]
++    fn receive_window_growth_and_budget_changes_prompt_an_update() {
++        let mut s = socket_with_buffer_sizes(64, 1024 * 1024);
++        s.set_receive_window_limit(64 * 1024);
++        s.state = State::Established;
++        s.remote_win_shift = 4;
++        s.remote_seq_no = REMOTE_SEQ + 1;
++        s.remote_last_ack = Some(REMOTE_SEQ + 1);
++        s.remote_last_win = s.scaled_window();
++        s.receive_window_end = Some(REMOTE_SEQ + 1 + 64 * 1024);
++        assert!(s.set_receive_window_limit(1024));
++        assert_eq!(s.scaled_window(), 4096);
++        assert!(s.set_receive_window_limit(128 * 1024));
++        assert_eq!(s.scaled_window(), 8192);
++        assert!(s.window_to_update());
++        assert!(s.set_receive_window_limit(usize::MAX));
++        assert_eq!(s.receive_window(), s.rx_buffer.capacity());
++        assert!(s.set_receive_window_limit(128 * 1024));
++    }
++
++    #[test]
++    fn receive_budget_reduction_drains_existing_credit_without_revoking_it() {
++        for start in [REMOTE_SEQ + 1, TcpSeqNumber(i32::MAX - 32 * 1024)] {
++            let mut s = socket_established();
++            s.rx_buffer = SocketBuffer::new(vec![0; 1024 * 1024]);
++            s.remote_win_shift = 4;
++            s.remote_seq_no = start;
++            s.remote_last_ack = Some(start);
++            s.receive_window_limit = Some(128 * 1024);
++            s.remote_last_win = s.scaled_window();
++            let original_right_edge = start + 128 * 1024;
++            s.receive_window_end = Some(original_right_edge);
++            s.set_receive_window_limit(64 * 1024);
++            assert_eq!(
++                s.scaled_window(),
++                8192,
++                "outstanding advertised space must stay usable"
++            );
++            let payload = [0x6a; 4096];
++            let mut received = [0; 4096];
++            for index in 0..16 {
++                let time = Instant::from_millis(index as i64 + 1);
++                let reply = send(
++                    &mut s,
++                    time,
++                    &TcpRepr {
++                        seq_number: start + index * payload.len(),
++                        ack_number: Some(LOCAL_SEQ + 1),
++                        payload: &payload,
++                        ..SEND_TEMPL
++                    },
++                );
++                let mut advertisement =
++                    reply.map(|reply| (reply.ack_number.unwrap(), reply.window_len));
++                if advertisement.is_none() {
++                    recv(&mut s, time, |packet| {
++                        advertisement = packet
++                            .ok()
++                            .map(|reply| (reply.ack_number.unwrap(), reply.window_len));
++                    });
++                }
++                let (ack, window) =
++                    advertisement.expect("accepted data schedules an ACK for dispatch");
++                let right_edge = ack + ((window as usize) << 4);
++                assert_eq!(
++                    right_edge, original_right_edge,
++                    "old credit should drain before the smaller budget renews it"
++                );
++                assert_eq!(s.recv_slice(&mut received).unwrap(), payload.len());
++                assert_eq!(received, payload);
++            }
++            assert_eq!(
++                s.scaled_window(),
++                4096,
++                "after draining, the active flow must use its smaller budget"
++            );
++        }
++    }
++
++    #[test]
++    fn reduced_receive_budget_still_accepts_promised_out_of_order_data() {
++        let mut s = socket_established();
++        s.rx_buffer = SocketBuffer::new(vec![0; 1024 * 1024]);
++        s.remote_win_shift = 4;
++        s.remote_has_sack = true;
++        s.receive_window_limit = Some(128 * 1024);
++        s.remote_last_win = s.scaled_window();
++        s.set_receive_window_limit(64 * 1024);
++        s.receive_window_end = Some(REMOTE_SEQ + 1 + 128 * 1024);
++        let start = REMOTE_SEQ + 1 + 96 * 1024;
++        let reply = send(
++            &mut s,
++            Instant::from_millis(1),
++            &TcpRepr {
++                seq_number: start,
++                ack_number: Some(LOCAL_SEQ + 1),
++                payload: b"already promised",
++                ..SEND_TEMPL
++            },
++        )
++        .expect("in-window out-of-order bytes generate a SACK");
++        assert_eq!(
++            reply.sack_ranges[0],
++            Some((start.0 as u32, (start + 16).0 as u32))
++        );
++    }
++    #[test]
++    fn receive_budget_tracks_syn_window_without_applying_data_scale() {
++        let mut s = socket_syn_received_with_buffer_sizes(64, 1024 * 1024);
++        s.remote_win_shift = 4;
++        s.remote_win_scale = Some(0);
++        s.set_receive_window_limit(64 * 1024);
++        recv(&mut s, Instant::ZERO, |packet| {
++            let reply = packet.unwrap();
++            assert_eq!(reply.control, TcpControl::Syn);
++            assert_eq!(reply.window_len, u16::MAX);
++        });
++        assert_eq!(s.receive_window_end, Some(REMOTE_SEQ + 1 + 65535));
++        let _ = send(
++            &mut s,
++            Instant::from_millis(1),
++            &TcpRepr {
++                seq_number: REMOTE_SEQ + 1,
++                ack_number: Some(LOCAL_SEQ + 1),
++                ..SEND_TEMPL
++            },
++        );
++        assert_eq!(s.state, State::Established);
++        assert_eq!(s.receive_window(), 64 * 1024);
++        assert_eq!(s.scaled_window(), 4096);
++    }
++
++    #[test]
++    fn receive_budget_rounding_retains_credit_within_physical_capacity() {
++        for queued in [false, true] {
++            let mut s = socket_established_with_buffer_sizes(64, 128 * 1024);
++            let start = REMOTE_SEQ + 1;
++            let previous_end = start + 128 * 1024;
++            s.remote_win_shift = 4;
++            s.receive_window_end = Some(previous_end);
++            s.receive_window_limit = Some(128 * 1024);
++            s.set_receive_window_limit(64 * 1024);
++            if queued {
++                s.rx_buffer.enqueue_slice(&[0; 1452]);
++            } else {
++                s.remote_seq_no = start + 1452;
++            }
++            let advertised = (s.scaled_window() as usize) << 4;
++            let new_end = s.remote_seq_no + s.rx_buffer.len() + advertised;
++            assert!(advertised <= s.rx_buffer.window());
++            assert!(new_end >= previous_end - 15);
++            assert!(new_end <= previous_end + 15);
++            if !queued {
++                assert!(new_end >= previous_end);
++            }
++        }
++    }
+ }

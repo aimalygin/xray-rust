@@ -1,0 +1,25 @@
+/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client: go1.26.5
+	path	xray-rust-wireguard-reference/cmd/bench-client
+	mod	xray-rust-wireguard-reference	(devel)	
+	dep	github.com/google/btree	v1.1.2	h1:xf4v41cLI2Z6FxbKm+8Bu+m8ifhj15JuZ9sa0jZCMUU=
+	dep	golang.org/x/crypto	v0.42.0	h1:chiH31gIWm57EkTXpwnqf8qeuMUi0yekh6mT2AvFlqI=
+	dep	golang.org/x/exp	v0.0.0-20231110203233-9a3e6036ecaa	h1:FRnLl4eNAQl8hwxVVC17teOw8kdjVDVAiFMtgUdTSRQ=
+	dep	golang.org/x/net	v0.44.0	h1:evd8IRDyfNBMBTTY5XRF1vaZlD+EmWx6x8PkhR04H/I=
+	dep	golang.org/x/sys	v0.36.0	h1:KVRy2GtZBrk1cBYA7MKu5bEZFxQk4NIDV6RLVcC8o0k=
+	dep	golang.org/x/time	v0.12.0	h1:ScB/8o8olJvc+CQPWrK3fPZNfh7qgwCrY0zJmoEQLSE=
+	dep	golang.zx2c4.com/wireguard	v0.0.0-20250521234502-f333402bd9cb	h1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=
+	dep	gvisor.dev/gvisor	v0.0.0-20260122175437-89a5d21be8f0	h1:Lk6hARj5UPY47dBep70OD/TIMwikJ5fGUGX0Rm3Xigk=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	CGO_ENABLED=1
+	build	CGO_CFLAGS=
+	build	CGO_CPPFLAGS=
+	build	CGO_CXXFLAGS=
+	build	CGO_LDFLAGS=
+	build	GOARCH=arm64
+	build	GOOS=darwin
+	build	GOARM64=v8.0
+	build	vcs=git
+	build	vcs.revision=61373052dc8b6784162c81650faa6bd92f0604aa
+	build	vcs.time=2026-09-20T06:05:02Z
+	build	vcs.modified=true

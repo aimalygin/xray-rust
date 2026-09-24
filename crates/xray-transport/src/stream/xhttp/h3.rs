@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::task::{ready, Context, Poll};
 use std::time::Duration;
 
-use bytes::{Buf, Bytes};
+use bytes::{Buf, Bytes, BytesMut};
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use futures_util::task::AtomicWaker;
 use h3::client;
@@ -34,6 +34,8 @@ use crate::{
 const QUIC_V1: u32 = 0x0000_0001;
 const MAX_UPLOAD_DATA_BYTES: usize = 16 * 1024;
 const RESPONSE_QUEUE_DEPTH: usize = 1;
+const MAX_RESPONSE_BATCH_BYTES: usize = 16 * 1024;
+const MAX_RESPONSE_BATCH_CHUNKS: usize = 16;
 const XRAY_INITIAL_STREAM_RECEIVE_WINDOW: u64 = 2 * 1024 * 1024;
 const XRAY_INITIAL_CONNECTION_RECEIVE_WINDOW: u64 = 3 * 1024 * 1024;
 const XRAY_BBR_INITIAL_WINDOW: u64 = 32 * 1280;
@@ -467,6 +469,16 @@ pub(crate) async fn connect_quic_transport(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
+    connect_quic_transport_with_datagrams(config, expected_alpn, None).await
+}
+
+/// Optional receive/send byte budgets and advertised frame-size cap for QUIC datagrams.
+/// `None` preserves the existing XHTTP/DoQ transport configuration.
+pub(crate) async fn connect_quic_transport_with_datagrams(
+    config: H3ConnectConfig,
+    expected_alpn: &'static [u8],
+    datagram_buffers: Option<(usize, usize, u16)>,
+) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
     if config.tls_config.alpn_protocols.len() != 1
@@ -476,7 +488,7 @@ pub(crate) async fn connect_quic_transport(
         return Err(H3Error::InvalidAlpn { expected });
     }
 
-    let (endpoint_config, client_config) = build_quinn_config(&config)?;
+    let (endpoint_config, client_config) = build_quinn_config(&config, datagram_buffers)?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
     let bind_addr = match remote_addr.ip() {
         IpAddr::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
@@ -486,9 +498,27 @@ pub(crate) async fn connect_quic_transport(
         addr: bind_addr,
         source,
     })?;
+    if datagram_buffers.is_some() {
+        configure_quic_datagram_socket(&socket);
+    }
     protect_quic_socket(&socket, config.socket_protector.as_deref())?;
     socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
 
+    #[cfg(target_os = "macos")]
+    let endpoint = if datagram_buffers.is_some() {
+        let socket =
+            crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?;
+        Endpoint::new_with_abstract_socket(
+            endpoint_config,
+            None,
+            socket,
+            Arc::new(quinn::TokioRuntime),
+        )
+    } else {
+        Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
+    }
+    .map_err(H3Error::Endpoint)?;
+    #[cfg(not(target_os = "macos"))]
     let endpoint = Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
         .map_err(H3Error::Endpoint)?;
     let connecting = endpoint
@@ -598,9 +628,35 @@ fn is_socket_protection_error(error: &H3Error) -> bool {
     )
 }
 
-fn build_quinn_config(config: &H3ConnectConfig) -> Result<(EndpointConfig, ClientConfig), H3Error> {
+struct EmptyConnectionId;
+
+impl quinn::ConnectionIdGenerator for EmptyConnectionId {
+    fn generate_cid(&mut self) -> quinn::ConnectionId {
+        quinn::ConnectionId::new(&[])
+    }
+
+    fn cid_len(&self) -> usize {
+        0
+    }
+
+    fn cid_lifetime(&self) -> Option<Duration> {
+        None
+    }
+}
+
+fn build_quinn_config(
+    config: &H3ConnectConfig,
+    datagram_buffers: Option<(usize, usize, u16)>,
+) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
+    if datagram_buffers.is_some() {
+        // Hysteria owns one connection per endpoint and keeps a fixed server
+        // address, so incoming packets need no connection ID for demultiplexing.
+        // This saves eight bytes per server packet. Local socket rebinds still
+        // address the server using its nonempty CID, as in native Hysteria.
+        endpoint.cid_generator(|| Box::new(EmptyConnectionId));
+    }
 
     let stream_window = quinn_varint(
         "initialStreamReceiveWindow",
@@ -628,6 +684,11 @@ fn build_quinn_config(config: &H3ConnectConfig) -> Result<(EndpointConfig, Clien
         .stream_receive_window(stream_window)
         .receive_window(connection_window)
         .max_concurrent_bidi_streams(max_incoming);
+    if let Some((receive, send, frame_size)) = datagram_buffers {
+        transport.datagram_receive_buffer_size(Some(receive));
+        transport.datagram_send_buffer_size(send);
+        transport.advertised_datagram_frame_size(Some(frame_size));
+    }
     if config.quic.disable_path_mtu_discovery {
         transport.mtu_discovery_config(None);
     }
@@ -659,6 +720,14 @@ fn quinn_varint(name: &'static str, value: u64) -> Result<VarInt, H3Error> {
         name,
         value: u128::from(value),
     })
+}
+
+// Match the bounded carrier buffer request used by the Go QUIC references.
+// The OS can clamp/refuse it. These are kernel queues, not process RSS.
+pub(crate) fn configure_quic_datagram_socket(socket: &StdUdpSocket) {
+    let socket = socket2::SockRef::from(socket);
+    let _ = socket.set_recv_buffer_size(7 * 1024 * 1024);
+    let _ = socket.set_send_buffer_size(7 * 1024 * 1024);
 }
 
 fn protect_quic_socket(
@@ -836,25 +905,75 @@ async fn drive_response_inner(
         return Ok(());
     }
 
+    let mut pending = Bytes::new();
     loop {
-        let data = tokio::select! {
-            biased;
-            () = cancelled(cancellation) => return Err(H3Error::Cancelled),
-            result = recv.recv_data() => result.map_err(|source| H3Error::Http3Stream {
-                context: "response DATA could not be received",
-                source,
-            })?,
-        };
-        let Some(mut data) = data else {
-            break;
-        };
-        let data = data.copy_to_bytes(data.remaining());
+        if pending.is_empty() {
+            let data = tokio::select! {
+                biased;
+                () = cancelled(cancellation) => return Err(H3Error::Cancelled),
+                result = recv.recv_data() => result.map_err(|source| H3Error::Http3Stream {
+                    context: "response DATA could not be received",
+                    source,
+                })?,
+            };
+            let Some(mut data) = data else {
+                break;
+            };
+            pending = data.copy_to_bytes(data.remaining());
+        }
+        let first = pending.split_to(pending.len().min(MAX_RESPONSE_BATCH_BYTES));
+        let mut combined: Option<BytesMut> = None;
+        let mut length = first.len();
+        let mut end = false;
+        let mut failure = None;
+        // HTTP/3 can expose one QUIC packet per DATA chunk. Pass immediately
+        // available chunks through the one-slot channel together, without
+        // waiting to fill a batch or changing transport flow-control credit.
+        for _ in 1..MAX_RESPONSE_BATCH_CHUNKS {
+            if length == MAX_RESPONSE_BATCH_BYTES || !pending.is_empty() {
+                break;
+            }
+            match poll_fn(|cx| Poll::Ready(recv.poll_recv_data(cx))).await {
+                Poll::Pending => break,
+                Poll::Ready(Ok(None)) => {
+                    end = true;
+                    break;
+                }
+                Poll::Ready(Err(source)) => {
+                    failure = Some(H3Error::Http3Stream {
+                        context: "response DATA could not be received",
+                        source,
+                    });
+                    break;
+                }
+                Poll::Ready(Ok(Some(mut data))) => {
+                    pending = data.copy_to_bytes(data.remaining());
+                    let take = pending.len().min(MAX_RESPONSE_BATCH_BYTES - length);
+                    if take != 0 {
+                        let buffer = combined.get_or_insert_with(|| {
+                            let mut buffer = BytesMut::with_capacity(MAX_RESPONSE_BATCH_BYTES);
+                            buffer.extend_from_slice(&first);
+                            buffer
+                        });
+                        buffer.extend_from_slice(&pending.split_to(take));
+                        length += take;
+                    }
+                }
+            }
+        }
+        let data = combined.map_or(first, BytesMut::freeze);
         tokio::select! {
             biased;
             () = cancelled(cancellation) => return Err(H3Error::Cancelled),
             result = body.send(BodyEvent::Data(data)) => {
                 result.map_err(|_| H3Error::ResponseConsumerDropped)?;
             }
+        }
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        if end {
+            break;
         }
     }
 

@@ -11,6 +11,10 @@ links to publication results. This roadmap is not a
 promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
+The owner selected Hysteria 2 and WireGuard client support for `v0.7` on
+2026-09-08. Phase 4 records that target and the initial upstream support check;
+the implementation contract and release evidence remain to be developed.
+
 The current compatibility baseline is Xray-core `v26.7.28` at full commit
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. See the
 [migration audit](xray-core-v26.7.28-migration-audit.md) for the exact upstream
@@ -611,6 +615,144 @@ are recorded in [stable promotion](v06-stable-promotion.md).
   and the stable C ABI remains backward compatible or follows a documented
   major transition.
 
+## Phase 4: `v0.7` Hysteria 2 and WireGuard clients
+
+Status: `0.7.0-rc.1` preparation started on 2026-09-22; final CI/device and
+application acceptance remain pending. See the [RC sequence](v07-release-candidate.md)
+and [versioned evidence contract](v07-release-evidence.md). Implementation started
+on 2026-09-08. The
+[upstream support check](v07-upstream-protocol-support.md) confirms both protocols
+in pinned Xray-core `v26.7.28`. The
+[implementation increments](v07-protocol-implementation.md) now include Hysteria
+wire codecs, authenticated QUIC transport and a bounded JSON/core runtime
+outbound for SOCKS, HTTP, TUN and routed DNS, with live reference tests.
+WireGuard now has a bounded GotaTun/smoltcp client registered in JSON and the
+core for SOCKS, HTTP, TUN and routed DNS. Its contract accepts up to eight peers,
+IPv4/IPv6, TCP/UDP, per-peer PSK and protected sockets. Overlapping allowedIPs and
+authenticated source isolation are covered. The [runtime contract](v07-wireguard-runtime.md)
+records accepted options, budgets and executable evidence. Mobile
+[DNS bootstrap and FakeDNS topology validation](v07-mobile-bootstrap.md) now cover
+both protocols on Swift/Kotlin, including all WireGuard peers. The
+[adapter review](v07-wireguard-adapter.md) tracks those boundaries. Shared Rust
+[Hysteria2 link / WireGuard file import](v07-profile-import.md) now reaches both
+SDKs through ABI 1.5, including protocol capability discovery, bounded inputs
+and redacted errors. [Independent native Hysteria checks](v07-native-hysteria-interop.md)
+now pin the official v2.12.2 server and gate transport/core TCP, UDP and routed DNS,
+including its documented UDP reply-size limitation. [Direct official WireGuard
+checks](v07-native-wireguard-interop.md) now cover TCP/UDP, wrong keys/PSK,
+peer isolation, MTU boundaries and core/TUN/DNS paths without Xray. Direct lifecycle
+checks additionally cover authenticated server-port changes, replay/bad-tag
+rejection, persistent keepalive, real-time rekey and existing UDP flows across
+a server restart. Broader network transitions, key-expiry/PMTU and TCP crash
+cases, application integration and broader physical-device acceptance remain release work.
+A [bounded iPhone 13 check](device-results/2026-09-13-iphone13-v07/README.md)
+now covers both protocols over Wi-Fi: IPv4/IPv6 TCP/UDP, DNS, three start/stop
+cycles per protocol, connection closure and same-tunnel recovery. It found and
+fixed an iOS build guard and an unusable IPv6 `/128` interface prefix. This is
+short development evidence. A subsequent [iPhone 17 Pro Max campaign](device-results/2026-09-13-iphone17-v07/README.md)
+passed bounded Hysteria 2 Wi-Fi/cellular/Wi-Fi recovery and Wi-Fi lock/wake for
+both protocols, but WireGuard repeatedly failed to recover cellular traffic
+within 45 seconds. The [2026-09-14 carrier-rebind fix](device-results/2026-09-14-iphone17-wireguard-rebind/README.md)
+then passed WireGuard Wi-Fi/cellular/Wi-Fi and lock/wake on the same iPhone: full
+traffic checks completed in 12.13/6.25/5.28 seconds respectively. This resolves
+the reproduced blocker in that bounded scenario, not all carrier conditions.
+The [Hysteria carrier-migration fix](device-results/2026-09-14-iphone17-hysteria-rebind/README.md)
+then reduced the observed cellular traffic check from 34.07 seconds with three
+retries to 3.81/3.65 seconds without retries in two runs. The final
+repeat also verifies closure by connection ID, since aggregate UDP counts can
+include fresh background/DNS work. The final return to Wi-Fi needed one retry
+in the UDP check and 15.08 seconds overall, although TCP was already working;
+the remaining variability prompted further investigation. The [2026-09-15 Apple observer fix](device-results/2026-09-15-iphone17-hysteria-udp/README.md)
+filters duplicate physical-path updates and cancels pending work while offline.
+Two full Hysteria device sequences then passed with Wi-Fi return in
+2.79/2.78 seconds and no UDP retries; 167 Swift tests and Debug/Release builds pass.
+The [WireGuard regression on the same build](device-results/2026-09-15-iphone17-wireguard-observer/README.md)
+also passed Wi-Fi/cellular/Wi-Fi and lock/wake in two runs. The first run's full traffic checks took
+8.90/15.68/5.86 seconds respectively, with one TCP retry on return to Wi-Fi. The repeat's Wi-Fi
+return took 16.36 seconds with one retry. That reproduced delay led to the
+[WireGuard recovery fix](device-results/2026-09-15-iphone17-wireguard-recovery/README.md):
+retain sessions and briefly drain the previous socket, and keep the shared TUN
+TCP bridge responsive to download/cancellation during blocked upload. The final
+iPhone sequence passed with cellular/Wi-Fi/unlock checks in 6.38/4.48/5.51 seconds,
+no retries, and all seven requested connections closed in 2.05 seconds. Three
+Hysteria smoke cycles passed on the same build. Bounded host reproductions and
+regressions pass; the report preserves the failed intermediate trial. This is
+bounded device acceptance, not universal loss-free handover. Broader recovery-
+latency, load, carrier/fault and Android device coverage remain pending.
+
+The [initial performance campaign](benchmarks/results/2026-09-19-v07/README.md)
+found idle-RSS budget failures, repeatable H1 TUN stalls and WireGuard load
+timeouts. The [fix campaign](benchmarks/results/2026-09-19-v07-fixes/README.md)
+passes both unchanged historical gates and all 990 primary runs against frozen
+`v0.6.1` / original-v0.7 controls. Shared async setup allocation, TUN capacity
+wakeups, engine lock/queue ownership, TCP window advertisement and smoltcp loss
+recovery are corrected. H1 TUN throughput returns to the v0.6.1 level;
+Hysteria2's long eight-flow TUN upload improves from 72 to 211 MiB/s while RSS
+falls from 104 to 47 MiB. WireGuard completes all 100 protocol runs and 40
+additional eight/sixteen-flow duplex stress runs. The report retains initial
+review flags, follow-up controls, rejected large-window variants and the
+remaining memory/throughput tradeoffs. These host results do not establish
+physical-device or unrestricted network acceptance for the revised runtime.
+The [competitor investigation](benchmarks/results/2026-09-20-v07-parity/README.md)
+adds pinned Xray, sing-box, native Hysteria and official wireguard-go comparisons.
+Its user-approved Mac target requires strictly lower process RSS and allows up
+to 3% lower speed or higher latency/CPU/startup, with no reliability allowance.
+Quality flags and uncertain intervals remain visible; the historical 15%
+review thresholds do not establish parity.
+Accepted changes, fresh regression checks and remaining deficits are recorded
+separately from the earlier candidate's counts above.
+On 2026-09-21 the owner deferred further H2/TUN RSS work to a future release
+while keeping the current implementation. The [allocation-lifetime investigation](benchmarks/results/2026-09-21-h2-allocation-lifetime/README.md)
+retains both rejected arena-reuse prototypes and the measured memory limitation.
+No future version is assigned; the separate Hysteria2 gaps and uncertain parity
+results remain open.
+See the [reproduction method](v07-performance.md).
+
+Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
+matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed
+configuration, routing, diagnostics, and cancellation. This owner decision
+supersedes the earlier recommendation to implement Trojan first. Trojan,
+Shadowsocks 2022, and VMess remain demand-driven backlog items.
+
+### Initial work
+
+- The owner decided on 2026-09-08 to retain exact `v26.7.28`
+  (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) while implementing both clients.
+  The completed [v26.9.8 source audit](xray-core-v26.9.8-migration-audit.md)
+  remains future migration evidence; that migration does not gate this work.
+- Define the Hysteria 2 client contract across the `hysteria` outbound,
+  Hysteria QUIC transport, TLS authentication, TCP streams, UDP sessions and
+  fragmentation. Explicitly decide the supported congestion-control,
+  bandwidth, Salamander, and UDP-hopping options against the selected source.
+- Define the WireGuard client contract for keys, peers, allowed IPs, local
+  addresses, endpoint resolution, MTU, keepalive, rekeying, and cancellation.
+  Select a Rust implementation and a bounded packet/flow integration suitable
+  for Apple and Android; review dependency licenses and maintenance before
+  adoption.
+- Split affected large runtime modules along their ownership boundaries
+  before adding the new protocol implementations. Reuse the outbound factory,
+  resolver, protected dialing, routing, and management surfaces where their
+  existing contracts fit.
+- Define equivalent Swift/Kotlin configuration and profile-import support for
+  the implemented subset, including secret redaction and capability discovery.
+
+### Release criteria
+
+- Both client protocols have documented accepted/rejected configurations and
+  blocking interoperability against the exact selected Xray-core revision.
+  Also pin native Hysteria 2 and WireGuard reference implementations to verify
+  the claimed standard-protocol behavior independently of Xray extensions.
+- New wire, crypto, parser, packet, and FFI boundaries have negative tests,
+  fuzz coverage, explicit resource budgets, and security review appropriate to
+  the changed surface. Existing VLESS/XHTTP and ABI checks remain blocking.
+- Targeted physical Apple/Android scenarios cover changed lifecycle risks,
+  including cancellation, reconnect, UDP behavior, and resource recovery.
+  No fixed-duration long soak campaign is introduced.
+- Feature freeze, a matching core/mobile RC, and application acceptance precede
+  stable publication. Exact supported options and implementation sequencing
+  must be recorded before feature freeze; this roadmap does not assert full
+  upstream feature parity or add server-side scope.
+
 ## Deferred security work before `1.0`
 
 `v0.5.0` completed the focused credential redaction, zeroization, and secret
@@ -628,21 +770,18 @@ revision and existing dependency/security gates. Reconsider that decision only
 during `1.0` planning or earlier if a concrete security finding, upstream
 incompatibility, or maintenance failure invalidates the current pin.
 
-## Protocol expansion after `v0.6`
+## Further protocol expansion after the selected `v0.7` scope
 
 Protocol work is demand-driven and begins only after the previous release
 gates are sustained in CI.
 
-Recommended order:
+The remaining candidates have no assigned release or mandatory order:
 
 1. **Trojan client.** It can reuse the existing TLS, stream, DNS, routing, and
    outbound lifecycle while exercising the new outbound factory seam.
 2. **Shadowsocks 2022.** Add it as an optional client component if profile
    corpus and integrator demand justify the crypto and compatibility surface.
 3. **VMess.** Implement only if real migration data shows material active use.
-4. **WireGuard or Hysteria.** Treat either as a separately designed project,
-   not a small protocol adapter, because each adds a substantial networking,
-   platform, performance, and security surface.
 
 Each protocol requires a pinned reference implementation, fixture corpus,
 blocking interop coverage, fuzz targets, resource budgets, mobile lifecycle

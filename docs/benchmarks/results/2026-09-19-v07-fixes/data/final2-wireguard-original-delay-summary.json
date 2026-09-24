@@ -1,0 +1,454 @@
+{
+  "artifact_sha256": {
+    "wireguard-socks-download-1-baseline-1/result.json": "b364be73eee86d2515feca1ca3e4d1fe5d584db15ccada37de8ca03df1a66f45",
+    "wireguard-socks-download-1-baseline-2/result.json": "8d83382087dc42e270f78e8cc4c4c42dd074343f05b2934e2f7008e52135497a",
+    "wireguard-socks-download-1-baseline-3/result.json": "e873fe89d89ac8290d24fb5a0ff0524a638a4f7d3fad4318cfe19e2f27403152",
+    "wireguard-socks-download-1-candidate-1/result.json": "1a23a879cc9e8d8c6e8da33708e0559b47ea43edb79e85cbffc0643ea5d3f944",
+    "wireguard-socks-download-1-candidate-2/result.json": "591029823bc0eccc85559e3bc6129a8380d949252e563e2aff334a0f9cf8cf9e",
+    "wireguard-socks-download-1-candidate-3/result.json": "153076eb6013adc68e095cc1dd20e4a5ae61a7607ff50fae18aefb1a50a1ee95",
+    "wireguard-socks-download-8-baseline-1/result.json": "9ceb4c83882f75d650403007c236f21f24a22f1e61f21a3982ba5af4dfa9ef82",
+    "wireguard-socks-download-8-baseline-2/result.json": "9734b7213f09dc951d378d3dfaac1be5ee367b579d048fdf836c42504c46b85d",
+    "wireguard-socks-download-8-baseline-3/result.json": "4eb5d822ae9f45e46c99e223dcc318d52bb066bebc857731aec3276e31a72dbb",
+    "wireguard-socks-download-8-candidate-1/result.json": "65fd23803a7f30f31e5e28ded4a17939736ebcd1816fbff90e3364a746af15f0",
+    "wireguard-socks-download-8-candidate-2/result.json": "60269c50e55b61a247c22608b54d33493fb70e345846277f49e5ac39087931cc",
+    "wireguard-socks-download-8-candidate-3/result.json": "1b0b4ef57fca72e04a8ab6d2d922dfdcd87adde13d72ef065aaab14634797e3b",
+    "wireguard-socks-upload-1-baseline-1/result.json": "a0f583340aa89271f8ffdd3da82af98e48c59ea03ebeef5d48c80a182e601f28",
+    "wireguard-socks-upload-1-baseline-2/result.json": "6d751b58a18cad572cfd247653b49e3ece67f63460d273de05fab166482554fb",
+    "wireguard-socks-upload-1-baseline-3/result.json": "311a70fb1c2bf41fee177581b9adeec4d1bef1dc022dd8ba745eaeb716073035",
+    "wireguard-socks-upload-1-candidate-1/result.json": "ea2b6edf1119410598f94d17cc1c1065833ca3d62a3a8210f4eace2a4f2dce6b",
+    "wireguard-socks-upload-1-candidate-2/result.json": "709ea6e91e67e117dec1f42de6e2398d9a262293eb54da004711b31e6008d349",
+    "wireguard-socks-upload-1-candidate-3/result.json": "54608267f77beb0a5fa799dd6398c2b1dd3f45165f152bd419b7b254f0c4714f",
+    "wireguard-socks-upload-8-baseline-1/result.json": "8425163de87a07bc1f2e2e0596d3f48a72ed85c9c6fa94450e5fe6a7446a1420",
+    "wireguard-socks-upload-8-baseline-2/result.json": "92241319b5a19e470fc4884a4685939973862a744b94b13c169888c311bc91c2",
+    "wireguard-socks-upload-8-baseline-3/result.json": "7d7ab58a9cd7c74cbfb3e4ce7dc5760e4b9c8285ff5af4b82efb727708ac81c9",
+    "wireguard-socks-upload-8-candidate-1/result.json": "d8fe6d2384f7288a3d684d946e6549291fedc042841f2b4a04f95f2a706387f8",
+    "wireguard-socks-upload-8-candidate-2/result.json": "d998bc7fa332b69e5d6d7970481d67478e66672cede281c83a84fe522ee1a3ee",
+    "wireguard-socks-upload-8-candidate-3/result.json": "25c128f2f23e241cd511c422cdd9e80809696321e28d1c63aff3710e978180d4"
+  },
+  "failures": [],
+  "manifest_sha256": "a31f4ac08a82472c35d9f8b858925d1c08a32f9469f54523940812466435fbb6",
+  "rows": [
+    {
+      "case": "wireguard-socks-upload-1",
+      "ratios": {
+        "cpu_ms": 0.45,
+        "cpu_ms_per_mib": 0.45,
+        "rss_mib": 1.018058690744921,
+        "throughput_mib_s": 7.570513045277224
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 200,
+              "median": 200,
+              "min": 190,
+              "samples": [
+                190,
+                200,
+                200
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 100.0,
+              "median": 100.0,
+              "min": 95.0,
+              "samples": [
+                95.0,
+                100.0,
+                100.0
+              ]
+            },
+            "rss_mib": {
+              "max": 6.984375,
+              "median": 6.921875,
+              "min": 6.921875,
+              "samples": [
+                6.921875,
+                6.921875,
+                6.984375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 0.2902002407518029,
+              "median": 0.2899433388638991,
+              "min": 0.2898973158804972,
+              "samples": [
+                0.2902002407518029,
+                0.2898973158804972,
+                0.2899433388638991
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 90,
+              "min": 90,
+              "samples": [
+                90,
+                90,
+                90
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 45.0,
+              "median": 45.0,
+              "min": 45.0,
+              "samples": [
+                45.0,
+                45.0,
+                45.0
+              ]
+            },
+            "rss_mib": {
+              "max": 7.078125,
+              "median": 7.046875,
+              "min": 6.953125,
+              "samples": [
+                7.078125,
+                7.046875,
+                6.953125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2.201942534547077,
+              "median": 2.195019829260383,
+              "min": 2.048580289046997,
+              "samples": [
+                2.048580289046997,
+                2.195019829260383,
+                2.201942534547077
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-socks-download-1",
+      "ratios": {
+        "cpu_ms": 0.38636363636363635,
+        "cpu_ms_per_mib": 0.38636363636363635,
+        "rss_mib": 1.0069767441860464,
+        "throughput_mib_s": 17.241338172334014
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 460,
+              "median": 440,
+              "min": 430,
+              "samples": [
+                440,
+                430,
+                460
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 230.0,
+              "median": 220.0,
+              "min": 215.0,
+              "samples": [
+                220.0,
+                215.0,
+                230.0
+              ]
+            },
+            "rss_mib": {
+              "max": 6.734375,
+              "median": 6.71875,
+              "min": 6.703125,
+              "samples": [
+                6.71875,
+                6.703125,
+                6.734375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 0.19211473937540352,
+              "median": 0.1919150491934459,
+              "min": 0.18879280445768107,
+              "samples": [
+                0.19211473937540352,
+                0.1919150491934459,
+                0.18879280445768107
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 190,
+              "median": 170,
+              "min": 150,
+              "samples": [
+                150,
+                170,
+                190
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 95.0,
+              "median": 85.0,
+              "min": 75.0,
+              "samples": [
+                75.0,
+                85.0,
+                95.0
+              ]
+            },
+            "rss_mib": {
+              "max": 6.78125,
+              "median": 6.765625,
+              "min": 6.75,
+              "samples": [
+                6.765625,
+                6.78125,
+                6.75
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 3.3163013622536917,
+              "median": 3.308872263504319,
+              "min": 3.301836564042835,
+              "samples": [
+                3.3163013622536917,
+                3.301836564042835,
+                3.308872263504319
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "ratios": {
+        "cpu_ms": 0.6164383561643836,
+        "cpu_ms_per_mib": 0.6164383561643836,
+        "rss_mib": 1.1711864406779662,
+        "throughput_mib_s": 3.9785100514908214
+      },
+      "review": [
+        "rss_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 940,
+              "median": 730,
+              "min": 730,
+              "samples": [
+                730,
+                940,
+                730
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 58.75,
+              "median": 45.625,
+              "min": 45.625,
+              "samples": [
+                45.625,
+                58.75,
+                45.625
+              ]
+            },
+            "rss_mib": {
+              "max": 9.609375,
+              "median": 9.21875,
+              "min": 9.21875,
+              "samples": [
+                9.609375,
+                9.21875,
+                9.21875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2.3173031692884143,
+              "median": 2.305418934524323,
+              "min": 2.3029286915008265,
+              "samples": [
+                2.305418934524323,
+                2.3173031692884143,
+                2.3029286915008265
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 450,
+              "median": 450,
+              "min": 430,
+              "samples": [
+                450,
+                430,
+                450
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 28.125,
+              "median": 28.125,
+              "min": 26.875,
+              "samples": [
+                28.125,
+                26.875,
+                28.125
+              ]
+            },
+            "rss_mib": {
+              "max": 10.96875,
+              "median": 10.796875,
+              "min": 10.765625,
+              "samples": [
+                10.765625,
+                10.796875,
+                10.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 9.21407049815602,
+              "median": 9.172132403902278,
+              "min": 9.140189946640296,
+              "samples": [
+                9.21407049815602,
+                9.140189946640296,
+                9.172132403902278
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-socks-download-8",
+      "ratios": {
+        "cpu_ms": 0.44036697247706424,
+        "cpu_ms_per_mib": 0.44036697247706424,
+        "rss_mib": 1.1873727087576376,
+        "throughput_mib_s": 6.831192446870521
+      },
+      "review": [
+        "rss_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2250,
+              "median": 2180,
+              "min": 2170,
+              "samples": [
+                2250,
+                2170,
+                2180
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 140.625,
+              "median": 136.25,
+              "min": 135.625,
+              "samples": [
+                140.625,
+                135.625,
+                136.25
+              ]
+            },
+            "rss_mib": {
+              "max": 7.671875,
+              "median": 7.671875,
+              "min": 7.578125,
+              "samples": [
+                7.671875,
+                7.671875,
+                7.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1.5267898842607215,
+              "median": 1.5228736755854848,
+              "min": 1.51444294659201,
+              "samples": [
+                1.51444294659201,
+                1.5267898842607215,
+                1.5228736755854848
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 960,
+              "median": 960,
+              "min": 960,
+              "samples": [
+                960,
+                960,
+                960
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 60.0,
+              "median": 60.0,
+              "min": 60.0,
+              "samples": [
+                60.0,
+                60.0,
+                60.0
+              ]
+            },
+            "rss_mib": {
+              "max": 9.125,
+              "median": 9.109375,
+              "min": 9.0625,
+              "samples": [
+                9.109375,
+                9.125,
+                9.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 10.409703706671095,
+              "median": 10.403043150197512,
+              "min": 10.394271498177938,
+              "samples": [
+                10.403043150197512,
+                10.409703706671095,
+                10.394271498177938
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

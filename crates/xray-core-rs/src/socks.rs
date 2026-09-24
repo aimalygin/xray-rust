@@ -1,3 +1,5 @@
+mod datagram;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -457,6 +459,14 @@ async fn handle_socks_connect(
         ),
         TcpOutbound::Vless(vless) => {
             let outbound_policy = effective_policy_for_level(&config, Some(vless.user().level));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(0));
             (
                 outbound_policy.handshake,
                 policy.conn_idle.min(outbound_policy.conn_idle),
@@ -983,6 +993,21 @@ async fn bridge_socks_udp_flow(
     };
 
     match outbound {
+        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+            datagram::bridge(
+                dial_target,
+                client_visible_target,
+                outbound,
+                context,
+                from_client,
+                shutdown,
+                first_payload,
+                pending_open_permit,
+                connection,
+                connection_close,
+            )
+            .await
+        }
         UdpOutbound::Freedom => {
             if context.runtime_logger.is_enabled() {
                 let source = context.client_addr.to_string();

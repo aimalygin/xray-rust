@@ -1,0 +1,434 @@
+[
+  {
+    "name": "native-wg-module-verify",
+    "command": [
+      "go",
+      "-C",
+      "tools/wireguard-reference",
+      "mod",
+      "verify"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 0.4302101135253906
+  },
+  {
+    "name": "native-wg-fixture-tests",
+    "command": [
+      "go",
+      "-C",
+      "tools/wireguard-reference",
+      "test",
+      "-p=4",
+      "-mod=readonly",
+      "./..."
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 1.5700559616088867
+  },
+  {
+    "name": "gotatun",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--release",
+      "--manifest-path",
+      "vendor/gotatun/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "ring,device",
+      "--lib"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 33.46403503417969
+  },
+  {
+    "name": "libraries",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "-p",
+      "xray-wireguard",
+      "-p",
+      "xray-transport",
+      "-p",
+      "xray-bench",
+      "--lib"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 114.78107810020447
+  },
+  {
+    "name": "xhttp-transports",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "stream_xhttp_h3_tests",
+      "--test",
+      "stream_xhttp_transport_tests",
+      "--test",
+      "stream_xhttp_h2_tests",
+      "--test",
+      "stream_xhttp_h1_tests"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 45.54958486557007
+  },
+  {
+    "name": "hysteria-client",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "hysteria_client_tests"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 13.354184865951538
+  },
+  {
+    "name": "tun-data-path",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--test",
+      "runtime_data_path_tests"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 61.98407793045044
+  },
+  {
+    "name": "wg-native",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-wireguard",
+      "--test",
+      "lifecycle",
+      "--test",
+      "interop",
+      "--test",
+      "multi_peer_tests",
+      "--test",
+      "native_lifecycle",
+      "--test",
+      "network_change",
+      "--",
+      "--include-ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "NATIVE_WIREGUARD_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/wireguard-native"
+    },
+    "returncode": 0,
+    "seconds": 257.0598020553589
+  },
+  {
+    "name": "wg-xray",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-wireguard",
+      "--test",
+      "interop",
+      "--test",
+      "multi_peer_tests",
+      "--",
+      "--include-ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "XRAY_WIREGUARD_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+    },
+    "returncode": 0,
+    "seconds": 50.862330198287964
+  },
+  {
+    "name": "hy-native",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "hysteria_interop_tests",
+      "--test",
+      "hysteria_native_interop_tests",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+    },
+    "returncode": 0,
+    "seconds": 23.353517770767212
+  },
+  {
+    "name": "hy-xray",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "hysteria_interop_tests",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+    },
+    "returncode": 0,
+    "seconds": 3.3310091495513916
+  },
+  {
+    "name": "wireguard-core-native",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--test",
+      "wireguard_runtime_tests",
+      "--test",
+      "runtime_data_path_tests",
+      "wireguard_runtime_",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "NATIVE_WIREGUARD_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/wireguard-native"
+    },
+    "returncode": 0,
+    "seconds": 111.47986006736755
+  },
+  {
+    "name": "wireguard-core-xray",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--test",
+      "wireguard_runtime_tests",
+      "--test",
+      "runtime_data_path_tests",
+      "wireguard_runtime_",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "XRAY_WIREGUARD_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+    },
+    "returncode": 0,
+    "seconds": 16.750797033309937
+  },
+  {
+    "name": "hysteria-core-native",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--test",
+      "hysteria_runtime_tests",
+      "--test",
+      "runtime_data_path_tests",
+      "hysteria_runtime_",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+    },
+    "returncode": 0,
+    "seconds": 38.1548810005188
+  },
+  {
+    "name": "hysteria-outbound-native",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--lib",
+      "outbound::hysteria::tests",
+      "--",
+      "--include-ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+    },
+    "returncode": 0,
+    "seconds": 60.02647805213928
+  },
+  {
+    "name": "hysteria-core-xray",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--test",
+      "hysteria_runtime_tests",
+      "--test",
+      "runtime_data_path_tests",
+      "hysteria_runtime_",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+    },
+    "returncode": 0,
+    "seconds": 0.7577850818634033
+  },
+  {
+    "name": "hysteria-outbound-xray",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "--lib",
+      "outbound::hysteria::tests",
+      "--",
+      "--include-ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+    },
+    "returncode": 0,
+    "seconds": 0.20671391487121582
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--offline",
+      "--release",
+      "-p",
+      "xray-core-rs",
+      "-p",
+      "xray-wireguard",
+      "-p",
+      "xray-transport",
+      "-p",
+      "xray-bench",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 23.325804233551025
+  },
+  {
+    "name": "format",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 1.2378721237182617
+  },
+  {
+    "name": "python",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts/tests",
+      "-p",
+      "test_v07_*.py"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 0.4206657409667969
+  }
+]

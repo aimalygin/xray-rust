@@ -1,0 +1,16 @@
+{
+  "selected": "M",
+  "smoltcp": "0.14.0",
+  "tcp_buffer_per_direction": 262144,
+  "tcp_slots": 16,
+  "reassembly_ranges": 4,
+  "stress_passes": {
+    "8_flows": 20,
+    "16_flows": 20
+  },
+  "rejected": {
+    "N": "1 MiB windows improve delayed single-flow throughput but timed out twice on 16-flow duplex. Third run interrupted; incomplete group retained.",
+    "O": "1 MiB windows with 32 reassembly ranges still timed out on first 16-flow duplex. Isolated reordering test improved, but no load-completion fix."
+  },
+  "runtime_stack_sha256": "a08e5d3fd5319d2c81e63a0d322f5e39ed67cde8cb09b994952c236168c23e60"
+}

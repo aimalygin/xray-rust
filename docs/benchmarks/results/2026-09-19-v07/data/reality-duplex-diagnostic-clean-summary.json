@@ -1,0 +1,140 @@
+{
+  "artifact_sha256": {
+    "reality-vision-socks-full-duplex-8-baseline-1/result.json": "5f6c6204b89cd25e11d51e49f27127deb171cf31a9b42fc6a5c27b4a489bddce",
+    "reality-vision-socks-full-duplex-8-baseline-2/result.json": "6fd1698cb020e82773fae17d107c6791c2b519d6e5532e414471321e89c56aba",
+    "reality-vision-socks-full-duplex-8-baseline-3/result.json": "a3ad271009c11dd0fe9fbbf36ddf64835b6a8fdf707a65e6b29a92138efbce5d",
+    "reality-vision-socks-full-duplex-8-baseline-4/result.json": "7dbcb933e797ffa4892f2a06d5619c9dfafd19615d97e4c7caa3e3904e1be527",
+    "reality-vision-socks-full-duplex-8-baseline-5/result.json": "0cb35412348c89015981a87bf37689e45c33fbdfc4d0cb7bfbc903698ef23fef",
+    "reality-vision-socks-full-duplex-8-candidate-1/result.json": "0eb701169458b3d7691e3ae2e5f677fc41985f3cf5ae90c384ee3e51f699ad65",
+    "reality-vision-socks-full-duplex-8-candidate-2/result.json": "fb92f86504b0c70dd940abdad0ddd5bde37dd5a11c4c271ff9c0ea13a6cd6fbd",
+    "reality-vision-socks-full-duplex-8-candidate-3/result.json": "ca926e1d0e7025fcb629d5ade6ef5ec01c2333ae12951eb0977aec666a38960b",
+    "reality-vision-socks-full-duplex-8-candidate-4/result.json": "10c8cb5866eb0a8080c2e6743840fc9c7981e84dd06a28f0c515f4bb3ef15cf0",
+    "reality-vision-socks-full-duplex-8-candidate-5/result.json": "b33378d20433036843f04751c242179c64630eaecf4086d8e71f66bd62b58d69"
+  },
+  "failures": [],
+  "manifest_sha256": "4063db12b36ac641615ff7f32876b2824ba3fb6f1a63195bb63b375b9ed38579",
+  "rows": [
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 0.9242424242424242,
+        "cpu_ms_per_mib": 0.9242424242424242,
+        "rss_mib": 1.0705218617771508,
+        "throughput_mib_s": 0.974053431841807
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 770,
+              "median": 660,
+              "min": 640,
+              "samples": [
+                660,
+                680,
+                770,
+                660,
+                640
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.50390625,
+              "median": 1.2890625,
+              "min": 1.25,
+              "samples": [
+                1.2890625,
+                1.328125,
+                1.50390625,
+                1.2890625,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 11.296875,
+              "median": 11.078125,
+              "min": 11.015625,
+              "samples": [
+                11.296875,
+                11.015625,
+                11.078125,
+                11.0625,
+                11.234375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1126.893241171661,
+              "median": 914.676697740217,
+              "min": 535.3322556112191,
+              "samples": [
+                535.3322556112191,
+                1126.893241171661,
+                1053.4799703653616,
+                914.676697740217,
+                841.2350870933068
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 660,
+              "median": 610,
+              "min": 580,
+              "samples": [
+                660,
+                580,
+                660,
+                610,
+                610
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.2890625,
+              "median": 1.19140625,
+              "min": 1.1328125,
+              "samples": [
+                1.2890625,
+                1.1328125,
+                1.2890625,
+                1.19140625,
+                1.19140625
+              ]
+            },
+            "rss_mib": {
+              "max": 12.140625,
+              "median": 11.859375,
+              "min": 11.75,
+              "samples": [
+                11.9375,
+                12.140625,
+                11.75,
+                11.859375,
+                11.796875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1138.9635654008673,
+              "median": 890.9439764595896,
+              "min": 701.865094216883,
+              "samples": [
+                1138.9635654008673,
+                1008.6771014234006,
+                701.865094216883,
+                890.9439764595896,
+                714.3408993126387
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "reality"
+}

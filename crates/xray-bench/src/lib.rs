@@ -75,6 +75,8 @@ use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FI
 
 pub mod chart;
 mod process_metrics;
+#[cfg(unix)]
+pub mod protocol_bench;
 mod stream_transport;
 
 use process_metrics::current_peak_rss_kib;
@@ -2452,7 +2454,15 @@ pub async fn run_tcp_freedom_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+    run_tcp_freedom_workload_on(socks_addr, options, Ipv4Addr::LOCALHOST).await
+}
+
+async fn run_tcp_freedom_workload_on(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+    origin_ip: Ipv4Addr,
+) -> Result<WorkloadOutcome, BenchError> {
+    let listener = TcpListener::bind((origin_ip, 0))
         .await
         .map_err(|source| BenchError::Io {
             action: "binding TCP echo server".to_owned(),
@@ -2868,7 +2878,15 @@ pub async fn run_udp_freedom_workload(
     socks_addr: SocketAddr,
     options: &BenchOptions,
 ) -> Result<WorkloadOutcome, BenchError> {
-    let echo_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+    run_udp_freedom_workload_on(socks_addr, options, Ipv4Addr::LOCALHOST).await
+}
+
+async fn run_udp_freedom_workload_on(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+    origin_ip: Ipv4Addr,
+) -> Result<WorkloadOutcome, BenchError> {
+    let echo_socket = UdpSocket::bind((origin_ip, 0))
         .await
         .map_err(|source| BenchError::Io {
             action: "binding UDP echo server".to_owned(),
@@ -5217,10 +5235,13 @@ impl TunTcpBenchmarkClient {
             .add_default_ipv4_route(SmolIpv4Address::new(10, 10, 0, 1))
             .expect("benchmark client default route is valid");
 
-        let tcp_socket = smol_tcp::Socket::new(
+        let mut tcp_socket = smol_tcp::Socket::new(
             smol_tcp::SocketBuffer::new(vec![0; 64 * 1024]),
             smol_tcp::SocketBuffer::new(vec![0; 64 * 1024]),
         );
+        // Keep the synthetic local link independent of Cargo's unified
+        // congestion-control features enabled for the WireGuard Internet path.
+        tcp_socket.set_congestion_control(smol_tcp::CongestionControl::None);
         let mut sockets = SocketSet::new(Vec::new());
         let tcp = sockets.add(tcp_socket);
 

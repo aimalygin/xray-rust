@@ -28,18 +28,107 @@ use xray_ffi::{
     XRAY_FFI_CAPABILITIES, XRAY_FFI_CAPABILITY_CONFIG_WARNINGS,
     XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT, XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY,
     XRAY_FFI_CAPABILITY_FILE_LOGGING, XRAY_FFI_CAPABILITY_GEODATA_SEARCH,
-    XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH, XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION,
+    XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND, XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH,
+    XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION, XRAY_FFI_CAPABILITY_PROFILE_IMPORT,
     XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE, XRAY_FFI_CAPABILITY_SOCKET_PROTECTION,
     XRAY_FFI_CAPABILITY_STARTUP_PROBE, XRAY_FFI_CAPABILITY_TUN_BATCH_POLL,
     XRAY_FFI_CAPABILITY_TUN_DIAGNOSTIC_EVENTS, XRAY_FFI_CAPABILITY_TUN_FD,
     XRAY_FFI_CAPABILITY_TUN_PACKET_IO, XRAY_FFI_CAPABILITY_TUN_RUNTIME_PROFILES,
-    XRAY_FFI_CAPABILITY_TUN_STATS,
+    XRAY_FFI_CAPABILITY_TUN_STATS, XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND,
 };
 
 #[test]
 fn ffi_reports_current_abi_version() {
     assert_eq!(xray_ffi_version_major(), XRAY_FFI_ABI_MAJOR);
     assert_eq!(xray_ffi_version_minor(), XRAY_FFI_ABI_MINOR);
+}
+
+#[test]
+fn ffi_wireguard_rebind_validates_outputs_and_keeps_idle_outbounds_lazy() {
+    use xray_ffi::xray_core_rebind_wireguard;
+    unsafe {
+        let mut error = std::ptr::null_mut();
+        let mut accepted = 99;
+        assert_eq!(
+            xray_core_rebind_wireguard(std::ptr::null_mut(), &mut accepted, &mut error),
+            XrayStatus::NullArgument
+        );
+        assert_eq!(accepted, 0);
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let handle = xray_core_new(&mut error);
+        assert_eq!(
+            xray_core_rebind_wireguard(handle, std::ptr::null_mut(), &mut error),
+            XrayStatus::NullArgument
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        assert_eq!(
+            xray_core_rebind_wireguard(handle, &mut accepted, &mut error),
+            XrayStatus::CoreNotLoaded
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let config = CString::new(
+            r#"{"inbounds":[{"protocol":"tun"}],"outbounds":[{"protocol":"freedom"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(
+            xray_core_rebind_wireguard(handle, &mut accepted, &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(accepted, 0);
+        assert!(error.is_null());
+        xray_core_free(handle);
+    }
+}
+
+#[test]
+fn ffi_hysteria_rebind_validates_outputs_and_keeps_idle_outbounds_lazy() {
+    use xray_ffi::xray_core_rebind_hysteria;
+    unsafe {
+        let mut error = std::ptr::null_mut();
+        let mut accepted = 99;
+        assert_eq!(
+            xray_core_rebind_hysteria(std::ptr::null_mut(), &mut accepted, &mut error),
+            XrayStatus::NullArgument
+        );
+        assert_eq!(accepted, 0);
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let handle = xray_core_new(&mut error);
+        assert_eq!(
+            xray_core_rebind_hysteria(handle, std::ptr::null_mut(), &mut error),
+            XrayStatus::NullArgument
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        assert_eq!(
+            xray_core_rebind_hysteria(handle, &mut accepted, &mut error),
+            XrayStatus::CoreNotLoaded
+        );
+        xray_error_free(error);
+        error = std::ptr::null_mut();
+        let config = CString::new(
+            r#"{"inbounds":[{"protocol":"tun"}],"outbounds":[{"protocol":"freedom"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(
+            xray_core_rebind_hysteria(handle, &mut accepted, &mut error),
+            XrayStatus::Ok
+        );
+        assert_eq!(accepted, 0);
+        assert!(error.is_null());
+        xray_core_free(handle);
+    }
 }
 
 #[test]
@@ -59,7 +148,10 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
         | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH
         | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT
-        | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE;
+        | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE
+        | XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND
+        | XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND
+        | XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);

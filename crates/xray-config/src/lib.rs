@@ -2,6 +2,7 @@ mod diagnostic;
 mod geodata;
 mod model;
 mod parser;
+pub mod profile_import;
 mod surface;
 pub mod tooling;
 
@@ -13,15 +14,17 @@ pub use model::{
     DnsFakeIpConfig, DnsHostTarget, DnsIpFilter, DnsNameServerConfig, DnsOutboundRule,
     DnsOutboundRuleAction, DnsOutboundSettings, DnsQTypeRange, DnsQueryStrategy, DnsServerConfig,
     DnsServerEndpoint, DnsServerTransport, DomainHostIndex, DomainMatcher, DomainMatcherSet,
-    DomainNameMode, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings, InboundConfig,
-    InboundProtocol, InboundSniffingConfig, IpCidr, IpMatcherSet, Network, ObservatoryConfig,
-    OutboundConfig, OutboundProtocol, OutboundProxySettings, OutboundSettings, PolicyConfig,
-    PolicyLevelConfig, PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange,
-    QuicParamsSettings, QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher,
-    RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy,
-    RoutingLeastLoadCost, RoutingLeastLoadSettings, RoutingPortRange, RoutingRule,
-    RoutingRuleTarget, SniffingDestination, SocketOptions, StreamSecurity, StreamSettings,
-    StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
+    DomainNameMode, GrpcSettings, HappyEyeballsSettings, HttpUpgradeSettings,
+    HysteriaOutboundSettings, HysteriaSettings, InboundConfig, InboundProtocol,
+    InboundSniffingConfig, IpCidr, IpMatcherSet, Network, ObservatoryConfig, OutboundConfig,
+    OutboundProtocol, OutboundProxySettings, OutboundSettings, PolicyConfig, PolicyLevelConfig,
+    PolicySystemConfig, QuicBbrProfile, QuicCongestion, QuicIntervalRange, QuicParamsSettings,
+    QuicUdpHopSettings, RealitySettings, RealityShortId, RegexMatcher, RoutingBalancer,
+    RoutingBalancerStrategy, RoutingConfig, RoutingDomainStrategy, RoutingLeastLoadCost,
+    RoutingLeastLoadSettings, RoutingPortRange, RoutingRule, RoutingRuleTarget,
+    SniffingDestination, SocketOptions, StreamSecurity, StreamSettings, StreamTransport,
+    TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings,
+    WireguardDomainStrategy, WireguardOutboundSettings, WireguardPeerSettings,
     XhttpDownloadSettings, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement,
     XhttpRange, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
     DEFAULT_DNS_SERVER_TIMEOUT_MS, DEFAULT_OBSERVATORY_PROBE_INTERVAL,

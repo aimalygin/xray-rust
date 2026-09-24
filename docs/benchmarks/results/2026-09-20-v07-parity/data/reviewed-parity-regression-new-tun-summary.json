@@ -1,0 +1,1258 @@
+{
+  "artifact_sha256": {
+    "hysteria2-tun-download-1-before-1/result.json": "b2416551e31e2b42d18ffd3f587ee79a924aaf03b6425d4b0837d62dba08e470",
+    "hysteria2-tun-download-1-before-2/result.json": "8eb11e9aea6478296f16d9317cd80c74b26751ae725a1c1945ee079f7f96ef99",
+    "hysteria2-tun-download-1-before-3/result.json": "589a3b280fb3b8d9b9c8b92d4088af54c3a63c87c756c07fb3a650044c56ae4e",
+    "hysteria2-tun-download-1-candidate-1/result.json": "f633c315f6b1c0ba3acf8bd76265e9dea55c9c7275d8aa818a76dfe39574c1b0",
+    "hysteria2-tun-download-1-candidate-2/result.json": "dd30aff0a5bd9bab6b5da16be6c711636f6a16cc2a81705b64b503eb5dbeabb6",
+    "hysteria2-tun-download-1-candidate-3/result.json": "a10adb88d05baf892afaafb6de9ce2a07becd78d620c3070d1c2f59f58b87a02",
+    "hysteria2-tun-download-8-before-1/result.json": "a98a37c1cea65689185ea2ae8a113737cf3fa3756a176241c1629b8cd9072899",
+    "hysteria2-tun-download-8-before-2/result.json": "38f203e499ddc1803561ff7af2206d4acc7060c1e7d8377e263e19f8b2799b1b",
+    "hysteria2-tun-download-8-before-3/result.json": "440b23fbddbe642001fd9a1eab268e032152b22875980615c18e11249a205771",
+    "hysteria2-tun-download-8-candidate-1/result.json": "1d6d3523f22e69d8206d15bc81e2b43ae8bfae6aa3e104762a93462bc9c22f9a",
+    "hysteria2-tun-download-8-candidate-2/result.json": "7d8cf45875a27a64839c5c1648a8a5e77c9bc2d16b2ac6c41a4e69b733517e79",
+    "hysteria2-tun-download-8-candidate-3/result.json": "7db70c7bc8bade205aa02bfcb1c51b7fcc850a3cab0108d5e819d887409f0e5e",
+    "hysteria2-tun-full-duplex-1-before-1/result.json": "8fb300426ccebb6c3e48faf6d6edd57c3c2bb2cb8c61084b2a8b1528b561c3a4",
+    "hysteria2-tun-full-duplex-1-before-2/result.json": "49394c4d1ff2a4b9509903557f33a6f54f89d3230ca0d9956a84fd996487ae2e",
+    "hysteria2-tun-full-duplex-1-before-3/result.json": "28f24ee33957841aa6d6d209d70f5c54f46434834121441922933ba28c730a24",
+    "hysteria2-tun-full-duplex-1-candidate-1/result.json": "3d10495935ef5b983c5f51fbf915e9d8baf8d6bfe4c69796241d55260fc0d041",
+    "hysteria2-tun-full-duplex-1-candidate-2/result.json": "d4c25cd99bced1ac2a211fa04dc76b60cd757dc930a0750d3d8ed1488e26b8c0",
+    "hysteria2-tun-full-duplex-1-candidate-3/result.json": "d9290480a582b8ce1cc85254c91cb871973ddf56068c5fb5129247c36a14f69b",
+    "hysteria2-tun-full-duplex-8-before-1/result.json": "946a6480faa148c581d069bd37bd18c96eb8fa97f48c59788eabaab5c104bb7c",
+    "hysteria2-tun-full-duplex-8-before-2/result.json": "0dc417ad639259386ef8cd660c8bd7f2e546681b0d0d195bd677cef1b9f0c825",
+    "hysteria2-tun-full-duplex-8-before-3/result.json": "d0496527584865f1c9363b0d5d6c5f2c2ede488cca6f0ee71e3b139132038ee3",
+    "hysteria2-tun-full-duplex-8-candidate-1/result.json": "b7b89626bc4eeee677fc6dca8c4ab685dc8732974161025419cf250a61a7f93e",
+    "hysteria2-tun-full-duplex-8-candidate-2/result.json": "35e4ef73d8194ec1ddb326bb31ccdc990965d27731828c60759845fd46011155",
+    "hysteria2-tun-full-duplex-8-candidate-3/result.json": "30c8ee15e4625801824f9894cab4c27ebc8a1b78018421b62fa74126bf3c95cc",
+    "hysteria2-tun-upload-1-before-1/result.json": "28cce23c1a9d587ffb3f1e7e47ffbc7a33eef7ddfe419f5da2e63f4769d2dfde",
+    "hysteria2-tun-upload-1-before-2/result.json": "1f29d71b2f1aaa49a122cef6b8e2593893c134271ee38d57a8f7ede88fc112e4",
+    "hysteria2-tun-upload-1-before-3/result.json": "d53284fe96168e9bd29337c5a210722c80c36512bf2489db9d71e5cbcaa9e1ac",
+    "hysteria2-tun-upload-1-candidate-1/result.json": "18a805cacd4521fb837bd5f2e866089753d45586d145f4c3d07074be658bfc84",
+    "hysteria2-tun-upload-1-candidate-2/result.json": "2734eab31bb7aed447891cf72bff49fcd4b6148f0712dca4057d8f41d890d6bd",
+    "hysteria2-tun-upload-1-candidate-3/result.json": "167930cd40aa9f7e946312cef0f8a2523df01bff164b645c2a1c723f15a1ed23",
+    "hysteria2-tun-upload-8-before-1/result.json": "2a88c0ffdaffb5f0881f53f3a6e2f537dd0c6ca4b79be223fa829966beff5c07",
+    "hysteria2-tun-upload-8-before-2/result.json": "d36035f62ee95c3097eb713126234a47e0fbee6183083f913e7185b4537d66a5",
+    "hysteria2-tun-upload-8-before-3/result.json": "380c36d700b380907d160b30bd50414478e9a57dc72a7a783613ad6e1c180e5d",
+    "hysteria2-tun-upload-8-candidate-1/result.json": "36e7d1c5e87ceb87bbd85511a8de2eb66f9b1e00f23777251a306063b5d34521",
+    "hysteria2-tun-upload-8-candidate-2/result.json": "39e0a727c786cdd40a6c8fa01103927d49bc7507331eebee4d221ee44effb916",
+    "hysteria2-tun-upload-8-candidate-3/result.json": "82778c797f1a37a21fbaff273ab6a5e5a927849196c9b30c309002e730ec577f",
+    "wireguard-tun-download-1-before-1/result.json": "3b9a09feac93e8036d9aa23c7c94f54e67b77d2774b420a69cab9bd58fc6bc8d",
+    "wireguard-tun-download-1-before-2/result.json": "6d50cc63812bb6540ee9ec0e22beb33433c36977b9e3f19df39450d14a111c43",
+    "wireguard-tun-download-1-before-3/result.json": "303646fbb8f3b9c1e9cde75ed349143dc6b11ab88790c5ba314cd4ee6301259f",
+    "wireguard-tun-download-1-candidate-1/result.json": "b24dcfaaecd4646e2bdd75b9c0f8f2d616f494117683a20810f396eceb1bedb2",
+    "wireguard-tun-download-1-candidate-2/result.json": "87303af50bc337eb9ad5b1f8b87c5f4d14806cf53b89acff6060e0e502d68ba2",
+    "wireguard-tun-download-1-candidate-3/result.json": "445c7b82bb41a8fb0e9464fb0c1dc085bfa0e20a6463ef4a3f886c0dc496a04a",
+    "wireguard-tun-download-8-before-1/result.json": "19a4e860544bee9f1d6cecb69c86e9496b4076df79d2321d00c75f0052e3522f",
+    "wireguard-tun-download-8-before-2/result.json": "2e15dbe3f61b2a98d880fac842497f10d95fe651bb73fe91023f824cecde0310",
+    "wireguard-tun-download-8-before-3/result.json": "99b2bd7b36e4bcc453aa23b7e161901fc88dff80fb118b05977b9c04e4eba720",
+    "wireguard-tun-download-8-candidate-1/result.json": "c590ffb70559fe0b88cff56a1bf4091984a8afdd5664b6d7303c8aa5ef943b57",
+    "wireguard-tun-download-8-candidate-2/result.json": "d56f7586fdbf62d3759204f4912a31fc8c3c6625104dbf82072031ce10ff9464",
+    "wireguard-tun-download-8-candidate-3/result.json": "e0d9efd95eec602dc8a1b4c75fd1de9eb7dd763374368efe382a492fa37aa25b",
+    "wireguard-tun-full-duplex-1-before-1/result.json": "a5953abbab064b7d3483affaa835b42241cfde5acd4840a84441048c0239573f",
+    "wireguard-tun-full-duplex-1-before-2/result.json": "efff427efa60173cb1a0d6ffda9c173ac8f414135bc60da7e737b0a5ac17512b",
+    "wireguard-tun-full-duplex-1-before-3/result.json": "9bc6614b4e1f406b7b78715386a2571cb87a6d12145c2a2a2dd117d7d2121d40",
+    "wireguard-tun-full-duplex-1-candidate-1/result.json": "d94ef505c65ed78bf759d8569a5b9b4b064dab28991d7c1eee982bf935f0d5b5",
+    "wireguard-tun-full-duplex-1-candidate-2/result.json": "1e999d75e7d3d4bf6f7f8ed47edf27eefb33f807d5a150d4cf67ec48731bd8ea",
+    "wireguard-tun-full-duplex-1-candidate-3/result.json": "1e9d8fb06ee2515a25ffc5d6b71603578d6467f884bbfc48e7576b5486c9b6f0",
+    "wireguard-tun-full-duplex-8-before-1/result.json": "c0e12834e349a79f394d778e009178778334263f1401e090a0ef5ba2caeed294",
+    "wireguard-tun-full-duplex-8-before-2/result.json": "37f73b6356cf38f2b72430ba595e233c1f5c101858f6a6bf1b7845b5127c0e02",
+    "wireguard-tun-full-duplex-8-before-3/result.json": "ac38d224a341c52d50952f427a6344f6bef67f73157757126cffdba3f4fa1f09",
+    "wireguard-tun-full-duplex-8-candidate-1/result.json": "8cb25b3627e0fb6bf76fc39e582fb77dd04b0f4d1d8cda31b4b4c8b48821213c",
+    "wireguard-tun-full-duplex-8-candidate-2/result.json": "22c011722fcbc466a2e0337353f5523ecb5dab20b9713541441dd43d9d3a6780",
+    "wireguard-tun-full-duplex-8-candidate-3/result.json": "b5d0a03df753e4e043ec6ee8a8e11247c313f2829b9c7b44cee0bedd8c1e715c",
+    "wireguard-tun-upload-1-before-1/result.json": "98314e3dbabee608a6834c2c6eadaf1e2c258f8f81ab7397880feed69c1ee948",
+    "wireguard-tun-upload-1-before-2/result.json": "b1a56d9a86ce3c89f6b91621754019e1e2dbd218e3d4dbfd8a1ecf86c4a0dd4a",
+    "wireguard-tun-upload-1-before-3/result.json": "fbe37ff789f43f88af1a7c9506330d960fd898c6972eed085a1e20d1a64921e8",
+    "wireguard-tun-upload-1-candidate-1/result.json": "e66c640c120efe7125e895dd6baa6b6b03a44a6f44b8c3a829b3479ead5d659b",
+    "wireguard-tun-upload-1-candidate-2/result.json": "c0bcb875cad7063b0a1478d50eb237125b1b4f9780959c357e47c7bd7de8feb5",
+    "wireguard-tun-upload-1-candidate-3/result.json": "ae295dd54e1f3de095354cd160894d031bf3bffd7950b14d4190c7a26460792d",
+    "wireguard-tun-upload-8-before-1/result.json": "e5d0e5dc459ea0f66b8ef98a7b3c85697b2466ade2a2d585eb46994e917c4f12",
+    "wireguard-tun-upload-8-before-2/result.json": "d8c50359003657a65a5962a1ffb1f1a3957e2c47a8fed5b90a34003cdf6d5b03",
+    "wireguard-tun-upload-8-before-3/result.json": "308158096a7f884f31ee8edd483f9df9a5bc2c64f100dbbcfcfc0b810a4d2e40",
+    "wireguard-tun-upload-8-candidate-1/result.json": "908ab7253f1d7939c0b6865403d777ec836977c04da0b0f6c647d23211cdb35e",
+    "wireguard-tun-upload-8-candidate-2/result.json": "4172fc633d93bc3067b047128d9f124ad474ad9fedfd1f89be72c33b9fc17492",
+    "wireguard-tun-upload-8-candidate-3/result.json": "b56e21ed922a45fc8696ec7fb49e64586deb825f85bf27199088a343e317074b"
+  },
+  "failures": [],
+  "manifest_sha256": "8e9794c2ee2f8429cdc57d4d03e6ff9e6b77e4dcd8594d01a33df141d1a469b0",
+  "rows": [
+    {
+      "case": "hysteria2-tun-upload-1",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 330,
+              "median": 320,
+              "min": 280,
+              "samples": [
+                320,
+                330,
+                280
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.3125,
+              "median": 10.0,
+              "min": 8.75,
+              "samples": [
+                10.0,
+                10.3125,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 24.859375,
+              "median": 24.59375,
+              "min": 23.75,
+              "samples": [
+                24.59375,
+                23.75,
+                24.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 115.94307919455792,
+              "median": 108.58698220233912,
+              "min": 102.37182727313444,
+              "samples": [
+                102.37182727313444,
+                115.94307919455792,
+                108.58698220233912
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 180,
+              "median": 160,
+              "min": 160,
+              "samples": [
+                160,
+                160,
+                180
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.625,
+              "median": 5.0,
+              "min": 5.0,
+              "samples": [
+                5.0,
+                5.0,
+                5.625
+              ]
+            },
+            "rss_mib": {
+              "max": 14.65625,
+              "median": 10.75,
+              "min": 10.375,
+              "samples": [
+                10.75,
+                14.65625,
+                10.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 264.08250927899286,
+              "median": 260.50058100991305,
+              "min": 219.64300625986684,
+              "samples": [
+                260.50058100991305,
+                264.08250927899286,
+                219.64300625986684
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "hysteria2-tun-download-1",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 400,
+              "median": 380,
+              "min": 350,
+              "samples": [
+                400,
+                350,
+                380
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 12.5,
+              "median": 11.875,
+              "min": 10.9375,
+              "samples": [
+                12.5,
+                10.9375,
+                11.875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.203125,
+              "median": 11.078125,
+              "min": 10.671875,
+              "samples": [
+                11.078125,
+                10.671875,
+                11.203125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 200.1174639484011,
+              "median": 195.3137409765891,
+              "min": 192.8548774580522,
+              "samples": [
+                192.8548774580522,
+                195.3137409765891,
+                200.1174639484011
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 220,
+              "median": 210,
+              "min": 210,
+              "samples": [
+                220,
+                210,
+                210
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 6.875,
+              "median": 6.5625,
+              "min": 6.5625,
+              "samples": [
+                6.875,
+                6.5625,
+                6.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 10.734375,
+              "median": 10.25,
+              "min": 10.234375,
+              "samples": [
+                10.734375,
+                10.234375,
+                10.25
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 232.02458921188475,
+              "median": 221.1121822537615,
+              "min": 218.9382128859123,
+              "samples": [
+                218.9382128859123,
+                232.02458921188475,
+                221.1121822537615
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-1",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 780,
+              "median": 670,
+              "min": 660,
+              "samples": [
+                660,
+                780,
+                670
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 12.1875,
+              "median": 10.46875,
+              "min": 10.3125,
+              "samples": [
+                10.3125,
+                12.1875,
+                10.46875
+              ]
+            },
+            "rss_mib": {
+              "max": 24.125,
+              "median": 23.34375,
+              "min": 22.109375,
+              "samples": [
+                24.125,
+                22.109375,
+                23.34375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 199.25810044656262,
+              "median": 197.1179459048482,
+              "min": 196.5442502780725,
+              "samples": [
+                197.1179459048482,
+                199.25810044656262,
+                196.5442502780725
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 340,
+              "median": 330,
+              "min": 330,
+              "samples": [
+                340,
+                330,
+                330
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.3125,
+              "median": 5.15625,
+              "min": 5.15625,
+              "samples": [
+                5.3125,
+                5.15625,
+                5.15625
+              ]
+            },
+            "rss_mib": {
+              "max": 12.390625,
+              "median": 12.0625,
+              "min": 11.5,
+              "samples": [
+                12.390625,
+                11.5,
+                12.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 285.83801018656993,
+              "median": 283.5305825323214,
+              "min": 279.1424950165323,
+              "samples": [
+                279.1424950165323,
+                283.5305825323214,
+                285.83801018656993
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "hysteria2-tun-upload-8",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2460,
+              "median": 2380,
+              "min": 2360,
+              "samples": [
+                2360,
+                2380,
+                2460
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 9.609375,
+              "median": 9.296875,
+              "min": 9.21875,
+              "samples": [
+                9.21875,
+                9.296875,
+                9.609375
+              ]
+            },
+            "rss_mib": {
+              "max": 47.921875,
+              "median": 47.359375,
+              "min": 47.203125,
+              "samples": [
+                47.203125,
+                47.921875,
+                47.359375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 200.273570254766,
+              "median": 199.69652882977016,
+              "min": 195.25090313076433,
+              "samples": [
+                199.69652882977016,
+                200.273570254766,
+                195.25090313076433
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1190,
+              "median": 1130,
+              "min": 1040,
+              "samples": [
+                1130,
+                1190,
+                1040
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.6484375,
+              "median": 4.4140625,
+              "min": 4.0625,
+              "samples": [
+                4.4140625,
+                4.6484375,
+                4.0625
+              ]
+            },
+            "rss_mib": {
+              "max": 22.140625,
+              "median": 19.796875,
+              "min": 19.0625,
+              "samples": [
+                22.140625,
+                19.796875,
+                19.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 330.01311350936396,
+              "median": 319.88975479435646,
+              "min": 312.4945641509532,
+              "samples": [
+                319.88975479435646,
+                312.4945641509532,
+                330.01311350936396
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 3940,
+              "median": 3910,
+              "min": 3860,
+              "samples": [
+                3860,
+                3940,
+                3910
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.390625,
+              "median": 15.2734375,
+              "min": 15.078125,
+              "samples": [
+                15.078125,
+                15.390625,
+                15.2734375
+              ]
+            },
+            "rss_mib": {
+              "max": 14.78125,
+              "median": 13.78125,
+              "min": 13.640625,
+              "samples": [
+                13.78125,
+                14.78125,
+                13.640625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 243.77295786584392,
+              "median": 236.15981985551824,
+              "min": 230.1876661956074,
+              "samples": [
+                243.77295786584392,
+                236.15981985551824,
+                230.1876661956074
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1410,
+              "median": 1410,
+              "min": 1410,
+              "samples": [
+                1410,
+                1410,
+                1410
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 5.5078125,
+              "median": 5.5078125,
+              "min": 5.5078125,
+              "samples": [
+                5.5078125,
+                5.5078125,
+                5.5078125
+              ]
+            },
+            "rss_mib": {
+              "max": 11.71875,
+              "median": 11.71875,
+              "min": 11.59375,
+              "samples": [
+                11.59375,
+                11.71875,
+                11.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 299.7141739486625,
+              "median": 299.0255387281776,
+              "min": 298.8011044547874,
+              "samples": [
+                299.0255387281776,
+                298.8011044547874,
+                299.7141739486625
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "hysteria2-tun-full-duplex-8",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5010,
+              "median": 4970,
+              "min": 4830,
+              "samples": [
+                4830,
+                5010,
+                4970
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 9.78515625,
+              "median": 9.70703125,
+              "min": 9.43359375,
+              "samples": [
+                9.43359375,
+                9.78515625,
+                9.70703125
+              ]
+            },
+            "rss_mib": {
+              "max": 50.921875,
+              "median": 41.421875,
+              "min": 37.765625,
+              "samples": [
+                41.421875,
+                37.765625,
+                50.921875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 265.5090575472084,
+              "median": 264.51045294991076,
+              "min": 253.0531277499542,
+              "samples": [
+                265.5090575472084,
+                253.0531277499542,
+                264.51045294991076
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2390,
+              "median": 2310,
+              "min": 2260,
+              "samples": [
+                2260,
+                2390,
+                2310
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.66796875,
+              "median": 4.51171875,
+              "min": 4.4140625,
+              "samples": [
+                4.4140625,
+                4.66796875,
+                4.51171875
+              ]
+            },
+            "rss_mib": {
+              "max": 21.203125,
+              "median": 21.171875,
+              "min": 20.96875,
+              "samples": [
+                21.171875,
+                21.203125,
+                20.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 341.8162438026203,
+              "median": 333.46703125146917,
+              "min": 327.55490903381775,
+              "samples": [
+                341.8162438026203,
+                327.55490903381775,
+                333.46703125146917
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-tun-upload-1",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 700,
+              "median": 680,
+              "min": 680,
+              "samples": [
+                680,
+                680,
+                700
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 21.875,
+              "median": 21.25,
+              "min": 21.25,
+              "samples": [
+                21.25,
+                21.25,
+                21.875
+              ]
+            },
+            "rss_mib": {
+              "max": 9.078125,
+              "median": 9.015625,
+              "min": 9.015625,
+              "samples": [
+                9.015625,
+                9.015625,
+                9.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 105.44708327601022,
+              "median": 103.87581202603192,
+              "min": 100.09912159110681,
+              "samples": [
+                105.44708327601022,
+                103.87581202603192,
+                100.09912159110681
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 430,
+              "median": 420,
+              "min": 420,
+              "samples": [
+                420,
+                430,
+                420
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 13.4375,
+              "median": 13.125,
+              "min": 13.125,
+              "samples": [
+                13.125,
+                13.4375,
+                13.125
+              ]
+            },
+            "rss_mib": {
+              "max": 9.8125,
+              "median": 9.578125,
+              "min": 9.453125,
+              "samples": [
+                9.578125,
+                9.453125,
+                9.8125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 138.28972345296475,
+              "median": 138.12422979555456,
+              "min": 136.81759812593413,
+              "samples": [
+                138.28972345296475,
+                136.81759812593413,
+                138.12422979555456
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-tun-download-1",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1010,
+              "median": 1000,
+              "min": 810,
+              "samples": [
+                1000,
+                1010,
+                810
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 31.5625,
+              "median": 31.25,
+              "min": 25.3125,
+              "samples": [
+                31.25,
+                31.5625,
+                25.3125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.40625,
+              "median": 8.28125,
+              "min": 8.21875,
+              "samples": [
+                8.21875,
+                8.28125,
+                8.40625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 123.91435775333589,
+              "median": 109.28404989695248,
+              "min": 108.04629759541547,
+              "samples": [
+                109.28404989695248,
+                108.04629759541547,
+                123.91435775333589
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 340,
+              "median": 340,
+              "min": 340,
+              "samples": [
+                340,
+                340,
+                340
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.625,
+              "median": 10.625,
+              "min": 10.625,
+              "samples": [
+                10.625,
+                10.625,
+                10.625
+              ]
+            },
+            "rss_mib": {
+              "max": 8.984375,
+              "median": 8.78125,
+              "min": 8.59375,
+              "samples": [
+                8.59375,
+                8.984375,
+                8.78125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 153.87519039049437,
+              "median": 148.98307412606297,
+              "min": 141.29425930078733,
+              "samples": [
+                148.98307412606297,
+                141.29425930078733,
+                153.87519039049437
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-tun-full-duplex-1",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1490,
+              "median": 1490,
+              "min": 1490,
+              "samples": [
+                1490,
+                1490,
+                1490
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 23.28125,
+              "median": 23.28125,
+              "min": 23.28125,
+              "samples": [
+                23.28125,
+                23.28125,
+                23.28125
+              ]
+            },
+            "rss_mib": {
+              "max": 10.203125,
+              "median": 10.109375,
+              "min": 9.953125,
+              "samples": [
+                10.109375,
+                9.953125,
+                10.203125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 127.64665287549624,
+              "median": 126.97957083619245,
+              "min": 123.97470665710256,
+              "samples": [
+                127.64665287549624,
+                126.97957083619245,
+                123.97470665710256
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 680,
+              "median": 610,
+              "min": 590,
+              "samples": [
+                680,
+                610,
+                590
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.625,
+              "median": 9.53125,
+              "min": 9.21875,
+              "samples": [
+                10.625,
+                9.53125,
+                9.21875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.3125,
+              "median": 10.75,
+              "min": 10.671875,
+              "samples": [
+                10.671875,
+                10.75,
+                11.3125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 190.19375331856526,
+              "median": 183.4689904482059,
+              "min": 164.56395840211914,
+              "samples": [
+                164.56395840211914,
+                183.4689904482059,
+                190.19375331856526
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-tun-upload-8",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5790,
+              "median": 5650,
+              "min": 5590,
+              "samples": [
+                5590,
+                5790,
+                5650
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 22.6171875,
+              "median": 22.0703125,
+              "min": 21.8359375,
+              "samples": [
+                21.8359375,
+                22.6171875,
+                22.0703125
+              ]
+            },
+            "rss_mib": {
+              "max": 16.34375,
+              "median": 16.234375,
+              "min": 15.859375,
+              "samples": [
+                16.34375,
+                16.234375,
+                15.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 111.44291657845534,
+              "median": 111.0041339604549,
+              "min": 108.75874110995854,
+              "samples": [
+                111.44291657845534,
+                108.75874110995854,
+                111.0041339604549
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2740,
+              "median": 2700,
+              "min": 2690,
+              "samples": [
+                2690,
+                2700,
+                2740
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.703125,
+              "median": 10.546875,
+              "min": 10.5078125,
+              "samples": [
+                10.5078125,
+                10.546875,
+                10.703125
+              ]
+            },
+            "rss_mib": {
+              "max": 22.234375,
+              "median": 21.25,
+              "min": 21.203125,
+              "samples": [
+                21.25,
+                22.234375,
+                21.203125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 169.4304689825057,
+              "median": 167.29909394738326,
+              "min": 165.00065420181255,
+              "samples": [
+                169.4304689825057,
+                167.29909394738326,
+                165.00065420181255
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-tun-download-8",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 7250,
+              "median": 7170,
+              "min": 7160,
+              "samples": [
+                7170,
+                7160,
+                7250
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 28.3203125,
+              "median": 28.0078125,
+              "min": 27.96875,
+              "samples": [
+                28.0078125,
+                27.96875,
+                28.3203125
+              ]
+            },
+            "rss_mib": {
+              "max": 12.65625,
+              "median": 12.09375,
+              "min": 11.921875,
+              "samples": [
+                12.09375,
+                11.921875,
+                12.65625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 131.89763560726047,
+              "median": 130.77256639309786,
+              "min": 122.17102690941617,
+              "samples": [
+                131.89763560726047,
+                130.77256639309786,
+                122.17102690941617
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2490,
+              "median": 2460,
+              "min": 2450,
+              "samples": [
+                2490,
+                2460,
+                2450
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 9.7265625,
+              "median": 9.609375,
+              "min": 9.5703125,
+              "samples": [
+                9.7265625,
+                9.609375,
+                9.5703125
+              ]
+            },
+            "rss_mib": {
+              "max": 10.953125,
+              "median": 10.84375,
+              "min": 10.265625,
+              "samples": [
+                10.265625,
+                10.953125,
+                10.84375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 187.33027195910054,
+              "median": 186.94042241598223,
+              "min": 186.11850973385413,
+              "samples": [
+                186.11850973385413,
+                186.94042241598223,
+                187.33027195910054
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "wireguard-tun-full-duplex-8",
+      "review": [],
+      "versions": {
+        "before": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 12080,
+              "median": 12060,
+              "min": 12030,
+              "samples": [
+                12030,
+                12080,
+                12060
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 23.59375,
+              "median": 23.5546875,
+              "min": 23.49609375,
+              "samples": [
+                23.49609375,
+                23.59375,
+                23.5546875
+              ]
+            },
+            "rss_mib": {
+              "max": 19.6875,
+              "median": 19.3125,
+              "min": 19.234375,
+              "samples": [
+                19.6875,
+                19.234375,
+                19.3125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 131.30183210506073,
+              "median": 131.1406897559423,
+              "min": 130.68758752569855,
+              "samples": [
+                130.68758752569855,
+                131.1406897559423,
+                131.30183210506073
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 4490,
+              "median": 4480,
+              "min": 4330,
+              "samples": [
+                4490,
+                4330,
+                4480
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.76953125,
+              "median": 8.75,
+              "min": 8.45703125,
+              "samples": [
+                8.76953125,
+                8.45703125,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 25.859375,
+              "median": 25.078125,
+              "min": 25.078125,
+              "samples": [
+                25.078125,
+                25.859375,
+                25.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 219.49464712509425,
+              "median": 211.69015466095104,
+              "min": 210.44435619281344,
+              "samples": [
+                210.44435619281344,
+                219.49464712509425,
+                211.69015466095104
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

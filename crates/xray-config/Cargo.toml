@@ -16,6 +16,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 xray-routing = { path = "../xray-routing" }
+xray-proxy = { path = "../xray-proxy" }
 xray-utls = { path = "../xray-utls" }
 xray-vless-encryption = { path = "../xray-vless-encryption" }
 zeroize.workspace = true
+
+[dev-dependencies]
+base64.workspace = true

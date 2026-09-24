@@ -440,6 +440,61 @@ async fn fixed_request_and_response_trailers_survive_partial_reads() {
 }
 
 #[tokio::test]
+async fn response_delivers_a_small_prefix_before_the_next_data_or_fin() {
+    let (client, server) = pair().await;
+    let (prefix_read, wait_for_reader) = tokio::sync::oneshot::channel();
+    let payload: Vec<u8> = (0..65_537).map(|index| (index % 251) as u8).collect();
+    let expected = payload.clone();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_, mut stream) = server.accept().await;
+            drain_request(&mut stream).await.expect("request FIN");
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("headers");
+            stream
+                .send_data(Bytes::from_static(b"x"))
+                .await
+                .expect("prefix");
+            // A response batch must never wait for future data to become full.
+            timeout(DEADLINE, wait_for_reader)
+                .await
+                .expect("reader sees prefix")
+                .expect("reader signal");
+            stream
+                .send_data(Bytes::from(payload))
+                .await
+                .expect("large DATA frame");
+            let mut trailers = HeaderMap::new();
+            trailers.insert("x-finished", "yes".parse().unwrap());
+            stream.send_trailers(trailers).await.expect("trailers");
+            stream.finish().await.expect("FIN");
+        }
+    });
+    let mut body = client
+        .send_fixed(request(Method::GET, "/batch-prefix"), Bytes::new())
+        .await
+        .expect("response");
+    let mut first = [0];
+    timeout(DEADLINE, body.read_exact(&mut first))
+        .await
+        .expect("prefix deadline")
+        .expect("prefix read");
+    assert_eq!(&first, b"x");
+    prefix_read.send(()).expect("release remaining response");
+    let mut actual = Vec::new();
+    timeout(DEADLINE, body.read_to_end(&mut actual))
+        .await
+        .expect("body deadline")
+        .expect("body and FIN");
+    assert_eq!(actual, expected);
+    assert_eq!(body.trailers().unwrap()["x-finished"], "yes");
+    handler.await.expect("handler");
+}
+
+#[tokio::test]
 async fn start_fixed_completes_upload_before_delayed_response_headers() {
     let (client, server) = pair().await;
     let (release, wait) = tokio::sync::oneshot::channel();
@@ -946,10 +1001,13 @@ async fn non_200_cancels_only_its_stream_and_connection_stays_reusable() {
 #[tokio::test]
 async fn dropping_pending_response_resets_exchange_without_killing_connection() {
     let (client, server) = pair().await;
+    let (accepted, first_accepted) = tokio::sync::oneshot::channel();
     let handler = tokio::spawn({
         let server = server.clone();
         async move {
-            let (_first, mut first) = server.accept().await;
+            let (first_request, mut first) = server.accept().await;
+            assert_eq!(first_request.uri().path(), "/cancel");
+            accepted.send(()).expect("first request accepted");
             let first_result = first.recv_data().await;
 
             let (_second, mut second) = server.accept().await;
@@ -969,6 +1027,10 @@ async fn dropping_pending_response_resets_exchange_without_killing_connection() 
         .start_streaming(request(Method::POST, "/cancel"))
         .await
         .expect("open first stream");
+    timeout(DEADLINE, first_accepted)
+        .await
+        .expect("first request acceptance deadline")
+        .expect("first request accepted before cancellation");
     drop(pending);
     let error = timeout(DEADLINE, upload.shutdown())
         .await
@@ -984,6 +1046,63 @@ async fn dropping_pending_response_resets_exchange_without_killing_connection() 
     let mut sink = Vec::new();
     body.read_to_end(&mut sink).await.expect("second EOF");
     assert!(handler.await.expect("server handler").is_err());
+}
+
+#[tokio::test]
+async fn immediate_pending_response_drop_keeps_connection_reusable() {
+    let (client, server) = pair().await;
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            // Reset may reach the peer before the first request's headers.
+            // Accept either ordering, but always require the next request.
+            loop {
+                let (request, mut stream) = server.accept().await;
+                if request.uri().path() == "/immediate-cancel" {
+                    drop(stream);
+                    continue;
+                }
+                assert_eq!(request.uri().path(), "/after-immediate-cancel");
+                drain_request(&mut stream)
+                    .await
+                    .expect("second request FIN");
+                stream
+                    .send_response(response(StatusCode::OK))
+                    .await
+                    .expect("response");
+                stream
+                    .send_data(Bytes::from_static(b"alive"))
+                    .await
+                    .expect("body");
+                stream.finish().await.expect("FIN");
+                break;
+            }
+        }
+    });
+    let (mut upload, pending) = client
+        .start_streaming(request(Method::POST, "/immediate-cancel"))
+        .await
+        .expect("open request");
+    drop(pending);
+    let error = timeout(DEADLINE, upload.shutdown())
+        .await
+        .expect("cancel deadline")
+        .expect_err("upload cancelled");
+    assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+    let mut body = client
+        .send_fixed(
+            request(Method::GET, "/after-immediate-cancel"),
+            Bytes::new(),
+        )
+        .await
+        .expect("reusable connection");
+    let mut actual = Vec::new();
+    timeout(DEADLINE, body.read_to_end(&mut actual))
+        .await
+        .expect("body deadline")
+        .expect("body and FIN");
+    assert_eq!(actual, b"alive");
+    handler.await.expect("handler");
 }
 
 #[tokio::test]

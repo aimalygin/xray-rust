@@ -1,0 +1,199 @@
+{
+  "artifact_sha256": {
+    "xhttp-h2-download-8-baseline-1/1790005820055/xray-rust/stream-transport/result.json": "0fc555bf81f6d0dfb908f891b01e127803e9ea80f82fab7565bc98f98b8260f2",
+    "xhttp-h2-download-8-baseline-2/1790005846312/xray-rust/stream-transport/result.json": "f847ae639a82db88bca456e3987c02cb9251116a35210bb6dd3ebaa71f7da139",
+    "xhttp-h2-download-8-baseline-3/1790005964446/xray-rust/stream-transport/result.json": "21e558c90c3fa1783c08f71d06863709fb892aef53a671e2cdf345c493016d6a",
+    "xhttp-h2-download-8-baseline-4/1790006002831/xray-rust/stream-transport/result.json": "101b2a25606100313aadb4c3fad651b23385f2a9e9417aa2b6f51cd280e4b532",
+    "xhttp-h2-download-8-baseline-5/1790006126101/xray-rust/stream-transport/result.json": "9eb3f8cd5e38fccb90cd97c9fd15d357c8b12817d192c447cb8cba2c52915baa",
+    "xhttp-h2-download-8-candidate-1/1790005777311/xray-rust/stream-transport/result.json": "e00fc887b3454d927b96c74dfd6be14ebcf3ffffdeeadde02efed3b2f8d0a731",
+    "xhttp-h2-download-8-candidate-2/1790005896683/xray-rust/stream-transport/result.json": "b19297525c0ac935855cfe1137f8007fb03e9a512deefd805142ad735990475b",
+    "xhttp-h2-download-8-candidate-3/1790005921285/xray-rust/stream-transport/result.json": "add75635dad500f5b28e7c2e57eafa5f4634e06b1a125b5c29738fe8b728a800",
+    "xhttp-h2-download-8-candidate-4/1790006050260/xray-rust/stream-transport/result.json": "4a716fe7d1851632fd98689998a97403a20e1b48bdc4eb8523a6dea867f26ba0",
+    "xhttp-h2-download-8-candidate-5/1790006071780/xray-rust/stream-transport/result.json": "9216d5781fdd43ba8e35e391eed158caa04d764efb8042ed424973da2aa2a36e",
+    "xhttp-h2-download-8-workers12-1/1790005796717/xray-rust/stream-transport/result.json": "5bee715e29fc92cb9e08c78626cfbab505aa65f7a819789099a50042c20c68b5",
+    "xhttp-h2-download-8-workers12-2/1790005875556/xray-rust/stream-transport/result.json": "095efde73527481dbf3d2975b5e08fb3d18df9d1df28d1d12ad58307ee1d6598",
+    "xhttp-h2-download-8-workers12-3/1790005940373/xray-rust/stream-transport/result.json": "dcd03a838a6c8e948d61df74728cd822f2bef3048ac33e5b22394facb61d5d91",
+    "xhttp-h2-download-8-workers12-4/1790006027845/xray-rust/stream-transport/result.json": "ab9cbb24d0c565162021de8d82bc73573e18489f5013f8ac4db5d4b3e48a503e",
+    "xhttp-h2-download-8-workers12-5/1790006091129/xray-rust/stream-transport/result.json": "8598a6a0d49566bf066adcc98a5c332c4c9f7149f77f883c854ffbafb64e386b"
+  },
+  "failures": [],
+  "manifest_sha256": "0ee3a7bdef4e3fc747026591880e63637ffc5973518d2e9b47993f5ae0172bd0",
+  "rows": [
+    {
+      "case": "xhttp-h2-download-8",
+      "ratios": {
+        "cpu_ms": 0.45387779083431257,
+        "cpu_ms_per_mib": 0.45387779083431257,
+        "rss_mib": 0.6783985921689397,
+        "throughput_mib_s": 1.271473109898675
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 69920,
+              "median": 68080,
+              "min": 60740,
+              "samples": [
+                69020,
+                68080,
+                60740,
+                65580,
+                69920
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.1337890625,
+              "median": 2.07763671875,
+              "min": 1.8536376953125,
+              "samples": [
+                2.1063232421875,
+                2.07763671875,
+                1.8536376953125,
+                2.0013427734375,
+                2.1337890625
+              ]
+            },
+            "rss_mib": {
+              "max": 43.59375,
+              "median": 35.515625,
+              "min": 16.171875,
+              "samples": [
+                16.171875,
+                17.34375,
+                35.515625,
+                35.578125,
+                43.59375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1829.6241760253906,
+              "median": 1529.4551849365234,
+              "min": 1382.3509216308594,
+              "samples": [
+                1382.3509216308594,
+                1783.2517623901367,
+                1829.6241760253906,
+                1463.2940292358398,
+                1529.4551849365234
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 32740,
+              "median": 30900,
+              "min": 30530,
+              "samples": [
+                30990,
+                30900,
+                30530,
+                32740,
+                30740
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.9991455078125,
+              "median": 0.9429931640625,
+              "min": 0.93170166015625,
+              "samples": [
+                0.94573974609375,
+                0.9429931640625,
+                0.93170166015625,
+                0.9991455078125,
+                0.9381103515625
+              ]
+            },
+            "rss_mib": {
+              "max": 29.140625,
+              "median": 24.09375,
+              "min": 22.140625,
+              "samples": [
+                23.390625,
+                24.09375,
+                22.140625,
+                29.140625,
+                25.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1977.9205322265625,
+              "median": 1944.6611404418945,
+              "min": 1727.2233963012695,
+              "samples": [
+                1943.2306289672852,
+                1944.6611404418945,
+                1977.9205322265625,
+                1727.2233963012695,
+                1953.9594650268555
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 69690,
+              "median": 67100,
+              "min": 66800,
+              "samples": [
+                66800,
+                67980,
+                69690,
+                67100,
+                67020
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.12677001953125,
+              "median": 2.0477294921875,
+              "min": 2.03857421875,
+              "samples": [
+                2.03857421875,
+                2.0745849609375,
+                2.12677001953125,
+                2.0477294921875,
+                2.0452880859375
+              ]
+            },
+            "rss_mib": {
+              "max": 45.84375,
+              "median": 30.34375,
+              "min": 14.796875,
+              "samples": [
+                14.796875,
+                30.34375,
+                28.359375,
+                45.84375,
+                32.78125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1760.9596252441406,
+              "median": 1655.8170318603516,
+              "min": 1522.064208984375,
+              "samples": [
+                1576.6620635986328,
+                1760.9596252441406,
+                1522.064208984375,
+                1655.8170318603516,
+                1750.8268356323242
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "legacy"
+}

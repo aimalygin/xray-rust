@@ -1,0 +1,142 @@
+{
+  "artifact_sha256": {
+    "xhttp-h1-tun-full-duplex-1-baseline-1/result.json": "c8d0672675bf00a8ba68240c8b3c322fc64de22d090b1fc414d876eb35d8f419",
+    "xhttp-h1-tun-full-duplex-1-baseline-2/result.json": "c50d651feade757870ec9cbb181d48be21aeb79b1423dddf24ad9978543a0863",
+    "xhttp-h1-tun-full-duplex-1-baseline-3/result.json": "17eb139391f47668cae6dd7235b6bb0569e5ce918c5bcd28c40ab9b88d1fa3b2",
+    "xhttp-h1-tun-full-duplex-1-baseline-4/result.json": "f5ba1b5de064d5d4b9aa6b961caf118bcf35065674aabf99e7b609e60a089221",
+    "xhttp-h1-tun-full-duplex-1-baseline-5/result.json": "d5d36f6273588808ec644be43d74c3b9a266a780674ea09e83d8c431cacdf40f",
+    "xhttp-h1-tun-full-duplex-1-candidate-1/result.json": "3d7c62dce2e53cea7bde27132123d77f2dfcb1a4c75a0174dec3d4ccbc7b0917",
+    "xhttp-h1-tun-full-duplex-1-candidate-2/result.json": "9cd7603d5d7fa1b9ba4981d14198707e2bec0e3cc5e854e567556f64c47c29d9",
+    "xhttp-h1-tun-full-duplex-1-candidate-3/result.json": "407d4777a56d9f0e0bb291a67d0eef5373ace79068e1ed5e440ee85e4228a500",
+    "xhttp-h1-tun-full-duplex-1-candidate-4/result.json": "fc47f45002f5fb9f01ab1030a338d730bca1292e000e3e1c22e6605578cd237e",
+    "xhttp-h1-tun-full-duplex-1-candidate-5/result.json": "d686ad026129593b91e3d6b228a47f51e5ecd22b59b96ba1e3102a08cbb644f2"
+  },
+  "failures": [],
+  "manifest_sha256": "92a7afe94c9b1534c226ce558f1cb02db868723b6528e3f6b6b0227762b0c048",
+  "rows": [
+    {
+      "case": "xhttp-h1-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0555555555555556,
+        "cpu_ms_per_mib": 1.0555555555555556,
+        "rss_mib": 1.0268620268620268,
+        "throughput_mib_s": 0.15166506792005136
+      },
+      "review": [
+        "throughput_mib_s"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 190,
+              "median": 180,
+              "min": 170,
+              "samples": [
+                190,
+                180,
+                170,
+                170,
+                180
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.96875,
+              "median": 2.8125,
+              "min": 2.65625,
+              "samples": [
+                2.96875,
+                2.8125,
+                2.65625,
+                2.65625,
+                2.8125
+              ]
+            },
+            "rss_mib": {
+              "max": 26.734375,
+              "median": 25.59375,
+              "min": 24.4375,
+              "samples": [
+                24.4375,
+                25.40625,
+                26.484375,
+                25.59375,
+                26.734375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 57.73943136140202,
+              "median": 57.581619261910326,
+              "min": 57.22478351511212,
+              "samples": [
+                57.22478351511212,
+                57.73943136140202,
+                57.63053626001908,
+                57.398195835693635,
+                57.581619261910326
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 190,
+              "median": 190,
+              "min": 190,
+              "samples": [
+                190,
+                190,
+                190,
+                190,
+                190
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.96875,
+              "median": 2.96875,
+              "min": 2.96875,
+              "samples": [
+                2.96875,
+                2.96875,
+                2.96875,
+                2.96875,
+                2.96875
+              ]
+            },
+            "rss_mib": {
+              "max": 29.53125,
+              "median": 26.28125,
+              "min": 23.921875,
+              "samples": [
+                29.53125,
+                26.28125,
+                26.125,
+                28.5,
+                23.921875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 8.812316488646774,
+              "median": 8.733120196304167,
+              "min": 7.754280540813209,
+              "samples": [
+                8.812316488646774,
+                8.704792501718941,
+                8.77743672652697,
+                8.733120196304167,
+                7.754280540813209
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "tun"
+}

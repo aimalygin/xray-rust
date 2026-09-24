@@ -127,12 +127,12 @@ pinning a domain onto, a tunnel-owned address is rejected on every URL port;
 classic non-URL servers retain their legacy port-53 check.
 
 Fake-IP without `dns.servers` is accepted only when TUN domain traffic cannot
-select Freedom. Before applying Network Extension settings, the provider
-rejects a Freedom default outbound and any TUN-applicable Freedom rule that is
-not strictly IP-only. A VLESS default outbound is valid, and private/CIDR
-Freedom rules containing `ip` selectors but no domain selectors remain valid.
-This prevents a restored fake-IP domain from reaching Freedom without a routed
-resolver.
+select Freedom or WireGuard. Before applying Network Extension settings, the
+provider rejects either protocol as the default or through a TUN-applicable
+rule that is not strictly IP-only. Balancer prefix candidates and `fallbackTag`
+are included in this check. A VLESS or Hysteria 2 default remains valid, as do
+IP-only split routes. WireGuard needs real destination IPs even when its outer
+peer endpoints are already pinned; add a `dns.servers` upstream for domain routes.
 
 A host can instead set `dnsServers` in provider configuration, or
 `xrayDNSServers` in start options, to one IPv4 or IPv6 address string or a
@@ -177,6 +177,15 @@ padding limits, and low-order/modulus checks match shared Rust fixtures; error
 messages redact rejected encryption values. This does not change the published
 `v0.5.0` distribution.
 
+Development v0.7 also exposes
+`XrayProfileImporter.profile(from: text, format: .hysteria2)` and `.wireguard`
+in `XrayMobileAdapter`, with shared Rust parsing through C ABI 1.5. Check
+`XrayCore.ffiInfo.supportsProfileImport(format)` and call `.clientProfile(...)`
+on the result for host storage. WireGuard preserves AllowedIPs split routing
+and requires real IP DNS servers from the file or the `dnsServers` argument.
+Use a matching rebuilt XCFramework; sample-app UI integration remains separate.
+See the [accepted formats, limits and tests](../../docs/v07-profile-import.md).
+
 The VLESS URL importer accepts raw/TCP + REALITY links and `xhttp`/`splithttp`
 links with `security=none`, TLS, or REALITY. XHTTP `host`, `path`, and `mode`
 remain outer settings. TLS imports preserve `sni`, `fp`, comma-separated
@@ -214,8 +223,8 @@ The selected test mode, transport, and trusted upstream remain selected when a
 new VLESS URL is imported; choose `Config JSON` to disable the override.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS server and every domain-valued classic, TCP, DoT, DoH, or DoQ DNS
-endpoint. An IP-literal stream URL needs no system lookup. URL modes use their
+domain VLESS/Hysteria 2 server, every WireGuard peer endpoint host, and every
+domain-valued classic, TCP, DoT, DoH, or DoQ DNS endpoint. An IP-literal stream URL needs no system lookup. URL modes use their
 embedded/default port for endpoint safety checks and pin a domain host
 into `dns.hosts`; the original server URI, object policy fields, and `tag` stay
 unchanged. Existing bare or `full:<domain>` exact `dns.hosts` mappings are
@@ -226,13 +235,16 @@ and writes every ordered A/AAAA result into a canonical exact IP array.
 Existing terminal IP arrays are retained and deduplicated in order.
 IPv4-mapped IPv6 carrier addresses are normalized to IPv4 so Rust socket
 selection and Apple `/32` exclusions stay aligned.
-DNS64-synthesized IPv6 results are accepted on IPv6-only networks. The original VLESS address string and
+DNS64-synthesized IPv6 results are accepted on IPv6-only networks. The original
+VLESS/Hysteria address, WireGuard endpoint string, and
 `NETunnelProviderProtocol.serverAddress` remain metadata rather than being
 replaced by one candidate, so exact-domain routing, SNI, and other metadata do
 not change.
 
-The provider collects every IPv4/IPv6 outer carrier endpoint from VLESS
-servers, their existing bootstrap mappings, and the configured server address.
+The provider collects every IPv4/IPv6 outer carrier endpoint from VLESS and
+Hysteria servers, all WireGuard peers, their bootstrap mappings, and the
+configured server address. WireGuard inner addresses and `allowedIPs` do not
+become carrier exclusions. See the [v0.7 bootstrap contract](../../docs/v07-mobile-bootstrap.md).
 Before creating the Rust core it installs an excluded `/32` or `/128` route for
 each carrier candidate alongside both default tunnel routes. `dns.servers`
 domains, including local TCP URL hosts, are still pinned for fail-closed

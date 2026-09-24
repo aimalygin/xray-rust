@@ -1,0 +1,65 @@
+{
+  "counts": [
+    {
+      "suite": "new",
+      "cases": 40,
+      "runs": 200,
+      "failed": 0,
+      "status": "pass"
+    },
+    {
+      "suite": "tun",
+      "cases": 30,
+      "runs": 300,
+      "failed": 0,
+      "status": "pass"
+    },
+    {
+      "suite": "reality",
+      "cases": 12,
+      "runs": 120,
+      "failed": 0,
+      "status": "pass"
+    },
+    {
+      "suite": "legacy",
+      "cases": 37,
+      "runs": 370,
+      "failed": 0,
+      "status": "pass"
+    }
+  ],
+  "reviews": [
+    {
+      "suite": "tun",
+      "case": "freedom-tun-full-duplex-1",
+      "metrics": {
+        "cpu_ms": 1.3333333333333333,
+        "cpu_ms_per_mib": 1.3333333333333333
+      }
+    },
+    {
+      "suite": "tun",
+      "case": "vless-tls-tun-download-1",
+      "metrics": {
+        "cpu_ms": 1.2,
+        "cpu_ms_per_mib": 1.2
+      }
+    },
+    {
+      "suite": "tun",
+      "case": "xhttp-h3-tun-upload-1",
+      "metrics": {
+        "cpu_ms": 1.1666666666666667,
+        "cpu_ms_per_mib": 1.1666666666666667
+      }
+    },
+    {
+      "suite": "reality",
+      "case": "reality-vision-socks-full-duplex-8",
+      "metrics": {
+        "throughput_mib_s": 0.795038672909029
+      }
+    }
+  ]
+}

@@ -10,6 +10,48 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.7.0-rc.1 - 2026-09-22
+
+Release candidate preparation; publication and final device acceptance are pending.
+
+- Add Hysteria 2 and standard WireGuard client outbounds for SOCKS, HTTP,
+  TUN and routed DNS, with bounded TCP/UDP resources and independent native
+  server interoperability checks. WireGuard supports up to eight peers,
+  IPv4/IPv6, PSKs and authenticated peer isolation.
+- Add protected carrier rebinding and bounded mobile network-change recovery.
+  Preserve active WireGuard sessions and keep TUN download/cancellation
+  responsive while an upload is blocked.
+- Forward client TCP FIN through TUN after draining buffered upload, preserving
+  server replies after half-close and releasing naturally closed connections.
+- Allow up to 512 WireGuard UDP sessions, allocated on demand, so short requests
+  using fresh source ports do not exhaust the old 16-session budget before
+  TUN idle cleanup. Retain bounded queues and verify budget reclamation.
+- Reduce shared async setup allocations, bound packet-protocol TUN upload
+  queues, reuse WireGuard TCP receive storage and improve QUIC ACK handling.
+  The CLI defaults to two Tokio workers and preserves the explicit override.
+  Improve XHTTP/H3 receive batching without waiting for future data.
+- Expose capability discovery, shared profile import and network-change
+  notifications through the additive C ABI 1.7 and matching Swift/Kotlin APIs.
+- Retain the pinned Xray-core v26.7.28 compatibility target. Supported options
+  and bounds are documented; this RC does not claim full upstream parity.
+- Defer the higher XHTTP/H2 TUN RSS to a future version by owner decision.
+  Separate Hysteria2 latency/short WAN duplex gaps remain documented; complete
+  performance parity has not been established. See [performance evidence](docs/v07-performance.md).
+- Require versioned exact-candidate Apple/Android evidence for 0.7 publication.
+  New checks include both protocols, both Android adapter paths, recovery and
+  legacy regression coverage; old v0.6 evidence remains independently validated.
+
+- Add shared Rust import for Hysteria2 links and WireGuard configuration files,
+  exposed through C ABI 1.5 and equivalent Swift/Kotlin SDK APIs. Advertise
+  protocol/import capabilities and validate bounded input with redacted errors.
+  Preserve WireGuard peers, PSKs and split routes; require explicit real DNS.
+- Prepare Hysteria 2 and all WireGuard peer endpoint DNS before mobile tunnel
+  setup on Apple and Android, preserving profile addresses and credentials.
+  Apple adds outer-carrier route exclusions; Android keeps socket protection.
+- Reject FakeDNS-only mobile routes that require real destination DNS through
+  WireGuard or Freedom, including balancer candidates and fallbacks. Preserve
+  VLESS/Hysteria remote resolution and IP-only split routes.
+
 ## 0.6.1 - 2026-09-09
 
 - Promotes the tested `0.6.1-rc.1` implementation to stable, including the

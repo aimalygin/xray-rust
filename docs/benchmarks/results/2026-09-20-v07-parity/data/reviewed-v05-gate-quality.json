@@ -1,0 +1,2369 @@
+{
+  "sample_interval_seconds": 2,
+  "snapshots": [
+    {
+      "time_unix": 1789992995.850794,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.0,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49662,
+          "cpu": 95.7,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789992997.8807812,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.8,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49662,
+          "cpu": 99.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789992999.910959,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 15.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.0,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49667,
+          "cpu": 98.2,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993001.9397912,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.3,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49667,
+          "cpu": 99.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993003.967974,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 19.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.1,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.0,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49667,
+          "cpu": 96.7,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52844,
+          "cpu": 122.4,
+          "executable": "/Applications/Slack.app/Contents/MacOS/Slack"
+        },
+        {
+          "pid": 52846,
+          "cpu": 15.3,
+          "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper.app/Contents/MacOS/Slack Helper"
+        },
+        {
+          "pid": 52849,
+          "cpu": 36.5,
+          "executable": "/Applications/Slack.app/Contents/Frameworks/Slack Helper (Renderer).app/Contents/MacOS/Slack Helper (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993005.997788,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.4,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 11.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49684,
+          "cpu": 99.2,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993008.0277572,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.2,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 34.8,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 11.8,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49684,
+          "cpu": 99.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993010.058839,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49689,
+          "cpu": 98.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993012.0885801,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.9,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.4,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.0,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49689,
+          "cpu": 100.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993014.117486,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 34.6,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.4,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49705,
+          "cpu": 64.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993016.145223,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49705,
+          "cpu": 99.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993018.175971,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 38.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.3,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49709,
+          "cpu": 86.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993020.2066739,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 16.8,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.0,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49709,
+          "cpu": 100.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993022.23457,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.6,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.6,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49709,
+          "cpu": 99.2,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993024.259161,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 12.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.4,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.4,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49726,
+          "cpu": 98.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993026.2900841,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.4,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.9,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49726,
+          "cpu": 99.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993028.31996,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49729,
+          "cpu": 99.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993030.350921,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 38.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.6,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49729,
+          "cpu": 98.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993032.381689,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.2,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.9,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49729,
+          "cpu": 100.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993034.411537,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.2,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49746,
+          "cpu": 98.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993036.4393,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 38.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49746,
+          "cpu": 100.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993038.469753,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.6,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.9,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49749,
+          "cpu": 98.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993040.4999099,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.6,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49749,
+          "cpu": 98.7,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993042.549568,
+      "processes": [
+        {
+          "pid": 1,
+          "cpu": 18.3,
+          "executable": "/sbin/launchd"
+        },
+        {
+          "pid": 413,
+          "cpu": 19.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 15.4,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49775,
+          "cpu": 0.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 49776,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993044.605645,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 25.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 10.4,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 43.8,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.5,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49775,
+          "cpu": 1.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 49776,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993046.662179,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 25.4,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.4,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49775,
+          "cpu": 1.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 49945,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 96381,
+          "cpu": 13.9,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993048.71621,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 24.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 10.2,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 44.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49775,
+          "cpu": 1.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50111,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 50184,
+          "cpu": 20.4,
+          "executable": "/System/Library/CoreServices/TimeMachine/backupd-helper"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993050.771741,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 25.2,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 10.0,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 45.8,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.6,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49775,
+          "cpu": 2.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50282,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993052.828479,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 28.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 41.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.9,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 49775,
+          "cpu": 2.7,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50448,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993054.88319,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 22.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 12.0,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 45.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.4,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50615,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993056.935553,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 27.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 11.7,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 45.0,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.6,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50615,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993058.993909,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 27.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 12.1,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 44.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.5,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50615,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993061.048366,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 24.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 11.2,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 45.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 15.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50982,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993063.102289,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 23.9,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 11.1,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 45.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.9,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 50982,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993065.15678,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 25.8,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 12.1,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 45.2,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.4,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 5.4,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 51300,
+          "cpu": 75.5,
+          "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted"
+        },
+        {
+          "pid": 51347,
+          "cpu": 0.4,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 51362,
+          "cpu": 54.3,
+          "executable": "/usr/libexec/triald_system"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993067.20891,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 23.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 10.6,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 44.2,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.8,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 1.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 51347,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 51501,
+          "cpu": 71.2,
+          "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+        },
+        {
+          "pid": 61711,
+          "cpu": 13.6,
+          "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        },
+        {
+          "pid": 96381,
+          "cpu": 90.8,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993069.264698,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 23.7,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 10.9,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 47.0,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.2,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 51347,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 51586,
+          "cpu": 35.3,
+          "executable": "/System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod"
+        },
+        {
+          "pid": 51609,
+          "cpu": 12.6,
+          "executable": "/System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod"
+        },
+        {
+          "pid": 51610,
+          "cpu": 52.2,
+          "executable": "/System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod"
+        },
+        {
+          "pid": 51611,
+          "cpu": 21.4,
+          "executable": "/System/Library/PrivateFrameworks/GeoServices.framework/Versions/A/XPCServices/com.apple.geod.xpc/Contents/MacOS/com.apple.geod"
+        },
+        {
+          "pid": 51632,
+          "cpu": 10.2,
+          "executable": "/usr/libexec/trustd"
+        },
+        {
+          "pid": 51633,
+          "cpu": 26.7,
+          "executable": "/usr/libexec/trustd"
+        },
+        {
+          "pid": 51634,
+          "cpu": 25.7,
+          "executable": "/usr/libexec/trustd"
+        },
+        {
+          "pid": 58713,
+          "cpu": 51.8,
+          "executable": "/usr/libexec/mobileassetd"
+        },
+        {
+          "pid": 96381,
+          "cpu": 10.1,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993071.322276,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 25.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 12.4,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 40.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 2.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 51362,
+          "cpu": 60.0,
+          "executable": "/usr/libexec/triald_system"
+        },
+        {
+          "pid": 51743,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 66297,
+          "cpu": 33.0,
+          "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd"
+        },
+        {
+          "pid": 80286,
+          "cpu": 20.9,
+          "executable": "/System/Library/CoreServices/TimeMachine/backupd"
+        },
+        {
+          "pid": 96381,
+          "cpu": 12.7,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993073.3789692,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 24.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 12.2,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 43.0,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46003,
+          "cpu": 75.7,
+          "executable": "/usr/libexec/triald"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 1.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 51743,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 52076,
+          "cpu": 12.9,
+          "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+        },
+        {
+          "pid": 96381,
+          "cpu": 14.2,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993075.434547,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 64.9,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 413,
+          "cpu": 24.8,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 43.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.8,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 7.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52114,
+          "cpu": 0.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 58771,
+          "cpu": 16.1,
+          "executable": "/usr/libexec/pkd"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993077.491441,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 153.3,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 381,
+          "cpu": 11.2,
+          "executable": "/usr/libexec/opendirectoryd"
+        },
+        {
+          "pid": 413,
+          "cpu": 25.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.8,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.5,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 46583,
+          "cpu": 10.4,
+          "executable": "/usr/libexec/containermanagerd"
+        },
+        {
+          "pid": 50614,
+          "cpu": 1.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 51300,
+          "cpu": 32.5,
+          "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted"
+        },
+        {
+          "pid": 52114,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 58771,
+          "cpu": 48.6,
+          "executable": "/usr/libexec/pkd"
+        },
+        {
+          "pid": 66297,
+          "cpu": 39.7,
+          "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd"
+        },
+        {
+          "pid": 79283,
+          "cpu": 10.3,
+          "executable": "/System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd"
+        },
+        {
+          "pid": 96381,
+          "cpu": 13.5,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993079.538432,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 92.3,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 381,
+          "cpu": 10.4,
+          "executable": "/usr/libexec/opendirectoryd"
+        },
+        {
+          "pid": 413,
+          "cpu": 20.2,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 7275,
+          "cpu": 19.2,
+          "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail"
+        },
+        {
+          "pid": 45956,
+          "cpu": 41.4,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 50614,
+          "cpu": 1.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52114,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 80286,
+          "cpu": 104.7,
+          "executable": "/System/Library/CoreServices/TimeMachine/backupd"
+        },
+        {
+          "pid": 96381,
+          "cpu": 11.8,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993081.5817852,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.1,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 2.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52480,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993083.623841,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.2,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.6,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 2.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52480,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993085.6554182,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 14.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 24.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52480,
+          "cpu": 5.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993087.697314,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 90.7,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 413,
+          "cpu": 10.7,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 33.1,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.3,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 2.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52867,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993089.737962,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 191.3,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 1.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 52867,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993091.7709608,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 11.7,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.0,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 6.7,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 53249,
+          "cpu": 2.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 96381,
+          "cpu": 17.3,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993093.813362,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 12.4,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 33.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.4,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 3.4,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 53249,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993095.855319,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 12.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 39.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.5,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 1.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 53249,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993097.893548,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 12.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.8,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 2.2,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 53644,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993099.9405599,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 11.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.8,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.8,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 2.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 53644,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993101.968148,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.3,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 31.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 53644,
+          "cpu": 9.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993104.0122108,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 11.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 2.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54025,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993106.053154,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 12.6,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.3,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 52479,
+          "cpu": 3.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54025,
+          "cpu": 0.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993108.082025,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 18.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.8,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54397,
+          "cpu": 31.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54515,
+          "cpu": 0.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993110.12173,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.1,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 36.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.8,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 6.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54595,
+          "cpu": 5.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993112.1631548,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 10.4,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.2,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.0,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 6.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54595,
+          "cpu": 5.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993114.202826,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 12.4,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 35.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 4.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54896,
+          "cpu": 4.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993116.245485,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 11.4,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 34.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.1,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 5.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 54896,
+          "cpu": 5.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993118.2843509,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 13.0,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 37.2,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 12.6,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 6.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 55196,
+          "cpu": 6.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 58713,
+          "cpu": 63.6,
+          "executable": "/usr/libexec/mobileassetd"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993120.34499,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 24.3,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 11.3,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 643,
+          "cpu": 13.1,
+          "executable": "/usr/libexec/nsurlsessiond"
+        },
+        {
+          "pid": 45956,
+          "cpu": 42.9,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.5,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 51300,
+          "cpu": 77.3,
+          "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted"
+        },
+        {
+          "pid": 51362,
+          "cpu": 56.2,
+          "executable": "/usr/libexec/triald_system"
+        },
+        {
+          "pid": 54594,
+          "cpu": 10.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 55196,
+          "cpu": 9.8,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 66297,
+          "cpu": 46.7,
+          "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd"
+        },
+        {
+          "pid": 79283,
+          "cpu": 12.4,
+          "executable": "/System/Library/Frameworks/Accounts.framework/Versions/A/Support/accountsd"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993122.3940659,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 23.7,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 428,
+          "cpu": 10.4,
+          "executable": "/usr/sbin/coreaudiod"
+        },
+        {
+          "pid": 45956,
+          "cpu": 43.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 13.7,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 8.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 55508,
+          "cpu": 6.5,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993124.450515,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 61.6,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 413,
+          "cpu": 24.2,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 42.7,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.4,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 6.1,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 55508,
+          "cpu": 5.9,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 58713,
+          "cpu": 25.4,
+          "executable": "/usr/libexec/mobileassetd"
+        },
+        {
+          "pid": 80286,
+          "cpu": 21.2,
+          "executable": "/System/Library/CoreServices/TimeMachine/backupd"
+        },
+        {
+          "pid": 96381,
+          "cpu": 11.4,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993126.510179,
+      "processes": [
+        {
+          "pid": 344,
+          "cpu": 77.2,
+          "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 413,
+          "cpu": 27.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 43.5,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 15.2,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 6.4,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 55801,
+          "cpu": 4.3,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 58713,
+          "cpu": 15.9,
+          "executable": "/usr/libexec/mobileassetd"
+        },
+        {
+          "pid": 96381,
+          "cpu": 10.2,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    },
+    {
+      "time_unix": 1789993128.5691001,
+      "processes": [
+        {
+          "pid": 413,
+          "cpu": 26.5,
+          "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer"
+        },
+        {
+          "pid": 45956,
+          "cpu": 44.4,
+          "executable": "/Applications/zoom.us.app/Contents/MacOS/zoom.us"
+        },
+        {
+          "pid": 46037,
+          "cpu": 14.9,
+          "executable": "/Applications/zoom.us.app/Contents/Frameworks/aomhost.app/Contents/MacOS/aomhost"
+        },
+        {
+          "pid": 54594,
+          "cpu": 8.0,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-bench"
+        },
+        {
+          "pid": 55801,
+          "cpu": 6.6,
+          "executable": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build/release/xray-rust"
+        },
+        {
+          "pid": 96381,
+          "cpu": 10.1,
+          "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)"
+        }
+      ],
+      "benchmark_process_present": true,
+      "compiler_overlap": []
+    }
+  ],
+  "compiler_overlap_detected": false,
+  "note": "Original gates build before timing; record compiler interference only when a benchmark process is also present."
+}

@@ -1,0 +1,218 @@
+{
+  "cases": [
+    {
+      "connections": 8,
+      "id": "wireguard-socks-upload-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "upload"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-full-duplex-8",
+      "iterations": 512,
+      "path": "socks",
+      "payload_size": 65536,
+      "protocol": "wireguard",
+      "traffic": "full-duplex"
+    }
+  ],
+  "cleanup_policy": "RAII kill/wait and process-group/global inventory verification",
+  "collector_sha256": "01dbdadf29c9100645c2362cd05cbe548a2c0e39387d0547c54f0ca1ae0cce46",
+  "diagnostic": true,
+  "finished_unix": 1789839604.608487,
+  "fixture_policy": "fresh reference and client per run; userspace only",
+  "harness_sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "preflight_campaign_processes": [],
+  "purpose": "Reference client isolation control for the same eight-flow upload and full-duplex workloads",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_sha256": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+  "repeats": 5,
+  "runs": [
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-1",
+      "output_relative": "wireguard-socks-upload-8-reference-client-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.412869930267334,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-2",
+      "output_relative": "wireguard-socks-upload-8-reference-client-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.236323118209839,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-3",
+      "output_relative": "wireguard-socks-upload-8-reference-client-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.310831069946289,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-4",
+      "output_relative": "wireguard-socks-upload-8-reference-client-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.478069067001343,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-upload-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-upload-8-reference-client-5",
+      "output_relative": "wireguard-socks-upload-8-reference-client-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 14.037028074264526,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-1.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-1",
+      "output_relative": "wireguard-socks-full-duplex-8-reference-client-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.462907314300537,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-2.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-2",
+      "output_relative": "wireguard-socks-full-duplex-8-reference-client-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.821851015090942,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-3.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-3",
+      "output_relative": "wireguard-socks-full-duplex-8-reference-client-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.805289030075073,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-4.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-4",
+      "output_relative": "wireguard-socks-full-duplex-8-reference-client-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 5.32752799987793,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    },
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "command": [
+        "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-5.json"
+      ],
+      "output": "/private/tmp/xray-v07-bench-20260919/evidence/wireguard-control-clean/wireguard-socks-full-duplex-8-reference-client-5",
+      "output_relative": "wireguard-socks-full-duplex-8-reference-client-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 5.249752044677734,
+      "surviving_process_group": false,
+      "version": "reference-client"
+    }
+  ],
+  "schema_version": 1,
+  "shared_collector_sha256": "8b0c55de302b004599cdbb470571313b35693f4dc212817035e5e4bf484f061d",
+  "smoke": false,
+  "started_unix": 1789839533.553039,
+  "status": "pass",
+  "suite": "new",
+  "versions": {
+    "reference-client": {
+      "commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+      "engine_sha256": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb"
+    }
+  }
+}

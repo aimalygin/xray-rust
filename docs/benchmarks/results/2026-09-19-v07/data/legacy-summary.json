@@ -1,0 +1,4820 @@
+{
+  "artifact_sha256": {
+    "grpc-download-1-baseline-1/1789838613676/xray-rust/stream-transport/result.json": "2928e9cf8909b7dac0bacf24ad40947f738419345fa83868d4e72ac274ade661",
+    "grpc-download-1-baseline-2/1789838614856/xray-rust/stream-transport/result.json": "9b33c279f96e4be21a9d3d5b693062d1ab066ff3541081a0e041abb9e7319801",
+    "grpc-download-1-baseline-3/1789838615252/xray-rust/stream-transport/result.json": "b82f24a2bef7f90da3ee44c493c6d7dde9af9e2ab662d05209a5bd330cb8cce2",
+    "grpc-download-1-baseline-4/1789838616422/xray-rust/stream-transport/result.json": "5e427a11a34a69007b8e49d7b104489c5a94744749820edc538c69399ab27151",
+    "grpc-download-1-baseline-5/1789838616811/xray-rust/stream-transport/result.json": "3c9cf953f5624c9c3a9b19a1a26543cd418f3d694a886408c3ec377810b24513",
+    "grpc-download-1-candidate-1/1789838614060/xray-rust/stream-transport/result.json": "947fc3b0c373df1127c6ed9a3d6dd4d5b1d13824573e59d8cc9e08ba5065d769",
+    "grpc-download-1-candidate-2/1789838614460/xray-rust/stream-transport/result.json": "aa34a52624016fa0a870f7605149f518335abbbb54e2af572fb74535bd5356c8",
+    "grpc-download-1-candidate-3/1789838615645/xray-rust/stream-transport/result.json": "8e13c906a9799647deda7b8cdf55f6ec9732efec188131823841d78644ff5329",
+    "grpc-download-1-candidate-4/1789838616043/xray-rust/stream-transport/result.json": "06cd8a9d113dc1415f7484a95c9a3f25be92ec8b00c2ed2fd74cb26922992b67",
+    "grpc-download-1-candidate-5/1789838617155/xray-rust/stream-transport/result.json": "27ece2008bb38452013d62251d1dc8799502306e373aa4edecf5fd0b5ad5e64a",
+    "grpc-download-8-baseline-1/1789838626980/xray-rust/stream-transport/result.json": "4530717e2483b9f3e13595818895fb04f7ba783d942f1a5f4f95c2207dd32f9c",
+    "grpc-download-8-baseline-2/1789838629114/xray-rust/stream-transport/result.json": "301b7b9e1e16db7a470bbeabc29e72e6c9c1ea67abe7d382f4a63d00a5d79d73",
+    "grpc-download-8-baseline-3/1789838629806/xray-rust/stream-transport/result.json": "ec3abbce2b042630d8c7e31d538ce1971ff8b4d0911e052600947929a56fab69",
+    "grpc-download-8-baseline-4/1789838631895/xray-rust/stream-transport/result.json": "907226cd64dedc1d48dcc08f2a26290da554f794f362d4fa5b4081309a5262cc",
+    "grpc-download-8-baseline-5/1789838632595/xray-rust/stream-transport/result.json": "9619d8113f9317720b7b2b7e99d7904d275f49b11ec5c3b67bb6b86cf2746cf5",
+    "grpc-download-8-candidate-1/1789838627670/xray-rust/stream-transport/result.json": "077cbd9b4ea1d82f5b5b4362f6f2c0a8a3812fb371854002085638c26019d7a9",
+    "grpc-download-8-candidate-2/1789838628375/xray-rust/stream-transport/result.json": "30235d403f910472060a5847f04b97da6cee87a7c1ddea9173514c4da886403f",
+    "grpc-download-8-candidate-3/1789838630500/xray-rust/stream-transport/result.json": "95b97bdff1a7631b024b80e4841cc29154c29e41b87948def600aed38b962c60",
+    "grpc-download-8-candidate-4/1789838631198/xray-rust/stream-transport/result.json": "317611700bafdccbc378b91f72abbdac3a5c43fcb55eb85766ea00f5585a66f4",
+    "grpc-download-8-candidate-5/1789838633293/xray-rust/stream-transport/result.json": "dbd2ac4236d9705ff6b5a5867a58802e2303fba8be27bc4a60cb05ea8a0ea0b2",
+    "grpc-full-duplex-1-baseline-1/1789838617547/xray-rust/stream-transport/result.json": "c4eaca51933d8a1cf3526eb3db2d718033f3850ed0c02e63902e7ccfd3217d53",
+    "grpc-full-duplex-1-baseline-2/1789838618703/xray-rust/stream-transport/result.json": "ce86bc7694035e170ae7edceb0d4732025a6901dcc56a5dd5d209bdce1ec3dc4",
+    "grpc-full-duplex-1-baseline-3/1789838619099/xray-rust/stream-transport/result.json": "06ecef59ab13538977cabf0929edd18a185d47fff034394b9151054df7e2c34f",
+    "grpc-full-duplex-1-baseline-4/1789838620278/xray-rust/stream-transport/result.json": "fbc5ae6956df7d2094570d89602d3c9a6b279861ee7d3c1d4ae92d03400bf053",
+    "grpc-full-duplex-1-baseline-5/1789838620668/xray-rust/stream-transport/result.json": "4ad3cae0cf7e9dbb9a6ea1a610365b3f1f627e8c7be2002cbb9d9ad0bb4be39f",
+    "grpc-full-duplex-1-candidate-1/1789838617928/xray-rust/stream-transport/result.json": "92afea532fbaedcb51c5d80f7425359bd2f6944ab71b4f658a3b417f954bc1f5",
+    "grpc-full-duplex-1-candidate-2/1789838618309/xray-rust/stream-transport/result.json": "f119245731f7182ae023a04c02164c1ad9869ddbebb6688d7719b68727342a68",
+    "grpc-full-duplex-1-candidate-3/1789838619495/xray-rust/stream-transport/result.json": "0cf0f1646b520fdd7514bb36d1d104a3f15c065ff44022436202d279f0d8b63d",
+    "grpc-full-duplex-1-candidate-4/1789838619892/xray-rust/stream-transport/result.json": "147aa13d86f86140b03044fabc43e96152bac079fc9121db116cafc72703807c",
+    "grpc-full-duplex-1-candidate-5/1789838621064/xray-rust/stream-transport/result.json": "7ef1671b9a5cbe3e23c1c105f32d9b25499ff1b6148c6d008ed9115e5d4adbe1",
+    "grpc-full-duplex-8-baseline-1/1789838633999/xray-rust/stream-transport/result.json": "01f0680f24d6c92e45ff9cd2203e829d3219a4fdecb72741248ef00467b33c5c",
+    "grpc-full-duplex-8-baseline-2/1789838636927/xray-rust/stream-transport/result.json": "f17d14480a65cfc812c3c73b98daca8982ff6af8be08800f9970cfc4b1d65d0a",
+    "grpc-full-duplex-8-baseline-3/1789838637933/xray-rust/stream-transport/result.json": "2c68267c704e805222cb13cb24c3693b1f7d21afa2d70548febc038fbd5def41",
+    "grpc-full-duplex-8-baseline-4/1789838640822/xray-rust/stream-transport/result.json": "c82544afc2bb678183fda6769f3b8b5ae3ce185fe46be709f52ef0c047038adf",
+    "grpc-full-duplex-8-baseline-5/1789838641733/xray-rust/stream-transport/result.json": "0b5bb51f86af48fc7401748331566a5a453bb746ac1d1506e88e99e2dd4b190c",
+    "grpc-full-duplex-8-candidate-1/1789838634959/xray-rust/stream-transport/result.json": "93042f524a7ec208837559b742c3d08675c1e3ffdb99ee182df7d0719618f52f",
+    "grpc-full-duplex-8-candidate-2/1789838635915/xray-rust/stream-transport/result.json": "ef737a3d663af232c60ba7aa6343b9cea732842d0b66fa0e6979646113278c0f",
+    "grpc-full-duplex-8-candidate-3/1789838638853/xray-rust/stream-transport/result.json": "20f6d28f2f4be86c5b35ccb60c78c10878b57637e66469f67ac60fca48336a7d",
+    "grpc-full-duplex-8-candidate-4/1789838639822/xray-rust/stream-transport/result.json": "f3bcf19ac4c48836a8fa56469af9c054a887d38b2ff4b3266d5a5fc69366e341",
+    "grpc-full-duplex-8-candidate-5/1789838642644/xray-rust/stream-transport/result.json": "ac2aa986e9ad00f45d93912dc791b0a6257941a14b50541eabb524b2139bcdff",
+    "grpc-upload-1-baseline-1/1789838610242/xray-rust/stream-transport/result.json": "01b9a6cc6901ff8e1e4e3ddfb696f87602bb6eb2f80d5d7870d6dd2bf833d255",
+    "grpc-upload-1-baseline-2/1789838611258/xray-rust/stream-transport/result.json": "335e76d873a51a5f5b6b0812545cfdf85f5f67168d067c582a9ae031675cc13b",
+    "grpc-upload-1-baseline-3/1789838611603/xray-rust/stream-transport/result.json": "a3c1eb8a159b5b3398569bdd068ba3440172b22b04beb0b61eee9287d795d686",
+    "grpc-upload-1-baseline-4/1789838612653/xray-rust/stream-transport/result.json": "dcc460c9ed05f12ff90091f8a4009ac49a0695e11d8fa30748c0873f096e2e63",
+    "grpc-upload-1-baseline-5/1789838612994/xray-rust/stream-transport/result.json": "0c85062e1715b3ade3bc09cd9344141fa5081ef2e57ddd43db7d0efbd367ba57",
+    "grpc-upload-1-candidate-1/1789838610586/xray-rust/stream-transport/result.json": "a42de93e0e285733e37a68fbafc18c8854341fdfacfe18986d06ba4d9dcff00c",
+    "grpc-upload-1-candidate-2/1789838610918/xray-rust/stream-transport/result.json": "29fd13edb3d723c4e48a144a86def428b9c357bd033f68270895bb63b452cc69",
+    "grpc-upload-1-candidate-3/1789838611951/xray-rust/stream-transport/result.json": "0937b1819066772236c044c4a86fe21cbc437156110e7261d3d9ace517a6bf54",
+    "grpc-upload-1-candidate-4/1789838612305/xray-rust/stream-transport/result.json": "94488db058800a489b59fd5a10c11c5223d2bb2997848aa38ff0f47e74904f36",
+    "grpc-upload-1-candidate-5/1789838613340/xray-rust/stream-transport/result.json": "1aa074ce6de2518416f4233b6455196a4a514d7563a504ee40c8c102f750e124",
+    "grpc-upload-8-baseline-1/1789838621457/xray-rust/stream-transport/result.json": "cd14207b6cb21afe82bab21ccea7b88b3150f4e5fe87762684552027a9def283",
+    "grpc-upload-8-baseline-2/1789838623139/xray-rust/stream-transport/result.json": "e53f87e3bcd0fccf10a032a4920f46401fa971929c7b953cb342bf56d885dc04",
+    "grpc-upload-8-baseline-3/1789838623690/xray-rust/stream-transport/result.json": "d4413e8163dd759260df88664ed48f2b4fe00fcb89331fc93462869d5e6ca7f6",
+    "grpc-upload-8-baseline-4/1789838625351/xray-rust/stream-transport/result.json": "0069530e5dd7522545483541b0939f85972d1b3c885e81e3799b32bd4b52320b",
+    "grpc-upload-8-baseline-5/1789838625888/xray-rust/stream-transport/result.json": "d11c4a7bbba75176fea2869c56c0a2905728dbc1d3f53df27cbdfc56ed25f690",
+    "grpc-upload-8-candidate-1/1789838621996/xray-rust/stream-transport/result.json": "1096e79b4a5db23c92d38b4c6cb2ff12322e0a4cd7e80005ec7c5d468fab0ffe",
+    "grpc-upload-8-candidate-2/1789838622592/xray-rust/stream-transport/result.json": "2916900ebc562f26c37dbd698ef4f0867e3cde5f2d77d12e0c98705407ff76e2",
+    "grpc-upload-8-candidate-3/1789838624241/xray-rust/stream-transport/result.json": "8a29944b1f19c6fcfc6202e3cc60308ce0884da98128d12b1f7c4745a832e4ab",
+    "grpc-upload-8-candidate-4/1789838624798/xray-rust/stream-transport/result.json": "9e147915eb0b3dae0a5654ce4cf860ae648735012738d714ac12617d383a521f",
+    "grpc-upload-8-candidate-5/1789838626442/xray-rust/stream-transport/result.json": "c638fb6d06442516ecf5743dc7fdac9d079b61fba5a967c2400b07ca14f06dde",
+    "httpupgrade-download-1-baseline-1/1789838582530/xray-rust/stream-transport/result.json": "3418dc735b18ad341ea6db3e900641a5b4eb1d2ea3ed946e305524209a981828",
+    "httpupgrade-download-1-baseline-2/1789838583535/xray-rust/stream-transport/result.json": "6cf4152af50bfa431663ad43fdbc0d6e4243e8a5bae9db08e9a461cf25ac33b1",
+    "httpupgrade-download-1-baseline-3/1789838583878/xray-rust/stream-transport/result.json": "e311bf58cdcd281fa32db34d9af95509bea3b84c1bbc861fd78aa2e367976f7b",
+    "httpupgrade-download-1-baseline-4/1789838584922/xray-rust/stream-transport/result.json": "5abf89e995b93b37d58c0259a03c6b35c915469e77d05e2f4c7b4529660a6789",
+    "httpupgrade-download-1-baseline-5/1789838585269/xray-rust/stream-transport/result.json": "849b30d93515a844b3072a4de56c5aa34219885e42fed42b9fb7f430b4d643be",
+    "httpupgrade-download-1-candidate-1/1789838582869/xray-rust/stream-transport/result.json": "f92d2da327b65f564c4a08a41dc86f2013ac2b89d6c4aad98a37390b7fa4eb2a",
+    "httpupgrade-download-1-candidate-2/1789838583211/xray-rust/stream-transport/result.json": "f01c0c688370337af1e21e2ad378e7bd8c707e5794d6684e6f7e6a54e61d05a2",
+    "httpupgrade-download-1-candidate-3/1789838584231/xray-rust/stream-transport/result.json": "ec65e1414c469d6ccc4553d7feb5c6d6e06f55f7250982b2beb04377fa76b47c",
+    "httpupgrade-download-1-candidate-4/1789838584585/xray-rust/stream-transport/result.json": "22a8bf23cb72ec9486058ef7ae1fb53402d086e50ebbc1a3394761288f601d88",
+    "httpupgrade-download-1-candidate-5/1789838585609/xray-rust/stream-transport/result.json": "d069dcf76fca92823ef45e3a09442ba8eace473b74825877f1ce539fd4b466e5",
+    "httpupgrade-download-8-baseline-1/1789838594869/xray-rust/stream-transport/result.json": "190a311f62f9bc318bc601d218864ab9cb66ba92ce91cd635c161e6a69ed3ad2",
+    "httpupgrade-download-8-baseline-2/1789838596651/xray-rust/stream-transport/result.json": "d5a82ed366347a8714e60c83c3a1f7be282d3196a11be13055cb35db2fc48fb8",
+    "httpupgrade-download-8-baseline-3/1789838597200/xray-rust/stream-transport/result.json": "097d6c8e3dcdd95a98ef23f749d0ef2aa27adc701aeb36dc2c7d39b1449b4901",
+    "httpupgrade-download-8-baseline-4/1789838598965/xray-rust/stream-transport/result.json": "2aa5c8e0ddd8a5dc82025c728f99bada86adfa7f0c6945e723818559d4a5988f",
+    "httpupgrade-download-8-baseline-5/1789838599574/xray-rust/stream-transport/result.json": "f814deb0730e6ef23436640525a55a71e49d3a3cf2f687c04fb9bae9b2233f83",
+    "httpupgrade-download-8-candidate-1/1789838595427/xray-rust/stream-transport/result.json": "cc5f664e9763d024f19f957aba4cb19d9268834c172b8e5e2355ec921b5f439c",
+    "httpupgrade-download-8-candidate-2/1789838596036/xray-rust/stream-transport/result.json": "12e88df33721767983d31f21c225ee2af5ebd53f63719b195e12a4217ec5641e",
+    "httpupgrade-download-8-candidate-3/1789838597757/xray-rust/stream-transport/result.json": "2084f162c95fabcaad7d674a02406a7219bbd2bfd1418847cd073b48efa9aab1",
+    "httpupgrade-download-8-candidate-4/1789838598361/xray-rust/stream-transport/result.json": "9aec1d942794d91219b8218d2dec6ee2db3b1ad8bce0c6391efc897eda4f5640",
+    "httpupgrade-download-8-candidate-5/1789838600135/xray-rust/stream-transport/result.json": "b0e947ea9a41f8ff2a0b7850d0f326a13823604816a3df2f43451a0bb09ee62a",
+    "httpupgrade-full-duplex-1-baseline-1/1789838585949/xray-rust/stream-transport/result.json": "32bda93f485bfd6c209f01cc2bc7ee247e8aee0bc073ee343d962df16c4722f8",
+    "httpupgrade-full-duplex-1-baseline-2/1789838587092/xray-rust/stream-transport/result.json": "88d9cf2021d84a15b0977e4679a1db8a9e8f49d700e8e44154396e0e3a3db31b",
+    "httpupgrade-full-duplex-1-baseline-3/1789838587442/xray-rust/stream-transport/result.json": "8d4192f22b37a4e36d1e646f4e41844e25db631e1cf4980c26ada3cbceae1a61",
+    "httpupgrade-full-duplex-1-baseline-4/1789838588541/xray-rust/stream-transport/result.json": "4d13cd7e7dd51b96e82c4d0b18c0fb3363fc5fcf0c8bd6b93519efc50b1f3669",
+    "httpupgrade-full-duplex-1-baseline-5/1789838588885/xray-rust/stream-transport/result.json": "714c0281c5bdffe59f7638d5e19293bf59c842f4bf8c8d6b3e7a910b80d92298",
+    "httpupgrade-full-duplex-1-candidate-1/1789838586299/xray-rust/stream-transport/result.json": "bc2160a185ee426b0673fce186a1fa5c808f85b18964c2a66838c750f1270570",
+    "httpupgrade-full-duplex-1-candidate-2/1789838586693/xray-rust/stream-transport/result.json": "1d26e3e429082c4dc694b72bb1fd4926c5169579a05119d3ad66408f96f747dc",
+    "httpupgrade-full-duplex-1-candidate-3/1789838587794/xray-rust/stream-transport/result.json": "2f45736b694a9e45aa2359b8bd98e21fdd5c09dd6592b98fa5c3cdff1fed4a78",
+    "httpupgrade-full-duplex-1-candidate-4/1789838588195/xray-rust/stream-transport/result.json": "fec040fb1da055974cfbdb9ef7b6a1a8fdc0ed2aa7403c7a8e28830df0e25e3c",
+    "httpupgrade-full-duplex-1-candidate-5/1789838589230/xray-rust/stream-transport/result.json": "c41bccc162b26c0d0a4c34b808edb84eaa79175edd36df502ea38929579144c1",
+    "httpupgrade-full-duplex-8-baseline-1/1789838600743/xray-rust/stream-transport/result.json": "51ba25f555f4b5e097d7c87d57f7ab2d346c0c55d89b863aba313d62411ecab2",
+    "httpupgrade-full-duplex-8-baseline-2/1789838603617/xray-rust/stream-transport/result.json": "31fbcd8775b90ca3ad0de5d4b030c2b0b7bc10f08c611d5e5948c34a43c345b6",
+    "httpupgrade-full-duplex-8-baseline-3/1789838604543/xray-rust/stream-transport/result.json": "d79139ba2ac021aea49fae38b708ba94c7ecaf7204b42aea57ef58a6b6fdcc9f",
+    "httpupgrade-full-duplex-8-baseline-4/1789838607434/xray-rust/stream-transport/result.json": "596dba5c2408d9442c70882fdfc426b94cf2108f53d8921ad47cbe1a94c35a44",
+    "httpupgrade-full-duplex-8-baseline-5/1789838608310/xray-rust/stream-transport/result.json": "0c82f30b1bb8b4df15052523cad7cdd5338182445b443b547421441086ef4b9d",
+    "httpupgrade-full-duplex-8-candidate-1/1789838601677/xray-rust/stream-transport/result.json": "5f2419fa21a85980c4418a93cb0dfe4d921f395cd010c0989949001f733e04be",
+    "httpupgrade-full-duplex-8-candidate-2/1789838602656/xray-rust/stream-transport/result.json": "5675146c313cec7540910834fbdb27d1f042a88ddeb3d440b8480f4e382e4e8c",
+    "httpupgrade-full-duplex-8-candidate-3/1789838605583/xray-rust/stream-transport/result.json": "74a9305356629ea44454e583af59df58956071251e6576b49cf8247443de6f9f",
+    "httpupgrade-full-duplex-8-candidate-4/1789838606512/xray-rust/stream-transport/result.json": "7b5913076b65debfedc40cf3c2dd46e5a94f5a646d636877d56134a8514ba0d9",
+    "httpupgrade-full-duplex-8-candidate-5/1789838609284/xray-rust/stream-transport/result.json": "f409d49e859b8795803301047cec632daf11b74e48bd9b63fd17d24344157da8",
+    "httpupgrade-upload-1-baseline-1/1789838579053/xray-rust/stream-transport/result.json": "e1bc1ef8c195d8eaaa73c4901b82d5244eab9313557c33e31bf961149c338e2f",
+    "httpupgrade-upload-1-baseline-2/1789838580095/xray-rust/stream-transport/result.json": "6fb715f3f7b5a45d90a004f598bc1b78207427fb51cc56dd1899efc765afd3ea",
+    "httpupgrade-upload-1-baseline-3/1789838580444/xray-rust/stream-transport/result.json": "c16665b3f362e8046208b710f50a4ae9f507e66d2ab74a9843b9f911e2c48572",
+    "httpupgrade-upload-1-baseline-4/1789838581493/xray-rust/stream-transport/result.json": "a5450de74cd3ebcac7a5bbb7e9a7367b72951a000811f3e7909981659f9aef1f",
+    "httpupgrade-upload-1-baseline-5/1789838581842/xray-rust/stream-transport/result.json": "7eb3b1a425e71b8500241cf19c32d63a0eab65b4327381cd479c2a4512e97283",
+    "httpupgrade-upload-1-candidate-1/1789838579403/xray-rust/stream-transport/result.json": "1a8d014a175b5eae18818f1e646046cb2434a0d758a8b28b6e90fb8715425bdb",
+    "httpupgrade-upload-1-candidate-2/1789838579751/xray-rust/stream-transport/result.json": "1c7e9642c94f87db31d9e33572a799d20edf2db43b31a6b548d7e8930744e78f",
+    "httpupgrade-upload-1-candidate-3/1789838580793/xray-rust/stream-transport/result.json": "e469604258b1cc39df427db7e114b6c2d10e8f9a7f2239992c66e646f1db300b",
+    "httpupgrade-upload-1-candidate-4/1789838581147/xray-rust/stream-transport/result.json": "50c59aea75c7e9fd448c43d7c0fb3d2c9ace3719c69e2cc936c508aaec0202c7",
+    "httpupgrade-upload-1-candidate-5/1789838582188/xray-rust/stream-transport/result.json": "337ce0df483f02d9d5953712d1cf7fe864bba59a52f740e50c5c9fae90d88e32",
+    "httpupgrade-upload-8-baseline-1/1789838589625/xray-rust/stream-transport/result.json": "1315cfea5ee4ed0cda564e0b48784a9840262460b3d750bf6500bf47b867d399",
+    "httpupgrade-upload-8-baseline-2/1789838591200/xray-rust/stream-transport/result.json": "626fb10c8b86f15c26d2dce165014d87e0c788cf3145c665f23dd9dae63a1f43",
+    "httpupgrade-upload-8-baseline-3/1789838591710/xray-rust/stream-transport/result.json": "56a45538d8f4ed11ba06c0c91ccf947109594eb073d5b08940da0ea3c1396b4d",
+    "httpupgrade-upload-8-baseline-4/1789838593302/xray-rust/stream-transport/result.json": "8da85bafb75b690837caa55245bbba8d104769d0796599b407b812d343a576fb",
+    "httpupgrade-upload-8-baseline-5/1789838593803/xray-rust/stream-transport/result.json": "7098b87abcb2dab1ef27af94b81a6b97bfb0c060abe80458d1909cfadffef8fd",
+    "httpupgrade-upload-8-candidate-1/1789838590135/xray-rust/stream-transport/result.json": "169a5cb564ef0c9fdeeb6c2ec76ad6ad4381ce53408e1c9493b6442c42233ce9",
+    "httpupgrade-upload-8-candidate-2/1789838590691/xray-rust/stream-transport/result.json": "7a2e8b0759d523f0a7d8aa2334f3e7aa54b557074746fddd6dce3963b66cf23e",
+    "httpupgrade-upload-8-candidate-3/1789838592207/xray-rust/stream-transport/result.json": "b282abf0658e8bc277753d615decad5a71f49939b2349a18128edd02d72df063",
+    "httpupgrade-upload-8-candidate-4/1789838592753/xray-rust/stream-transport/result.json": "15d834a40d3e8894efd8ada0f3a0bc84e28ed01b9e49961a6789a4364e959ec0",
+    "httpupgrade-upload-8-candidate-5/1789838594305/xray-rust/stream-transport/result.json": "8d05530676e2db8331bb57603dfee06e677127546ae8d3e33d83ab3ff3e5366a",
+    "reality-vision-bulk-1-baseline-1/1789838448425/xray-rust/reality-vision-bulk-throughput/result.json": "959ee8ec74d6df8d0e3af043bb186500dc5fa2e58ac210402cd1d5323d72773d",
+    "reality-vision-bulk-1-baseline-2/1789838475356/xray-rust/reality-vision-bulk-throughput/result.json": "1cd48f060dfbb049b5371a6b6669bfb11d977d24179d4b4f4fa8278bde2ff3c5",
+    "reality-vision-bulk-1-baseline-3/1789838484296/xray-rust/reality-vision-bulk-throughput/result.json": "882a298c9d56838f646c41754dd80d4ef052b6882fe5bf8c08f7eb844545b8cd",
+    "reality-vision-bulk-1-baseline-4/1789838511137/xray-rust/reality-vision-bulk-throughput/result.json": "5470d8d09981502129f307417f41b4769d933f7f9bf38f9f977f4704c160fea0",
+    "reality-vision-bulk-1-baseline-5/1789838520073/xray-rust/reality-vision-bulk-throughput/result.json": "f96d81a24a13e87108eec1187eada710c3e2d9a20369830a79966aa9a4beadc8",
+    "reality-vision-bulk-1-candidate-1/1789838457394/xray-rust/reality-vision-bulk-throughput/result.json": "49043cf733619b3c7e15b1a263445b0a4e18146adec76fee93399f72db9b210f",
+    "reality-vision-bulk-1-candidate-2/1789838466392/xray-rust/reality-vision-bulk-throughput/result.json": "241faf20b5671ee8fe8110ef35d62bf61824756ea6e7a5a6a03af597d6a9d1d6",
+    "reality-vision-bulk-1-candidate-3/1789838493247/xray-rust/reality-vision-bulk-throughput/result.json": "8cf69e766369501f6c22cc3dc8af8f6605d0781fa4120be620f5f805917a910b",
+    "reality-vision-bulk-1-candidate-4/1789838502191/xray-rust/reality-vision-bulk-throughput/result.json": "e1acfcad5aad171c4de7294871248968dc35a381904a70e035589ad9b12ff907",
+    "reality-vision-bulk-1-candidate-5/1789838529080/xray-rust/reality-vision-bulk-throughput/result.json": "0233010810d97c6df184d020829af4621e627445db03a01421377f04c229f514",
+    "ws-download-1-baseline-1/1789838542028/xray-rust/stream-transport/result.json": "4b5f0813e9a3328f365fc1e1b0c612fed665fba9e1bae32bffc0b73ea864739a",
+    "ws-download-1-baseline-2/1789838543045/xray-rust/stream-transport/result.json": "39d6e3623f5141dddd40f704a709133d94bc94612b299041c70193584310752d",
+    "ws-download-1-baseline-3/1789838543392/xray-rust/stream-transport/result.json": "d5a8bed2cf38f4f40178dea789c6c5d7f19c8618bf1a10772f42d3a3ed92aef5",
+    "ws-download-1-baseline-4/1789838544408/xray-rust/stream-transport/result.json": "b380ab47c177b453777c76e3d5e56942c61f8e6ef739532a379b278592a9557b",
+    "ws-download-1-baseline-5/1789838544752/xray-rust/stream-transport/result.json": "8ff3ba1d08bef858f2b17563c76c070541e3f673843ac694df5e698e5990d91c",
+    "ws-download-1-candidate-1/1789838542369/xray-rust/stream-transport/result.json": "601b7503ee0a0280ffa3e4eba7b179c5ad230ba0a147467aef664e402364112f",
+    "ws-download-1-candidate-2/1789838542710/xray-rust/stream-transport/result.json": "dc8c0657fa10f51fe6ff54aa0c59d4dd6df2740822d34630d847b5b7a48bfc42",
+    "ws-download-1-candidate-3/1789838543739/xray-rust/stream-transport/result.json": "c72fab03a832d12e4a9d8f93abf709c96bf8fe3bc56d660d6b4c2c0a2605f6c9",
+    "ws-download-1-candidate-4/1789838544076/xray-rust/stream-transport/result.json": "a8bee0dc3ed7312255b0ed3c2f224158818431cbfd4cbfd52a640b78bf9e1084",
+    "ws-download-1-candidate-5/1789838545088/xray-rust/stream-transport/result.json": "9c8bc335c0fec5f9b51daa13d99842df5deef81519bdd99006bc761831d7c6b6",
+    "ws-download-8-baseline-1/1789838559419/xray-rust/stream-transport/result.json": "44ee114ecb5f099aaac19c9a69a87fb97df0b5ba68f5c28d680ac800afa825f2",
+    "ws-download-8-baseline-2/1789838561655/xray-rust/stream-transport/result.json": "91a0e3306c3741e24fd1799cb0bd8f4b6664e1c54e7ece550ddda03ec96483f7",
+    "ws-download-8-baseline-3/1789838562286/xray-rust/stream-transport/result.json": "7b600b6aa5391e3b79b5b95ca2d33c2e3b146edd1722d2e007d600dcf5686058",
+    "ws-download-8-baseline-4/1789838564269/xray-rust/stream-transport/result.json": "de769e453896bb3a352643157167664ea6a1af9789f8c7e0e7fab748a73cbf9a",
+    "ws-download-8-baseline-5/1789838564946/xray-rust/stream-transport/result.json": "dc5c52fb89261d0f6f8b7ba0810ab9f1dabb306f933d956389d9f60a76f66cd8",
+    "ws-download-8-candidate-1/1789838560094/xray-rust/stream-transport/result.json": "a1b097ce3904b135296d4d2cf1f1fd794f45e24cf0acac94697f3aa01f7c689a",
+    "ws-download-8-candidate-2/1789838560927/xray-rust/stream-transport/result.json": "862127f51fdebd21c7e72a27ea2c790155fe9a191308ee80b3b7f9b13aa97797",
+    "ws-download-8-candidate-3/1789838562934/xray-rust/stream-transport/result.json": "2e757c673a0b5fd183bac634cc740bab1d193f78f7905520d1a66eaec343b60c",
+    "ws-download-8-candidate-4/1789838563586/xray-rust/stream-transport/result.json": "bf02af802daf4f69c476bc1fbc52ba41277bed3b280906cf83108ce322273e0b",
+    "ws-download-8-candidate-5/1789838565598/xray-rust/stream-transport/result.json": "09806b6fa179e9c83e928a031080a75ad36d534663db02526bfd025156afb410",
+    "ws-full-duplex-1-baseline-1/1789838545433/xray-rust/stream-transport/result.json": "9d933d3578d7c7ee6414b24ea7e1ab9d64c2159c7585949af0e316eeb3f1ba85",
+    "ws-full-duplex-1-baseline-2/1789838546673/xray-rust/stream-transport/result.json": "8220dcf1d2ec549e17cac71c52bec88699e2fb56e7a017d18d91336245e8ea62",
+    "ws-full-duplex-1-baseline-3/1789838547066/xray-rust/stream-transport/result.json": "4ea7f40dc41beb49ddbb4dc4eb16cfc4a9e3536ac99554163043f5a4dff9330f",
+    "ws-full-duplex-1-baseline-4/1789838548257/xray-rust/stream-transport/result.json": "d6341b72faf70215a694679faa517dd5cb4566acc12e9cb44d4397967c441053",
+    "ws-full-duplex-1-baseline-5/1789838548695/xray-rust/stream-transport/result.json": "038203b254df6966e3f207b9c92caa8991e26ad6cff5e6ec53e4d85f7e678b27",
+    "ws-full-duplex-1-candidate-1/1789838545825/xray-rust/stream-transport/result.json": "2272c17312f9317142833b6f3d4af6d860b89c50d562250e993ae80e19c7eada",
+    "ws-full-duplex-1-candidate-2/1789838546272/xray-rust/stream-transport/result.json": "218e4ae79ec6cdd5350af884626d40fb1012586fe7aefb7e786f392d48ab270d",
+    "ws-full-duplex-1-candidate-3/1789838547458/xray-rust/stream-transport/result.json": "4f28c17b91243382799b8c90a6cea0e2cf3e6b6b2a7f5c27a57b9e576d23289f",
+    "ws-full-duplex-1-candidate-4/1789838547848/xray-rust/stream-transport/result.json": "777c51fa33eccc36c1c9e1596271afd045271d4dbeb9e232c56ff65b0eafb60b",
+    "ws-full-duplex-1-candidate-5/1789838549088/xray-rust/stream-transport/result.json": "f1f3d9814e87c0a91a746fc2563aee6105b168a1631ea35b9bb1097ad0a2f3cb",
+    "ws-full-duplex-8-baseline-1/1789838566261/xray-rust/stream-transport/result.json": "8840917b5afb173fc20b5a4729ad272e161cfcb42556b6041e9ca42f2a9e8011",
+    "ws-full-duplex-8-baseline-2/1789838570185/xray-rust/stream-transport/result.json": "73df705a4feed0c7fb7bb40dc21168763128ee48b117391fb654245ac9770f07",
+    "ws-full-duplex-8-baseline-3/1789838571640/xray-rust/stream-transport/result.json": "c16e806c80a65ee10e641ad66b77fd636d177d07d6a253e4372c9696bebf97d6",
+    "ws-full-duplex-8-baseline-4/1789838575343/xray-rust/stream-transport/result.json": "6b767a6bb522982d60be4e970a62942d2267a6ae6a495261be580a6df0d3ae2a",
+    "ws-full-duplex-8-baseline-5/1789838576574/xray-rust/stream-transport/result.json": "4c58f6069cb46b9f00cfb6d1ace78d8a1ba2a6430298907ba43952391733a009",
+    "ws-full-duplex-8-candidate-1/1789838567607/xray-rust/stream-transport/result.json": "c57bc959983de4ff504399e9731b622f250132d1be627025a752f48eadebda5c",
+    "ws-full-duplex-8-candidate-2/1789838568830/xray-rust/stream-transport/result.json": "8b7438c2a54f2eba5241bdc5e826efb7f1e7e221b3a2ea7a2df2a2235ade5cee",
+    "ws-full-duplex-8-candidate-3/1789838572775/xray-rust/stream-transport/result.json": "3d4c39fd60edd9034b60588306a3f793233c68eaf5f5874b251ac424cad44088",
+    "ws-full-duplex-8-candidate-4/1789838574045/xray-rust/stream-transport/result.json": "5078b86c214c5d57da885ecadf3851de3fed44a61fe4f90a3c64a9f8a51dce97",
+    "ws-full-duplex-8-candidate-5/1789838577785/xray-rust/stream-transport/result.json": "a244457f3f6f91f7d11719508f1e9a31059e0a5812461945ea2a2129437b81d6",
+    "ws-upload-1-baseline-1/1789838538070/xray-rust/stream-transport/result.json": "1f02098c0863d71a693c7690570f77cf1ae547d9ebf193af5a041757f70e36f8",
+    "ws-upload-1-baseline-2/1789838539272/xray-rust/stream-transport/result.json": "ef1830752b45015468ba2bf37b47552fc218c3e7e5ab54ffb17563e4acc4734d",
+    "ws-upload-1-baseline-3/1789838539664/xray-rust/stream-transport/result.json": "50b6aba0c85860e6f6ae4fff1b8a19d2ca7073ede456d27894e48b6eac1beb68",
+    "ws-upload-1-baseline-4/1789838540856/xray-rust/stream-transport/result.json": "c3ecf40379d5cb138680d566d8b9c84410cc3d31814c7db9a054482bed0acaa0",
+    "ws-upload-1-baseline-5/1789838541253/xray-rust/stream-transport/result.json": "b69e05a1fef697a93549933e3525bdebd7aeb02955b075f097f459b65bfb7780",
+    "ws-upload-1-candidate-1/1789838538449/xray-rust/stream-transport/result.json": "9e748cdf361aaa0257adb88bb170a2eeeff517d8de09ee92c837ef700d79d63d",
+    "ws-upload-1-candidate-2/1789838538893/xray-rust/stream-transport/result.json": "fe8ea41be3055bbd9c2a30137b1d65c96b59ca6fe9ef9f616faae9b48954d39d",
+    "ws-upload-1-candidate-3/1789838540069/xray-rust/stream-transport/result.json": "bcb5b9744e0742c602028ada75bbc1b426683aeaaf06e5978c999996cba9def5",
+    "ws-upload-1-candidate-4/1789838540464/xray-rust/stream-transport/result.json": "38ba2a7f4c444454ec1b13b3c780a047e91a4e933b3e8ddaefc1eb33e2afb6cc",
+    "ws-upload-1-candidate-5/1789838541645/xray-rust/stream-transport/result.json": "ad883c842cf16452d01406006b43339236f004fff15d0a42ecd954e63a15814e",
+    "ws-upload-8-baseline-1/1789838549492/xray-rust/stream-transport/result.json": "33d9e98c8b98e6c4a6b6fc6ebcae40eaff6cea10bdb263e3e2a770ff398b20be",
+    "ws-upload-8-baseline-2/1789838552604/xray-rust/stream-transport/result.json": "6edba0a618a05fe8b704a99652f06740dc67756ad3cec8aa0a00300f5978ec53",
+    "ws-upload-8-baseline-3/1789838553673/xray-rust/stream-transport/result.json": "3216ab8f31891c2264a9ce0effc10625a41b057ed99711677fb6947455d3e079",
+    "ws-upload-8-baseline-4/1789838556639/xray-rust/stream-transport/result.json": "c2d4ec166ad51021366b9062dfb32a73c542c6c4677983bd1ea701289d76afd7",
+    "ws-upload-8-baseline-5/1789838557599/xray-rust/stream-transport/result.json": "414e6135ef43a651cb8c921f7cb9d6791e55d4365426a8f32913f18c0e0348e6",
+    "ws-upload-8-candidate-1/1789838550798/xray-rust/stream-transport/result.json": "561efd763c9e5c34d3af2b9fb6e8dd9f19167cd74db6d5f1657a7d19396fffc4",
+    "ws-upload-8-candidate-2/1789838551668/xray-rust/stream-transport/result.json": "b9d1bd86d21e2a9c86fc6094f64655f09daa5416bc77e08db018ce0cdfea4fa8",
+    "ws-upload-8-candidate-3/1789838554573/xray-rust/stream-transport/result.json": "68abfddf639380af19244e109dab395bc675422155ddce066a07fe452f48b4d8",
+    "ws-upload-8-candidate-4/1789838555581/xray-rust/stream-transport/result.json": "390df42b0c52b71aa11e8867eb67603f09273cc192fea5756c97f90ca878c391",
+    "ws-upload-8-candidate-5/1789838558580/xray-rust/stream-transport/result.json": "40801db3f2f156a2f79c255fdba6c7f979e191bc8f4b5425fd4b6ee47822c77e",
+    "xhttp-h1-download-1-baseline-1/1789838811836/xray-rust/stream-transport/result.json": "20fd9fcacc602d6f77faf90782b890a2f75608a65ce321b957fbb87c7fde3f06",
+    "xhttp-h1-download-1-baseline-2/1789838812986/xray-rust/stream-transport/result.json": "74ba9aa173c4c228def87e99d66598137effe5631d160f29a8e425f4856e74a9",
+    "xhttp-h1-download-1-baseline-3/1789838813366/xray-rust/stream-transport/result.json": "882a8d973e7cd1d52168470883e8d1da4e47c8f3aa1ba44ca618842647fa20a5",
+    "xhttp-h1-download-1-baseline-4/1789838814497/xray-rust/stream-transport/result.json": "fed5f5645b40bec09e75cac2416f53bc9f678862b3a426ed002d8c9b47be91cd",
+    "xhttp-h1-download-1-baseline-5/1789838814880/xray-rust/stream-transport/result.json": "bb7bcaa6f05357de75e3a17a4be3c377f90f9359bf0021603eb2735634201bea",
+    "xhttp-h1-download-1-candidate-1/1789838812215/xray-rust/stream-transport/result.json": "96000a7ac03828752f00d7db6037ff62554ab98a4b088b50483b49acb52d0123",
+    "xhttp-h1-download-1-candidate-2/1789838812596/xray-rust/stream-transport/result.json": "043dd0f76ac24b3aaae6cf37182850c371d9c544fb5700b21f95d3178e70d925",
+    "xhttp-h1-download-1-candidate-3/1789838813746/xray-rust/stream-transport/result.json": "4c4d5ba198f92c4fc3537c68fe16899f195e836304a917fc9fce2abb00d9a45c",
+    "xhttp-h1-download-1-candidate-4/1789838814125/xray-rust/stream-transport/result.json": "f155f413d0c885acbd820b0261e180190e32de9ea041a71da1aefd611d7b689c",
+    "xhttp-h1-download-1-candidate-5/1789838815203/xray-rust/stream-transport/result.json": "af6a794c927a47c3fb6956c103e4a0c3cc978165b32364e276f86ccc017ea7f4",
+    "xhttp-h1-download-8-baseline-1/1789839149787/xray-rust/stream-transport/result.json": "7da352c7f4f231d5280cf3e87b83a74cd8fb0bc0578175c0a585c2667afaa60b",
+    "xhttp-h1-download-8-baseline-2/1789839151757/xray-rust/stream-transport/result.json": "38ac182d0d57f2c60952c18b71d1d11a49a49bdb05503ae01ad4acb860c450da",
+    "xhttp-h1-download-8-baseline-3/1789839152335/xray-rust/stream-transport/result.json": "88b7f8462d8660c90f6102f71129766039710d4f54e2452b38eef9571ef418e8",
+    "xhttp-h1-download-8-baseline-4/1789839155321/xray-rust/stream-transport/result.json": "1cad4cfc0b5fe986bfe1cc34853842a84f431a2a3890f18f3320a41345eeaec2",
+    "xhttp-h1-download-8-baseline-5/1789839156110/xray-rust/stream-transport/result.json": "12222c253844fe9214f4e78cdaeef9992bfd87a65ab747278a16818a39203562",
+    "xhttp-h1-download-8-candidate-1/1789839150369/xray-rust/stream-transport/result.json": "400b9d2d69d7bab451b41421eda496ed451798eebdaedc1584789bd4a15d33e9",
+    "xhttp-h1-download-8-candidate-2/1789839150911/xray-rust/stream-transport/result.json": "657a9786bd21bdd3cbf93d134652727a50029e2d748ae8a5e96de34ccbf3ea92",
+    "xhttp-h1-download-8-candidate-3/1789839153469/xray-rust/stream-transport/result.json": "5a094a17cc8f9681a5d2ee5e42128212a7fdfdbfc499837edbc28301b9170ba2",
+    "xhttp-h1-download-8-candidate-4/1789839154305/xray-rust/stream-transport/result.json": "37f7fa6573f8a46465aa39e876a7b0824b81b37cffd76ff6078d02a6fa86ee69",
+    "xhttp-h1-download-8-candidate-5/1789839157173/xray-rust/stream-transport/result.json": "e46beed5eae6ac283bc384cd7234916379aeebb863282bec05ba0178a7d55b06",
+    "xhttp-h1-full-duplex-1-baseline-1/1789838815572/xray-rust/stream-transport/result.json": "07fa942bd4495336a64a7d02bdb84f9d12d8734ca76e0f1dfc8d7099eeb2c223",
+    "xhttp-h1-full-duplex-1-baseline-2/1789838865692/xray-rust/stream-transport/result.json": "29c97d53f501337d4d9ad79abece07a3ac40111a52e6842c4e7231daaa5e9020",
+    "xhttp-h1-full-duplex-1-baseline-3/1789838882380/xray-rust/stream-transport/result.json": "822556332430b64b3ee6bcaff69c00d9affbfb6d08767868dc5fba01d4c17b96",
+    "xhttp-h1-full-duplex-1-baseline-4/1789838932516/xray-rust/stream-transport/result.json": "94ac4a380ae348b62be0fac97186eaf241ab850ede17da2414884e276d676918",
+    "xhttp-h1-full-duplex-1-baseline-5/1789838949271/xray-rust/stream-transport/result.json": "330398fd54d94cba55f93f871064dd23db5e4923887d020cc92a774929b00f10",
+    "xhttp-h1-full-duplex-1-candidate-1/1789838832293/xray-rust/stream-transport/result.json": "eb00a692491516e1f3601bf63ba769d640b7ad066b4c4d07208a009366490487",
+    "xhttp-h1-full-duplex-1-candidate-2/1789838849013/xray-rust/stream-transport/result.json": "725b509547c1e1324c97b4ed455c62590b3ff64acda608c005de518986177f55",
+    "xhttp-h1-full-duplex-1-candidate-3/1789838899083/xray-rust/stream-transport/result.json": "17d867a4aa547ac47afa6fd5496f754d163955cfa54c43696a9d5bc8be29780f",
+    "xhttp-h1-full-duplex-1-candidate-4/1789838915808/xray-rust/stream-transport/result.json": "d048453f25fc1023fda6f431ebcf3b63ca5575d825982aaca8c0297d0f5b81a5",
+    "xhttp-h1-full-duplex-1-candidate-5/1789838965974/xray-rust/stream-transport/result.json": "368c36f7973f014005c981ec8cbdd0ec5fdec04a75e6a79a937efb9507e57a71",
+    "xhttp-h1-full-duplex-8-baseline-1/1789839158129/xray-rust/stream-transport/result.json": "60070eed01c35f76c13a30e092f32cdea63bb4146f7e8823bbf3123cb6f9ba72",
+    "xhttp-h1-full-duplex-8-baseline-2/1789839208809/xray-rust/stream-transport/result.json": "dfde869091b4140b7f87e7f87b265bc1ee05c3a7dfa1b764c48b94b40fffbd64",
+    "xhttp-h1-full-duplex-8-baseline-3/1789839225745/xray-rust/stream-transport/result.json": "d6887ac6e1062b4b954df6772e39a21491d5f311a6166e17c3b2877c7f5aa52b",
+    "xhttp-h1-full-duplex-8-baseline-4/1789839276396/xray-rust/stream-transport/result.json": "1479fab6725d91e85564306e8d46af75a3f966d5271db9c521145d392e7c6c63",
+    "xhttp-h1-full-duplex-8-baseline-5/1789839293241/xray-rust/stream-transport/result.json": "6249e16ef6abb9cf0922059139e80dd8f1c1c74d0f7607dfc50e0517e59c7b64",
+    "xhttp-h1-full-duplex-8-candidate-1/1789839175180/xray-rust/stream-transport/result.json": "5e8b8851770ae6885a6da2850c4050d91fc14f2c3cc25eebedabb96de65e6e8a",
+    "xhttp-h1-full-duplex-8-candidate-2/1789839191960/xray-rust/stream-transport/result.json": "42f6f8a54e7e8052a4122556855a7bc36f71ffe2f83d7cfd19d9eea63127ee15",
+    "xhttp-h1-full-duplex-8-candidate-3/1789839242762/xray-rust/stream-transport/result.json": "0749ae932af6d4800ce09b38af28178cff6ba0887cd2df19ea2ae521263439db",
+    "xhttp-h1-full-duplex-8-candidate-4/1789839259556/xray-rust/stream-transport/result.json": "d46628b4e7507a432ff5ae37b04ad537c75081e9fcd29afb218aa15117de028d",
+    "xhttp-h1-full-duplex-8-candidate-5/1789839310017/xray-rust/stream-transport/result.json": "fc65deda1fa1424d215070e19af02362a8ea50498681fbec02003a1e06a351ca",
+    "xhttp-h1-upload-1-baseline-1/1789838643607/xray-rust/stream-transport/result.json": "8de05a3a64a99e02992b38d64981d2c5f3c6252596afe53b4180ae21657eb914",
+    "xhttp-h1-upload-1-baseline-2/1789838694390/xray-rust/stream-transport/result.json": "4e15cec8390bdfe59bcf8e7f2c53560034a09a839fc9fded3b4921aba536498f",
+    "xhttp-h1-upload-1-baseline-3/1789838711287/xray-rust/stream-transport/result.json": "d6362569f49ae510e51f39142f0f58cac5a8c1395c3844b635af07b059270522",
+    "xhttp-h1-upload-1-baseline-4/1789838761620/xray-rust/stream-transport/result.json": "777b20af9b472722eb2c7a0e7b7d606afe8340546e6eb80566fd14e1e4d3dabc",
+    "xhttp-h1-upload-1-baseline-5/1789838778367/xray-rust/stream-transport/result.json": "a7f2e6bf0b8a8e277ae36f94f20c357de2c176d9d63aa14def1ee98cf7574fb1",
+    "xhttp-h1-upload-1-candidate-1/1789838660481/xray-rust/stream-transport/result.json": "5d183875e70c559989af0b74ba67f28257160a4f2a91b0d7c1bb935265a80291",
+    "xhttp-h1-upload-1-candidate-2/1789838677468/xray-rust/stream-transport/result.json": "323cad2fab31faba428f097daddaa17a7cb1d5978645178d6bfd117690744d26",
+    "xhttp-h1-upload-1-candidate-3/1789838728254/xray-rust/stream-transport/result.json": "2cd1dd002a80c8e18a1061074f12b70fefae03a5c06a19e52dd1eebae6efabde",
+    "xhttp-h1-upload-1-candidate-4/1789838744939/xray-rust/stream-transport/result.json": "b997c0db4dd0ef67a875556b415cd8128bfd428be96fdab39f0646a207510142",
+    "xhttp-h1-upload-1-candidate-5/1789838795119/xray-rust/stream-transport/result.json": "60bad478d36062f81d83513d84a2d1802d24bdb0ee4515eb55ff67d240428dff",
+    "xhttp-h1-upload-8-baseline-1/1789838982669/xray-rust/stream-transport/result.json": "2b3062a0abb0e21f401779a61862f504604bf7f2ac6aff7a6887363b14a4466e",
+    "xhttp-h1-upload-8-baseline-2/1789839032873/xray-rust/stream-transport/result.json": "0e586ae8d83d324d3480bf7e96cc30f2c13c932a90b152f55d02d0fe8ad86b6f",
+    "xhttp-h1-upload-8-baseline-3/1789839049627/xray-rust/stream-transport/result.json": "2ae879852422986a7322d3713e86900d65a4323d35d966c7fadab7b7e9e12c6c",
+    "xhttp-h1-upload-8-baseline-4/1789839099694/xray-rust/stream-transport/result.json": "da73413299587e449778e74eaaff2ce8cc7c5f11223e6e77157ff7576d417ae1",
+    "xhttp-h1-upload-8-baseline-5/1789839116368/xray-rust/stream-transport/result.json": "f9e5be1f9e7bb483085e46db099fcbabc18063fe3ac8db0f9eb36a5096fa04b9",
+    "xhttp-h1-upload-8-candidate-1/1789838999398/xray-rust/stream-transport/result.json": "7eeecfd2e466397c30b008e63ba03a150418c46260e88fab7d3b97c4b9e53f50",
+    "xhttp-h1-upload-8-candidate-2/1789839016173/xray-rust/stream-transport/result.json": "537699900086ebab4bd3358574a3d99c80e25c94e6b854be1812d6713d9341e7",
+    "xhttp-h1-upload-8-candidate-3/1789839066333/xray-rust/stream-transport/result.json": "73c6efb8102f866a09f534a451a63b731716c9aa181330f94694c84b5fc6a297",
+    "xhttp-h1-upload-8-candidate-4/1789839083020/xray-rust/stream-transport/result.json": "b18185327b084f45025fb500f0eed79d9705ea171a2025473345361e7ad9de34",
+    "xhttp-h1-upload-8-candidate-5/1789839133085/xray-rust/stream-transport/result.json": "5dbd19b4d9637427eec6fd77a7f93652fbd03dabb5c63b9426337c6e9fe024bb",
+    "xhttp-h2-download-1-baseline-1/1789839330538/xray-rust/stream-transport/result.json": "4859674fd3218c70222e0e98ea99e489c254dd5357ced829484533d0e2115445",
+    "xhttp-h2-download-1-baseline-2/1789839331652/xray-rust/stream-transport/result.json": "61505656c0a6cabe10290b4bb39a0143f33818c8bd1c504c00a6e75f5dc6233f",
+    "xhttp-h2-download-1-baseline-3/1789839332020/xray-rust/stream-transport/result.json": "eaebcaa039016794b6ae1b54ffb0c4ad9a2cc6c560d32ba6f606fed5e1102422",
+    "xhttp-h2-download-1-baseline-4/1789839333239/xray-rust/stream-transport/result.json": "73a58f49ecc7399388169cd51eb8cab36995420a503dee6e34464f8417e30200",
+    "xhttp-h2-download-1-baseline-5/1789839333614/xray-rust/stream-transport/result.json": "cb90b6cea65f48a0ea7bf360d1160a1c7ef5398f6981dc8ae632ece8b38f75cf",
+    "xhttp-h2-download-1-candidate-1/1789839330908/xray-rust/stream-transport/result.json": "00cc04367bc8da94e48506df93b277a95420c2c6e4c8b4ac4b6d55b312050744",
+    "xhttp-h2-download-1-candidate-2/1789839331279/xray-rust/stream-transport/result.json": "2fb61232efc9e7b3ed68212c32821b8a8002de4e86815e0b7c5ce829b1e27cf0",
+    "xhttp-h2-download-1-candidate-3/1789839332383/xray-rust/stream-transport/result.json": "a67f7dee704b66a7e89b25ccf9c48e71b653336131b279c61faf5b52b383e45a",
+    "xhttp-h2-download-1-candidate-4/1789839332813/xray-rust/stream-transport/result.json": "f01010825db29c835a915a9a92fedea361d8a27e3c1fc72b95722c0c80891017",
+    "xhttp-h2-download-1-candidate-5/1789839333991/xray-rust/stream-transport/result.json": "f26158eabe19eec4b443ee5e65a6eba3e73ec80bd0a837dc05c21c9d193c74ac",
+    "xhttp-h2-download-8-baseline-1/1789839346292/xray-rust/stream-transport/result.json": "edbb92d2284e94ace46f8a426ad90f3e7c91804edab14a582eb401c6375b6090",
+    "xhttp-h2-download-8-baseline-2/1789839348132/xray-rust/stream-transport/result.json": "688aa3b7c6978af40e71f924b74e83d9dba16491ddfaead82615b556db6d55d3",
+    "xhttp-h2-download-8-baseline-3/1789839348761/xray-rust/stream-transport/result.json": "642aeba276330170c413712804c744364611ba3a6c40f826cddacb226e2ed8b3",
+    "xhttp-h2-download-8-baseline-4/1789839350757/xray-rust/stream-transport/result.json": "6a9a4653a349194582e8d0de11f78effbcfdf84a647b297534b13b5c95d5064a",
+    "xhttp-h2-download-8-baseline-5/1789839351440/xray-rust/stream-transport/result.json": "129093af0dd8de7e354a52b3aba829680057e1a4b90add3492ff03f3b2adb1d8",
+    "xhttp-h2-download-8-candidate-1/1789839346872/xray-rust/stream-transport/result.json": "21195ea8c97aa637e4b2d4015ca7100927d99fd760676d7374422d5846eeb7d4",
+    "xhttp-h2-download-8-candidate-2/1789839347496/xray-rust/stream-transport/result.json": "086ae0deee1dd57933c88e64685b9719c16c95db60ceefdb0578e7e6b32a5da3",
+    "xhttp-h2-download-8-candidate-3/1789839349398/xray-rust/stream-transport/result.json": "c2006a8673e6cff92dd3e67ad0c95b80bd0aa639a1819727b7d79ae0a7fe8629",
+    "xhttp-h2-download-8-candidate-4/1789839350083/xray-rust/stream-transport/result.json": "a0d46c473a11afe873e53a929dd90f8d4d4607741eb4bb399012a0b49220fdbe",
+    "xhttp-h2-download-8-candidate-5/1789839352073/xray-rust/stream-transport/result.json": "81d91090a4945ad86c7434c89bdcad7690c95b49ef98e1d09f5dddf980ae3d94",
+    "xhttp-h2-full-duplex-1-baseline-1/1789839334364/xray-rust/stream-transport/result.json": "2564b731675ba97787a0a205def1f6d36d7f94023bb8d92e6ad938d78f10e605",
+    "xhttp-h2-full-duplex-1-baseline-2/1789839335639/xray-rust/stream-transport/result.json": "6e7402a7d075b25a752de80be4d7082ea297a191225c1f1ce92f8c6f4746660d",
+    "xhttp-h2-full-duplex-1-baseline-3/1789839336066/xray-rust/stream-transport/result.json": "c545dc126603393c2e2fe93c8cff9db6314afee37452b95b8689ad6ffb3feae3",
+    "xhttp-h2-full-duplex-1-baseline-4/1789839337339/xray-rust/stream-transport/result.json": "0271fd6aa62f9e505235a5f1425769bca24497bbdf63d6d06fa851afd27d2c7e",
+    "xhttp-h2-full-duplex-1-baseline-5/1789839337767/xray-rust/stream-transport/result.json": "fccc33074745600e9667697409a298771333cca43e31a6b74b1294e650273790",
+    "xhttp-h2-full-duplex-1-candidate-1/1789839334785/xray-rust/stream-transport/result.json": "78f2a010f0a7463f6da535f8142a3753699f6d0602e5c932306f9506bb29140f",
+    "xhttp-h2-full-duplex-1-candidate-2/1789839335206/xray-rust/stream-transport/result.json": "5e3b37ed749114c2fd353ffdfc739796f7bfcbf14601de36007e890ceb0c6cf5",
+    "xhttp-h2-full-duplex-1-candidate-3/1789839336485/xray-rust/stream-transport/result.json": "f7c38f4a36f0fd9cfe9030bcb1d65c4ffedf589df5cba36b35ad4b1a13be85bd",
+    "xhttp-h2-full-duplex-1-candidate-4/1789839336909/xray-rust/stream-transport/result.json": "905f05ea486fdb72bad28253634757991670314484e91541f6112fe096988a9d",
+    "xhttp-h2-full-duplex-1-candidate-5/1789839338189/xray-rust/stream-transport/result.json": "42589600a1930c4439a504319473b5e7e4b00912a7fc00aa684d77a9daa3af41",
+    "xhttp-h2-full-duplex-8-baseline-1/1789839352696/xray-rust/stream-transport/result.json": "081b881f98b341fe601f30ffc0e9a04bd547db0fd21cff498fd6b131eeaa7f7e",
+    "xhttp-h2-full-duplex-8-baseline-2/1789839356497/xray-rust/stream-transport/result.json": "8598269e4982b65bc0912e474dc51f0c151b4ee43ae0bffac14f86d55b2c4d78",
+    "xhttp-h2-full-duplex-8-baseline-3/1789839357736/xray-rust/stream-transport/result.json": "883a8cb64cff3ecc311936e0493cb5a6c19417cccf6d751d9271403400b16953",
+    "xhttp-h2-full-duplex-8-baseline-4/1789839361511/xray-rust/stream-transport/result.json": "b6e9682f4bcb02fc86e3577f9abffc7fc872418d95935d8195ee9f322e567c37",
+    "xhttp-h2-full-duplex-8-baseline-5/1789839362806/xray-rust/stream-transport/result.json": "61b7e1a53e814b4d0a1f4fae396bc1e44027ef0b7e2f5fd58e76ab89c10fa9a8",
+    "xhttp-h2-full-duplex-8-candidate-1/1789839353997/xray-rust/stream-transport/result.json": "0395e1431a38754675fe45b18ee81301ee89f6b58d7ce481ed18c40548710ef9",
+    "xhttp-h2-full-duplex-8-candidate-2/1789839355238/xray-rust/stream-transport/result.json": "d3bf01fbeae19d56e9f8090e5b515553de4e318604bb803c595c8fcd4570a972",
+    "xhttp-h2-full-duplex-8-candidate-3/1789839358973/xray-rust/stream-transport/result.json": "690816d0ad462dc425fc5db1ba1917d1c194387806471b0cf8b5bbbf1ae437b1",
+    "xhttp-h2-full-duplex-8-candidate-4/1789839360219/xray-rust/stream-transport/result.json": "f74c0bbd7d2a9c14c0efe6a08d3ab3fd0289d12063e22adc0ced47d531fba59f",
+    "xhttp-h2-full-duplex-8-candidate-5/1789839364045/xray-rust/stream-transport/result.json": "c9251441b6b3a37d952b38d1678f665c2ec51cd3240b313dc4f55aef9cc3ebe0",
+    "xhttp-h2-upload-1-baseline-1/1789839326775/xray-rust/stream-transport/result.json": "40b910ef457a00af7f1d007cb0dd1a305533e21d8c4ba34d802d4de6a0ed8a89",
+    "xhttp-h2-upload-1-baseline-2/1789839327926/xray-rust/stream-transport/result.json": "77538ea484fc97b89b8cadc4211b07f8b077a7733e5c71fbc728840118c7a783",
+    "xhttp-h2-upload-1-baseline-3/1789839328305/xray-rust/stream-transport/result.json": "a1af6ce75289d1782bd129c714102f0eead14672dca49c89f07403ae256400c5",
+    "xhttp-h2-upload-1-baseline-4/1789839329422/xray-rust/stream-transport/result.json": "6bdaf8df1ce3dc723c2deb3e87f8b7cb21996f4a6ef43200005f675c346fe830",
+    "xhttp-h2-upload-1-baseline-5/1789839329794/xray-rust/stream-transport/result.json": "aad5d839726e4200d0000f77f3664c8dd0cc006dfd53dedaaabd9e8dd7fe8ecb",
+    "xhttp-h2-upload-1-candidate-1/1789839327195/xray-rust/stream-transport/result.json": "90be348c6204fac716543b4f82563fb366a78bd9d02d78e710f9b8db11ef4e2e",
+    "xhttp-h2-upload-1-candidate-2/1789839327566/xray-rust/stream-transport/result.json": "5a05c2aec13f7fc349bd6a2928f1707e3d845cfc859457bdc2f740ef7f1120fa",
+    "xhttp-h2-upload-1-candidate-3/1789839328679/xray-rust/stream-transport/result.json": "692601d2c6fc0c47000bda264d140dbcc56a7455020890381f879d6b4d93b9bf",
+    "xhttp-h2-upload-1-candidate-4/1789839329054/xray-rust/stream-transport/result.json": "5ee1a36856a0dc787a643b2631f47b9cb6c5dc8cc52c23e754848876e2b7d400",
+    "xhttp-h2-upload-1-candidate-5/1789839330164/xray-rust/stream-transport/result.json": "f1e2a9448003e2c8f20e086069fc7f15fbd549c8c84d5498a86eec02684e8737",
+    "xhttp-h2-upload-8-baseline-1/1789839338615/xray-rust/stream-transport/result.json": "f703b7ee6810ea6a199c238f664c62084c68e60eec8daf8147a07a25318fb0c1",
+    "xhttp-h2-upload-8-baseline-2/1789839340913/xray-rust/stream-transport/result.json": "3e1a934e31dbc1d7364ee31553a5a705a13c12542dc94dbe29f0db8ead366b45",
+    "xhttp-h2-upload-8-baseline-3/1789839341647/xray-rust/stream-transport/result.json": "8a7347250d2f249881beb3ac8e344bb4c81f199550f797b3297a7523d6f24c93",
+    "xhttp-h2-upload-8-baseline-4/1789839343994/xray-rust/stream-transport/result.json": "572e323153767321f7795bde03366e2a42362b8f8950f29cff6e0c92477b10f7",
+    "xhttp-h2-upload-8-baseline-5/1789839344721/xray-rust/stream-transport/result.json": "802c3d9f98243d0dc1b9dfb358a676d0362a534bce0b753ac506f1cd963e87b4",
+    "xhttp-h2-upload-8-candidate-1/1789839339343/xray-rust/stream-transport/result.json": "d3cf377f2e3ed572c288aefddfbc4df5135bba767d25b6106ea98b82a0bfb6d0",
+    "xhttp-h2-upload-8-candidate-2/1789839340123/xray-rust/stream-transport/result.json": "b681a1605d3f6c705b6df470ca8bf582b1e52aa1f8bf0ebe2d4d5719598b5e2e",
+    "xhttp-h2-upload-8-candidate-3/1789839342435/xray-rust/stream-transport/result.json": "43d82d5791719a7bb557688b45c085d3b13e2c3d0182813a66052348936439de",
+    "xhttp-h2-upload-8-candidate-4/1789839343216/xray-rust/stream-transport/result.json": "481c1f31080ad32c03ee9b0b0965aebadfb808ec02a800dcda02ed98e94af06c",
+    "xhttp-h2-upload-8-candidate-5/1789839345504/xray-rust/stream-transport/result.json": "80787ade276e70aafa70c13223fbf56f21dc58a2b6b321d7379cce5513a85a11",
+    "xhttp-h3-download-1-baseline-1/1789839372693/xray-rust/stream-transport/result.json": "c12da857922cc89cc3c248d7d3265684da02caa51f83184692c9dc3c0401d5fc",
+    "xhttp-h3-download-1-baseline-2/1789839374416/xray-rust/stream-transport/result.json": "fa7114a15e99346b04215e29b9b86dfaa2c942716bb9bc133663f07c17012aa0",
+    "xhttp-h3-download-1-baseline-3/1789839374986/xray-rust/stream-transport/result.json": "eb7cb9f776d457105e8eb1450a7dab8e3c6b3c4782ee905d6b171f883c9c7276",
+    "xhttp-h3-download-1-baseline-4/1789839376712/xray-rust/stream-transport/result.json": "a0baba13aabdf15b32190b5c76c75a39106ece8f56fb211a3c4bdc0cb4319546",
+    "xhttp-h3-download-1-baseline-5/1789839377288/xray-rust/stream-transport/result.json": "2bad27bce2ff99f1b48b20594f4c0838707e96f5fbaa5d086edbb5a11f21f1f4",
+    "xhttp-h3-download-1-candidate-1/1789839373265/xray-rust/stream-transport/result.json": "674d36fb22bd7399e0ced78c2d81145bd04be4a4566b40e666eb6f70ea6247cd",
+    "xhttp-h3-download-1-candidate-2/1789839373835/xray-rust/stream-transport/result.json": "b46fb43208e394b31a857259b2a9265a44d570fd167589da9ecb0ce9a8ea772d",
+    "xhttp-h3-download-1-candidate-3/1789839375565/xray-rust/stream-transport/result.json": "cb6255ec63ec9a8eef9da0110848e3680b7a9e16ae0ceff2131acdb9fc1d70fd",
+    "xhttp-h3-download-1-candidate-4/1789839376141/xray-rust/stream-transport/result.json": "f0023ecc2efa8964cc77d3221c2191312d0fcbc128cd8452cb2dd60575b2e39c",
+    "xhttp-h3-download-1-candidate-5/1789839377874/xray-rust/stream-transport/result.json": "fff89acc0883668c4968333598335d9c30efe748a0924c10958091d7ee22e5f0",
+    "xhttp-h3-download-8-baseline-1/1789839409598/xray-rust/stream-transport/result.json": "f1211e300e77080787ad228116305cabbbc40b05a6fb6ec1ccf4d17c774db506",
+    "xhttp-h3-download-8-baseline-2/1789839417305/xray-rust/stream-transport/result.json": "ce81513211fac3fcc7ca6317f9605695e48f2ba971c36e06220d7bee50610af7",
+    "xhttp-h3-download-8-baseline-3/1789839420034/xray-rust/stream-transport/result.json": "358a6f41770329a75830f1026ed4b9e6f07a73a0e306678ef5b2d719a1211c95",
+    "xhttp-h3-download-8-baseline-4/1789839427649/xray-rust/stream-transport/result.json": "7af7e11d5a54822264443accff768a093b40a406a5b05377e93f4df064b22ddb",
+    "xhttp-h3-download-8-baseline-5/1789839430117/xray-rust/stream-transport/result.json": "5e10fb5de93118444918fcfba2fba5ffbd7a2ea50942b21c6176b82a6263a746",
+    "xhttp-h3-download-8-candidate-1/1789839412119/xray-rust/stream-transport/result.json": "515424e8d4fd7a466960bb7450eff4d5a783166356821cd0e250b888d55751a3",
+    "xhttp-h3-download-8-candidate-2/1789839414672/xray-rust/stream-transport/result.json": "4b09459b6ad56060659f52e5120ce39a00878bb6bc44b39ac0ad52a5d6f4daae",
+    "xhttp-h3-download-8-candidate-3/1789839422693/xray-rust/stream-transport/result.json": "7a890aea82cd555c2edb550eca69fd81fb579c2d9909a89c77049ddb148d3f5e",
+    "xhttp-h3-download-8-candidate-4/1789839425146/xray-rust/stream-transport/result.json": "7ee55f4abccc01b0f34d1604729d7a7cdcfac78c9eca662e0b7cc769dd7919e0",
+    "xhttp-h3-download-8-candidate-5/1789839432554/xray-rust/stream-transport/result.json": "5df97fd3441ae8d3bc75705fbeaca6244e37715c11718e9495bbf180df9288b1",
+    "xhttp-h3-full-duplex-1-baseline-1/1789839378457/xray-rust/stream-transport/result.json": "a9c3748f14150bdd52c0ebc932b0f801f528895694b3074170c181eecdb2939c",
+    "xhttp-h3-full-duplex-1-baseline-2/1789839381117/xray-rust/stream-transport/result.json": "6e56536d8d1433c70dce49062cda8713d2f9b933d7e99b0a08b4f299635c70f2",
+    "xhttp-h3-full-duplex-1-baseline-3/1789839381994/xray-rust/stream-transport/result.json": "b8aade04de91adec9f737ab3e73df6faefd01e433aff59a3fd8f28c2c13e1d30",
+    "xhttp-h3-full-duplex-1-baseline-4/1789839384675/xray-rust/stream-transport/result.json": "f63876b2784eeca92fd3046c86120b59f1c470a3563ece187483ff016d4a57ef",
+    "xhttp-h3-full-duplex-1-baseline-5/1789839385624/xray-rust/stream-transport/result.json": "d6cc53910e265418adcd12a7f58a7f7210607742cc515829cc1c3165e4a06655",
+    "xhttp-h3-full-duplex-1-candidate-1/1789839379355/xray-rust/stream-transport/result.json": "bbda9034a711a6dedc8064e1041f3a9099f6dbc5e281ee4365a60511879e5325",
+    "xhttp-h3-full-duplex-1-candidate-2/1789839380229/xray-rust/stream-transport/result.json": "49b1aca4b147d6f89463921485b43a610e9e922d98c8fd11bb089e4463eec8d6",
+    "xhttp-h3-full-duplex-1-candidate-3/1789839382833/xray-rust/stream-transport/result.json": "3f01c7d2ebe921375d3f658724ff9b5ecffd5b1d2f4c0553650bed03461ff5aa",
+    "xhttp-h3-full-duplex-1-candidate-4/1789839383787/xray-rust/stream-transport/result.json": "a6ecfc00cfdcba43c786e8620dfef44067e254a7b105b7636e747b9f72ea5f82",
+    "xhttp-h3-full-duplex-1-candidate-5/1789839386502/xray-rust/stream-transport/result.json": "bc450679fc93956a728bf1d94c74cbbbcb36d1e08f774797908db4a6ec697736",
+    "xhttp-h3-full-duplex-8-baseline-1/1789839434998/xray-rust/stream-transport/result.json": "cd1ea61b3dad748d069b173394591b9c673d393a8ac6ec1efcb636071e580f12",
+    "xhttp-h3-full-duplex-8-baseline-2/1789839446401/xray-rust/stream-transport/result.json": "3ca856e421ca32ab76ad015dc32ef0bf52dc996dd78fb21e0666d1da9f4c9ec1",
+    "xhttp-h3-full-duplex-8-baseline-3/1789839450413/xray-rust/stream-transport/result.json": "1872a40633eb9b2d783706a47a6d90666bbca3cf208a61379f55cf4cbd8019c2",
+    "xhttp-h3-full-duplex-8-baseline-4/1789839462037/xray-rust/stream-transport/result.json": "7da7f84ad7d3e929e73e9e78d6ce35388ce471a32aa4dc665d4c339eb52f1d62",
+    "xhttp-h3-full-duplex-8-baseline-5/1789839465833/xray-rust/stream-transport/result.json": "a59cc35116c315c442cf219e10dc0bfb5a052147f3a3191051d2a45f18aac95b",
+    "xhttp-h3-full-duplex-8-candidate-1/1789839438740/xray-rust/stream-transport/result.json": "34a8060b74099f1653c30f803a785055e435a435b673d88173c1e15480a1a959",
+    "xhttp-h3-full-duplex-8-candidate-2/1789839442591/xray-rust/stream-transport/result.json": "071bf214784b72f50af3e19ce55896a74c2043450066b07bb26a96c375d5de7f",
+    "xhttp-h3-full-duplex-8-candidate-3/1789839454328/xray-rust/stream-transport/result.json": "069616473e37e63defe6ae200ef9183a0d3a282014094d0adfc48a7cd23cf62c",
+    "xhttp-h3-full-duplex-8-candidate-4/1789839458176/xray-rust/stream-transport/result.json": "0feb9d5e32d262f1d2a70209b1d80b3fc9387a80a5cdcd69c6b3d1933ca45e4e",
+    "xhttp-h3-full-duplex-8-candidate-5/1789839469582/xray-rust/stream-transport/result.json": "5337976a9b693f51a3843eaa852de9c3ab9fffc98a37803440e76b48976c6e01",
+    "xhttp-h3-upload-1-baseline-1/1789839365345/xray-rust/stream-transport/result.json": "05f295377b1be4c2eee609ce572479b73072e9f434982f23e4eecc24a183a066",
+    "xhttp-h3-upload-1-baseline-2/1789839367539/xray-rust/stream-transport/result.json": "5f5a600ca6b62f486bb07dbd099993bbca39f7715396a4c658144127b9d912d4",
+    "xhttp-h3-upload-1-baseline-3/1789839368272/xray-rust/stream-transport/result.json": "e45776c6a152711dca1107a3bcf4599d04f23992370b8c1709a66515b89593e9",
+    "xhttp-h3-upload-1-baseline-4/1789839370483/xray-rust/stream-transport/result.json": "c20f86d04542602dd948c5e324c9e18b448c0e983b69b33adee587d9a051c91c",
+    "xhttp-h3-upload-1-baseline-5/1789839371216/xray-rust/stream-transport/result.json": "1ab26accac6e129d450ba5fb114fef0f13cb8d965c23ffaaae5a37d3294daad9",
+    "xhttp-h3-upload-1-candidate-1/1789839366081/xray-rust/stream-transport/result.json": "b4ff8902ada92ba8d338a90662ea7d25228ca6217a33275cdbe2fc70746d4460",
+    "xhttp-h3-upload-1-candidate-2/1789839366804/xray-rust/stream-transport/result.json": "b911fe15e7959d6cc9f2133fee78dba61edc8695af69475a1a4d9921f5192c4b",
+    "xhttp-h3-upload-1-candidate-3/1789839369022/xray-rust/stream-transport/result.json": "3aa16d5f063d4001af2b0bc67348adce913bbd2687a7776697a56c03ad660178",
+    "xhttp-h3-upload-1-candidate-4/1789839369759/xray-rust/stream-transport/result.json": "0a04f526f00cf5ac098bbcc2adee52b6d3522f3f20cead8957372bc44b304a4b",
+    "xhttp-h3-upload-1-candidate-5/1789839371953/xray-rust/stream-transport/result.json": "c373deff29d47f845211f73aae21bae5311db0324f900b449710f20292fb1ea4",
+    "xhttp-h3-upload-8-baseline-1/1789839387386/xray-rust/stream-transport/result.json": "9f86f6a33d9bc37770a61653822f6f448066000858954006b38c53ab1726fd04",
+    "xhttp-h3-upload-8-baseline-2/1789839394098/xray-rust/stream-transport/result.json": "dcc4bcd0f005b9318e766d75ec3738c6b07c12f906ea2e14bd7d83b5d89dfacd",
+    "xhttp-h3-upload-8-baseline-3/1789839396329/xray-rust/stream-transport/result.json": "8e7a970c31876f3c738c137f096871d7bfa86681c2465246011b0ad94c444573",
+    "xhttp-h3-upload-8-baseline-4/1789839402968/xray-rust/stream-transport/result.json": "8d600b7c8470adacd9f55c80da052061899f6332478930666a3b52db1ada3d49",
+    "xhttp-h3-upload-8-baseline-5/1789839405165/xray-rust/stream-transport/result.json": "ff9e9b5f5c7cce228ab63aec8081b37e666e984e66e45c65f3deea9f82ec4a5c",
+    "xhttp-h3-upload-8-candidate-1/1789839389559/xray-rust/stream-transport/result.json": "a34e66392eaff3dbf1c8b1aff530daeec942c1299851336dc858fec7c5f82247",
+    "xhttp-h3-upload-8-candidate-2/1789839391820/xray-rust/stream-transport/result.json": "a89a4da9815ac272170f2ac09930d205c757a2f92b675ba1a4013de0d9dff6f2",
+    "xhttp-h3-upload-8-candidate-3/1789839398543/xray-rust/stream-transport/result.json": "0e9c486ce43aa23e460a04097d6aafebb000c864b434bdfc504d74959ae5653c",
+    "xhttp-h3-upload-8-candidate-4/1789839400750/xray-rust/stream-transport/result.json": "c47533d1ce1799ebf21eff8a99bc4416adcc9bb955d7f7c34cff2ec304df9291",
+    "xhttp-h3-upload-8-candidate-5/1789839407377/xray-rust/stream-transport/result.json": "01cc4710bfe8da6324421b5e3fde9523e7e535f54cfabad3a75dc55364140f89"
+  },
+  "failures": [],
+  "manifest_sha256": "e8989851c08c75d5d913b850b4eff5eefc85c046f7b939d6bf6ebb7e258b3aed",
+  "rows": [
+    {
+      "case": "reality-vision-bulk-1",
+      "ratios": {
+        "cpu_ms": 1.0128205128205128,
+        "cpu_ms_per_mib": 1.0128205128205128,
+        "rss_mib": 1.0605427974947808,
+        "throughput_mib_s": 0.994987817612252
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 790,
+              "median": 780,
+              "min": 780,
+              "samples": [
+                790,
+                780,
+                780,
+                780,
+                790
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.771484375,
+              "median": 0.76171875,
+              "min": 0.76171875,
+              "samples": [
+                0.771484375,
+                0.76171875,
+                0.76171875,
+                0.76171875,
+                0.771484375
+              ]
+            },
+            "rss_mib": {
+              "max": 7.5,
+              "median": 7.484375,
+              "min": 7.4375,
+              "samples": [
+                7.5,
+                7.484375,
+                7.484375,
+                7.4375,
+                7.484375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1721.024513244629,
+              "median": 1712.4414443969727,
+              "min": 1700.9973526000977,
+              "samples": [
+                1703.8583755493164,
+                1712.4414443969727,
+                1715.3024673461914,
+                1721.024513244629,
+                1700.9973526000977
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 790,
+              "median": 790,
+              "min": 780,
+              "samples": [
+                790,
+                790,
+                790,
+                780,
+                790
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.771484375,
+              "median": 0.771484375,
+              "min": 0.76171875,
+              "samples": [
+                0.771484375,
+                0.771484375,
+                0.771484375,
+                0.76171875,
+                0.771484375
+              ]
+            },
+            "rss_mib": {
+              "max": 8.0,
+              "median": 7.9375,
+              "min": 7.875,
+              "samples": [
+                7.875,
+                7.9375,
+                7.96875,
+                7.921875,
+                8.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1712.4414443969727,
+              "median": 1703.8583755493164,
+              "min": 1689.7916793823242,
+              "samples": [
+                1689.7916793823242,
+                1703.8583755493164,
+                1706.7193984985352,
+                1712.4414443969727,
+                1700.9973526000977
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "ws-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0692883895131087,
+        "throughput_mib_s": 1.0087164959686206
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                90,
+                90,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.40625,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.40625,
+                1.40625,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 8.390625,
+              "median": 8.34375,
+              "min": 8.28125,
+              "samples": [
+                8.34375,
+                8.390625,
+                8.28125,
+                8.359375,
+                8.34375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 556.5881729125977,
+              "median": 547.0514297485352,
+              "min": 542.4022674560547,
+              "samples": [
+                547.0514297485352,
+                551.8198013305664,
+                542.4022674560547,
+                542.4022674560547,
+                556.5881729125977
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                80,
+                80,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 8.9375,
+              "median": 8.921875,
+              "min": 8.796875,
+              "samples": [
+                8.90625,
+                8.9375,
+                8.921875,
+                8.796875,
+                8.9375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 556.5881729125977,
+              "median": 551.8198013305664,
+              "min": 528.9316177368164,
+              "samples": [
+                528.9316177368164,
+                551.8198013305664,
+                556.5881729125977,
+                551.8198013305664,
+                542.4022674560547
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "ws-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0696202531645569,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                100,
+                100,
+                100,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5625,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 7.4375,
+              "median": 7.40625,
+              "min": 7.359375,
+              "samples": [
+                7.40625,
+                7.375,
+                7.40625,
+                7.4375,
+                7.359375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1084.8045349121094,
+              "median": 969.7675704956055,
+              "min": 955.2240371704102,
+              "samples": [
+                955.2240371704102,
+                969.7675704956055,
+                1015.9015655517578,
+                969.7675704956055,
+                1084.8045349121094
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                100,
+                100,
+                100,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5625,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 7.953125,
+              "median": 7.921875,
+              "min": 7.90625,
+              "samples": [
+                7.953125,
+                7.921875,
+                7.9375,
+                7.90625,
+                7.921875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1015.9015655517578,
+              "median": 969.7675704956055,
+              "min": 927.5674819946289,
+              "samples": [
+                969.7675704956055,
+                969.7675704956055,
+                941.2765502929688,
+                927.5674819946289,
+                1015.9015655517578
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "ws-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.063197026022305,
+        "throughput_mib_s": 1.0081490104772992
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 170,
+              "median": 150,
+              "min": 150,
+              "samples": [
+                150,
+                150,
+                150,
+                170,
+                150
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.328125,
+              "median": 1.171875,
+              "min": 1.171875,
+              "samples": [
+                1.171875,
+                1.171875,
+                1.171875,
+                1.328125,
+                1.171875
+              ]
+            },
+            "rss_mib": {
+              "max": 8.484375,
+              "median": 8.40625,
+              "min": 8.34375,
+              "samples": [
+                8.484375,
+                8.34375,
+                8.390625,
+                8.46875,
+                8.40625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1066.6847229003906,
+              "median": 1024.007797241211,
+              "min": 810.1463317871094,
+              "samples": [
+                1024.007797241211,
+                1057.8632354736328,
+                1066.6847229003906,
+                810.1463317871094,
+                984.6687316894531
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 160,
+              "median": 150,
+              "min": 150,
+              "samples": [
+                160,
+                150,
+                150,
+                150,
+                150
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.171875,
+              "min": 1.171875,
+              "samples": [
+                1.25,
+                1.171875,
+                1.171875,
+                1.171875,
+                1.171875
+              ]
+            },
+            "rss_mib": {
+              "max": 9.21875,
+              "median": 8.9375,
+              "min": 8.828125,
+              "samples": [
+                9.21875,
+                8.90625,
+                8.9375,
+                8.828125,
+                9.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1049.2801666259766,
+              "median": 1032.3524475097656,
+              "min": 805.1395416259766,
+              "samples": [
+                805.1395416259766,
+                1049.2801666259766,
+                1032.3524475097656,
+                1024.007797241211,
+                1049.2801666259766
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "ws-upload-8",
+      "ratios": {
+        "cpu_ms": 0.9661016949152542,
+        "cpu_ms_per_mib": 0.9661016949152542,
+        "rss_mib": 1.108910891089109,
+        "throughput_mib_s": 1.0937991816178785
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 610,
+              "median": 590,
+              "min": 550,
+              "samples": [
+                580,
+                590,
+                550,
+                590,
+                610
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.19140625,
+              "median": 1.15234375,
+              "min": 1.07421875,
+              "samples": [
+                1.1328125,
+                1.15234375,
+                1.07421875,
+                1.15234375,
+                1.19140625
+              ]
+            },
+            "rss_mib": {
+              "max": 18.9375,
+              "median": 17.359375,
+              "min": 16.75,
+              "samples": [
+                16.75,
+                17.03125,
+                17.359375,
+                17.9375,
+                18.9375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 825.8819580078125,
+              "median": 757.4558258056641,
+              "min": 503.5400390625,
+              "samples": [
+                503.5400390625,
+                633.7165832519531,
+                825.8819580078125,
+                766.5157318115234,
+                757.4558258056641
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 610,
+              "median": 570,
+              "min": 550,
+              "samples": [
+                570,
+                550,
+                610,
+                560,
+                570
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.19140625,
+              "median": 1.11328125,
+              "min": 1.07421875,
+              "samples": [
+                1.11328125,
+                1.07421875,
+                1.19140625,
+                1.09375,
+                1.11328125
+              ]
+            },
+            "rss_mib": {
+              "max": 19.84375,
+              "median": 19.25,
+              "min": 18.46875,
+              "samples": [
+                18.46875,
+                19.375,
+                19.84375,
+                19.25,
+                18.984375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 973.4630584716797,
+              "median": 828.5045623779297,
+              "min": 690.1025772094727,
+              "samples": [
+                864.9826049804688,
+                828.5045623779297,
+                706.3150405883789,
+                690.1025772094727,
+                973.4630584716797
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "ws-download-8",
+      "ratios": {
+        "cpu_ms": 0.975609756097561,
+        "cpu_ms_per_mib": 0.975609756097561,
+        "rss_mib": 1.097972972972973,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 840,
+              "median": 820,
+              "min": 800,
+              "samples": [
+                820,
+                810,
+                840,
+                800,
+                830
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.640625,
+              "median": 1.6015625,
+              "min": 1.5625,
+              "samples": [
+                1.6015625,
+                1.58203125,
+                1.640625,
+                1.5625,
+                1.62109375
+              ]
+            },
+            "rss_mib": {
+              "max": 9.34375,
+              "median": 9.25,
+              "min": 9.21875,
+              "samples": [
+                9.34375,
+                9.21875,
+                9.25,
+                9.234375,
+                9.328125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1422.286033630371,
+              "median": 1402.8549194335938,
+              "min": 1383.9006423950195,
+              "samples": [
+                1383.9006423950195,
+                1422.286033630371,
+                1402.8549194335938,
+                1422.286033630371,
+                1402.8549194335938
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 830,
+              "median": 800,
+              "min": 640,
+              "samples": [
+                640,
+                690,
+                810,
+                800,
+                830
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.62109375,
+              "median": 1.5625,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.34765625,
+                1.58203125,
+                1.5625,
+                1.62109375
+              ]
+            },
+            "rss_mib": {
+              "max": 10.3125,
+              "median": 10.15625,
+              "min": 10.046875,
+              "samples": [
+                10.109375,
+                10.3125,
+                10.046875,
+                10.15625,
+                10.28125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1418.3521270751953,
+              "median": 1402.8549194335938,
+              "min": 1003.9806365966797,
+              "samples": [
+                1003.9806365966797,
+                1216.1731719970703,
+                1402.8549194335938,
+                1418.3521270751953,
+                1402.8549194335938
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "ws-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.027027027027027,
+        "cpu_ms_per_mib": 1.027027027027027,
+        "rss_mib": 1.0433497536945813,
+        "throughput_mib_s": 0.9625816450791542
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1180,
+              "median": 1110,
+              "min": 1090,
+              "samples": [
+                1160,
+                1180,
+                1110,
+                1100,
+                1090
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.15234375,
+              "median": 1.083984375,
+              "min": 1.064453125,
+              "samples": [
+                1.1328125,
+                1.15234375,
+                1.083984375,
+                1.07421875,
+                1.064453125
+              ]
+            },
+            "rss_mib": {
+              "max": 16.3125,
+              "median": 15.859375,
+              "min": 15.234375,
+              "samples": [
+                16.3125,
+                15.234375,
+                16.015625,
+                15.859375,
+                15.84375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1253.366470336914,
+              "median": 1076.817512512207,
+              "min": 874.5193481445312,
+              "samples": [
+                970.7212448120117,
+                874.5193481445312,
+                1253.366470336914,
+                1076.817512512207,
+                1094.1028594970703
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1170,
+              "median": 1140,
+              "min": 1120,
+              "samples": [
+                1170,
+                1140,
+                1140,
+                1120,
+                1130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.142578125,
+              "median": 1.11328125,
+              "min": 1.09375,
+              "samples": [
+                1.142578125,
+                1.11328125,
+                1.11328125,
+                1.09375,
+                1.103515625
+              ]
+            },
+            "rss_mib": {
+              "max": 16.9375,
+              "median": 16.546875,
+              "min": 16.40625,
+              "samples": [
+                16.890625,
+                16.546875,
+                16.9375,
+                16.46875,
+                16.40625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1079.0824890136719,
+              "median": 1036.524772644043,
+              "min": 940.3228759765625,
+              "samples": [
+                1079.0824890136719,
+                940.3228759765625,
+                1023.0541229248047,
+                1043.9157485961914,
+                1036.524772644043
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "httpupgrade-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0617283950617284,
+        "throughput_mib_s": 1.0203948593779102
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 50,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                50,
+                50,
+                50,
+                50,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.78125,
+              "median": 0.78125,
+              "min": 0.78125,
+              "samples": [
+                0.78125,
+                0.78125,
+                0.78125,
+                0.78125,
+                0.78125
+              ]
+            },
+            "rss_mib": {
+              "max": 7.625,
+              "median": 7.59375,
+              "min": 7.546875,
+              "samples": [
+                7.5625,
+                7.625,
+                7.59375,
+                7.546875,
+                7.59375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1333.3559036254883,
+              "median": 1280.069351196289,
+              "min": 1254.9161911010742,
+              "samples": [
+                1306.1761856079102,
+                1280.069351196289,
+                1333.3559036254883,
+                1280.069351196289,
+                1254.9161911010742
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 50,
+              "median": 50,
+              "min": 50,
+              "samples": [
+                50,
+                50,
+                50,
+                50,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.78125,
+              "median": 0.78125,
+              "min": 0.78125,
+              "samples": [
+                0.78125,
+                0.78125,
+                0.78125,
+                0.78125,
+                0.78125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.09375,
+              "median": 8.0625,
+              "min": 8.015625,
+              "samples": [
+                8.015625,
+                8.03125,
+                8.0625,
+                8.0625,
+                8.09375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1306.1761856079102,
+              "median": 1306.1761856079102,
+              "min": 1280.069351196289,
+              "samples": [
+                1306.1761856079102,
+                1306.1761856079102,
+                1306.1761856079102,
+                1306.1761856079102,
+                1280.069351196289
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "httpupgrade-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0669546436285098,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                80,
+                80,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 7.28125,
+              "median": 7.234375,
+              "min": 7.203125,
+              "samples": [
+                7.28125,
+                7.203125,
+                7.203125,
+                7.234375,
+                7.28125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1280.069351196289,
+              "median": 1254.9161911010742,
+              "min": 1185.297966003418,
+              "samples": [
+                1280.069351196289,
+                1280.069351196289,
+                1185.297966003418,
+                1185.297966003418,
+                1254.9161911010742
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                80,
+                80,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 7.75,
+              "median": 7.71875,
+              "min": 7.703125,
+              "samples": [
+                7.703125,
+                7.75,
+                7.71875,
+                7.71875,
+                7.75
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1280.069351196289,
+              "median": 1254.9161911010742,
+              "min": 1185.297966003418,
+              "samples": [
+                1254.9161911010742,
+                1254.9161911010742,
+                1185.297966003418,
+                1254.9161911010742,
+                1280.069351196289
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "httpupgrade-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0693877551020408,
+        "throughput_mib_s": 1.0518971109602475
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 110,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                110,
+                110,
+                100,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.859375,
+              "median": 0.78125,
+              "min": 0.78125,
+              "samples": [
+                0.78125,
+                0.859375,
+                0.859375,
+                0.78125,
+                0.78125
+              ]
+            },
+            "rss_mib": {
+              "max": 7.6875,
+              "median": 7.65625,
+              "min": 7.609375,
+              "samples": [
+                7.640625,
+                7.609375,
+                7.6875,
+                7.65625,
+                7.671875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1641.0350799560547,
+              "median": 1580.357551574707,
+              "min": 1561.0456466674805,
+              "samples": [
+                1641.0350799560547,
+                1580.357551574707,
+                1580.357551574707,
+                1580.357551574707,
+                1561.0456466674805
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                100,
+                100,
+                100,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.78125,
+              "median": 0.78125,
+              "min": 0.78125,
+              "samples": [
+                0.78125,
+                0.78125,
+                0.78125,
+                0.78125,
+                0.78125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.203125,
+              "median": 8.1875,
+              "min": 8.09375,
+              "samples": [
+                8.09375,
+                8.203125,
+                8.15625,
+                8.1875,
+                8.203125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1706.7193984985352,
+              "median": 1662.3735427856445,
+              "min": 1620.2926635742188,
+              "samples": [
+                1684.3080520629883,
+                1662.3735427856445,
+                1662.3735427856445,
+                1620.2926635742188,
+                1706.7193984985352
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "httpupgrade-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0357142857142858,
+        "cpu_ms_per_mib": 1.0357142857142858,
+        "rss_mib": 1.0861313868613138,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 290,
+              "median": 280,
+              "min": 270,
+              "samples": [
+                290,
+                270,
+                280,
+                280,
+                280
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.56640625,
+              "median": 0.546875,
+              "min": 0.52734375,
+              "samples": [
+                0.56640625,
+                0.52734375,
+                0.546875,
+                0.546875,
+                0.546875
+              ]
+            },
+            "rss_mib": {
+              "max": 10.75,
+              "median": 10.703125,
+              "min": 10.53125,
+              "samples": [
+                10.703125,
+                10.75,
+                10.53125,
+                10.65625,
+                10.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2255.558967590332,
+              "median": 2151.370048522949,
+              "min": 2151.370048522949,
+              "samples": [
+                2151.370048522949,
+                2255.558967590332,
+                2151.370048522949,
+                2151.370048522949,
+                2169.6090698242188
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 290,
+              "median": 290,
+              "min": 280,
+              "samples": [
+                280,
+                280,
+                290,
+                290,
+                290
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.56640625,
+              "median": 0.56640625,
+              "min": 0.546875,
+              "samples": [
+                0.546875,
+                0.546875,
+                0.56640625,
+                0.56640625,
+                0.56640625
+              ]
+            },
+            "rss_mib": {
+              "max": 11.75,
+              "median": 11.625,
+              "min": 11.453125,
+              "samples": [
+                11.625,
+                11.75,
+                11.453125,
+                11.625,
+                11.640625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2178.788185119629,
+              "median": 2151.370048522949,
+              "min": 2133.3694458007812,
+              "samples": [
+                2151.370048522949,
+                2178.788185119629,
+                2133.3694458007812,
+                2151.370048522949,
+                2160.4299545288086
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "httpupgrade-download-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.1,
+        "throughput_mib_s": 1.014062710267797
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 690,
+              "median": 670,
+              "min": 660,
+              "samples": [
+                680,
+                670,
+                690,
+                660,
+                660
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.34765625,
+              "median": 1.30859375,
+              "min": 1.2890625,
+              "samples": [
+                1.328125,
+                1.30859375,
+                1.34765625,
+                1.2890625,
+                1.2890625
+              ]
+            },
+            "rss_mib": {
+              "max": 8.984375,
+              "median": 8.90625,
+              "min": 8.875,
+              "samples": [
+                8.984375,
+                8.90625,
+                8.90625,
+                8.9375,
+                8.875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1790.2851104736328,
+              "median": 1771.688461303711,
+              "min": 1759.5291137695312,
+              "samples": [
+                1771.688461303711,
+                1765.608787536621,
+                1759.5291137695312,
+                1790.2851104736328,
+                1784.0862274169922
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 690,
+              "median": 670,
+              "min": 660,
+              "samples": [
+                670,
+                690,
+                670,
+                670,
+                660
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.34765625,
+              "median": 1.30859375,
+              "min": 1.2890625,
+              "samples": [
+                1.30859375,
+                1.34765625,
+                1.30859375,
+                1.30859375,
+                1.2890625
+              ]
+            },
+            "rss_mib": {
+              "max": 9.875,
+              "median": 9.796875,
+              "min": 9.765625,
+              "samples": [
+                9.875,
+                9.765625,
+                9.78125,
+                9.796875,
+                9.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1822.1139907836914,
+              "median": 1796.6032028198242,
+              "min": 1759.5291137695312,
+              "samples": [
+                1796.6032028198242,
+                1759.5291137695312,
+                1822.1139907836914,
+                1777.8873443603516,
+                1802.9212951660156
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "httpupgrade-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 0.9594594594594594,
+        "cpu_ms_per_mib": 0.9594594594594594,
+        "rss_mib": 1.106936416184971,
+        "throughput_mib_s": 1.042448097553446
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 760,
+              "median": 740,
+              "min": 700,
+              "samples": [
+                720,
+                760,
+                740,
+                700,
+                750
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.7421875,
+              "median": 0.72265625,
+              "min": 0.68359375,
+              "samples": [
+                0.703125,
+                0.7421875,
+                0.72265625,
+                0.68359375,
+                0.732421875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.03125,
+              "median": 10.8125,
+              "min": 10.71875,
+              "samples": [
+                11.03125,
+                10.8125,
+                10.859375,
+                10.765625,
+                10.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1678.7052154541016,
+              "median": 1544.5947647094727,
+              "min": 1381.993293762207,
+              "samples": [
+                1580.357551574707,
+                1544.5947647094727,
+                1381.993293762207,
+                1678.7052154541016,
+                1490.5929565429688
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 720,
+              "median": 710,
+              "min": 690,
+              "samples": [
+                720,
+                720,
+                690,
+                710,
+                710
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.703125,
+              "median": 0.693359375,
+              "min": 0.673828125,
+              "samples": [
+                0.703125,
+                0.703125,
+                0.673828125,
+                0.693359375,
+                0.693359375
+              ]
+            },
+            "rss_mib": {
+              "max": 12.0,
+              "median": 11.96875,
+              "min": 11.46875,
+              "samples": [
+                12.0,
+                11.96875,
+                11.953125,
+                11.46875,
+                12.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1687.0498657226562,
+              "median": 1610.1598739624023,
+              "min": 1512.6466751098633,
+              "samples": [
+                1512.6466751098633,
+                1607.5372695922852,
+                1687.0498657226562,
+                1610.1598739624023,
+                1625.4186630249023
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "grpc-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0478547854785478,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                80,
+                80,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 9.5625,
+              "median": 9.46875,
+              "min": 9.171875,
+              "samples": [
+                9.46875,
+                9.171875,
+                9.546875,
+                9.5625,
+                9.34375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1391.4108276367188,
+              "median": 1361.7277145385742,
+              "min": 1333.3559036254883,
+              "samples": [
+                1333.3559036254883,
+                1391.4108276367188,
+                1361.7277145385742,
+                1333.3559036254883,
+                1391.4108276367188
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                80,
+                80,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 10.125,
+              "median": 9.921875,
+              "min": 9.84375,
+              "samples": [
+                9.84375,
+                9.921875,
+                10.125,
+                9.984375,
+                9.90625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1523.8523483276367,
+              "median": 1361.7277145385742,
+              "min": 1280.069351196289,
+              "samples": [
+                1361.7277145385742,
+                1422.286033630371,
+                1280.069351196289,
+                1523.8523483276367,
+                1333.3559036254883
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "grpc-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0674373795761078,
+        "throughput_mib_s": 0.9889373114314448
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 110,
+              "median": 110,
+              "min": 110,
+              "samples": [
+                110,
+                110,
+                110,
+                110,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.71875,
+              "median": 1.71875,
+              "min": 1.71875,
+              "samples": [
+                1.71875,
+                1.71875,
+                1.71875,
+                1.71875,
+                1.71875
+              ]
+            },
+            "rss_mib": {
+              "max": 8.171875,
+              "median": 8.109375,
+              "min": 8.09375,
+              "samples": [
+                8.09375,
+                8.140625,
+                8.09375,
+                8.171875,
+                8.109375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 727.2958755493164,
+              "median": 711.2026214599609,
+              "min": 688.1952285766602,
+              "samples": [
+                711.2026214599609,
+                703.3348083496094,
+                727.2958755493164,
+                688.1952285766602,
+                727.2958755493164
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 110,
+              "median": 110,
+              "min": 110,
+              "samples": [
+                110,
+                110,
+                110,
+                110,
+                110
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.71875,
+              "median": 1.71875,
+              "min": 1.71875,
+              "samples": [
+                1.71875,
+                1.71875,
+                1.71875,
+                1.71875,
+                1.71875
+              ]
+            },
+            "rss_mib": {
+              "max": 8.71875,
+              "median": 8.65625,
+              "min": 8.609375,
+              "samples": [
+                8.609375,
+                8.71875,
+                8.65625,
+                8.671875,
+                8.65625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 703.3348083496094,
+              "median": 703.3348083496094,
+              "min": 695.7054138183594,
+              "samples": [
+                703.3348083496094,
+                695.7054138183594,
+                695.7054138183594,
+                703.3348083496094,
+                703.3348083496094
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "grpc-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0379746835443038,
+        "throughput_mib_s": 0.9830398617262612
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 160,
+              "median": 160,
+              "min": 160,
+              "samples": [
+                160,
+                160,
+                160,
+                160,
+                160
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 10.015625,
+              "median": 9.875,
+              "min": 9.515625,
+              "samples": [
+                10.015625,
+                9.875,
+                9.9375,
+                9.515625,
+                9.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1113.0571365356445,
+              "median": 1103.520393371582,
+              "min": 1084.8045349121094,
+              "samples": [
+                1113.0571365356445,
+                1084.8045349121094,
+                1084.8045349121094,
+                1103.520393371582,
+                1103.520393371582
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 160,
+              "median": 160,
+              "min": 160,
+              "samples": [
+                160,
+                160,
+                160,
+                160,
+                160
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.25,
+              "median": 1.25,
+              "min": 1.25,
+              "samples": [
+                1.25,
+                1.25,
+                1.25,
+                1.25,
+                1.25
+              ]
+            },
+            "rss_mib": {
+              "max": 10.4375,
+              "median": 10.25,
+              "min": 10.15625,
+              "samples": [
+                10.25,
+                10.40625,
+                10.4375,
+                10.171875,
+                10.15625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1113.0571365356445,
+              "median": 1084.8045349121094,
+              "min": 1075.74462890625,
+              "samples": [
+                1113.0571365356445,
+                1084.8045349121094,
+                1103.520393371582,
+                1084.8045349121094,
+                1075.74462890625
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "grpc-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0751665080875357,
+        "throughput_mib_s": 0.9919741324556846
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 530,
+              "median": 520,
+              "min": 490,
+              "samples": [
+                520,
+                520,
+                530,
+                530,
+                490
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.03515625,
+              "median": 1.015625,
+              "min": 0.95703125,
+              "samples": [
+                1.015625,
+                1.015625,
+                1.03515625,
+                1.03515625,
+                0.95703125
+              ]
+            },
+            "rss_mib": {
+              "max": 17.5,
+              "median": 16.421875,
+              "min": 13.71875,
+              "samples": [
+                16.421875,
+                17.234375,
+                13.71875,
+                17.5,
+                16.21875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2081.3941955566406,
+              "median": 2064.5856857299805,
+              "min": 1875.5197525024414,
+              "samples": [
+                2064.5856857299805,
+                2064.5856857299805,
+                1875.5197525024414,
+                1992.2256469726562,
+                2081.3941955566406
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1040,
+              "median": 520,
+              "min": 480,
+              "samples": [
+                1040,
+                480,
+                540,
+                520,
+                480
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.03125,
+              "median": 1.015625,
+              "min": 0.9375,
+              "samples": [
+                2.03125,
+                0.9375,
+                1.0546875,
+                1.015625,
+                0.9375
+              ]
+            },
+            "rss_mib": {
+              "max": 18.46875,
+              "median": 17.65625,
+              "min": 16.265625,
+              "samples": [
+                18.46875,
+                16.265625,
+                18.21875,
+                17.65625,
+                16.40625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2056.241035461426,
+              "median": 2048.015594482422,
+              "min": 1575.469970703125,
+              "samples": [
+                1575.469970703125,
+                2056.241035461426,
+                2048.015594482422,
+                2056.241035461426,
+                2039.9093627929688
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "grpc-download-8",
+      "ratios": {
+        "cpu_ms": 0.9919354838709677,
+        "cpu_ms_per_mib": 0.9919354838709677,
+        "rss_mib": 1.0942760942760943,
+        "throughput_mib_s": 0.9877727614747931
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1250,
+              "median": 1240,
+              "min": 1230,
+              "samples": [
+                1230,
+                1240,
+                1250,
+                1230,
+                1240
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.44140625,
+              "median": 2.421875,
+              "min": 2.40234375,
+              "samples": [
+                2.40234375,
+                2.421875,
+                2.44140625,
+                2.40234375,
+                2.421875
+              ]
+            },
+            "rss_mib": {
+              "max": 9.40625,
+              "median": 9.28125,
+              "min": 9.21875,
+              "samples": [
+                9.265625,
+                9.21875,
+                9.40625,
+                9.328125,
+                9.28125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1267.4331665039062,
+              "median": 1267.4331665039062,
+              "min": 1251.9359588623047,
+              "samples": [
+                1258.0156326293945,
+                1267.4331665039062,
+                1251.9359588623047,
+                1267.4331665039062,
+                1267.4331665039062
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1240,
+              "median": 1230,
+              "min": 1230,
+              "samples": [
+                1230,
+                1230,
+                1240,
+                1230,
+                1240
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.421875,
+              "median": 2.40234375,
+              "min": 2.40234375,
+              "samples": [
+                2.40234375,
+                2.40234375,
+                2.421875,
+                2.40234375,
+                2.421875
+              ]
+            },
+            "rss_mib": {
+              "max": 10.1875,
+              "median": 10.15625,
+              "min": 10.109375,
+              "samples": [
+                10.1875,
+                10.109375,
+                10.140625,
+                10.15625,
+                10.1875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1267.4331665039062,
+              "median": 1251.9359588623047,
+              "min": 1242.7568435668945,
+              "samples": [
+                1251.9359588623047,
+                1267.4331665039062,
+                1264.2145156860352,
+                1242.7568435668945,
+                1251.9359588623047
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "grpc-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0695187165775402,
+        "cpu_ms_per_mib": 1.0695187165775402,
+        "rss_mib": 1.0728709394205442,
+        "throughput_mib_s": 0.9660608714692358
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2560,
+              "median": 1870,
+              "min": 1840,
+              "samples": [
+                1900,
+                2560,
+                1860,
+                1840,
+                1870
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.5,
+              "median": 1.826171875,
+              "min": 1.796875,
+              "samples": [
+                1.85546875,
+                2.5,
+                1.81640625,
+                1.796875,
+                1.826171875
+              ]
+            },
+            "rss_mib": {
+              "max": 18.59375,
+              "median": 17.796875,
+              "min": 16.828125,
+              "samples": [
+                17.796875,
+                18.59375,
+                16.828125,
+                17.84375,
+                16.953125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1638.4124755859375,
+              "median": 1633.286476135254,
+              "min": 1400.8283615112305,
+              "samples": [
+                1605.0338745117188,
+                1400.8283615112305,
+                1638.4124755859375,
+                1638.4124755859375,
+                1633.286476135254
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2540,
+              "median": 2000,
+              "min": 1890,
+              "samples": [
+                1910,
+                2540,
+                2000,
+                2470,
+                1890
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.48046875,
+              "median": 1.953125,
+              "min": 1.845703125,
+              "samples": [
+                1.865234375,
+                2.48046875,
+                1.953125,
+                2.412109375,
+                1.845703125
+              ]
+            },
+            "rss_mib": {
+              "max": 21.046875,
+              "median": 19.09375,
+              "min": 18.46875,
+              "samples": [
+                18.8125,
+                19.625,
+                19.09375,
+                21.046875,
+                18.46875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1630.6638717651367,
+              "median": 1577.8541564941406,
+              "min": 1414.4182205200195,
+              "samples": [
+                1617.7892684936523,
+                1414.4182205200195,
+                1577.8541564941406,
+                1450.5386352539062,
+                1630.6638717651367
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-upload-1",
+      "ratios": {
+        "cpu_ms": 0.9393939393939394,
+        "cpu_ms_per_mib": 0.9393939393939394,
+        "rss_mib": 1.0398671096345515,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 360,
+              "median": 330,
+              "min": 310,
+              "samples": [
+                310,
+                330,
+                330,
+                340,
+                360
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 11.25,
+              "median": 10.3125,
+              "min": 9.6875,
+              "samples": [
+                9.6875,
+                10.3125,
+                10.3125,
+                10.625,
+                11.25
+              ]
+            },
+            "rss_mib": {
+              "max": 9.484375,
+              "median": 9.40625,
+              "min": 9.375,
+              "samples": [
+                9.453125,
+                9.484375,
+                9.390625,
+                9.40625,
+                9.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2.0265579223632812,
+              "median": 2.0265579223632812,
+              "min": 2.0265579223632812,
+              "samples": [
+                2.0265579223632812,
+                2.0265579223632812,
+                2.0265579223632812,
+                2.0265579223632812,
+                2.0265579223632812
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 340,
+              "median": 310,
+              "min": 270,
+              "samples": [
+                310,
+                320,
+                270,
+                310,
+                340
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.625,
+              "median": 9.6875,
+              "min": 8.4375,
+              "samples": [
+                9.6875,
+                10.0,
+                8.4375,
+                9.6875,
+                10.625
+              ]
+            },
+            "rss_mib": {
+              "max": 9.9375,
+              "median": 9.78125,
+              "min": 9.5,
+              "samples": [
+                9.890625,
+                9.78125,
+                9.5,
+                9.71875,
+                9.9375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2.0265579223632812,
+              "median": 2.0265579223632812,
+              "min": 2.0265579223632812,
+              "samples": [
+                2.0265579223632812,
+                2.0265579223632812,
+                2.0265579223632812,
+                2.0265579223632812,
+                2.0265579223632812
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0563106796116506,
+        "throughput_mib_s": 1.061204725934534
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                90,
+                90,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.5,
+              "min": 2.5,
+              "samples": [
+                2.5,
+                2.8125,
+                2.8125,
+                2.5,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.078125,
+              "median": 8.046875,
+              "min": 8.0,
+              "samples": [
+                8.0,
+                8.03125,
+                8.078125,
+                8.0625,
+                8.046875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 653.1476974487305,
+              "median": 615.4775619506836,
+              "min": 603.795051574707,
+              "samples": [
+                615.4775619506836,
+                603.795051574707,
+                603.795051574707,
+                640.0346755981445,
+                653.1476974487305
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                80,
+                80,
+                90,
+                80,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.5,
+              "min": 2.5,
+              "samples": [
+                2.5,
+                2.5,
+                2.8125,
+                2.5,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.53125,
+              "median": 8.5,
+              "min": 8.484375,
+              "samples": [
+                8.5,
+                8.515625,
+                8.53125,
+                8.484375,
+                8.5
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 666.7375564575195,
+              "median": 653.1476974487305,
+              "min": 592.7085876464844,
+              "samples": [
+                666.7375564575195,
+                653.1476974487305,
+                592.7085876464844,
+                653.1476974487305,
+                640.0346755981445
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.025,
+        "cpu_ms_per_mib": 1.025,
+        "rss_mib": 1.0614617940199336,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 410,
+              "median": 400,
+              "min": 390,
+              "samples": [
+                390,
+                410,
+                410,
+                400,
+                400
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 6.40625,
+              "median": 6.25,
+              "min": 6.09375,
+              "samples": [
+                6.09375,
+                6.40625,
+                6.40625,
+                6.25,
+                6.25
+              ]
+            },
+            "rss_mib": {
+              "max": 9.5625,
+              "median": 9.40625,
+              "min": 9.34375,
+              "samples": [
+                9.40625,
+                9.5625,
+                9.46875,
+                9.34375,
+                9.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 3.9339065551757812,
+              "median": 3.9339065551757812,
+              "min": 3.9339065551757812,
+              "samples": [
+                3.9339065551757812,
+                3.9339065551757812,
+                3.9339065551757812,
+                3.9339065551757812,
+                3.9339065551757812
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 420,
+              "median": 410,
+              "min": 380,
+              "samples": [
+                420,
+                410,
+                420,
+                380,
+                410
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 6.5625,
+              "median": 6.40625,
+              "min": 5.9375,
+              "samples": [
+                6.5625,
+                6.40625,
+                6.5625,
+                5.9375,
+                6.40625
+              ]
+            },
+            "rss_mib": {
+              "max": 10.0,
+              "median": 9.984375,
+              "min": 9.9375,
+              "samples": [
+                9.96875,
+                9.984375,
+                9.9375,
+                10.0,
+                10.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 3.9339065551757812,
+              "median": 3.9339065551757812,
+              "min": 3.9339065551757812,
+              "samples": [
+                3.9339065551757812,
+                3.9339065551757812,
+                3.9339065551757812,
+                3.9339065551757812,
+                3.9339065551757812
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0575221238938053,
+        "throughput_mib_s": 1.0
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1790,
+              "median": 1760,
+              "min": 1660,
+              "samples": [
+                1660,
+                1710,
+                1760,
+                1790,
+                1790
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 6.9921875,
+              "median": 6.875,
+              "min": 6.484375,
+              "samples": [
+                6.484375,
+                6.6796875,
+                6.875,
+                6.9921875,
+                6.9921875
+              ]
+            },
+            "rss_mib": {
+              "max": 14.21875,
+              "median": 14.125,
+              "min": 13.953125,
+              "samples": [
+                14.125,
+                13.953125,
+                14.203125,
+                13.96875,
+                14.21875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 15.735626220703125,
+              "median": 15.735626220703125,
+              "min": 15.735626220703125,
+              "samples": [
+                15.735626220703125,
+                15.735626220703125,
+                15.735626220703125,
+                15.735626220703125,
+                15.735626220703125
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1780,
+              "median": 1760,
+              "min": 1690,
+              "samples": [
+                1710,
+                1690,
+                1780,
+                1760,
+                1770
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 6.953125,
+              "median": 6.875,
+              "min": 6.6015625,
+              "samples": [
+                6.6796875,
+                6.6015625,
+                6.953125,
+                6.875,
+                6.9140625
+              ]
+            },
+            "rss_mib": {
+              "max": 15.078125,
+              "median": 14.9375,
+              "min": 14.671875,
+              "samples": [
+                14.984375,
+                14.671875,
+                14.734375,
+                14.9375,
+                15.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 15.735626220703125,
+              "median": 15.735626220703125,
+              "min": 15.735626220703125,
+              "samples": [
+                15.735626220703125,
+                15.735626220703125,
+                15.735626220703125,
+                15.735626220703125,
+                15.735626220703125
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-download-8",
+      "ratios": {
+        "cpu_ms": 0.8923076923076924,
+        "cpu_ms_per_mib": 0.8923076923076924,
+        "rss_mib": 1.0788690476190477,
+        "throughput_mib_s": 0.9334587350105807
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 790,
+              "median": 650,
+              "min": 500,
+              "samples": [
+                700,
+                790,
+                650,
+                500,
+                580
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.0859375,
+              "median": 2.5390625,
+              "min": 1.953125,
+              "samples": [
+                2.734375,
+                3.0859375,
+                2.5390625,
+                1.953125,
+                2.265625
+              ]
+            },
+            "rss_mib": {
+              "max": 10.703125,
+              "median": 10.5,
+              "min": 10.265625,
+              "samples": [
+                10.703125,
+                10.375,
+                10.59375,
+                10.265625,
+                10.5
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1071.2146759033203,
+              "median": 506.99710845947266,
+              "min": 316.1430358886719,
+              "samples": [
+                1071.2146759033203,
+                924.229621887207,
+                316.1430358886719,
+                506.99710845947266,
+                344.6340560913086
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 710,
+              "median": 580,
+              "min": 510,
+              "samples": [
+                710,
+                580,
+                570,
+                610,
+                510
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.7734375,
+              "median": 2.265625,
+              "min": 1.9921875,
+              "samples": [
+                2.7734375,
+                2.265625,
+                2.2265625,
+                2.3828125,
+                1.9921875
+              ]
+            },
+            "rss_mib": {
+              "max": 11.453125,
+              "median": 11.328125,
+              "min": 11.125,
+              "samples": [
+                11.328125,
+                11.3125,
+                11.453125,
+                11.453125,
+                11.125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1127.8390884399414,
+              "median": 473.26087951660156,
+              "min": 383.2578659057617,
+              "samples": [
+                1127.8390884399414,
+                501.99031829833984,
+                473.26087951660156,
+                383.2578659057617,
+                417.7093505859375
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0133333333333334,
+        "cpu_ms_per_mib": 1.0133333333333334,
+        "rss_mib": 1.0611353711790392,
+        "throughput_mib_s": 1.003831417624521
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2340,
+              "median": 2250,
+              "min": 2170,
+              "samples": [
+                2250,
+                2170,
+                2340,
+                2300,
+                2250
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.5703125,
+              "median": 4.39453125,
+              "min": 4.23828125,
+              "samples": [
+                4.39453125,
+                4.23828125,
+                4.5703125,
+                4.4921875,
+                4.39453125
+              ]
+            },
+            "rss_mib": {
+              "max": 14.53125,
+              "median": 14.3125,
+              "min": 14.265625,
+              "samples": [
+                14.3125,
+                14.53125,
+                14.28125,
+                14.5,
+                14.265625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 31.232833862304688,
+              "median": 31.113624572753906,
+              "min": 30.755996704101562,
+              "samples": [
+                30.755996704101562,
+                31.113624572753906,
+                30.875205993652344,
+                31.232833862304688,
+                31.232833862304688
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2450,
+              "median": 2280,
+              "min": 2160,
+              "samples": [
+                2270,
+                2280,
+                2450,
+                2160,
+                2320
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.78515625,
+              "median": 4.453125,
+              "min": 4.21875,
+              "samples": [
+                4.43359375,
+                4.453125,
+                4.78515625,
+                4.21875,
+                4.53125
+              ]
+            },
+            "rss_mib": {
+              "max": 15.5625,
+              "median": 15.1875,
+              "min": 15.0,
+              "samples": [
+                15.3125,
+                15.0,
+                15.5625,
+                15.046875,
+                15.1875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 31.35204315185547,
+              "median": 31.232833862304688,
+              "min": 31.113624572753906,
+              "samples": [
+                31.232833862304688,
+                31.232833862304688,
+                31.35204315185547,
+                31.113624572753906,
+                31.35204315185547
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0783333333333334,
+        "throughput_mib_s": 1.0133050247699928
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 110,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                100,
+                100,
+                110,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.71875,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.71875,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 9.65625,
+              "median": 9.375,
+              "min": 9.1875,
+              "samples": [
+                9.3125,
+                9.65625,
+                9.375,
+                9.1875,
+                9.5
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 864.9826049804688,
+              "median": 842.2136306762695,
+              "min": 790.2383804321289,
+              "samples": [
+                790.2383804321289,
+                864.9826049804688,
+                864.9826049804688,
+                820.5175399780273,
+                842.2136306762695
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 100,
+              "samples": [
+                100,
+                100,
+                100,
+                100,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5625,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 10.25,
+              "median": 10.109375,
+              "min": 10.0625,
+              "samples": [
+                10.25,
+                10.0625,
+                10.0625,
+                10.109375,
+                10.15625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 876.7843246459961,
+              "median": 853.419303894043,
+              "min": 820.5175399780273,
+              "samples": [
+                876.7843246459961,
+                853.419303894043,
+                820.5175399780273,
+                876.7843246459961,
+                853.419303894043
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 0.965166908563135,
+        "throughput_mib_s": 0.9877812546565341
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 130,
+              "min": 120,
+              "samples": [
+                130,
+                120,
+                130,
+                130,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.03125,
+              "median": 2.03125,
+              "min": 1.875,
+              "samples": [
+                2.03125,
+                1.875,
+                2.03125,
+                2.03125,
+                2.03125
+              ]
+            },
+            "rss_mib": {
+              "max": 12.171875,
+              "median": 10.765625,
+              "min": 9.703125,
+              "samples": [
+                10.203125,
+                10.765625,
+                12.15625,
+                12.171875,
+                9.703125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 810.1463317871094,
+              "median": 800.013542175293,
+              "min": 790.2383804321289,
+              "samples": [
+                800.013542175293,
+                810.1463317871094,
+                800.013542175293,
+                790.2383804321289,
+                790.2383804321289
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 130,
+              "min": 130,
+              "samples": [
+                130,
+                130,
+                130,
+                130,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.03125,
+              "median": 2.03125,
+              "min": 2.03125,
+              "samples": [
+                2.03125,
+                2.03125,
+                2.03125,
+                2.03125,
+                2.03125
+              ]
+            },
+            "rss_mib": {
+              "max": 12.609375,
+              "median": 10.390625,
+              "min": 10.0,
+              "samples": [
+                10.0,
+                12.609375,
+                10.75,
+                10.390625,
+                10.109375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 820.5175399780273,
+              "median": 790.2383804321289,
+              "min": 771.1648941040039,
+              "samples": [
+                800.013542175293,
+                820.5175399780273,
+                771.1648941040039,
+                771.1648941040039,
+                790.2383804321289
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.1064139941690962,
+        "throughput_mib_s": 1.0230369085954918
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 210,
+              "median": 200,
+              "min": 200,
+              "samples": [
+                200,
+                210,
+                200,
+                200,
+                200
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.640625,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.640625,
+                1.5625,
+                1.5625,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 13.0625,
+              "median": 10.71875,
+              "min": 10.203125,
+              "samples": [
+                13.0625,
+                10.40625,
+                10.203125,
+                11.953125,
+                10.71875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1007.9145431518555,
+              "median": 962.4958038330078,
+              "min": 941.2765502929688,
+              "samples": [
+                962.4958038330078,
+                941.2765502929688,
+                1007.9145431518555,
+                977.1585464477539,
+                955.2240371704102
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 200,
+              "median": 200,
+              "min": 200,
+              "samples": [
+                200,
+                200,
+                200,
+                200,
+                200
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5625,
+              "median": 1.5625,
+              "min": 1.5625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 12.96875,
+              "median": 11.859375,
+              "min": 10.421875,
+              "samples": [
+                12.421875,
+                10.890625,
+                12.96875,
+                10.421875,
+                11.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1040.6970977783203,
+              "median": 984.6687316894531,
+              "min": 969.7675704956055,
+              "samples": [
+                1000.0467300415039,
+                977.1585464477539,
+                984.6687316894531,
+                1040.6970977783203,
+                969.7675704956055
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-upload-8",
+      "ratios": {
+        "cpu_ms": 1.009433962264151,
+        "cpu_ms_per_mib": 1.009433962264151,
+        "rss_mib": 1.0759193357058126,
+        "throughput_mib_s": 0.9864686132872114
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1120,
+              "median": 1060,
+              "min": 980,
+              "samples": [
+                1050,
+                1060,
+                980,
+                1120,
+                1090
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.1875,
+              "median": 2.0703125,
+              "min": 1.9140625,
+              "samples": [
+                2.05078125,
+                2.0703125,
+                1.9140625,
+                2.1875,
+                2.12890625
+              ]
+            },
+            "rss_mib": {
+              "max": 13.8125,
+              "median": 13.171875,
+              "min": 12.859375,
+              "samples": [
+                13.515625,
+                13.8125,
+                12.90625,
+                13.171875,
+                12.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1204.7290802001953,
+              "median": 1171.708106994629,
+              "min": 1089.4536972045898,
+              "samples": [
+                1190.781593322754,
+                1171.708106994629,
+                1089.4536972045898,
+                1204.7290802001953,
+                1147.9854583740234
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1120,
+              "median": 1070,
+              "min": 1010,
+              "samples": [
+                1070,
+                1070,
+                1090,
+                1010,
+                1120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.1875,
+              "median": 2.08984375,
+              "min": 1.97265625,
+              "samples": [
+                2.08984375,
+                2.08984375,
+                2.12890625,
+                1.97265625,
+                2.1875
+              ]
+            },
+            "rss_mib": {
+              "max": 14.28125,
+              "median": 14.171875,
+              "min": 13.578125,
+              "samples": [
+                14.28125,
+                14.03125,
+                14.25,
+                14.171875,
+                13.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1166.3436889648438,
+              "median": 1155.853271484375,
+              "min": 1127.8390884399414,
+              "samples": [
+                1155.853271484375,
+                1127.8390884399414,
+                1166.3436889648438,
+                1130.3424835205078,
+                1163.7210845947266
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-download-8",
+      "ratios": {
+        "cpu_ms": 1.0092592592592593,
+        "cpu_ms_per_mib": 1.0092592592592593,
+        "rss_mib": 1.114321608040201,
+        "throughput_mib_s": 0.9671117145658897
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1130,
+              "median": 1080,
+              "min": 1050,
+              "samples": [
+                1080,
+                1090,
+                1130,
+                1080,
+                1050
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.20703125,
+              "median": 2.109375,
+              "min": 2.05078125,
+              "samples": [
+                2.109375,
+                2.12890625,
+                2.20703125,
+                2.109375,
+                2.05078125
+              ]
+            },
+            "rss_mib": {
+              "max": 13.59375,
+              "median": 12.4375,
+              "min": 11.765625,
+              "samples": [
+                12.4375,
+                13.34375,
+                11.765625,
+                13.59375,
+                11.953125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1712.4414443969727,
+              "median": 1580.357551574707,
+              "min": 1462.9364013671875,
+              "samples": [
+                1712.4414443969727,
+                1580.357551574707,
+                1678.7052154541016,
+                1462.9364013671875,
+                1537.5614166259766
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1130,
+              "median": 1090,
+              "min": 1050,
+              "samples": [
+                1050,
+                1120,
+                1070,
+                1130,
+                1090
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.20703125,
+              "median": 2.12890625,
+              "min": 2.05078125,
+              "samples": [
+                2.05078125,
+                2.1875,
+                2.08984375,
+                2.20703125,
+                2.12890625
+              ]
+            },
+            "rss_mib": {
+              "max": 14.984375,
+              "median": 13.859375,
+              "min": 13.171875,
+              "samples": [
+                13.625,
+                14.515625,
+                13.171875,
+                13.859375,
+                14.984375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1595.0202941894531,
+              "median": 1528.3823013305664,
+              "min": 1438.2600784301758,
+              "samples": [
+                1595.0202941894531,
+                1528.3823013305664,
+                1528.3823013305664,
+                1438.2600784301758,
+                1542.210578918457
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0679012345679013,
+        "throughput_mib_s": 1.0214768072622606
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2480,
+              "median": 2370,
+              "min": 2260,
+              "samples": [
+                2480,
+                2260,
+                2340,
+                2460,
+                2370
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.421875,
+              "median": 2.314453125,
+              "min": 2.20703125,
+              "samples": [
+                2.421875,
+                2.20703125,
+                2.28515625,
+                2.40234375,
+                2.314453125
+              ]
+            },
+            "rss_mib": {
+              "max": 15.9375,
+              "median": 15.1875,
+              "min": 14.0,
+              "samples": [
+                15.53125,
+                15.9375,
+                15.1875,
+                14.0,
+                14.875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1135.3492736816406,
+              "median": 1076.817512512207,
+              "min": 1021.9812393188477,
+              "samples": [
+                1021.9812393188477,
+                1135.3492736816406,
+                1076.817512512207,
+                1041.7699813842773,
+                1092.9107666015625
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2450,
+              "median": 2370,
+              "min": 2320,
+              "samples": [
+                2370,
+                2330,
+                2320,
+                2440,
+                2450
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.392578125,
+              "median": 2.314453125,
+              "min": 2.265625,
+              "samples": [
+                2.314453125,
+                2.275390625,
+                2.265625,
+                2.3828125,
+                2.392578125
+              ]
+            },
+            "rss_mib": {
+              "max": 17.3125,
+              "median": 16.21875,
+              "min": 16.0,
+              "samples": [
+                16.21875,
+                17.0,
+                17.3125,
+                16.15625,
+                16.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1139.0447616577148,
+              "median": 1099.9441146850586,
+              "min": 1046.0615158081055,
+              "samples": [
+                1099.9441146850586,
+                1114.3684387207031,
+                1139.0447616577148,
+                1046.0615158081055,
+                1054.6445846557617
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0635155096011817,
+        "throughput_mib_s": 1.0024077046548956
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 500,
+              "median": 490,
+              "min": 480,
+              "samples": [
+                480,
+                500,
+                490,
+                490,
+                480
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 7.8125,
+              "median": 7.65625,
+              "min": 7.5,
+              "samples": [
+                7.5,
+                7.8125,
+                7.65625,
+                7.65625,
+                7.5
+              ]
+            },
+            "rss_mib": {
+              "max": 10.71875,
+              "median": 10.578125,
+              "min": 10.546875,
+              "samples": [
+                10.71875,
+                10.5625,
+                10.546875,
+                10.609375,
+                10.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 151.75342559814453,
+              "median": 148.53477478027344,
+              "min": 147.5811004638672,
+              "samples": [
+                151.75342559814453,
+                147.5811004638672,
+                148.53477478027344,
+                148.53477478027344,
+                149.60765838623047
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 500,
+              "median": 490,
+              "min": 480,
+              "samples": [
+                490,
+                500,
+                480,
+                490,
+                490
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 7.8125,
+              "median": 7.65625,
+              "min": 7.5,
+              "samples": [
+                7.65625,
+                7.8125,
+                7.5,
+                7.65625,
+                7.65625
+              ]
+            },
+            "rss_mib": {
+              "max": 11.296875,
+              "median": 11.25,
+              "min": 11.21875,
+              "samples": [
+                11.21875,
+                11.25,
+                11.28125,
+                11.25,
+                11.296875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 149.60765838623047,
+              "median": 148.89240264892578,
+              "min": 146.8658447265625,
+              "samples": [
+                148.89240264892578,
+                146.8658447265625,
+                149.60765838623047,
+                148.89240264892578,
+                149.60765838623047
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-download-1",
+      "ratios": {
+        "cpu_ms": 0.9859154929577465,
+        "cpu_ms_per_mib": 0.9859154929577465,
+        "rss_mib": 1.0493975903614459,
+        "throughput_mib_s": 1.0172031076581576
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 720,
+              "median": 710,
+              "min": 710,
+              "samples": [
+                710,
+                720,
+                710,
+                710,
+                710
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 11.25,
+              "median": 11.09375,
+              "min": 11.09375,
+              "samples": [
+                11.09375,
+                11.25,
+                11.09375,
+                11.09375,
+                11.09375
+              ]
+            },
+            "rss_mib": {
+              "max": 13.0625,
+              "median": 12.96875,
+              "min": 12.84375,
+              "samples": [
+                12.84375,
+                13.0625,
+                12.859375,
+                12.96875,
+                13.015625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 216.96090698242188,
+              "median": 214.8151397705078,
+              "min": 213.38462829589844,
+              "samples": [
+                214.8151397705078,
+                214.09988403320312,
+                214.8151397705078,
+                213.38462829589844,
+                216.96090698242188
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 720,
+              "median": 700,
+              "min": 690,
+              "samples": [
+                720,
+                720,
+                690,
+                700,
+                700
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 11.25,
+              "median": 10.9375,
+              "min": 10.78125,
+              "samples": [
+                11.25,
+                11.25,
+                10.78125,
+                10.9375,
+                10.9375
+              ]
+            },
+            "rss_mib": {
+              "max": 13.6875,
+              "median": 13.609375,
+              "min": 13.53125,
+              "samples": [
+                13.6875,
+                13.609375,
+                13.53125,
+                13.59375,
+                13.65625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 220.77560424804688,
+              "median": 218.51062774658203,
+              "min": 212.66937255859375,
+              "samples": [
+                214.09988403320312,
+                212.66937255859375,
+                220.77560424804688,
+                218.51062774658203,
+                220.77560424804688
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0333333333333334,
+        "cpu_ms_per_mib": 1.0333333333333334,
+        "rss_mib": 1.0478615071283095,
+        "throughput_mib_s": 0.9733984799131379
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1300,
+              "median": 1200,
+              "min": 1190,
+              "samples": [
+                1200,
+                1190,
+                1200,
+                1300,
+                1250
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.15625,
+              "median": 9.375,
+              "min": 9.296875,
+              "samples": [
+                9.375,
+                9.296875,
+                9.375,
+                10.15625,
+                9.765625
+              ]
+            },
+            "rss_mib": {
+              "max": 15.546875,
+              "median": 15.34375,
+              "min": 15.3125,
+              "samples": [
+                15.328125,
+                15.46875,
+                15.546875,
+                15.34375,
+                15.3125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 221.49085998535156,
+              "median": 219.58351135253906,
+              "min": 202.53658294677734,
+              "samples": [
+                219.58351135253906,
+                221.49085998535156,
+                220.77560424804688,
+                202.53658294677734,
+                210.88123321533203
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1280,
+              "median": 1240,
+              "min": 1210,
+              "samples": [
+                1210,
+                1220,
+                1280,
+                1240,
+                1250
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.0,
+              "median": 9.6875,
+              "min": 9.453125,
+              "samples": [
+                9.453125,
+                9.53125,
+                10.0,
+                9.6875,
+                9.765625
+              ]
+            },
+            "rss_mib": {
+              "max": 16.203125,
+              "median": 16.078125,
+              "min": 15.96875,
+              "samples": [
+                16.09375,
+                16.203125,
+                16.078125,
+                15.96875,
+                16.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 217.79537200927734,
+              "median": 213.74225616455078,
+              "min": 203.60946655273438,
+              "samples": [
+                217.79537200927734,
+                217.31853485107422,
+                203.60946655273438,
+                211.59648895263672,
+                213.74225616455078
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0198170731707317,
+        "cpu_ms_per_mib": 1.0198170731707317,
+        "rss_mib": 1.0329057445621863,
+        "throughput_mib_s": 1.0053932584269663
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 6750,
+              "median": 6560,
+              "min": 6330,
+              "samples": [
+                6560,
+                6750,
+                6560,
+                6730,
+                6330
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 13.18359375,
+              "median": 12.8125,
+              "min": 12.36328125,
+              "samples": [
+                12.8125,
+                13.18359375,
+                12.8125,
+                13.14453125,
+                12.36328125
+              ]
+            },
+            "rss_mib": {
+              "max": 38.109375,
+              "median": 28.015625,
+              "min": 27.78125,
+              "samples": [
+                28.078125,
+                27.78125,
+                28.015625,
+                28.015625,
+                38.109375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 268.8169479370117,
+              "median": 265.2406692504883,
+              "min": 264.4062042236328,
+              "samples": [
+                268.8169479370117,
+                265.2406692504883,
+                265.1214599609375,
+                268.57852935791016,
+                264.4062042236328
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 6760,
+              "median": 6690,
+              "min": 6670,
+              "samples": [
+                6690,
+                6720,
+                6690,
+                6670,
+                6760
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 13.203125,
+              "median": 13.06640625,
+              "min": 13.02734375,
+              "samples": [
+                13.06640625,
+                13.125,
+                13.06640625,
+                13.02734375,
+                13.203125
+              ]
+            },
+            "rss_mib": {
+              "max": 34.59375,
+              "median": 28.9375,
+              "min": 28.828125,
+              "samples": [
+                34.59375,
+                29.46875,
+                28.9375,
+                28.859375,
+                28.828125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 267.38643646240234,
+              "median": 266.67118072509766,
+              "min": 260.7107162475586,
+              "samples": [
+                262.26043701171875,
+                260.7107162475586,
+                267.38643646240234,
+                267.02880859375,
+                266.67118072509766
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-download-8",
+      "ratios": {
+        "cpu_ms": 0.9829867674858223,
+        "cpu_ms_per_mib": 0.9829867674858223,
+        "rss_mib": 1.1029185867895546,
+        "throughput_mib_s": 1.0056497175141244
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5680,
+              "median": 5290,
+              "min": 5130,
+              "samples": [
+                5290,
+                5680,
+                5510,
+                5200,
+                5130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 11.09375,
+              "median": 10.33203125,
+              "min": 10.01953125,
+              "samples": [
+                10.33203125,
+                11.09375,
+                10.76171875,
+                10.15625,
+                10.01953125
+              ]
+            },
+            "rss_mib": {
+              "max": 10.359375,
+              "median": 10.171875,
+              "min": 10.0625,
+              "samples": [
+                10.125,
+                10.171875,
+                10.328125,
+                10.359375,
+                10.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 235.43834686279297,
+              "median": 232.1004867553711,
+              "min": 209.68914031982422,
+              "samples": [
+                232.1004867553711,
+                209.68914031982422,
+                217.79537200927734,
+                235.08071899414062,
+                235.43834686279297
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 5470,
+              "median": 5200,
+              "min": 5120,
+              "samples": [
+                5250,
+                5470,
+                5150,
+                5200,
+                5120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.68359375,
+              "median": 10.15625,
+              "min": 10.0,
+              "samples": [
+                10.25390625,
+                10.68359375,
+                10.05859375,
+                10.15625,
+                10.0
+              ]
+            },
+            "rss_mib": {
+              "max": 11.359375,
+              "median": 11.21875,
+              "min": 10.890625,
+              "samples": [
+                10.890625,
+                10.890625,
+                11.359375,
+                11.25,
+                11.21875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 237.7033233642578,
+              "median": 233.4117889404297,
+              "min": 217.91458129882812,
+              "samples": [
+                228.76262664794922,
+                217.91458129882812,
+                234.96150970458984,
+                233.4117889404297,
+                237.7033233642578
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 0.990990990990991,
+        "cpu_ms_per_mib": 0.990990990990991,
+        "rss_mib": 1.0313531353135315,
+        "throughput_mib_s": 0.987408610885459
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 11160,
+              "median": 11100,
+              "min": 10920,
+              "samples": [
+                10940,
+                11160,
+                11100,
+                11110,
+                10920
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.8984375,
+              "median": 10.83984375,
+              "min": 10.6640625,
+              "samples": [
+                10.68359375,
+                10.8984375,
+                10.83984375,
+                10.849609375,
+                10.6640625
+              ]
+            },
+            "rss_mib": {
+              "max": 28.5625,
+              "median": 28.40625,
+              "min": 28.265625,
+              "samples": [
+                28.46875,
+                28.28125,
+                28.5625,
+                28.40625,
+                28.265625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 296.8311309814453,
+              "median": 293.49327087402344,
+              "min": 274.5389938354492,
+              "samples": [
+                296.8311309814453,
+                274.5389938354492,
+                282.04917907714844,
+                293.49327087402344,
+                296.1158752441406
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 11150,
+              "median": 11000,
+              "min": 10720,
+              "samples": [
+                11070,
+                10970,
+                11000,
+                11150,
+                10720
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 10.888671875,
+              "median": 10.7421875,
+              "min": 10.46875,
+              "samples": [
+                10.810546875,
+                10.712890625,
+                10.7421875,
+                10.888671875,
+                10.46875
+              ]
+            },
+            "rss_mib": {
+              "max": 29.5625,
+              "median": 29.296875,
+              "min": 29.15625,
+              "samples": [
+                29.28125,
+                29.296875,
+                29.15625,
+                29.5625,
+                29.375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 298.61927032470703,
+              "median": 289.7977828979492,
+              "min": 288.0096435546875,
+              "samples": [
+                289.7977828979492,
+                293.6124801635742,
+                289.67857360839844,
+                288.0096435546875,
+                298.61927032470703
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "legacy"
+}

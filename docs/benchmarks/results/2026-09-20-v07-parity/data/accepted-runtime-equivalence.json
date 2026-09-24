@@ -1,0 +1,16 @@
+{
+  "runtime_source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+  "documented_source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+  "changed_paths": [
+    "crates/xray-bench/src/protocol_bench.rs",
+    "docs/v07-performance.md",
+    "docs/v07-wireguard-adapter.md",
+    "scripts/summarize-v07-protocol-parity.py",
+    "scripts/tests/test_v07_protocol_parity.py",
+    "vendor/quinn-proto/XRAY-PATCH.diff",
+    "vendor/quinn-proto/XRAY-PATCH.md",
+    "vendor/smoltcp/XRAY-PATCH.diff",
+    "vendor/smoltcp/XRAY-PATCH.md"
+  ],
+  "runtime_sources_unchanged": true
+}

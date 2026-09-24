@@ -527,6 +527,24 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
         return stats
     }
 
+#if DEBUG
+    public func protocolProbeNetworkEvents() async throws -> [[String: String]]? {
+        guard let manager = try await loadManager(),
+              let session = manager.connection as? NETunnelProviderSession else { return nil }
+        guard let response = try await session.sendProviderMessageAsync(Data(XrayTunnelProviderMessage.protocolProbeNetworkEventsRequest.utf8)) else { return nil }
+        return try JSONDecoder().decode([[String: String]].self, from: response)
+    }
+
+    public func protocolProbeConnectionIDs(close: Bool = false) async throws -> [UInt64]? {
+        guard let manager = try await loadManager(),
+              let session = manager.connection as? NETunnelProviderSession else { return nil }
+        let request = close ? XrayTunnelProviderMessage.protocolProbeCloseConnectionIDsRequest
+            : XrayTunnelProviderMessage.protocolProbeConnectionIDsRequest
+        guard let response = try await session.sendProviderMessageAsync(Data(request.utf8)) else { return nil }
+        return try JSONDecoder().decode([UInt64].self, from: response)
+    }
+#endif
+
     public func closeActiveConnections() async throws -> UInt64 {
         XrayAppleLog.info("TunnelController", "Requesting closure of active connections")
         guard let manager = try await loadManager(),

@@ -1,0 +1,59 @@
+[
+  {
+    "name": "canonical-vendor",
+    "command": [
+      "bash",
+      "scripts/check-vendored-sources.sh"
+    ],
+    "returncode": 0,
+    "seconds": 45.871865034103394
+  },
+  {
+    "name": "harness-build",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-bench"
+    ],
+    "returncode": 0,
+    "seconds": 68.91944670677185
+  },
+  {
+    "name": "release-build",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-cli"
+    ],
+    "returncode": 0,
+    "seconds": 31.593381881713867
+  },
+  {
+    "name": "v05-gate",
+    "command": [
+      "bash",
+      "scripts/run-v05-pre-device-benchmarks.sh",
+      "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-v05-gate"
+    ],
+    "returncode": 0,
+    "seconds": 136.3170359134674
+  },
+  {
+    "name": "v06-gate",
+    "command": [
+      "python3",
+      "scripts/run-v06-feature-benchmarks.py",
+      "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-v06-gate"
+    ],
+    "returncode": 0,
+    "seconds": 178.28254532814026
+  }
+]

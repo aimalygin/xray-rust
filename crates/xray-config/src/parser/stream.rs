@@ -9,7 +9,22 @@ impl Parser<'_> {
     ) -> Option<StreamSettings> {
         let stream = outbound.get("streamSettings");
         let stream_network = self.parse_network(stream, index)?;
-        let security = self.parse_security(stream, index)?;
+        let mut security = self.parse_security(stream, index)?;
+        if stream_network == StreamNetwork::Hysteria {
+            if let StreamSecurity::Tls(tls) = &mut security {
+                let explicit = stream
+                    .and_then(|s| s.get("tlsSettings"))
+                    .and_then(|s| s.get("fingerprint"));
+                if explicit.is_some_and(|v| !v.is_null() && v.as_str() != Some("")) {
+                    self.error(
+                        format!("$.outbounds[{index}].streamSettings.tlsSettings.fingerprint"),
+                        "Hysteria uses stock QUIC TLS; fingerprints are unsupported",
+                    );
+                }
+                // Generic TCP TLS defaults to Chrome; QUIC is unshaped.
+                tls.fingerprint = None;
+            }
+        }
         // Xray refuses this in `StreamConfig.Build`, so a profile pairing them
         // would build cleanly here and then fail against a real server. The
         // check lives here rather than in `validate_stream_settings_compatibility`
@@ -50,9 +65,13 @@ impl Parser<'_> {
         }
 
         Some(StreamSettings {
-            // Every transport we accept dials TCP; `transport` carries what
-            // gets layered on top of it.
-            network: Network::Tcp,
+            // Native Hysteria owns a UDP carrier; other transports retain
+            // their existing TCP classification (XHTTP selects H3 later).
+            network: if stream_network == StreamNetwork::Hysteria {
+                Network::Udp
+            } else {
+                Network::Tcp
+            },
             transport,
             security,
             quic_params,
@@ -67,6 +86,9 @@ impl Parser<'_> {
         index: usize,
     ) -> Option<StreamTransport> {
         match network {
+            StreamNetwork::Hysteria => self
+                .parse_hysteria_transport(stream, index)
+                .map(StreamTransport::Hysteria),
             StreamNetwork::Raw => Some(StreamTransport::Raw),
             StreamNetwork::WebSocket => self
                 .parse_websocket_settings(stream, index)
@@ -106,6 +128,7 @@ impl Parser<'_> {
         // `rawSettings` is `tcpSettings` renamed, so the raw transport reads
         // either spelling. Both are validated for every network already.
         let consumed: &[&str] = match network {
+            StreamNetwork::Hysteria => &["hysteriaSettings"],
             StreamNetwork::Raw => &["tcpSettings", "rawSettings"],
             StreamNetwork::WebSocket => &["wsSettings"],
             StreamNetwork::HttpUpgrade => &["httpupgradeSettings"],
@@ -114,6 +137,7 @@ impl Parser<'_> {
         };
 
         for key in [
+            "hysteriaSettings",
             "tcpSettings",
             "rawSettings",
             "wsSettings",
@@ -136,6 +160,12 @@ impl Parser<'_> {
                 ),
             );
             match key {
+                "hysteriaSettings" => {
+                    self.error(
+                        format!("$.outbounds[{index}].streamSettings.hysteriaSettings"),
+                        "hysteriaSettings requires the hysteria transport",
+                    );
+                }
                 "wsSettings" => {
                     let _ = self.parse_websocket_settings(Some(stream), index);
                 }
@@ -882,6 +912,7 @@ impl Parser<'_> {
         let network = network.to_ascii_lowercase();
 
         match network.as_str() {
+            "hysteria" => Some(StreamNetwork::Hysteria),
             // Xray renamed the `tcp` transport to `raw`; both names stay valid.
             "tcp" | "raw" => Some(StreamNetwork::Raw),
             "ws" | "websocket" => Some(StreamNetwork::WebSocket),
@@ -904,7 +935,7 @@ impl Parser<'_> {
                 );
                 None
             }
-            network @ ("kcp" | "mkcp" | "hysteria") => {
+            network @ ("kcp" | "mkcp") => {
                 self.error(
                     network_path,
                     format!("stream network `{network}` is not supported by xray-rust"),

@@ -1,0 +1,12 @@
+{
+  "reason": "Driver expected 301 release tests but all 300 passed. The canonical debug run includes one cfg(debug_assertions) MTU panic test that release excludes; all other old tests plus three new tests passed.",
+  "prior_records_preserved": true,
+  "old_only": [
+    "connection::mtud::tests::mtu_discovery_with_peer_max_udp_payload_size_after_search_panics - should panic"
+  ],
+  "new_only": [
+    "congestion::bbr::probe_rtt_round_regression::a_previous_probe_round_does_not_complete_the_next_probe",
+    "congestion::bbr::probe_rtt_round_regression::completed_round_before_deadline_is_remembered",
+    "congestion::bbr::probe_rtt_round_regression::timer_and_a_round_after_draining_are_both_required"
+  ]
+}

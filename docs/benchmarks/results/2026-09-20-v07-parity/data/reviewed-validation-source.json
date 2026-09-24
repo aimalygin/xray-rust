@@ -1,0 +1,6 @@
+{
+  "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+  "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f",
+  "source": "/private/tmp/xray-v07-parity-20260920/protocol-followup-source",
+  "target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build"
+}

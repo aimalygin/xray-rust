@@ -8,12 +8,15 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.4`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.7`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
 policy replacement requires the ABI 1.4 capability bit, before calling optional
-symbols.
+symbols. Profile import requires minor >=5, `PROFILE_IMPORT` and the selected
+`HYSTERIA2_OUTBOUND` or `WIREGUARD_OUTBOUND` capability.
+WireGuard carrier rebind requires minor >=6 and `WIREGUARD_OUTBOUND`.
+Hysteria carrier rebind requires minor >=7 and `HYSTERIA2_OUTBOUND`.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -30,7 +33,54 @@ from the header and preserve/ignore unknown bits. A capability bit is added in
 the same change as its optional API; it does not override major/minor
 compatibility checks.
 
+## Offline profile import
+
+ABI 1.5 adds `xray_profile_import_json`, a handle-free, bounded UTF-8 JSON API
+for Hysteria 2 links and WireGuard configuration text. Its two-call output
+protocol, supported fields, routing/DNS policy and equivalent Swift/Kotlin
+entry points are documented in [mobile profile import](v07-profile-import.md).
+Import validates configuration and typed runtime policy without starting the
+VPN or contacting the endpoint. The result contains credentials and belongs to
+the caller. New bits 16, 17 and 18 respectively advertise Hysteria 2 outbound,
+WireGuard outbound and this import surface; they do not claim full upstream
+option coverage or device acceptance.
+
 ## Recommended lifecycle
+
+### WireGuard network changes
+
+ABI 1.6 adds `xray_core_rebind_wireguard(handle, accepted, error)` and Swift
+`XrayCore.rebindWireGuard()`. A host network-change notification queues fresh
+protected UDP sockets for each live WireGuard client, retaining its authenticated
+WireGuard sessions, pending packets, inner TCP/UDP stack and current peer endpoints. It does not
+resolve DNS again, synthesize NAT64 addresses, replace routing or restart the
+core. The required output count reports accepted coalesced requests, not
+completed socket replacements. Unused outbounds stay lazy. A socket bind or
+protection failure closes the affected client; it never falls back to an
+unprotected socket. Calls may run with data-path/snapshot operations but not
+core lifecycle/free operations.
+
+The Apple packet-tunnel runtime observes `NWPathMonitor` changes, coalesces
+bursts for 500 ms, and requests rebinding when the path becomes usable. Stopping
+that runtime cancels the monitor and fences queued callbacks. JNI/Android
+network callback wiring is not added by this Apple-specific increment.
+
+### Hysteria network changes
+
+ABI 1.7 adds `xray_core_rebind_hysteria(handle, accepted, error)` and Swift
+`XrayCore.rebindHysteria()`. It queues a fresh protected UDP socket on the
+connection's Tokio runtime, so the caller needs no Tokio context. The live QUIC
+connection, authentication, streams and UDP sessions are retained; Quinn performs
+path migration. The Apple observer requests this alongside WireGuard rebinding.
+
+The required count means accepted/coalesced requests, not successful binds or
+path validation. A bind/protection/rebind failure closes the client; the core can
+create a new session on the next flow. Lazy outbounds stay lazy, and notifications
+racing initial authentication are retained. Endpoints and DNS pins are unchanged;
+this is not DNS64/NAT64 rebootstrap or Android network-callback integration.
+Calls share the WireGuard method's lifecycle and pointer ownership rules.
+
+### Core lifecycle
 
 1. Verify `xray_ffi_version_major()` and require a sufficient
    `xray_ffi_version_minor()`.

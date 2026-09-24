@@ -1,0 +1,2077 @@
+{
+  "timed_groups": [
+    {
+      "name": "h2-tun-memory-reproduction",
+      "runs": 30,
+      "quality": {
+        "compiler_load_detected": false,
+        "runs_observed": 30,
+        "compiler_sample_interval_seconds": 2,
+        "compiler_threshold_cpu_percent": 10,
+        "scope": "exploratory if compiler load detected; otherwise sampled ambient control on the same host",
+        "driver_sha256": "3acbc58645b383f72dbd683af89763bffe2b0195466fe98e91f58fe9d0e8133e"
+      },
+      "versions": {
+        "baseline": {
+          "binary": "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust",
+          "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d"
+        },
+        "candidate": {
+          "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+          "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "workers12": {
+          "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity-workers12/xray-rust",
+          "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        }
+      },
+      "rows": [
+        {
+          "case": "xhttp-h2-tun-full-duplex-1",
+          "ratios": {
+            "cpu_ms": 0.7293729372937293,
+            "cpu_ms_per_mib": 0.7293729372937293,
+            "rss_mib": 1.0499153976311337,
+            "throughput_mib_s": 1.0648630630543456
+          },
+          "review": [],
+          "versions": {
+            "baseline": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 3040,
+                  "median": 3030,
+                  "min": 2910,
+                  "samples": [
+                    3040,
+                    2910,
+                    3030,
+                    3030,
+                    2970
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 2.96875,
+                  "median": 2.958984375,
+                  "min": 2.841796875,
+                  "samples": [
+                    2.96875,
+                    2.841796875,
+                    2.958984375,
+                    2.958984375,
+                    2.900390625
+                  ]
+                },
+                "rss_mib": {
+                  "max": 19.375,
+                  "median": 18.46875,
+                  "min": 18.21875,
+                  "samples": [
+                    18.265625,
+                    18.21875,
+                    19.375,
+                    18.5,
+                    18.46875
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 630.6794124602666,
+                  "median": 627.2671469173001,
+                  "min": 612.417680642454,
+                  "samples": [
+                    612.417680642454,
+                    630.6794124602666,
+                    627.2671469173001,
+                    630.4895738980783,
+                    620.0618623730612
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "candidate": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 2250,
+                  "median": 2210,
+                  "min": 2200,
+                  "samples": [
+                    2200,
+                    2220,
+                    2250,
+                    2210,
+                    2210
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 2.197265625,
+                  "median": 2.158203125,
+                  "min": 2.1484375,
+                  "samples": [
+                    2.1484375,
+                    2.16796875,
+                    2.197265625,
+                    2.158203125,
+                    2.158203125
+                  ]
+                },
+                "rss_mib": {
+                  "max": 19.640625,
+                  "median": 19.390625,
+                  "min": 18.1875,
+                  "samples": [
+                    19.640625,
+                    18.1875,
+                    18.671875,
+                    19.4375,
+                    19.390625
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 671.5060494461893,
+                  "median": 667.9536154197165,
+                  "min": 657.6995689065142,
+                  "samples": [
+                    671.5060494461893,
+                    657.6995689065142,
+                    670.3753713274812,
+                    667.9536154197165,
+                    658.781429948154
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "workers12": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 2960,
+                  "median": 2920,
+                  "min": 2900,
+                  "samples": [
+                    2950,
+                    2910,
+                    2960,
+                    2920,
+                    2900
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 2.890625,
+                  "median": 2.8515625,
+                  "min": 2.83203125,
+                  "samples": [
+                    2.880859375,
+                    2.841796875,
+                    2.890625,
+                    2.8515625,
+                    2.83203125
+                  ]
+                },
+                "rss_mib": {
+                  "max": 18.921875,
+                  "median": 18.625,
+                  "min": 18.4375,
+                  "samples": [
+                    18.625,
+                    18.515625,
+                    18.921875,
+                    18.4375,
+                    18.625
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 645.3497814943009,
+                  "median": 639.6982087764228,
+                  "min": 634.4250395295899,
+                  "samples": [
+                    639.6982087764228,
+                    645.3497814943009,
+                    643.6807981264741,
+                    634.4250395295899,
+                    637.8348333812313
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            }
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "ratios": {
+            "cpu_ms": 0.6372315035799523,
+            "cpu_ms_per_mib": 0.6372315035799523,
+            "rss_mib": 1.1591804570527975,
+            "throughput_mib_s": 1.137631822585157
+          },
+          "review": [
+            "rss_mib"
+          ],
+          "versions": {
+            "baseline": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 12660,
+                  "median": 12570,
+                  "min": 12390,
+                  "samples": [
+                    12390,
+                    12570,
+                    12590,
+                    12500,
+                    12660
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 3.0908203125,
+                  "median": 3.06884765625,
+                  "min": 3.02490234375,
+                  "samples": [
+                    3.02490234375,
+                    3.06884765625,
+                    3.07373046875,
+                    3.0517578125,
+                    3.0908203125
+                  ]
+                },
+                "rss_mib": {
+                  "max": 21.203125,
+                  "median": 19.828125,
+                  "min": 14.8125,
+                  "samples": [
+                    17.5625,
+                    19.828125,
+                    20.484375,
+                    14.8125,
+                    21.203125
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 713.9501838449438,
+                  "median": 712.3052219347804,
+                  "min": 701.7191755750503,
+                  "samples": [
+                    713.9501838449438,
+                    713.0981964999912,
+                    709.1850509446734,
+                    712.3052219347804,
+                    701.7191755750503
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "candidate": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 8170,
+                  "median": 8010,
+                  "min": 7970,
+                  "samples": [
+                    8170,
+                    7970,
+                    8010,
+                    7980,
+                    8010
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 1.99462890625,
+                  "median": 1.95556640625,
+                  "min": 1.94580078125,
+                  "samples": [
+                    1.99462890625,
+                    1.94580078125,
+                    1.95556640625,
+                    1.9482421875,
+                    1.95556640625
+                  ]
+                },
+                "rss_mib": {
+                  "max": 31.71875,
+                  "median": 22.984375,
+                  "min": 19.625,
+                  "samples": [
+                    22.984375,
+                    25.21875,
+                    19.625,
+                    20.265625,
+                    31.71875
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 828.9800021614318,
+                  "median": 810.341087866589,
+                  "min": 807.2119937788905,
+                  "samples": [
+                    807.2119937788905,
+                    816.6458245466814,
+                    807.5106042411823,
+                    828.9800021614318,
+                    810.341087866589
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "workers12": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 12120,
+                  "median": 11900,
+                  "min": 11870,
+                  "samples": [
+                    11940,
+                    11890,
+                    12120,
+                    11870,
+                    11900
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 2.958984375,
+                  "median": 2.9052734375,
+                  "min": 2.89794921875,
+                  "samples": [
+                    2.9150390625,
+                    2.90283203125,
+                    2.958984375,
+                    2.89794921875,
+                    2.9052734375
+                  ]
+                },
+                "rss_mib": {
+                  "max": 18.1875,
+                  "median": 17.4375,
+                  "min": 15.765625,
+                  "samples": [
+                    16.3125,
+                    18.1875,
+                    17.6875,
+                    17.4375,
+                    15.765625
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 764.9475543786197,
+                  "median": 752.6724891333961,
+                  "min": 734.2706358113093,
+                  "samples": [
+                    764.9475543786197,
+                    736.1118641710804,
+                    734.2706358113093,
+                    752.8358451870096,
+                    752.6724891333961
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            }
+          }
+        }
+      ],
+      "candidate_comparisons": [
+        {
+          "case": "xhttp-h2-tun-full-duplex-1",
+          "reference": "baseline",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.0499153976311337,
+              "paired_bootstrap_95pct": [
+                0.9637096774193549,
+                1.075278015397776
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 0.7293729372937293,
+              "paired_bootstrap_95pct": [
+                0.7236842105263158,
+                0.7628865979381443
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.0648630630543456,
+              "paired_bootstrap_95pct": [
+                1.0428429340048417,
+                1.09648377352814
+              ]
+            }
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-full-duplex-1",
+          "reference": "workers12",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.0411073825503356,
+              "paired_bootstrap_95pct": [
+                0.9822784810126582,
+                1.054530201342282
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 0.7568493150684932,
+              "paired_bootstrap_95pct": [
+                0.7457627118644068,
+                0.7628865979381443
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.0441699011434453,
+              "paired_bootstrap_95pct": [
+                1.0191365795206708,
+                1.0528487587989706
+              ]
+            }
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "reference": "baseline",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.1591804570527975,
+              "paired_bootstrap_95pct": [
+                0.958047292143402,
+                1.4959469417833455
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 0.6372315035799523,
+              "paired_bootstrap_95pct": [
+                0.6327014218009479,
+                0.6594027441485069
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.137631822585157,
+              "paired_bootstrap_95pct": [
+                1.1306278953969726,
+                1.1637988556503018
+              ]
+            }
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "reference": "workers12",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.3181003584229392,
+              "paired_bootstrap_95pct": [
+                1.1095406360424027,
+                2.0118929633300295
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 0.673109243697479,
+              "paired_bootstrap_95pct": [
+                0.6608910891089109,
+                0.6842546063651591
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.076618449014379,
+              "paired_bootstrap_95pct": [
+                1.0552514210397117,
+                1.1094045134923733
+              ]
+            }
+          }
+        }
+      ],
+      "manifest_sha256": "ab5609d58b4c910565bbda5b79f31134c1c2bf5f6ee04a98b0c0d4137e403faf"
+    },
+    {
+      "name": "h2-tun-allocator-control",
+      "runs": 20,
+      "quality": {
+        "compiler_load_detected": false,
+        "runs_observed": 20,
+        "compiler_sample_interval_seconds": 2,
+        "compiler_threshold_cpu_percent": 10,
+        "scope": "exploratory if compiler load detected; otherwise sampled ambient control on the same host",
+        "driver_sha256": "5c0a6110d069c54e7d42ed52b5245f44ea4627b2438bdbb51ec3616b72792d9e"
+      },
+      "versions": {
+        "baseline": {
+          "binary": "/private/tmp/xray-v07-bench-20260919/bin/baseline/xray-rust",
+          "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d"
+        },
+        "baseline2": {
+          "binary": "/private/tmp/xray-h2-tun-memory-20260921/bin/baseline2/xray-rust",
+          "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d"
+        },
+        "candidate": {
+          "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+          "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "candidate_mag1": {
+          "binary": "/private/tmp/xray-h2-tun-memory-20260921/bin/candidate-mag1/xray-rust",
+          "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        }
+      },
+      "rows": [
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "ratios": {
+            "cpu_ms": 0.6423948220064725,
+            "cpu_ms_per_mib": 0.6423948220064725,
+            "rss_mib": 1.408040201005025,
+            "throughput_mib_s": 1.1655813888138948
+          },
+          "review": [
+            "rss_mib"
+          ],
+          "versions": {
+            "baseline": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 12420,
+                  "median": 12360,
+                  "min": 12230,
+                  "samples": [
+                    12360,
+                    12360,
+                    12420,
+                    12230,
+                    12280
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 3.0322265625,
+                  "median": 3.017578125,
+                  "min": 2.98583984375,
+                  "samples": [
+                    3.017578125,
+                    3.017578125,
+                    3.0322265625,
+                    2.98583984375,
+                    2.998046875
+                  ]
+                },
+                "rss_mib": {
+                  "max": 19.828125,
+                  "median": 15.546875,
+                  "min": 15.015625,
+                  "samples": [
+                    15.546875,
+                    15.015625,
+                    15.875,
+                    15.484375,
+                    19.828125
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 721.4902737840833,
+                  "median": 713.9911283245013,
+                  "min": 697.2865626932345,
+                  "samples": [
+                    708.5684095599295,
+                    713.9911283245013,
+                    697.2865626932345,
+                    718.5456939553876,
+                    721.4902737840833
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "baseline2": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 9040,
+                  "median": 8440,
+                  "min": 8210,
+                  "samples": [
+                    8450,
+                    8210,
+                    9040,
+                    8440,
+                    8340
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 2.20703125,
+                  "median": 2.060546875,
+                  "min": 2.00439453125,
+                  "samples": [
+                    2.06298828125,
+                    2.00439453125,
+                    2.20703125,
+                    2.060546875,
+                    2.0361328125
+                  ]
+                },
+                "rss_mib": {
+                  "max": 20.453125,
+                  "median": 17.59375,
+                  "min": 14.0625,
+                  "samples": [
+                    18.265625,
+                    17.59375,
+                    14.515625,
+                    20.453125,
+                    14.0625
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 780.8913757310191,
+                  "median": 766.0111656652568,
+                  "min": 695.2265522740308,
+                  "samples": [
+                    769.5043268050368,
+                    780.8913757310191,
+                    695.2265522740308,
+                    754.8335098069027,
+                    766.0111656652568
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "candidate": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 7980,
+                  "median": 7940,
+                  "min": 7800,
+                  "samples": [
+                    7900,
+                    7980,
+                    7950,
+                    7940,
+                    7800
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 1.9482421875,
+                  "median": 1.9384765625,
+                  "min": 1.904296875,
+                  "samples": [
+                    1.9287109375,
+                    1.9482421875,
+                    1.94091796875,
+                    1.9384765625,
+                    1.904296875
+                  ]
+                },
+                "rss_mib": {
+                  "max": 24.6875,
+                  "median": 21.890625,
+                  "min": 17.0,
+                  "samples": [
+                    17.0,
+                    22.125,
+                    19.078125,
+                    21.890625,
+                    24.6875
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 844.7044282351251,
+                  "median": 832.2147709532721,
+                  "min": 819.4873737347845,
+                  "samples": [
+                    837.2512128410644,
+                    819.4873737347845,
+                    832.2147709532721,
+                    821.8271690994706,
+                    844.7044282351251
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            },
+            "candidate_mag1": {
+              "complete": true,
+              "metrics": {
+                "cpu_ms": {
+                  "max": 8130,
+                  "median": 7940,
+                  "min": 7900,
+                  "samples": [
+                    8130,
+                    7920,
+                    7940,
+                    8020,
+                    7900
+                  ]
+                },
+                "cpu_ms_per_mib": {
+                  "max": 1.98486328125,
+                  "median": 1.9384765625,
+                  "min": 1.9287109375,
+                  "samples": [
+                    1.98486328125,
+                    1.93359375,
+                    1.9384765625,
+                    1.9580078125,
+                    1.9287109375
+                  ]
+                },
+                "rss_mib": {
+                  "max": 23.8125,
+                  "median": 18.96875,
+                  "min": 12.40625,
+                  "samples": [
+                    18.96875,
+                    12.40625,
+                    17.265625,
+                    22.484375,
+                    23.8125
+                  ]
+                },
+                "throughput_mib_s": {
+                  "max": 837.4084844751551,
+                  "median": 819.6998529703413,
+                  "min": 806.2442197594199,
+                  "samples": [
+                    806.2442197594199,
+                    837.4084844751551,
+                    819.6998529703413,
+                    825.2071018647225,
+                    816.5438713000167
+                  ]
+                }
+              },
+              "passed_repeats": 5
+            }
+          }
+        }
+      ],
+      "candidate_comparisons": [
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "reference": "baseline",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.408040201005025,
+              "paired_bootstrap_95pct": [
+                1.0934673366834171,
+                1.473465140478668
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 0.6423948220064725,
+              "paired_bootstrap_95pct": [
+                0.6351791530944625,
+                0.6492232215862633
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.1655813888138948,
+              "paired_bootstrap_95pct": [
+                1.1437368228811562,
+                1.1935046729408985
+              ]
+            }
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "reference": "baseline2",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.244227353463588,
+              "paired_bootstrap_95pct": [
+                0.93071000855432,
+                1.7555555555555555
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 0.9407582938388626,
+              "paired_bootstrap_95pct": [
+                0.879424778761062,
+                0.9719853836784409
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.0864264233413876,
+              "paired_bootstrap_95pct": [
+                1.0494255657102556,
+                1.1970411202379478
+              ]
+            }
+          }
+        },
+        {
+          "case": "xhttp-h2-tun-upload-8",
+          "reference": "candidate_mag1",
+          "metrics": {
+            "rss_mib": {
+              "ratio": 1.1540362438220757,
+              "paired_bootstrap_95pct": [
+                0.8962108731466227,
+                1.783375314861461
+              ]
+            },
+            "cpu_ms": {
+              "ratio": 1.0,
+              "paired_bootstrap_95pct": [
+                0.971709717097171,
+                1.0075757575757576
+              ]
+            },
+            "throughput_mib_s": {
+              "ratio": 1.0152676835765928,
+              "paired_bootstrap_95pct": [
+                0.9785993203166521,
+                1.038458561713344
+              ]
+            }
+          }
+        }
+      ],
+      "manifest_sha256": "7de44edd379e6f3e565d8a7a187b4745f14d9cb9d89373161fe72aa518f448a9"
+    }
+  ],
+  "profiles": [
+    {
+      "family": "profiles",
+      "name": "duplex1-baseline",
+      "case": "duplex1",
+      "version": "baseline",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4456448,
+          "rss_after_bytes": 4571136,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 2179072.0,
+            "zone_resident_approx_bytes": 671744.0,
+            "zone_dirty_approx_bytes": 671744.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 622,
+            "zone_live_approx_bytes": 218112.0,
+            "zone_fragmentation_approx_bytes": 453632.0,
+            "zone_fragmentation_percent": 68,
+            "raw_zone_line": "DefaultMallocZone_0x105fbc000 16.8M 656K 656K 0K 622 213K 443K 68% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 625,
+            "bytes": 218048
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 19431424,
+          "rss_after_bytes": 19496960,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13631488.0,
+            "zone_resident_approx_bytes": 11429478.4,
+            "zone_dirty_approx_bytes": 11429478.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1914,
+            "zone_live_approx_bytes": 7953408.0,
+            "zone_fragmentation_approx_bytes": 3499008.0,
+            "zone_fragmentation_percent": 31,
+            "raw_zone_line": "DefaultMallocZone_0x105fbc000 36.8M 10.9M 10.9M 0K 1914 7767K 3417K 31% 11"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 18382848,
+          "rss_after_bytes": 18350080,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13421772.8,
+            "zone_resident_approx_bytes": 11010048.0,
+            "zone_dirty_approx_bytes": 10800332.8,
+            "zone_swapped_approx_bytes": 540672.0,
+            "zone_nodes": 861,
+            "zone_live_approx_bytes": 665600.0,
+            "zone_fragmentation_approx_bytes": 10590617.6,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x105fbc000 36.8M 10.5M 10.3M 528K 861 650K 10.1M 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 861,
+            "bytes": 665888
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 18235392,
+          "rss_after_bytes": 18235392,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 6291456.0,
+            "zone_resident_approx_bytes": 10905190.4,
+            "zone_dirty_approx_bytes": 3555328.0,
+            "zone_swapped_approx_bytes": 606208.0,
+            "zone_nodes": 861,
+            "zone_live_approx_bytes": 665600.0,
+            "zone_fragmentation_approx_bytes": 3495936.0,
+            "zone_fragmentation_percent": 84,
+            "raw_zone_line": "DefaultMallocZone_0x105fbc000 36.8M 10.4M 3472K 592K 861 650K 3414K 84% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 861,
+            "bytes": 665888
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "duplex1-baseline2",
+      "case": "duplex1",
+      "version": "baseline2",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4194304,
+          "rss_after_bytes": 4308992,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 1884160.0,
+            "zone_resident_approx_bytes": 573440.0,
+            "zone_dirty_approx_bytes": 573440.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 441,
+            "zone_live_approx_bytes": 176128.0,
+            "zone_fragmentation_approx_bytes": 397312.0,
+            "zone_fragmentation_percent": 70,
+            "raw_zone_line": "DefaultMallocZone_0x1017ac000 16.8M 560K 560K 0K 441 172K 388K 70% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 441,
+            "bytes": 176160
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 22708224,
+          "rss_after_bytes": 22708224,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 16777216.0,
+            "zone_resident_approx_bytes": 15099494.4,
+            "zone_dirty_approx_bytes": 15099494.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1761,
+            "zone_live_approx_bytes": 9927680.0,
+            "zone_fragmentation_approx_bytes": 5211136.0,
+            "zone_fragmentation_percent": 35,
+            "raw_zone_line": "DefaultMallocZone_0x1017ac000 36.8M 14.4M 14.4M 0K 1761 9695K 5089K 35% 11"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 23003136,
+          "rss_after_bytes": 23003136,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 16986931.2,
+            "zone_resident_approx_bytes": 15414067.2,
+            "zone_dirty_approx_bytes": 15414067.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 632,
+            "zone_live_approx_bytes": 701440.0,
+            "zone_fragmentation_approx_bytes": 14680064.0,
+            "zone_fragmentation_percent": 96,
+            "raw_zone_line": "DefaultMallocZone_0x1017ac000 36.8M 14.7M 14.7M 0K 632 685K 14.0M 96% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 632,
+            "bytes": 701024
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 23003136,
+          "rss_after_bytes": 23003136,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 14994636.8,
+            "zone_resident_approx_bytes": 15414067.2,
+            "zone_dirty_approx_bytes": 13316915.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 632,
+            "zone_live_approx_bytes": 701440.0,
+            "zone_fragmentation_approx_bytes": 12687769.6,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x1017ac000 36.8M 14.7M 12.7M 0K 632 685K 12.1M 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 632,
+            "bytes": 701024
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "duplex1-candidate",
+      "case": "duplex1",
+      "version": "candidate",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4259840,
+          "rss_after_bytes": 4374528,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 1867776.0,
+            "zone_resident_approx_bytes": 557056.0,
+            "zone_dirty_approx_bytes": 557056.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 442,
+            "zone_live_approx_bytes": 178176.0,
+            "zone_fragmentation_approx_bytes": 378880.0,
+            "zone_fragmentation_percent": 69,
+            "raw_zone_line": "DefaultMallocZone_0x1058d8000 16.8M 544K 544K 0K 442 174K 370K 69% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 442,
+            "bytes": 178048
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 19152896,
+          "rss_after_bytes": 19218432,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13002342.4,
+            "zone_resident_approx_bytes": 11429478.4,
+            "zone_dirty_approx_bytes": 11429478.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1712,
+            "zone_live_approx_bytes": 7959552.0,
+            "zone_fragmentation_approx_bytes": 3427328.0,
+            "zone_fragmentation_percent": 31,
+            "raw_zone_line": "DefaultMallocZone_0x1058d8000 36.8M 10.9M 10.9M 0K 1712 7773K 3347K 31% 11"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 19398656,
+          "rss_after_bytes": 17448960,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13107200.0,
+            "zone_resident_approx_bytes": 10190848.0,
+            "zone_dirty_approx_bytes": 10190848.0,
+            "zone_swapped_approx_bytes": 1261568.0,
+            "zone_nodes": 633,
+            "zone_live_approx_bytes": 567296.0,
+            "zone_fragmentation_approx_bytes": 10905190.4,
+            "zone_fragmentation_percent": 96,
+            "raw_zone_line": "DefaultMallocZone_0x1058d8000 36.8M 9952K 9952K 1232K 633 554K 10.4M 96% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 633,
+            "bytes": 567744
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 17170432,
+          "rss_after_bytes": 17170432,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 5586944.0,
+            "zone_resident_approx_bytes": 9895936.0,
+            "zone_dirty_approx_bytes": 2818048.0,
+            "zone_swapped_approx_bytes": 1114112.0,
+            "zone_nodes": 633,
+            "zone_live_approx_bytes": 567296.0,
+            "zone_fragmentation_approx_bytes": 3364864.0,
+            "zone_fragmentation_percent": 86,
+            "raw_zone_line": "DefaultMallocZone_0x1058d8000 36.8M 9664K 2752K 1088K 633 554K 3286K 86% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 633,
+            "bytes": 567744
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "duplex1-workers12",
+      "case": "duplex1",
+      "version": "workers12",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4472832,
+          "rss_after_bytes": 4587520,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 2097152.0,
+            "zone_resident_approx_bytes": 606208.0,
+            "zone_dirty_approx_bytes": 606208.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 623,
+            "zone_live_approx_bytes": 223232.0,
+            "zone_fragmentation_approx_bytes": 382976.0,
+            "zone_fragmentation_percent": 64,
+            "raw_zone_line": "DefaultMallocZone_0x101a34000 16.8M 592K 592K 0K 623 218K 374K 64% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 623,
+            "bytes": 223584
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 19038208,
+          "rss_after_bytes": 19169280,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 12897484.8,
+            "zone_resident_approx_bytes": 10800332.8,
+            "zone_dirty_approx_bytes": 10800332.8,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1891,
+            "zone_live_approx_bytes": 7881728.0,
+            "zone_fragmentation_approx_bytes": 2882560.0,
+            "zone_fragmentation_percent": 27,
+            "raw_zone_line": "DefaultMallocZone_0x101a34000 36.8M 10.3M 10.3M 0K 1891 7697K 2815K 27% 11"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 19382272,
+          "rss_after_bytes": 19382272,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 12687769.6,
+            "zone_resident_approx_bytes": 11010048.0,
+            "zone_dirty_approx_bytes": 10590617.6,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 821,
+            "zone_live_approx_bytes": 610304.0,
+            "zone_fragmentation_approx_bytes": 9990144.0,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x101a34000 36.8M 10.5M 10.1M 0K 821 596K 9756K 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 821,
+            "bytes": 609840
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 19382272,
+          "rss_after_bytes": 19382272,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 5685248.0,
+            "zone_resident_approx_bytes": 11010048.0,
+            "zone_dirty_approx_bytes": 3588096.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 821,
+            "zone_live_approx_bytes": 610304.0,
+            "zone_fragmentation_approx_bytes": 2977792.0,
+            "zone_fragmentation_percent": 84,
+            "raw_zone_line": "DefaultMallocZone_0x101a34000 36.8M 10.5M 3504K 0K 821 596K 2908K 84% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 821,
+            "bytes": 609840
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "upload8-baseline",
+      "case": "upload8",
+      "version": "baseline",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4423680,
+          "rss_after_bytes": 4538368,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 2129920.0,
+            "zone_resident_approx_bytes": 638976.0,
+            "zone_dirty_approx_bytes": 638976.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 622,
+            "zone_live_approx_bytes": 218112.0,
+            "zone_fragmentation_approx_bytes": 420864.0,
+            "zone_fragmentation_percent": 66,
+            "raw_zone_line": "DefaultMallocZone_0x1056f0000 16.8M 624K 624K 0K 622 213K 411K 66% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 622,
+            "bytes": 217856
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 15613952,
+          "rss_after_bytes": 15630336,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 9682944.0,
+            "zone_resident_approx_bytes": 6848512.0,
+            "zone_dirty_approx_bytes": 6848512.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1522,
+            "zone_live_approx_bytes": 3065856.0,
+            "zone_fragmentation_approx_bytes": 3782656.0,
+            "zone_fragmentation_percent": 56,
+            "raw_zone_line": "DefaultMallocZone_0x1056f0000 28.8M 6688K 6688K 0K 1522 2994K 3694K 56% 9"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 16203776,
+          "rss_after_bytes": 16203776,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 9502720.0,
+            "zone_resident_approx_bytes": 7356416.0,
+            "zone_dirty_approx_bytes": 6668288.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1152,
+            "zone_live_approx_bytes": 772096.0,
+            "zone_fragmentation_approx_bytes": 5896192.0,
+            "zone_fragmentation_percent": 89,
+            "raw_zone_line": "DefaultMallocZone_0x1056f0000 28.8M 7184K 6512K 0K 1152 754K 5758K 89% 9"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1152,
+            "bytes": 772512
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 12042240,
+          "rss_after_bytes": 12042240,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 8634368.0,
+            "zone_resident_approx_bytes": 4833280.0,
+            "zone_dirty_approx_bytes": 4161536.0,
+            "zone_swapped_approx_bytes": 1638400.0,
+            "zone_nodes": 1152,
+            "zone_live_approx_bytes": 772096.0,
+            "zone_fragmentation_approx_bytes": 5027840.0,
+            "zone_fragmentation_percent": 87,
+            "raw_zone_line": "DefaultMallocZone_0x1056f0000 28.8M 4720K 4064K 1600K 1152 754K 4910K 87% 9"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1152,
+            "bytes": 772512
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "upload8-baseline2",
+      "case": "upload8",
+      "version": "baseline2",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4194304,
+          "rss_after_bytes": 4308992,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 1900544.0,
+            "zone_resident_approx_bytes": 573440.0,
+            "zone_dirty_approx_bytes": 573440.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 439,
+            "zone_live_approx_bytes": 176128.0,
+            "zone_fragmentation_approx_bytes": 397312.0,
+            "zone_fragmentation_percent": 70,
+            "raw_zone_line": "DefaultMallocZone_0x10611c000 16.8M 560K 560K 0K 439 172K 388K 70% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 439,
+            "bytes": 176048
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 19546112,
+          "rss_after_bytes": 21331968,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13631488.0,
+            "zone_resident_approx_bytes": 11953766.4,
+            "zone_dirty_approx_bytes": 11953766.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1317,
+            "zone_live_approx_bytes": 5542912.0,
+            "zone_fragmentation_approx_bytes": 6433792.0,
+            "zone_fragmentation_percent": 54,
+            "raw_zone_line": "DefaultMallocZone_0x10611c000 36.8M 11.4M 11.4M 0K 1317 5413K 6283K 54% 11"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 20840448,
+          "rss_after_bytes": 20840448,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 15414067.2,
+            "zone_resident_approx_bytes": 13736345.6,
+            "zone_dirty_approx_bytes": 13736345.6,
+            "zone_swapped_approx_bytes": 98304.0,
+            "zone_nodes": 926,
+            "zone_live_approx_bytes": 803840.0,
+            "zone_fragmentation_approx_bytes": 13002342.4,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x10611c000 36.8M 13.1M 13.1M 96K 926 785K 12.4M 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 926,
+            "bytes": 803344
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 19169280,
+          "rss_after_bytes": 19169280,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 10380902.4,
+            "zone_resident_approx_bytes": 12058624.0,
+            "zone_dirty_approx_bytes": 7372800.0,
+            "zone_swapped_approx_bytes": 1343488.0,
+            "zone_nodes": 926,
+            "zone_live_approx_bytes": 803840.0,
+            "zone_fragmentation_approx_bytes": 7912448.0,
+            "zone_fragmentation_percent": 91,
+            "raw_zone_line": "DefaultMallocZone_0x10611c000 36.8M 11.5M 7200K 1312K 926 785K 7727K 91% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 926,
+            "bytes": 803344
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "upload8-candidate",
+      "case": "upload8",
+      "version": "candidate",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4243456,
+          "rss_after_bytes": 4358144,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 1867776.0,
+            "zone_resident_approx_bytes": 540672.0,
+            "zone_dirty_approx_bytes": 540672.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 441,
+            "zone_live_approx_bytes": 178176.0,
+            "zone_fragmentation_approx_bytes": 362496.0,
+            "zone_fragmentation_percent": 68,
+            "raw_zone_line": "DefaultMallocZone_0x102210000 16.8M 528K 528K 0K 441 174K 354K 68% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 441,
+            "bytes": 178000
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 18612224,
+          "rss_after_bytes": 26214400,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 12478054.4,
+            "zone_resident_approx_bytes": 10800332.8,
+            "zone_dirty_approx_bytes": 10800332.8,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1326,
+            "zone_live_approx_bytes": 5381120.0,
+            "zone_fragmentation_approx_bytes": 5465088.0,
+            "zone_fragmentation_percent": 51,
+            "raw_zone_line": "DefaultMallocZone_0x102210000 32.8M 10.3M 10.3M 0K 1326 5255K 5337K 51% 10"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 26509312,
+          "rss_after_bytes": 26509312,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 15414067.2,
+            "zone_resident_approx_bytes": 18559795.2,
+            "zone_dirty_approx_bytes": 13736345.6,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 927,
+            "zone_live_approx_bytes": 800768.0,
+            "zone_fragmentation_approx_bytes": 13002342.4,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x102210000 40.8M 17.7M 13.1M 0K 927 782K 12.4M 95% 12"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 927,
+            "bytes": 800800
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 12959744,
+          "rss_after_bytes": 12959744,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 9469952.0,
+            "zone_resident_approx_bytes": 5668864.0,
+            "zone_dirty_approx_bytes": 4964352.0,
+            "zone_swapped_approx_bytes": 2834432.0,
+            "zone_nodes": 927,
+            "zone_live_approx_bytes": 800768.0,
+            "zone_fragmentation_approx_bytes": 6998016.0,
+            "zone_fragmentation_percent": 90,
+            "raw_zone_line": "DefaultMallocZone_0x102210000 40.8M 5536K 4848K 2768K 927 782K 6834K 90% 12"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 927,
+            "bytes": 800800
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "profiles",
+      "name": "upload8-workers12",
+      "case": "upload8",
+      "version": "workers12",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "relief_reported_bytes": null,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4538368,
+          "rss_after_bytes": 4653056,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 2162688.0,
+            "zone_resident_approx_bytes": 671744.0,
+            "zone_dirty_approx_bytes": 671744.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 623,
+            "zone_live_approx_bytes": 223232.0,
+            "zone_fragmentation_approx_bytes": 448512.0,
+            "zone_fragmentation_percent": 67,
+            "raw_zone_line": "DefaultMallocZone_0x1056a4000 16.8M 656K 656K 0K 623 218K 438K 67% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 623,
+            "bytes": 223584
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 17235968,
+          "rss_after_bytes": 31670272,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 11010048.0,
+            "zone_resident_approx_bytes": 8175616.0,
+            "zone_dirty_approx_bytes": 8175616.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1526,
+            "zone_live_approx_bytes": 3650560.0,
+            "zone_fragmentation_approx_bytes": 4525056.0,
+            "zone_fragmentation_percent": 56,
+            "raw_zone_line": "DefaultMallocZone_0x1056a4000 28.8M 7984K 7984K 0K 1526 3565K 4419K 56% 9"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 32145408,
+          "rss_after_bytes": 32145408,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 19084083.2,
+            "zone_resident_approx_bytes": 22963814.4,
+            "zone_dirty_approx_bytes": 16252928.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1130,
+            "zone_live_approx_bytes": 797696.0,
+            "zone_fragmentation_approx_bytes": 15414067.2,
+            "zone_fragmentation_percent": 96,
+            "raw_zone_line": "DefaultMallocZone_0x1056a4000 40.8M 21.9M 15.5M 0K 1130 779K 14.7M 96% 12"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1130,
+            "bytes": 797344
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 14909440,
+          "rss_after_bytes": 14909440,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 11744051.2,
+            "zone_resident_approx_bytes": 6995968.0,
+            "zone_dirty_approx_bytes": 4898816.0,
+            "zone_swapped_approx_bytes": 933888.0,
+            "zone_nodes": 1130,
+            "zone_live_approx_bytes": 797696.0,
+            "zone_fragmentation_approx_bytes": 5035008.0,
+            "zone_fragmentation_percent": 87,
+            "raw_zone_line": "DefaultMallocZone_0x1056a4000 40.8M 6832K 4784K 912K 1130 779K 4917K 87% 12"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1130,
+            "bytes": 797344
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true
+    },
+    {
+      "family": "relief-profiles",
+      "name": "upload8-baseline",
+      "case": "upload8",
+      "version": "baseline",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "relief_reported_bytes": 0,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4538368,
+          "rss_after_bytes": 4653056,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 2195456.0,
+            "zone_resident_approx_bytes": 688128.0,
+            "zone_dirty_approx_bytes": 688128.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 622,
+            "zone_live_approx_bytes": 218112.0,
+            "zone_fragmentation_approx_bytes": 470016.0,
+            "zone_fragmentation_percent": 69,
+            "raw_zone_line": "DefaultMallocZone_0x1037e8000 16.8M 672K 672K 0K 622 213K 459K 69% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 622,
+            "bytes": 217856
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 15564800,
+          "rss_after_bytes": 15564800,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 9568256.0,
+            "zone_resident_approx_bytes": 6799360.0,
+            "zone_dirty_approx_bytes": 6799360.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1536,
+            "zone_live_approx_bytes": 2721792.0,
+            "zone_fragmentation_approx_bytes": 4077568.0,
+            "zone_fragmentation_percent": 60,
+            "raw_zone_line": "DefaultMallocZone_0x1037e8000 28.8M 6640K 6640K 0K 1536 2658K 3982K 60% 9"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 24772608,
+          "rss_after_bytes": 24772608,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 16672358.4,
+            "zone_resident_approx_bytes": 15938355.2,
+            "zone_dirty_approx_bytes": 13841203.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1145,
+            "zone_live_approx_bytes": 842752.0,
+            "zone_fragmentation_approx_bytes": 13002342.4,
+            "zone_fragmentation_percent": 94,
+            "raw_zone_line": "DefaultMallocZone_0x1037e8000 32.8M 15.2M 13.2M 0K 1145 823K 12.4M 94% 10"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1145,
+            "bytes": 843024
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 24772608,
+          "rss_after_bytes": 24772608,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 16672358.4,
+            "zone_resident_approx_bytes": 15938355.2,
+            "zone_dirty_approx_bytes": 13841203.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1145,
+            "zone_live_approx_bytes": 842752.0,
+            "zone_fragmentation_approx_bytes": 13002342.4,
+            "zone_fragmentation_percent": 94,
+            "raw_zone_line": "DefaultMallocZone_0x1037e8000 32.8M 15.2M 13.2M 0K 1145 823K 12.4M 94% 10"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1145,
+            "bytes": 843024
+          }
+        },
+        {
+          "stage": "relieved",
+          "rss_before_bytes": 24756224,
+          "rss_after_bytes": 24756224,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 16567500.8,
+            "zone_resident_approx_bytes": 15938355.2,
+            "zone_dirty_approx_bytes": 13841203.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1145,
+            "zone_live_approx_bytes": 842752.0,
+            "zone_fragmentation_approx_bytes": 13002342.4,
+            "zone_fragmentation_percent": 94,
+            "raw_zone_line": "DefaultMallocZone_0x1037e8000 32.8M 15.2M 13.2M 0K 1145 823K 12.4M 94% 10"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1145,
+            "bytes": 843024
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true,
+      "relief_live_heap_unchanged": true,
+      "relief_rss_change_bytes": -16384
+    },
+    {
+      "family": "relief-profiles",
+      "name": "upload8-baseline2",
+      "case": "upload8",
+      "version": "baseline2",
+      "engine_sha256": "d77931ce0905e08de84303e98870201b32c65288910086e0e25dbe2d2e4a5c3d",
+      "relief_reported_bytes": 0,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 147456,
+          "rss_after_bytes": 4292608,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 196608.0,
+            "zone_unavailable": true,
+            "exclusion_reason": "Target not fully started: dyld initialized, libSystem not yet initialized; do not use this startup snapshot as initialized allocator baseline"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 441,
+            "bytes": 176160
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 19054592,
+          "rss_after_bytes": 22560768,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13107200.0,
+            "zone_resident_approx_bytes": 11429478.4,
+            "zone_dirty_approx_bytes": 11429478.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1341,
+            "zone_live_approx_bytes": 5643264.0,
+            "zone_fragmentation_approx_bytes": 5776384.0,
+            "zone_fragmentation_percent": 51,
+            "raw_zone_line": "DefaultMallocZone_0x101150000 32.8M 10.9M 10.9M 0K 1341 5511K 5641K 51% 10"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 22708224,
+          "rss_after_bytes": 22708224,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 14889779.2,
+            "zone_resident_approx_bytes": 14994636.8,
+            "zone_dirty_approx_bytes": 13212057.6,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 933,
+            "zone_live_approx_bytes": 803840.0,
+            "zone_fragmentation_approx_bytes": 12373196.8,
+            "zone_fragmentation_percent": 94,
+            "raw_zone_line": "DefaultMallocZone_0x101150000 36.8M 14.3M 12.6M 0K 933 785K 11.8M 94% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 933,
+            "bytes": 803920
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 22708224,
+          "rss_after_bytes": 22708224,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13841203.2,
+            "zone_resident_approx_bytes": 14994636.8,
+            "zone_dirty_approx_bytes": 12268339.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 933,
+            "zone_live_approx_bytes": 803840.0,
+            "zone_fragmentation_approx_bytes": 11429478.4,
+            "zone_fragmentation_percent": 94,
+            "raw_zone_line": "DefaultMallocZone_0x101150000 36.8M 14.3M 11.7M 0K 933 785K 10.9M 94% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 933,
+            "bytes": 803920
+          }
+        },
+        {
+          "stage": "relieved",
+          "rss_before_bytes": 22691840,
+          "rss_after_bytes": 22691840,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 13841203.2,
+            "zone_resident_approx_bytes": 14994636.8,
+            "zone_dirty_approx_bytes": 12268339.2,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 933,
+            "zone_live_approx_bytes": 803840.0,
+            "zone_fragmentation_approx_bytes": 11429478.4,
+            "zone_fragmentation_percent": 94,
+            "raw_zone_line": "DefaultMallocZone_0x101150000 36.8M 14.3M 11.7M 0K 933 785K 10.9M 94% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 933,
+            "bytes": 803920
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true,
+      "relief_live_heap_unchanged": true,
+      "relief_rss_change_bytes": -16384
+    },
+    {
+      "family": "relief-profiles",
+      "name": "upload8-candidate",
+      "case": "upload8",
+      "version": "candidate",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "relief_reported_bytes": 0,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4325376,
+          "rss_after_bytes": 4440064,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 1884160.0,
+            "zone_resident_approx_bytes": 557056.0,
+            "zone_dirty_approx_bytes": 557056.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 442,
+            "zone_live_approx_bytes": 178176.0,
+            "zone_fragmentation_approx_bytes": 378880.0,
+            "zone_fragmentation_percent": 69,
+            "raw_zone_line": "DefaultMallocZone_0x105824000 16.8M 544K 544K 0K 442 174K 370K 69% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 442,
+            "bytes": 178048
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 20873216,
+          "rss_after_bytes": 33456128,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 14680064.0,
+            "zone_resident_approx_bytes": 13002342.4,
+            "zone_dirty_approx_bytes": 13002342.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1313,
+            "zone_live_approx_bytes": 7330816.0,
+            "zone_fragmentation_approx_bytes": 5710848.0,
+            "zone_fragmentation_percent": 44,
+            "raw_zone_line": "DefaultMallocZone_0x105824000 36.8M 12.4M 12.4M 0K 1313 7159K 5577K 44% 11"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 33587200,
+          "rss_after_bytes": 33587200,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 20027801.6,
+            "zone_resident_approx_bytes": 25585254.4,
+            "zone_dirty_approx_bytes": 18350080.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 914,
+            "zone_live_approx_bytes": 820224.0,
+            "zone_fragmentation_approx_bytes": 17511219.2,
+            "zone_fragmentation_percent": 96,
+            "raw_zone_line": "DefaultMallocZone_0x105824000 48.8M 24.4M 17.5M 0K 914 801K 16.7M 96% 14"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 914,
+            "bytes": 819808
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 33587200,
+          "rss_after_bytes": 33587200,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 20027801.6,
+            "zone_resident_approx_bytes": 25585254.4,
+            "zone_dirty_approx_bytes": 18350080.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 914,
+            "zone_live_approx_bytes": 820224.0,
+            "zone_fragmentation_approx_bytes": 17511219.2,
+            "zone_fragmentation_percent": 96,
+            "raw_zone_line": "DefaultMallocZone_0x105824000 48.8M 24.4M 17.5M 0K 914 801K 16.7M 96% 14"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 914,
+            "bytes": 819808
+          }
+        },
+        {
+          "stage": "relieved",
+          "rss_before_bytes": 33570816,
+          "rss_after_bytes": 33570816,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 20027801.6,
+            "zone_resident_approx_bytes": 25585254.4,
+            "zone_dirty_approx_bytes": 18350080.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 914,
+            "zone_live_approx_bytes": 820224.0,
+            "zone_fragmentation_approx_bytes": 17511219.2,
+            "zone_fragmentation_percent": 96,
+            "raw_zone_line": "DefaultMallocZone_0x105824000 48.8M 24.4M 17.5M 0K 914 801K 16.7M 96% 14"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 914,
+            "bytes": 819808
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true,
+      "relief_live_heap_unchanged": true,
+      "relief_rss_change_bytes": -16384
+    },
+    {
+      "family": "relief-profiles",
+      "name": "upload8-workers12",
+      "case": "upload8",
+      "version": "workers12",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+      "relief_reported_bytes": 0,
+      "snapshots": [
+        {
+          "stage": "before",
+          "rss_before_bytes": 4554752,
+          "rss_after_bytes": 4669440,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 2146304.0,
+            "zone_resident_approx_bytes": 622592.0,
+            "zone_dirty_approx_bytes": 622592.0,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 623,
+            "zone_live_approx_bytes": 223232.0,
+            "zone_fragmentation_approx_bytes": 399360.0,
+            "zone_fragmentation_percent": 65,
+            "raw_zone_line": "DefaultMallocZone_0x101b34000 16.8M 608K 608K 0K 623 218K 390K 65% 6"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false,
+          "heap": {
+            "nodes": 623,
+            "bytes": 223584
+          }
+        },
+        {
+          "stage": "active",
+          "rss_before_bytes": 23363584,
+          "rss_after_bytes": 23363584,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 17196646.4,
+            "zone_resident_approx_bytes": 14050918.4,
+            "zone_dirty_approx_bytes": 14050918.4,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1517,
+            "zone_live_approx_bytes": 6925312.0,
+            "zone_fragmentation_approx_bytes": 7099392.0,
+            "zone_fragmentation_percent": 51,
+            "raw_zone_line": "DefaultMallocZone_0x101b34000 32.8M 13.4M 13.4M 0K 1517 6763K 6933K 51% 10"
+          },
+          "after_checkpoint_already_present": false,
+          "after_checkpoint_present_at_end": false
+        },
+        {
+          "stage": "after",
+          "rss_before_bytes": 31031296,
+          "rss_after_bytes": 31031296,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 18664652.8,
+            "zone_resident_approx_bytes": 21600665.6,
+            "zone_dirty_approx_bytes": 15518924.8,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1146,
+            "zone_live_approx_bytes": 815104.0,
+            "zone_fragmentation_approx_bytes": 14784921.6,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x101b34000 36.8M 20.6M 14.8M 0K 1146 796K 14.1M 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1146,
+            "bytes": 815568
+          }
+        },
+        {
+          "stage": "idle10",
+          "rss_before_bytes": 31031296,
+          "rss_after_bytes": 31031296,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 18664652.8,
+            "zone_resident_approx_bytes": 21600665.6,
+            "zone_dirty_approx_bytes": 15518924.8,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1146,
+            "zone_live_approx_bytes": 815104.0,
+            "zone_fragmentation_approx_bytes": 14784921.6,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x101b34000 36.8M 20.6M 14.8M 0K 1146 796K 14.1M 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1146,
+            "bytes": 815568
+          }
+        },
+        {
+          "stage": "relieved",
+          "rss_before_bytes": 31014912,
+          "rss_after_bytes": 31014912,
+          "vmmap": {
+            "physical_footprint_approx_bytes": 18664652.8,
+            "zone_resident_approx_bytes": 21600665.6,
+            "zone_dirty_approx_bytes": 15518924.8,
+            "zone_swapped_approx_bytes": 0.0,
+            "zone_nodes": 1146,
+            "zone_live_approx_bytes": 815104.0,
+            "zone_fragmentation_approx_bytes": 14784921.6,
+            "zone_fragmentation_percent": 95,
+            "raw_zone_line": "DefaultMallocZone_0x101b34000 36.8M 20.6M 14.8M 0K 1146 796K 14.1M 95% 11"
+          },
+          "after_checkpoint_already_present": true,
+          "after_checkpoint_present_at_end": true,
+          "heap": {
+            "nodes": 1146,
+            "bytes": 815568
+          }
+        }
+      ],
+      "live_heap_stable_after_to_idle10": true,
+      "relief_live_heap_unchanged": true,
+      "relief_rss_change_bytes": -16384
+    }
+  ],
+  "timed_runs": 50,
+  "diagnostic_runs": 12,
+  "original_evidence_replaced": false,
+  "runtime_changed": false,
+  "interpretation": "RSS/free allocator region retention and fragmentation must remain separate from live allocations; no long-term leak or universal memory parity claim",
+  "profiler_caveat": "The baseline2 case of plain/relief profiles also applied the worker setting to the harness via inherited environment. These diagnostic snapshots are not timings; the final allocator control applies overrides only to client_env and keeps the harness/server policy constant."
+}

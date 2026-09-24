@@ -95,9 +95,10 @@ fn add_flow(
         handle,
         TcpFlow {
             generation: 1,
-            to_remote,
+            to_remote: Some(to_remote),
             task: None,
             remote_open: false,
+            upload_queue_packets: None,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
             has_deferred_remote_data: false,
@@ -139,6 +140,7 @@ fn stalled_reader_does_not_block_tcp_udp_or_close_events() {
         StackEvent::RemoteOpened {
             handle: fast,
             generation: 1,
+            upload_queue_packets: None,
         },
         data_event(fast, b"fast"),
         StackEvent::UdpDatagram {

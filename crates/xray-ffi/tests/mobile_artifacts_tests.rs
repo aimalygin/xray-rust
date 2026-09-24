@@ -32,6 +32,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_ffi_version_major",
         "xray_ffi_version_minor",
         "xray_ffi_capabilities",
+        "xray_profile_import_json",
         "xray_core_new",
         "xray_core_set_geodata_search_dir",
         "xray_core_set_geodata_search_dir_exclusive",
@@ -46,6 +47,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_connection_snapshot_json",
         "xray_core_outbound_accounting_snapshot_json",
         "xray_core_close_connection",
+        "xray_core_rebind_wireguard",
+        "xray_core_rebind_hysteria",
         "xray_core_start",
         "xray_core_stop",
         "xray_core_free",
@@ -304,7 +307,9 @@ fn apple_packet_pump_reuses_poll_storage_and_fails_outside_worker_queue() {
         "ipv4Settings.excludedRoutes = ipv4ExcludedRoutes",
         "settings.ipv4Settings = ipv4Settings",
         "let ipv6Settings = NEIPv6Settings(",
-        "networkPrefixLengths: [128]",
+        // Interface prefix must admit the tunnel DNS anchor on iOS; outer
+        // endpoint exclusions remain individual /128 routes below.
+        "networkPrefixLengths: [120]",
         "ipv6Settings.includedRoutes = [NEIPv6Route.default()]",
         "let ipv6ExcludedRoutes = ipv6ExcludedRoutes(for: serverAddresses)",
         "ipv6Settings.excludedRoutes = ipv6ExcludedRoutes",
@@ -669,7 +674,9 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
 
     for token in [
         "InetAddress.getAllByName(domain)",
-        "equals(\"vless\", ignoreCase = true)",
+        "collectOutboundBootstrapDomains(root, carrierBootstrapDomains)",
+        "\"vless\", \"hysteria\", \"wireguard\"",
+        "wireguardBootstrapHost(peers.getJSONObject(it).getString(\"endpoint\"))",
         "exactDnsHostIdentity(key)",
         "':' !in key",
         "canonicalizeExactDnsHostMappingsFromJson(hosts)",
@@ -693,7 +700,7 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
     }
     assert!(
         !bootstrap.contains("put(\"address\""),
-        "Android bootstrap must preserve VLESS domain addresses"
+        "Android bootstrap must preserve carrier domain addresses"
     );
     assert!(
         !bootstrap.contains("firstOrNull"),
@@ -1111,6 +1118,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_ffi_version_major",
     "xray_ffi_version_minor",
     "xray_ffi_capabilities",
+    "xray_profile_import_json",
     "xray_core_new",
     "xray_core_set_geodata_search_dir",
     "xray_core_set_geodata_search_dir_exclusive",
@@ -1125,6 +1133,8 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_connection_snapshot_json",
     "xray_core_outbound_accounting_snapshot_json",
     "xray_core_close_connection",
+    "xray_core_rebind_wireguard",
+    "xray_core_rebind_hysteria",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -1206,7 +1216,11 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH;
   capabilities &= XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT;
   capabilities &= XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE;
+  capabilities &= XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND;
+  capabilities &= XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND;
+  capabilities &= XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
   (void)capabilities;
+  (void)xray_profile_import_json(packet, sizeof(packet), NULL, 0, &written, &error);
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_geodata_search_dir_exclusive(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);
@@ -1256,6 +1270,8 @@ static void use_xray_ffi_api(void) {
   (void)xray_core_outbound_accounting_snapshot_json(
       handle, message, sizeof(message), &message_written, &error);
   (void)xray_core_close_connection(handle, 1, &error);
+  (void)xray_core_rebind_wireguard(handle, &stats_probe, &error);
+  (void)xray_core_rebind_hysteria(handle, &stats_probe, &error);
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);

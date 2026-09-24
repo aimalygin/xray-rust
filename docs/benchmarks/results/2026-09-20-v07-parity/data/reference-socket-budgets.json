@@ -1,0 +1,15 @@
+{
+  "scope": "Static requested kernel socket budgets only; no assertion of effective size or resident kernel memory. Not a performance run and not an attribution of the native UDP echo timeout.",
+  "rust_quic_and_wireguard_per_direction_requested_bytes": 7340032,
+  "native_wireguard_go_per_direction_requested_bytes": 7340032,
+  "native_hysteria_apernet_quic_go_per_direction_requested_bytes": 8388608,
+  "sources": {
+    "/Users/antonmalygin/go/pkg/mod/github.com/apernet/quic-go@v0.61.1-0.20260806010916-184d081eef3e/internal/protocol/params.go": "b7c0961f569e7b9c9ee9504d04163cef1e5b0eb4bafd5b8a827810f31f62dacc",
+    "/Users/antonmalygin/go/pkg/mod/github.com/apernet/quic-go@v0.61.1-0.20260806010916-184d081eef3e/sys_conn_buffers.go": "26037b5e2020b7f288e3ec9d6efc7a3d8274275569cbef95d57a336cd9e00164",
+    "/Users/antonmalygin/go/pkg/mod/github.com/apernet/quic-go@v0.61.1-0.20260806010916-184d081eef3e/sys_conn_buffers_write.go": "3bf811da6cc2357cc9e7a289de3a126a754cf7e88733fb1f959d12f2ce39f867",
+    "/Users/antonmalygin/go/pkg/mod/golang.zx2c4.com/wireguard@v0.0.0-20250521234502-f333402bd9cb/conn/controlfns.go": "5df50e54427e9521b7ba99716d865a8f8e14e8315f2c0bea809942aa7b515d24",
+    "/Users/antonmalygin/go/pkg/mod/golang.zx2c4.com/wireguard@v0.0.0-20250521234502-f333402bd9cb/conn/controlfns_unix.go": "944fa7e3e35699bfa26e906471e08d530bdee4c7da2ad7f25d34f13a3d7ea86b",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/crates/xray-transport/src/stream/xhttp/h3.rs": "6d963b5457f7ff0d7e311735e143dd1c46017785c369839541085c9bf6c6b292",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/crates/xray-wireguard/src/io.rs": "583f8f4861be356a7cb12e14e71e7552fd37cbef9c542db8d38c12aef0191bdc"
+  }
+}

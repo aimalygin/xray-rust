@@ -1,0 +1,92 @@
+{
+  "manifest_sha256": "eae4361bb74a0b8d23d623a6522c49739166add64763d21b3d86342e0ef54131",
+  "smoke": true,
+  "suite": "new",
+  "failures": [],
+  "rows": [
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "passed_repeats": 1,
+          "metrics": {
+            "throughput_mib_s": {
+              "median": 11.443636158171078,
+              "min": 11.443636158171078,
+              "max": 11.443636158171078,
+              "samples": [
+                11.443636158171078
+              ]
+            },
+            "rss_mib": {
+              "median": 11.484375,
+              "min": 11.484375,
+              "max": 11.484375,
+              "samples": [
+                11.484375
+              ]
+            },
+            "cpu_ms": {
+              "median": 100,
+              "min": 100,
+              "max": 100,
+              "samples": [
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "median": 25.0,
+              "min": 25.0,
+              "max": 25.0,
+              "samples": [
+                25.0
+              ]
+            },
+            "client_startup_seconds": {
+              "median": 1.24433025,
+              "min": 1.24433025,
+              "max": 1.24433025,
+              "samples": [
+                1.24433025
+              ]
+            },
+            "client_startup_cpu_millis": {
+              "median": 10,
+              "min": 10,
+              "max": 10,
+              "samples": [
+                10
+              ]
+            },
+            "client_cpu_total_millis": {
+              "median": 110,
+              "min": 110,
+              "max": 110,
+              "samples": [
+                110
+              ]
+            }
+          }
+        }
+      },
+      "review": [],
+      "comparisons": {}
+    }
+  ],
+  "artifact_sha256": {
+    "wireguard-socks-full-duplex-8-candidate-1/result.json": "d7b331b157be622a7847a81b721102d95c3986653f4a6b61f40a71452d1391d4"
+  },
+  "parity": {
+    "status": "not_met",
+    "environmental_interference_detected": false,
+    "reference_comparisons": 0,
+    "complete": false,
+    "point_deficit_metrics": 0,
+    "metrics_without_supporting_interval": 0,
+    "max_regression_pct": 3.0,
+    "memory_target": "strictly lower RSS",
+    "strict_point_deficit_metrics": 0,
+    "scope": "observed workload and host only; explicit performance allowance does not waive memory, failed trials, environmental interference or uncertainty"
+  }
+}

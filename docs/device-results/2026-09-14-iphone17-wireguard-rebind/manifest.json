@@ -1,0 +1,169 @@
+{
+  "abi": "1.6",
+  "build": {
+    "base_commit": "98c55e01765a7bcd964300130ff560c5bb06f4fa",
+    "branch": "codex/v07-hysteria-wireguard",
+    "dirty_worktree": true,
+    "identity_limit": "The prior target directory was removed before resumption. Installed app survived, and reports ABI 1.6, but executable/static-library hashes and original build logs are unavailable. Source hashes below record the inspected current tree, not a cryptographically verified match to installed executable bytes. No fresh iOS build is claimed on 2026-09-14.",
+    "installed_candidate": "Signed Debug app with release iOS arm64 Rust library, built/installed 2026-09-13; deployment target 15.0",
+    "source_sha256": {
+      "Cargo.lock": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+      "Cargo.toml": "04351d55ca1f2d56c869828a4837f1b646aa830e9a6bfcffa85f1b7bbc05d3df",
+      "crates/xray-core-rs/src/lib.rs": "7d2d43f74a41438a6125af63591c7776ec98ef4cc20eb12195cb671c3d03fe7d",
+      "crates/xray-core-rs/src/outbound.rs": "7651346b82c3b9041bcafecc73ae941268c898a85d840794c3f628924164df21",
+      "crates/xray-core-rs/src/outbound/wireguard.rs": "dcd3a0f8c01ffdddf4be13c7afd5f7f785227d52b278aaff23a64b084d54d72f",
+      "crates/xray-core-rs/src/outbound/wireguard/tests.rs": "40a8fcb405ffac76e6b5b18880636243afe47619d3d85eb73b49ea6ddc91a907",
+      "crates/xray-ffi/include/xray_ffi.h": "bd859dce99064d25716a8c781bc785c70b4cfb1d3951b71ed19d4e5909786c3c",
+      "crates/xray-ffi/src/lib.rs": "0e956d111a2f7c528c10a5cd9e645cf34d9f0fbfedcfb26900ddb2dbc25b6941",
+      "crates/xray-ffi/tests/ffi_tests.rs": "bb899da62bf5af41c203523038a2fa5b5b3068894390b9f555ad00415121a864",
+      "crates/xray-ffi/tests/mobile_artifacts_tests.rs": "5739e201390a0a617b4ae5d955a65d129235d80b329bdaa0bd4b18ebbf7c41be",
+      "crates/xray-wireguard/src/client.rs": "ac6f75a8a284076d910eba2f6bb26319768c3035df3e299eb676d646f18259c3",
+      "crates/xray-wireguard/tests/network_change.rs": "84701b209bd60c4eaf6c600fd1bf137b774630a3bbb519e5f99909556df3bb38",
+      "platform/apple/Sources/XrayAppleClient/Debug/XrayDeviceProbeSignals.swift": "2e0d3360b4042380779df22b16d9840c8af32c1c2db4a43f0e193eaa218efc34",
+      "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "fdbc19b2927dff3930935aeca782fbabaf410ea73b4c43ced54e9e83eb1166b6",
+      "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelNetworkObserver.swift": "bca26e995b0f914623a99a22478d42086077aa7451819c24587bfdfbe4879467",
+      "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift": "906cf8e669ebe0609d80c12fa59f28eca1f7a7975009a458311867c9e2a017ba",
+      "platform/apple/Sources/XrayMobileAdapter/XrayCore.swift": "56661ca6cdf446e9b6bd82d629331daf13998d6507d056cc3750bda524a83cac",
+      "platform/apple/Tests/XrayAppleTunnelTests/XrayPacketTunnelNetworkObserverTests.swift": "97911306308309139a9240c56ba983f76febb9076eb291fc8ef5aa6d1576f2e0",
+      "platform/apple/XrayClient/XrayClient/XrayClientApp.swift": "75186b3fdaac6c764c6545c991457040dbbb1e6d8ff7a369b4035fae0a82ca31",
+      "scripts/check-native-wireguard-interop.sh": "516b452409883c0d4b56e03e51e1eb5ff4d293b10cee70ebda339e0945a52926",
+      "scripts/run-v07-apple-protocol-fixture.py": "347fb4afaf0a42b4f4a69c4cbe0a741ede9c1e699785ee8a3bb933b2f47885b4",
+      "vendor/gotatun/src/udp/socket/mod.rs": "f40da9fd425983ed1a9e7139ec1db7a1ff93124cb54aac0179e97521b33aec44"
+    }
+  },
+  "cleanup": {
+    "device_probe_input_removed": true,
+    "local_ephemeral_fixture_removed": true,
+    "normal_app_relaunched_without_probe_or_console": true,
+    "original_three_services_active": true,
+    "original_udp_53053_listening": true,
+    "remaining_device_vpn_manager_count": 1,
+    "tcp_and_loopback_service_pids_unchanged": true,
+    "temporary_services_stopped": true,
+    "temporary_ssh_helpers_removed": true,
+    "temporary_unit_removed": true,
+    "temporary_vps_directory_removed": true
+  },
+  "development_scope": "0.7",
+  "device": {
+    "model": "iPhone 17 Pro Max",
+    "os": "26.6.2",
+    "os_build": "23G90",
+    "product_type": "iPhone18,2"
+  },
+  "fixture": {
+    "carrier": "public IPv4 literal",
+    "ephemeral_credentials_published": false,
+    "mode": "transitions",
+    "port": 53053,
+    "script_sha256": "347fb4afaf0a42b4f4a69c4cbe0a741ede9c1e699785ee8a3bb933b2f47885b4",
+    "transport": "UDP"
+  },
+  "limitations": [
+    "one completed bounded physical-device sequence, not a carrier/soak matrix",
+    "device traffic uses fresh application flows; existing-flow continuity checked on independent host reference only",
+    "endpoints retained; no DNS refresh or NAT64-prefix adaptation",
+    "recovery ends at completion of full payload sequence, not first packet",
+    "sparse memory samples and protected-data lock notifications, not peak memory or hardware deep-sleep evidence",
+    "installed binary identity limitation; no release qualification",
+    "Hysteria and Android device tests not rerun in this campaign"
+  ],
+  "reference": {
+    "binary_sha256": "64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d",
+    "binary_uploaded": false,
+    "matching_full_clean_vcs_stamp_verified": false,
+    "name": "existing owner VPS Xray-core",
+    "reported_toolchain": "go1.26.5 linux/amd64",
+    "reported_version": "26.7.28 5ca6f4b"
+  },
+  "release_acceptance": false,
+  "run": {
+    "after_close_active_tcp": 0,
+    "after_close_active_udp": 0,
+    "device_report_matches_console": true,
+    "dns_anchor_queries": 4,
+    "end_utc": "2026-09-14T14:14:46Z",
+    "event_count": 86,
+    "event_file": "wireguard-transitions-events.jsonl",
+    "event_file_sha256": "b70b5d697e589354f762bff86b1e91ec8ca8506763bcd14ae06b7cd486644823",
+    "lock_intervals_seconds": [
+      108.75591779167007
+    ],
+    "max_sampled_dropped_packets": 0,
+    "max_sampled_footprint_bytes": 4424432,
+    "max_sampled_rss_bytes": 27164672,
+    "max_sampled_threads": 9,
+    "max_sampled_tun_read_loop_exits": 0,
+    "max_sampled_tun_write_loop_exits": 0,
+    "result": "passed",
+    "runtime_identifier_count": 1,
+    "stages": [
+      {
+        "activeRecoverySeconds": 5.879896666665445,
+        "event": "transition-recovered",
+        "protocol": "wireguard",
+        "result": "passed",
+        "retries": 0,
+        "secondsSincePathOrUnlock": 9.390425458332174,
+        "stage": "wifi-baseline",
+        "time": "2026-09-14T14:11:16Z"
+      },
+      {
+        "activeRecoverySeconds": 12.035035875000176,
+        "event": "transition-recovered",
+        "protocol": "wireguard",
+        "result": "passed",
+        "retries": 0,
+        "secondsSincePathOrUnlock": 12.126137500003097,
+        "stage": "cellular",
+        "time": "2026-09-14T14:11:56Z"
+      },
+      {
+        "activeRecoverySeconds": 6.078353208329645,
+        "event": "transition-recovered",
+        "protocol": "wireguard",
+        "result": "passed",
+        "retries": 0,
+        "secondsSincePathOrUnlock": 6.245835708337836,
+        "stage": "wifi",
+        "time": "2026-09-14T14:12:46Z"
+      },
+      {
+        "activeRecoverySeconds": 4.424186833333806,
+        "event": "transition-recovered",
+        "protocol": "wireguard",
+        "result": "passed",
+        "retries": 0,
+        "secondsSincePathOrUnlock": 5.284194166670204,
+        "stage": "after-unlock",
+        "time": "2026-09-14T14:14:44Z"
+      }
+    ],
+    "start_utc": "2026-09-14T14:11:07Z",
+    "tcp_echoes": 12,
+    "udp_echoes": 8
+  },
+  "schema": "xray-v07-wireguard-carrier-rebind/1",
+  "verification": {
+    "core_unit_tests_passed": 4,
+    "diff_check_passed": true,
+    "ffi_tests_passed": 85,
+    "formatting_passed": true,
+    "host_checks_sha256": "98d8267fb7911720b9bc265c850a51bdced3a06879c89c967f39e6f3b7d47656",
+    "mobile_artifact_tests_final_passed": 30,
+    "native_reference_cases_passed": 18,
+    "raw_local_log_sha256": {
+      "clippy.log": "50e757b11145e60ec5bfcdf0ba435a64ffc01e5e3b2784a7b87bb013ae9cbfed",
+      "core-unit.log": "9f3d683c611e991adae3bef565a76ef9e9b1ddbb677875a9b7974ad5304d74e6",
+      "ffi-tests.log": "4e6642df5aea044ffe021878947b679e008c7f85ca89ea8552eaa709252e0556",
+      "fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "macos-build.log": "74bde2a3139a5b73ea3d613c9a5ba87a9da4848452828e7c6d6ce0facb7c4dee",
+      "mobile-artifacts-final.log": "4e3a92059037567bdb3491b64048d734c6003ffd10dcc65ff896c9d4bd1a80a3",
+      "native-all.log": "ab9ecd67d365ade5c3eda8a9f1f2e1dd91941c6e504a8e6a58be27a34bb9ca8d",
+      "swift-tests.log": "52012a34539018411dee0cf62adc47a76e9f1fdf2f375b47c6986370bd69ab58"
+    },
+    "strict_clippy_passed": true,
+    "swift_selected_tests_passed": 164
+  },
+  "workspace_package_version": "0.6.1"
+}

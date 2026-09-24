@@ -1,0 +1,9 @@
+{
+  "complete": false,
+  "usable_complete_cases": [
+    64
+  ],
+  "excluded_attempt": "close-1000-baseline-1",
+  "reason": "Unmodified historical phase2-probe rejects --connections above 256 before running any measurement; maximum supported count is collected separately.",
+  "replacement": "../final2-close-control-256"
+}

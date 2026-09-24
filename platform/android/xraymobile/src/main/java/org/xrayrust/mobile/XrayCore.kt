@@ -32,6 +32,9 @@ enum class XrayFfiCapability(val mask: Long) {
     OutboundHealth(1L shl 13),
     ConnectionManagement(1L shl 14),
     RoutingPolicyUpdate(1L shl 15),
+    Hysteria2Outbound(1L shl 16),
+    WireguardOutbound(1L shl 17),
+    ProfileImport(1L shl 18),
 }
 
 data class XrayFfiInfo(
@@ -562,6 +565,11 @@ class XrayCore private constructor(handle: Long) : Closeable {
             validateXrayFfiVersion(info.version)
             return info
         }
+
+        internal fun importProfileJson(request: ByteArray): ByteArray = nativeImportProfileJson(request)
+
+        @JvmStatic
+        private external fun nativeImportProfileJson(request: ByteArray): ByteArray
 
         @JvmStatic
         private external fun nativeFfiVersionMajor(): Int

@@ -1,0 +1,11 @@
+{
+  "timed_runs_verified": 50,
+  "diagnostic_runs_verified": 12,
+  "external_manifest_files_verified": 10,
+  "guarded_core_files_verified": 566,
+  "core_head_unchanged": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+  "mobile_clean": true,
+  "mobile_head": "21b7e23c456d781b4c3b31de08afac8d7d8f89a5",
+  "diagnostic_patch_reconstructed_tree": "f9dad7484718e1d1faed9266d861bb93f2550da1",
+  "diagnostic_patch_only_changes_harness": true
+}

@@ -1,0 +1,26 @@
+{
+  "xray-core": {
+    "path": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+    "sha256": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb"
+  },
+  "native-hysteria": {
+    "path": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native",
+    "sha256": "304d19e4518352ac823b46f2b6ebcfa1c284157debabea70f3ba4eaaa1802356"
+  },
+  "native-wireguard-client": {
+    "path": "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client",
+    "sha256": "b342adec5d2c217bbffca675243b2ee7cf2c21ef044d242c740e6244b816129e"
+  },
+  "sing-box": {
+    "path": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+    "sha256": "b2b34ea4948148b36d4fe5a2759c9cb8a0f5356c6908b697ba2118eebe8a06b3"
+  },
+  "rust-before": {
+    "path": "/private/tmp/xray-v07-opt-20260919/bin/final2/xray-rust",
+    "sha256": "a4d94361a40257a38e9dfc88aa5a25f624b6a583b2bfd7676b84fd886baf5aee"
+  },
+  "protocol-bench": {
+    "path": "/private/tmp/xray-v07-bench-20260919/bin/protocol-bench",
+    "sha256": "c3f56254a9b012e8df9e0dc9f616a14d4260e1f292869331dc24f1a5cda9b6d6"
+  }
+}

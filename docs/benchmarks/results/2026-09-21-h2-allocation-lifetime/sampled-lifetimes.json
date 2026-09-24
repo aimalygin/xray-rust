@@ -1,0 +1,28 @@
+{
+  "source": "Instruments UI history, recorded owned PID 67352, candidate2-512m-signed trace",
+  "scope": "Individual examples, not a lifetime distribution",
+  "samples": [
+    {
+      "address": "0xaf48a4000",
+      "size": 65536,
+      "allocation_seconds": 1.538861,
+      "free_seconds": 1.539043,
+      "lifetime_us": 182,
+      "allocation_caller": "0x102a3a81b",
+      "free_caller": "0x102a8037f",
+      "attribution": "Input arena inferred from PacketRxToken/Bytes free stack and 64KiB reader allocation site"
+    },
+    {
+      "address": "0xaf4834000",
+      "size": 65536,
+      "allocation_seconds": 1.535427,
+      "free_seconds": 7.802174,
+      "lifetime_us": 6266747,
+      "allocation_caller": "0x1028e5fd3",
+      "free_caller": "0x102a00c47",
+      "attribution": "Per-flow bridge read buffer; freed with bridge_tcp_flow_inner"
+    }
+  ],
+  "load_address": "0x102554000",
+  "symbolication_file": "sampled-lifetimes-symbols.txt"
+}

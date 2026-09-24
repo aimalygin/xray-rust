@@ -1,0 +1,8 @@
+{
+  "compiler_load_detected": false,
+  "runs_observed": 30,
+  "compiler_sample_interval_seconds": 2,
+  "compiler_threshold_cpu_percent": 10,
+  "scope": "exploratory if compiler load detected; otherwise sampled ambient control on the same host",
+  "driver_sha256": "b4b881b9077f4ecd7bf0f843aa76c73882cb5cf96b7bdc10f1e2ef7c4d375eeb"
+}

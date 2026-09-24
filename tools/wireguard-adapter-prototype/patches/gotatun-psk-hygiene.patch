@@ -1,0 +1,446 @@
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -853,6 +853,7 @@
+  "wintun-bindings",
+  "x25519-dalek",
+  "zerocopy",
++ "zeroize",
+ ]
+ 
+ [[package]]
+--- a/gotatun/Cargo.toml
++++ b/gotatun/Cargo.toml
+@@ -33,6 +33,7 @@
+ harness = false
+ 
+ [dependencies]
++zeroize = { version = "1.8.2", features = ["alloc"] }
+ aead = { workspace = true }
+ aws-lc-rs = { workspace = true, optional = true }
+ base64 = { workspace = true }
+--- a/gotatun/src/device/configure.rs
++++ b/gotatun/src/device/configure.rs
+@@ -10,6 +10,8 @@
+ // SPDX-License-Identifier: MPL-2.0
+ 
+ //! Configuration and inspection interface for WireGuard devices.
++use crate::PresharedKey;
++
+ use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
+ 
+ use ipnetwork::IpNetwork;
+@@ -91,7 +93,7 @@
+ #[derive(Default)]
+ #[non_exhaustive]
+ pub struct PeerMut {
+-    preshared_key: Update<[u8; 32]>,
++    preshared_key: Update<PresharedKey>,
+     endpoint: Update<SocketAddr>,
+     keepalive: Update<u16>,
+ 
+@@ -101,7 +103,7 @@
+ 
+ impl PeerMut {
+     /// Set or clear the preshared key for this peer.
+-    pub fn set_preshared_key(&mut self, preshared_key: Option<[u8; 32]>) {
++    pub fn set_preshared_key(&mut self, preshared_key: Option<PresharedKey>) {
+         self.preshared_key = preshared_key.into();
+     }
+ 
+--- a/gotatun/src/device/peer.rs
++++ b/gotatun/src/device/peer.rs
+@@ -8,6 +8,8 @@
+ //   Copyright (c) Mullvad VPN AB. All rights reserved.
+ //
+ // SPDX-License-Identifier: MPL-2.0
++
++use crate::PresharedKey;
+ 
+ use std::net::SocketAddr;
+ 
+@@ -32,9 +34,8 @@
+     pub endpoint: Option<SocketAddr>,
+     /// List of IP networks that are allowed to be routed through this peer.
+     pub allowed_ips: Vec<IpNetwork>,
+-    // TODO: zeroize
+     /// Optional preshared key for additional security.
+-    pub preshared_key: Option<[u8; 32]>,
++    pub preshared_key: Option<PresharedKey>,
+     /// Persistent keepalive interval in seconds. Disabled if `None`.
+     pub keepalive: Option<u16>,
+ 
+@@ -84,7 +85,7 @@
+     }
+ 
+     /// Set the preshared key for this peer.
+-    pub const fn with_preshared_key(mut self, preshared_key: [u8; 32]) -> Self {
++    pub fn with_preshared_key(mut self, preshared_key: PresharedKey) -> Self {
+         self.preshared_key = Some(preshared_key);
+         self
+     }
+@@ -102,3 +103,23 @@
+         self
+     }
+ }
++
++#[cfg(test)]
++mod psk_hygiene_tests {
++    use super::*;
++
++    #[test]
++    fn peer_clones_own_redacted_psk_and_survive_original_drop() {
++        let peer = Peer::new(PublicKey::from([0x53; 32]))
++            .with_preshared_key(PresharedKey::new(&[0xa5; 32]));
++        let copy = peer.clone();
++        assert_ne!(
++            peer.preshared_key.as_ref().unwrap().as_bytes().as_ptr(),
++            copy.preshared_key.as_ref().unwrap().as_bytes().as_ptr()
++        );
++        assert!(format!("{peer:?}").contains("PresharedKey(<redacted>)"));
++        assert!(!format!("{peer:?}").contains("165, 165"));
++        drop(peer);
++        assert_eq!(copy.preshared_key.unwrap().as_bytes(), &[0xa5; 32]);
++    }
++}
+--- a/gotatun/src/device/peer_state.rs
++++ b/gotatun/src/device/peer_state.rs
+@@ -9,6 +9,8 @@
+ //   Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+ //
+ // SPDX-License-Identifier: MPL-2.0
++
++use crate::PresharedKey;
+ 
+ use ipnetwork::IpNetwork;
+ 
+@@ -125,7 +127,7 @@
+         self.tunnel.persistent_keepalive()
+     }
+ 
+-    pub fn preshared_key(&self) -> Option<[u8; 32]> {
++    pub fn preshared_key(&self) -> Option<PresharedKey> {
+         self.tunnel.preshared_key()
+     }
+ }
+--- a/gotatun/src/device/tests.rs
++++ b/gotatun/src/device/tests.rs
+@@ -282,7 +282,7 @@
+         let updated = device
+             .device
+             .modify_peer(&peer.public_key, |peer_mut| {
+-                peer_mut.set_preshared_key(Some(preshared_key));
++                peer_mut.set_preshared_key(Some(crate::PresharedKey::new(&preshared_key)));
+             })
+             .await
+             .expect("modify_peer should succeed");
+@@ -298,7 +298,7 @@
+ async fn update_peer_preshared_key_reaches_tunnel() {
+     assert_peer_psk_update_reaches_tunnel(async |device: &mut mock::MockDevice, preshared_key| {
+         let mut peer = get_first_and_only_peer(device).await;
+-        peer.preshared_key = Some(preshared_key);
++        peer.preshared_key = Some(crate::PresharedKey::new(&preshared_key));
+         let updated = device
+             .device
+             .update_peer(peer)
+--- a/gotatun/src/device/uapi/mod.rs
++++ b/gotatun/src/device/uapi/mod.rs
+@@ -503,7 +503,7 @@
+                 public_key: KeyBytes(*public_key.as_bytes()),
+                 preshared_key: peer
+                     .preshared_key()
+-                    .map(|key| command::SetUnset::Set(KeyBytes(key))),
++                    .map(|key| command::SetUnset::Set(KeyBytes(*key.as_bytes()))),
+                 endpoint,
+                 persistent_keepalive_interval: peer.persistent_keepalive(),
+                 allowed_ip: peer.allowed_ips().collect(),
+@@ -667,7 +667,7 @@
+ 
+         match preshared_key {
+             Some(command::SetUnset::Set(psk)) => {
+-                new_peer.preshared_key = Some(psk.0);
++                new_peer.preshared_key = Some(crate::PresharedKey::new(&psk.0));
+             }
+             Some(command::SetUnset::Unset) => {
+                 new_peer.preshared_key = None;
+--- a/gotatun/src/lib.rs
++++ b/gotatun/src/lib.rs
+@@ -20,6 +20,8 @@
+ #![cfg_attr(docsrs, feature(doc_cfg))]
+ 
+ mod crypto;
++mod preshared_key;
++pub use preshared_key::PresharedKey;
+ #[cfg(feature = "device")]
+ pub mod device;
+ pub mod noise;
+--- a/gotatun/src/noise/handshake.rs
++++ b/gotatun/src/noise/handshake.rs
+@@ -9,6 +9,8 @@
+ //   Copyright (c) 2019 Cloudflare, Inc. All rights reserved.
+ //
+ // SPDX-License-Identifier: MPL-2.0
++
++use crate::PresharedKey;
+ 
+ use crate::crypto::aead::{Aad, CHACHA20_POLY1305, LessSafeKey, Nonce, UnboundKey};
+ use crate::noise::errors::WireGuardError;
+@@ -252,7 +254,7 @@
+     /// A pre-computation of HASH("mac1----", `peer_static_public`) for this peer
+     sending_mac1_key: [u8; KEY_LEN],
+     /// An optional preshared key
+-    preshared_key: Option<[u8; KEY_LEN]>,
++    preshared_key: Option<PresharedKey>,
+ }
+ 
+ impl std::fmt::Debug for NoiseParams {
+@@ -403,7 +405,7 @@
+         static_private: x25519::StaticSecret,
+         static_public: x25519::PublicKey,
+         peer_static_public: x25519::PublicKey,
+-        preshared_key: Option<[u8; 32]>,
++        preshared_key: Option<PresharedKey>,
+     ) -> NoiseParams {
+         let static_shared = static_private.diffie_hellman(&peer_static_public);
+ 
+@@ -435,7 +437,7 @@
+         self.static_shared = self.static_private.diffie_hellman(&self.peer_static_public);
+     }
+ 
+-    fn set_preshared_key(&mut self, preshared_key: Option<[u8; 32]>) {
++    fn set_preshared_key(&mut self, preshared_key: Option<PresharedKey>) {
+         self.preshared_key = preshared_key;
+     }
+ }
+@@ -446,7 +448,7 @@
+         static_public: x25519::PublicKey,
+         peer_static_public: x25519::PublicKey,
+         index_table: IndexTable,
+-        preshared_key: Option<[u8; 32]>,
++        preshared_key: Option<PresharedKey>,
+     ) -> Handshake {
+         let params = NoiseParams::new(
+             static_private,
+@@ -515,13 +517,13 @@
+     /// Store the preshared key used by future handshakes.
+     ///
+     /// Any in-flight handshake and established sessions are deliberately left untouched.
+-    pub(crate) fn set_preshared_key(&mut self, preshared_key: Option<[u8; 32]>) {
++    pub(crate) fn set_preshared_key(&mut self, preshared_key: Option<PresharedKey>) {
+         self.params.set_preshared_key(preshared_key);
+     }
+ 
+     /// Get the preshared key
+-    pub(crate) fn preshared_key(&self) -> Option<[u8; 32]> {
+-        self.params.preshared_key
++    pub(crate) fn preshared_key(&self) -> Option<PresharedKey> {
++        self.params.preshared_key.clone()
+     }
+ 
+     pub(super) fn receive_handshake_initialization(
+@@ -651,7 +653,10 @@
+         // temp = HMAC(responder.chaining_key, preshared_key)
+         let temp = b2s_hmac(
+             &chaining_key,
+-            &self.params.preshared_key.unwrap_or([0u8; 32])[..],
++            self.params
++                .preshared_key
++                .as_ref()
++                .map_or(&[0u8; 32], |key| key.as_bytes().as_slice()),
+         );
+         // responder.chaining_key = HMAC(temp, 0x1)
+         chaining_key = b2s_hmac(&temp, &[0x01]);
+@@ -893,7 +898,10 @@
+         // temp = HMAC(responder.chaining_key, preshared_key)
+         let temp = b2s_hmac(
+             &chaining_key,
+-            &self.params.preshared_key.unwrap_or([0u8; 32])[..],
++            self.params
++                .preshared_key
++                .as_ref()
++                .map_or(&[0u8; 32], |key| key.as_bytes().as_slice()),
+         );
+         // responder.chaining_key = HMAC(temp, 0x1)
+         chaining_key = b2s_hmac(&temp, &[0x01]);
+@@ -984,3 +992,33 @@
+             .expect("Should open what we just sealed");
+     }
+ }
++
++#[cfg(test)]
++mod psk_hygiene_tests {
++    use super::*;
++
++    #[test]
++    fn noise_debug_and_key_updates_preserve_redacted_ownership() {
++        let private = x25519::StaticSecret::from([0x42; 32]);
++        let peer_private = x25519::StaticSecret::from([0x53; 32]);
++        let mut params = NoiseParams::new(
++            private.clone(),
++            x25519::PublicKey::from(&private),
++            x25519::PublicKey::from(&peer_private),
++            Some(PresharedKey::new(&[0xa5; 32])),
++        );
++        let snapshot = params.preshared_key.clone().unwrap();
++        let debug = format!("{params:?}");
++        assert!(debug.contains("PresharedKey(<redacted>)"));
++        assert!(!debug.contains("165, 165"));
++        params.set_preshared_key(Some(PresharedKey::new(&[0x64; 32])));
++        assert_eq!(
++            params.preshared_key.as_ref().unwrap().as_bytes(),
++            &[0x64; 32]
++        );
++        assert_eq!(snapshot.as_bytes(), &[0xa5; 32]);
++        params.set_preshared_key(None);
++        assert!(params.preshared_key.is_none());
++        assert!(!format!("{params:?}").contains("100, 100"));
++    }
++}
+--- a/gotatun/src/noise/mod.rs
++++ b/gotatun/src/noise/mod.rs
+@@ -23,6 +23,8 @@
+ 
+ mod session;
+ mod timers;
++
++use crate::PresharedKey;
+ 
+ use rand::{RngCore, SeedableRng, rngs::StdRng};
+ use zerocopy::IntoBytes;
+@@ -95,7 +97,7 @@
+     pub fn new(
+         static_private: x25519::StaticSecret,
+         peer_static_public: x25519::PublicKey,
+-        preshared_key: Option<[u8; 32]>,
++        preshared_key: Option<PresharedKey>,
+         persistent_keepalive: Option<u16>,
+         index_table: IndexTable,
+         rate_limiter: Arc<RateLimiter>,
+@@ -117,7 +119,7 @@
+     pub fn new_with_rng(
+         static_private: x25519::StaticSecret,
+         peer_static_public: x25519::PublicKey,
+-        preshared_key: Option<[u8; 32]>,
++        preshared_key: Option<PresharedKey>,
+         persistent_keepalive: Option<u16>,
+         index_table: IndexTable,
+         rate_limiter: Arc<RateLimiter>,
+@@ -186,12 +188,12 @@
+     /// the key does not interrupt traffic.
+     // Not invalidating current sessions matches the Linux kernel, which update
+     // the key in place and never tear down the session on a configuration change.
+-    pub fn set_preshared_key(&mut self, preshared_key: Option<[u8; 32]>) {
++    pub fn set_preshared_key(&mut self, preshared_key: Option<PresharedKey>) {
+         self.handshake.set_preshared_key(preshared_key);
+     }
+ 
+     /// Get the current preshared key.
+-    pub fn preshared_key(&self) -> Option<[u8; 32]> {
++    pub fn preshared_key(&self) -> Option<PresharedKey> {
+         self.handshake.preshared_key()
+     }
+ 
+@@ -1000,7 +1002,7 @@
+         let (mut my_tun, mut their_tun) = create_two_tuns_and_handshake();
+ 
+         // Only one side adopts a new key.
+-        my_tun.set_preshared_key(Some([7; 32]));
++        my_tun.set_preshared_key(Some(PresharedKey::new(&[7; 32])));
+ 
+         // The established session is unaffected and keeps working.
+         assert_packet_roundtrip(&mut my_tun, &mut their_tun);
+@@ -1033,8 +1035,8 @@
+     #[test]
+     fn handshake_completes_with_matching_preshared_key() {
+         let (mut my_tun, mut their_tun) = create_two_tuns();
+-        my_tun.set_preshared_key(Some([7; 32]));
+-        their_tun.set_preshared_key(Some([7; 32]));
++        my_tun.set_preshared_key(Some(PresharedKey::new(&[7; 32])));
++        their_tun.set_preshared_key(Some(PresharedKey::new(&[7; 32])));
+         complete_handshake(&mut my_tun, &mut their_tun);
+     }
+ 
+@@ -1042,7 +1044,7 @@
+     #[test]
+     fn handshake_fails_with_one_sided_preshared_key() {
+         let (mut my_tun, mut their_tun) = create_two_tuns();
+-        my_tun.set_preshared_key(Some([7; 32]));
++        my_tun.set_preshared_key(Some(PresharedKey::new(&[7; 32])));
+         let result = try_handshake(&mut my_tun, &mut their_tun);
+         assert!(
+             matches!(result, TunnResult::Err(WireGuardError::InvalidAeadTag)),
+@@ -1054,8 +1056,8 @@
+     #[test]
+     fn handshake_fails_with_different_preshared_key() {
+         let (mut my_tun, mut their_tun) = create_two_tuns();
+-        my_tun.set_preshared_key(Some([7; 32]));
+-        their_tun.set_preshared_key(Some([4; 32]));
++        my_tun.set_preshared_key(Some(PresharedKey::new(&[7; 32])));
++        their_tun.set_preshared_key(Some(PresharedKey::new(&[4; 32])));
+         let result = try_handshake(&mut my_tun, &mut their_tun);
+         assert!(
+             matches!(result, TunnResult::Err(WireGuardError::InvalidAeadTag)),
+--- a/gotatun/src/preshared_key.rs
++++ b/gotatun/src/preshared_key.rs
+@@ -0,0 +1,62 @@
++// This Source Code Form is subject to the terms of the Mozilla Public
++// License, v. 2.0. If a copy of the MPL was not distributed with this
++// file, You can obtain one at https://mozilla.org/MPL/2.0/.
++// SPDX-License-Identifier: MPL-2.0
++
++use std::fmt;
++use zeroize::Zeroizing;
++
++/// Owned preshared key, redacted in Debug and zeroized before deallocation.
++///
++/// The heap allocation keeps key bytes at a stable address during ownership
++/// transfers. Cloning creates an independent zeroizing owner. Explicit byte
++/// access is only for the Noise KDF and authorized configuration export.
++pub struct PresharedKey(Box<Zeroizing<[u8; 32]>>);
++
++impl PresharedKey {
++    /// Copy a key into zeroizing storage. The caller owns its input's lifetime.
++    pub fn new(bytes: &[u8; 32]) -> Self {
++        let mut key = Box::new(Zeroizing::new([0; 32]));
++        key.copy_from_slice(bytes);
++        Self(key)
++    }
++
++    /// Borrow secret bytes. Do not log them or retain unprotected copies.
++    pub fn as_bytes(&self) -> &[u8; 32] {
++        &self.0
++    }
++}
++
++impl Clone for PresharedKey {
++    fn clone(&self) -> Self {
++        Self::new(self.as_bytes())
++    }
++}
++
++impl fmt::Debug for PresharedKey {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        f.write_str("PresharedKey(<redacted>)")
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use zeroize::{Zeroize, ZeroizeOnDrop};
++
++    #[test]
++    fn ownership_moves_without_moving_bytes_and_clones_wipe_independently() {
++        fn zeroizing_owner<T: ZeroizeOnDrop>(_: &T) {}
++        let first = PresharedKey::new(&[0xa5; 32]);
++        zeroizing_owner(&*first.0);
++        let address = first.as_bytes().as_ptr();
++        let mut moved = Some(first);
++        assert_eq!(moved.as_ref().unwrap().as_bytes().as_ptr(), address);
++        let copy = moved.as_ref().unwrap().clone();
++        assert_ne!(copy.as_bytes().as_ptr(), address);
++        moved.as_mut().unwrap().0.zeroize();
++        assert_eq!(moved.as_ref().unwrap().as_bytes(), &[0; 32]);
++        assert_eq!(copy.as_bytes(), &[0xa5; 32]);
++        assert_eq!(format!("{copy:?}"), "PresharedKey(<redacted>)");
++    }
++}

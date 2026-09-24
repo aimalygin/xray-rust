@@ -1,0 +1,27 @@
+{
+  "compiler_load_detected": false,
+  "runs_observed": 25,
+  "compiler_sample_interval_seconds": 2,
+  "compiler_threshold_cpu_percent": 10,
+  "scope": "exploratory when compiler load is detected; otherwise sampled ambient control on the same host",
+  "driver_sha256": "2a3ee1993139da75ef8891fcb4716a6505dd53be933a687fc18d71d24567d10f",
+  "internal_controls": [
+    "before",
+    "previous",
+    "no_idle"
+  ],
+  "external_references": [
+    "singbox",
+    "native",
+    "xray"
+  ],
+  "idle_connections_by_version": {
+    "candidate": 0,
+    "previous": 0,
+    "singbox": 0,
+    "native": 0,
+    "xray": 0
+  },
+  "idle_connections_echo_verified": true,
+  "idle_settle_seconds": 0
+}

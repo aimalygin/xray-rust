@@ -1,0 +1,111 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// This file incorporates work covered by the following copyright and
+// permission notice:
+//
+//   Copyright (c) Mullvad VPN AB. All rights reserved.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+use std::fmt;
+
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned, big_endian};
+
+use crate::packet::{DecodeError, Decoder};
+
+use super::util::size_must_be;
+
+/// A UDP packet.
+///
+/// This is a dynamically sized zerocopy type, which means you can compose packet types like
+/// `Ipv6<Udp<WgData>>` and cast them to/from byte slices using [`FromBytes`] and [`IntoBytes`].
+/// [Read more](crate::packet)
+#[repr(C)]
+#[derive(Debug, FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
+pub struct Udp<Payload: ?Sized = [u8]> {
+    /// UDP header.
+    pub header: UdpHeader,
+    /// UDP payload. The type of this is `[u8]` by default, but it may be any zerocopy type,
+    /// e.g. a `WgData`.
+    pub payload: Payload,
+}
+
+/// A UDP header.
+#[repr(C, packed)]
+#[derive(Clone, Copy, FromBytes, IntoBytes, KnownLayout, Unaligned, Immutable)]
+pub struct UdpHeader {
+    /// UDP source port.
+    pub source_port: big_endian::U16,
+    /// UDP destination port.
+    pub destination_port: big_endian::U16,
+    /// Length of the UDP packet (including header) in bytes.
+    pub length: big_endian::U16,
+    /// Checksum of the UDP packet
+    pub checksum: big_endian::U16,
+}
+
+impl UdpHeader {
+    /// Length of a [`UdpHeader`], in bytes.
+    pub const LEN: usize = size_must_be::<UdpHeader>(8);
+
+    /// Create a new [`UdpHeader`] with the provided fields.
+    pub const fn new(source_port: u16, destination_port: u16, length: u16, checksum: u16) -> Self {
+        UdpHeader {
+            source_port: big_endian::U16::new(source_port),
+            destination_port: big_endian::U16::new(destination_port),
+            length: big_endian::U16::new(length),
+            checksum: big_endian::U16::new(checksum),
+        }
+    }
+}
+
+impl fmt::Debug for UdpHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("UdpHeader")
+            .field("source_port", &self.source_port.get())
+            .field("destination_port", &self.destination_port.get())
+            .field("length", &self.length.get())
+            .field("checksum", &self.checksum.get())
+            .finish()
+    }
+}
+
+/// A [`Decoder`] for [`Udp`] datagrams.
+pub struct UdpDecoder {
+    /// Validate UDP length field.
+    pub length: bool,
+    /// Validate UDP checksum field. Only applies if decoding into an IP packet.
+    pub checksum: bool,
+}
+
+impl UdpDecoder {
+    /// Validate as *much* as possible about the UDP packet.
+    pub const CHECK_ALL: Self = Self {
+        length: true,
+        checksum: true,
+    };
+
+    /// Validate as *little* as possible about the UDP packet.
+    pub const UNCHECKED: Self = Self {
+        length: false,
+        checksum: false,
+    };
+}
+
+/// Decode a byte slice into an [`Udp`] packet (without an IP header).
+impl Decoder<[u8], Udp> for UdpDecoder {
+    fn validate(&self, bytes: &[u8]) -> Result<usize, DecodeError> {
+        let udp = Udp::<[u8]>::try_ref_from_bytes(bytes)?;
+
+        if self.length {
+            let udp_len = usize::from(udp.header.length.get());
+            if bytes.len() != udp_len {
+                return Err(DecodeError::InvalidValue("UDP Length"));
+            }
+        }
+
+        Ok(bytes.len())
+    }
+}

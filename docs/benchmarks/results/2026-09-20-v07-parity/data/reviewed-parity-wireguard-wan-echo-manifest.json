@@ -1,0 +1,3146 @@
+{
+  "binary_builds": {
+    "candidate": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+          "xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+        },
+        "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+        "canonical_vendor_basis": {
+          "log": "reviewed-canonical-vendor.log",
+          "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+          "unchanged": false,
+          "vendor_tree": "3fb4f61a8c5f4385c51be6efa44a60bc4ee69706"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+          "parent_commit": "107d71f776c68a359ec6f71234b2587ee8b781cb",
+          "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "patch_sha256": "395b56aae6abbba3585100568faf99d772684514e10e726f8756078c1890dbb3",
+          "purpose": "Hysteria-only empty local CID; actual Initial capture plus native/Xray interop, blackholed path recovery, protection, and H3 regression tests; benefit to be measured",
+          "source_commit": "a2d6c8f2d6a17f6ce023d9a59b8d48621130c641",
+          "source_tree": "ce6dce5b1e615c7782b6120d98d220920864e16b",
+          "validation": [
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--test",
+                "hysteria_native_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+              },
+              "name": "native",
+              "returncode": 0,
+              "seconds": 19.483339071273804
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "hysteria_interop_tests",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1"
+              ],
+              "environment": {
+                "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+              },
+              "name": "xray",
+              "returncode": 0,
+              "seconds": 3.1275367736816406
+            },
+            {
+              "command": [
+                "cargo",
+                "test",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-transport",
+                "--test",
+                "stream_xhttp_h3_tests"
+              ],
+              "environment": {},
+              "name": "h3",
+              "returncode": 0,
+              "seconds": 18.900521993637085
+            },
+            {
+              "command": [
+                "cargo",
+                "fmt",
+                "--all",
+                "--",
+                "--check"
+              ],
+              "environment": {},
+              "name": "format",
+              "returncode": 0,
+              "seconds": 1.131680965423584
+            },
+            {
+              "command": [
+                "cargo",
+                "build",
+                "--offline",
+                "--locked",
+                "--release",
+                "-p",
+                "xray-cli"
+              ],
+              "environment": {},
+              "name": "build",
+              "returncode": 0,
+              "seconds": 50.62861704826355
+            }
+          ]
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+        "source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json",
+      "sha256": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch",
+        "sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c"
+      }
+    }
+  },
+  "candidate_workers": null,
+  "cases": [
+    {
+      "connections": 1,
+      "id": "wireguard-socks-tcp-latency-1",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-tcp-latency-8",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "wireguard-socks-udp-1",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "wireguard",
+      "traffic": "udp"
+    },
+    {
+      "connections": 8,
+      "id": "wireguard-socks-udp-8",
+      "iterations": 30,
+      "path": "socks",
+      "payload_size": 1200,
+      "protocol": "wireguard",
+      "traffic": "udp"
+    }
+  ],
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native": "304d19e4518352ac823b46f2b6ebcfa1c284157debabea70f3ba4eaaa1802356",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client.json": "6dbb95fa30dd82af6e4de68a4cd4bc4a1dc4a0ee949286dea273f23f3fbca86b",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client": "b342adec5d2c217bbffca675243b2ee7cf2c21ef044d242c740e6244b816129e",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/build.json": "f6f419d6fed7a0c0544ac07db7bcddf8fa864b0a73d9348b593f9270ab6e3650",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/source.patch": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench": "dd41949758574eca8f00651ef6d2fdc57e579d78859800b9a1c213e1a2ecea2d",
+    "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e",
+    "/private/tmp/xray-v07-parity-20260920/bin/sing-box": "b2b34ea4948148b36d4fe5a2759c9cb8a0f5356c6908b697ba2118eebe8a06b3",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client.json": "204cc4ac5b15cad2382846da1ce58d032a151850151114165fefad4cac688468",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client.json": "da8b0e01f9f11549b674beddb27afbe7a60c31324960d11a9da213e370f44067",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-protocol-parity.py": "38d733a9023694a5432f68dba68b1b5c4a784cbf97e532d7e8751c2904da43ee"
+  },
+  "finished_unix": 1789997842.752501,
+  "idle_connections_by_version": {
+    "candidate": 0,
+    "native": 0,
+    "singbox": 0,
+    "xray": 0
+  },
+  "idle_settle_seconds": 0,
+  "link_mbps_per_direction": 100.0,
+  "one_way_delay_ms": 25.0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "process_accounting": "prepared real binary launched directly; one verified TCP echo before steady measurements; startup and lifetime CPU retained separately",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_go_workers": 2,
+  "repeats": 3,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 271.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997580.82723
+          },
+          {
+            "processes": [
+              {
+                "cpu": 261.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997582.89476
+          },
+          {
+            "processes": [
+              {
+                "cpu": 305.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997584.9130838
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 111,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 111,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.029902219772339,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 323.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              },
+              {
+                "cpu": 44.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997586.102844
+          },
+          {
+            "processes": [
+              {
+                "cpu": 318.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997588.166632
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.1,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 232.3,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997590.170602
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-singbox-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 141,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 141,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.022650957107544,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 111.5,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 98.1,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997591.357516
+          },
+          {
+            "processes": [
+              {
+                "cpu": 127.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 77.9,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997593.420722
+          },
+          {
+            "processes": [
+              {
+                "cpu": 20.2,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 59.0,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997595.369558
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-native-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 141,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 141,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.9622678756713867,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 98.2,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997596.5416052
+          },
+          {
+            "processes": [
+              {
+                "cpu": 82.7,
+                "executable": "/System/Library/PrivateFrameworks/MediaAnalysis.framework/Versions/A/mediaanalysisd",
+                "pid": 72763
+              }
+            ],
+            "time_unix": 1789997598.604321
+          },
+          {
+            "processes": [
+              {
+                "cpu": 14.0,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 71643
+              }
+            ],
+            "time_unix": 1789997600.6600478
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997601.596542
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-xray-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 139,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 139,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.010797023773193,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 25.7,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              }
+            ],
+            "time_unix": 1789997602.762516
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997604.830888
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997606.803283
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 111,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 111,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.990746259689331,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 10.5,
+                "executable": "/usr/libexec/aned",
+                "pid": 447
+              },
+              {
+                "cpu": 31.9,
+                "executable": "/usr/sbin/cfprefsd",
+                "pid": 614
+              },
+              {
+                "cpu": 114.9,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 47.1,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 72697
+              },
+              {
+                "cpu": 21.5,
+                "executable": "/System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd",
+                "pid": 72828
+              }
+            ],
+            "time_unix": 1789997607.972427
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.0,
+                "executable": "/usr/sbin/cfprefsd",
+                "pid": 614
+              },
+              {
+                "cpu": 11.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 100.3,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 147.4,
+                "executable": "/usr/libexec/textunderstandingd",
+                "pid": 72796
+              }
+            ],
+            "time_unix": 1789997610.038126
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.2,
+                "executable": "/usr/libexec/aned",
+                "pid": 447
+              },
+              {
+                "cpu": 59.4,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 75.4,
+                "executable": "/usr/libexec/biomesyncd",
+                "pid": 71956
+              },
+              {
+                "cpu": 20.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997612.083539
+          },
+          {
+            "processes": [
+              {
+                "cpu": 24.5,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 12.0,
+                "executable": "/usr/libexec/biomesyncd",
+                "pid": 71956
+              },
+              {
+                "cpu": 96.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997613.077908
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-xray-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 139,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 139,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.079687833786011,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 15.9,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 25.2,
+                "executable": "/usr/libexec/biomesyncd",
+                "pid": 71956
+              },
+              {
+                "cpu": 17.7,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 72697
+              }
+            ],
+            "time_unix": 1789997614.259349
+          },
+          {
+            "processes": [
+              {
+                "cpu": 69.3,
+                "executable": "/usr/libexec/biomesyncd",
+                "pid": 71956
+              },
+              {
+                "cpu": 15.6,
+                "executable": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent",
+                "pid": 79282
+              }
+            ],
+            "time_unix": 1789997616.3221262
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.8,
+                "executable": "/usr/libexec/biomesyncd",
+                "pid": 71956
+              }
+            ],
+            "time_unix": 1789997618.3002691
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-native-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 141,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 141,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.995039939880371,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 78.0,
+                "executable": "/usr/libexec/biomesyncd",
+                "pid": 71956
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent",
+                "pid": 79282
+              }
+            ],
+            "time_unix": 1789997619.477667
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997621.535891
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997623.5981781
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997623.624873
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-singbox-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 141,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 141,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.088444232940674,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997624.78756
+          },
+          {
+            "processes": [
+              {
+                "cpu": 14.1,
+                "executable": "/System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/reversetemplated",
+                "pid": 55545
+              },
+              {
+                "cpu": 68.4,
+                "executable": "/usr/libexec/textunderstandingd",
+                "pid": 72796
+              }
+            ],
+            "time_unix": 1789997626.847646
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.4,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 18.4,
+                "executable": "/usr/libexec/textunderstandingd",
+                "pid": 72796
+              },
+              {
+                "cpu": 14.0,
+                "executable": "/System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd",
+                "pid": 72828
+              }
+            ],
+            "time_unix": 1789997628.807192
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-native-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 141,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 141,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.9812211990356445,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997629.97857
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.7,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              }
+            ],
+            "time_unix": 1789997632.0402792
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 13.3,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              }
+            ],
+            "time_unix": 1789997634.104309
+          },
+          {
+            "processes": [
+              {
+                "cpu": 45.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              }
+            ],
+            "time_unix": 1789997635.102855
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-xray-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 139,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 139,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.083031892776489,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 41.6,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              }
+            ],
+            "time_unix": 1789997636.2758138
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.3,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 12.5,
+                "executable": "/Applications/Discord.app/Contents/Frameworks/Discord Helper (Renderer).app/Contents/MacOS/Discord Helper (Renderer)",
+                "pid": 45816
+              }
+            ],
+            "time_unix": 1789997638.3392441
+          },
+          {
+            "processes": [
+              {
+                "cpu": 11.4,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 10.6,
+                "executable": "/System/Applications/Calendar.app/Contents/MacOS/Calendar",
+                "pid": 38284
+              }
+            ],
+            "time_unix": 1789997640.326972
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 111,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 111,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.997882843017578,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 10.8,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              }
+            ],
+            "time_unix": 1789997641.505635
+          },
+          {
+            "processes": [
+              {
+                "cpu": 57.5,
+                "executable": "/usr/libexec/textunderstandingd",
+                "pid": 72796
+              },
+              {
+                "cpu": 13.7,
+                "executable": "/System/Library/PrivateFrameworks/ModelCatalogRuntime.framework/Versions/A/modelcatalogd",
+                "pid": 72828
+              }
+            ],
+            "time_unix": 1789997643.5672479
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.0,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 39.0,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 14.3,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 34.1,
+                "executable": "/usr/libexec/PerfPowerServices",
+                "pid": 50124
+              },
+              {
+                "cpu": 22.1,
+                "executable": "/usr/libexec/inputanalyticsd",
+                "pid": 73382
+              },
+              {
+                "cpu": 14.4,
+                "executable": "/System/Library/PrivateFrameworks/BiomeStreams.framework/Support/BiomeAgent",
+                "pid": 79282
+              }
+            ],
+            "time_unix": 1789997645.617756
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.2,
+                "executable": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer",
+                "pid": 413
+              },
+              {
+                "cpu": 41.3,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 12.9,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 35.6,
+                "executable": "/usr/libexec/PerfPowerServices",
+                "pid": 50124
+              },
+              {
+                "cpu": 13.7,
+                "executable": "/usr/libexec/inputanalyticsd",
+                "pid": 73382
+              },
+              {
+                "cpu": 10.6,
+                "executable": "/System/Library/CoreServices/TextInputSwitcher.app/Contents/MacOS/TextInputSwitcher",
+                "pid": 73409
+              }
+            ],
+            "time_unix": 1789997645.646666
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-1-singbox-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-1-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 141,
+        "peak_queued_bytes": 1216,
+        "receive_buffer_bytes": 2097152,
+        "received": 141,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.075416088104248,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 13.3,
+                "executable": "/System/Library/ExtensionKit/Extensions/TGOnDeviceInferenceProviderService.appex/Contents/MacOS/TGOnDeviceInferenceProviderService",
+                "pid": 42068
+              },
+              {
+                "cpu": 10.4,
+                "executable": "/usr/libexec/inputanalyticsd",
+                "pid": 73382
+              }
+            ],
+            "time_unix": 1789997646.828387
+          },
+          {
+            "processes": [
+              {
+                "cpu": 26.2,
+                "executable": "/usr/libexec/airportd",
+                "pid": 431
+              }
+            ],
+            "time_unix": 1789997648.89028
+          },
+          {
+            "processes": [
+              {
+                "cpu": 12.3,
+                "executable": "/System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/reversetemplated",
+                "pid": 55545
+              },
+              {
+                "cpu": 28.3,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63803
+              },
+              {
+                "cpu": 47.1,
+                "executable": "/usr/libexec/textunderstandingd",
+                "pid": 72796
+              }
+            ],
+            "time_unix": 1789997650.908136
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 783,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 783,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.025793790817261,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 96.1,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997652.073567
+          },
+          {
+            "processes": [
+              {
+                "cpu": 96.0,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997654.130559
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.1,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997656.1854348
+          },
+          {
+            "processes": [
+              {
+                "cpu": 99.1,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997656.21345
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-singbox-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1023,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1023,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.070122957229614,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 99.6,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              },
+              {
+                "cpu": 10.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Resources/codex",
+                "pid": 96370
+              },
+              {
+                "cpu": 18.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997657.352504
+          },
+          {
+            "processes": [
+              {
+                "cpu": 95.2,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997659.409784
+          },
+          {
+            "processes": [
+              {
+                "cpu": 98.7,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997661.4287481
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-native-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1023,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1023,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.021929979324341,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 58.7,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 31.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 30.0,
+                "executable": "/usr/libexec/duetexpertd",
+                "pid": 44018
+              }
+            ],
+            "time_unix": 1789997662.6050591
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997664.668302
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997666.7319
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997667.737947
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-xray-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1000,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1000,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.082949161529541,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 69.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997668.870817
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997670.9325829
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997672.962433
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 783,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 783,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.043540954589844,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 69.9,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997674.097452
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997676.154138
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997678.2180018
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997679.248404
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-xray-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1000,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1000,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.098449945449829,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997680.4165928
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997682.480601
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997684.4847949
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-native-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1023,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1023,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.02196478843689,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997685.648202
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997687.704563
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997689.762274
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997689.7887821
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-singbox-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1023,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1023,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.069615840911865,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 27.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 75129
+              }
+            ],
+            "time_unix": 1789997690.950273
+          },
+          {
+            "processes": [
+              {
+                "cpu": 91.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997692.978341
+          },
+          {
+            "processes": [
+              {
+                "cpu": 137.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              }
+            ],
+            "time_unix": 1789997694.954591
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-native-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1023,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1023,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.954105854034424,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 144.8,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              }
+            ],
+            "time_unix": 1789997696.124025
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997698.181828
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.2,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 10.2,
+                "executable": "/System/Applications/Calendar.app/Contents/MacOS/Calendar",
+                "pid": 38284
+              }
+            ],
+            "time_unix": 1789997700.2466712
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.0,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997701.284939
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-xray-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1000,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1000,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.1177191734313965,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997702.450639
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997704.514134
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997706.5300941
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 783,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 783,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.032344102859497,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997707.695533
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997709.761149
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997711.8136032
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997711.840836
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-tcp-latency-8-singbox-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 1023,
+        "peak_queued_bytes": 9728,
+        "receive_buffer_bytes": 2097152,
+        "received": 1023,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.103209972381592,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997713.002815
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997715.062131
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997717.0403252
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.9815611839294434,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997718.201528
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997720.264779
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997722.267658
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-singbox-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.0073161125183105,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997723.4390259
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.7,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 34513
+              }
+            ],
+            "time_unix": 1789997725.4970932
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997727.401354
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-native-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.9243509769439697,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997728.565254
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997730.622456
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997732.679116
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997733.674282
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-xray-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 76,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 76,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.0583648681640625,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997734.8420632
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997736.9119081
+          },
+          {
+            "processes": [
+              {
+                "cpu": 18.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997738.8035011
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.928926944732666,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997739.972455
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997742.031745
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997744.0951822
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.1,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997744.96335
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-xray-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 76,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 76,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.954993009567261,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997746.1282392
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997748.1892102
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997750.0962932
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-native-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.9211690425872803,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 18.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 77402
+              }
+            ],
+            "time_unix": 1789997751.262961
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997753.322945
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997755.334497
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-singbox-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.023423910140991,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997756.500999
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997758.5692632
+          },
+          {
+            "processes": [
+              {
+                "cpu": 20.9,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997760.490658
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-native-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.9428467750549316,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 11.1,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997761.662698
+          },
+          {
+            "processes": [
+              {
+                "cpu": 21.1,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 64410
+              }
+            ],
+            "time_unix": 1789997763.720833
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997765.7727628
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997766.73882
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-xray-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 76,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 76,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.028515815734863,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 89.7,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997767.873539
+          },
+          {
+            "processes": [
+              {
+                "cpu": 15.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997769.937196
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997771.8540218
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.933459997177124,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997773.0227048
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997775.079251
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997777.0680819
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-1",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-1-singbox-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-1-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 75,
+        "peak_queued_bytes": 1264,
+        "receive_buffer_bytes": 2097152,
+        "received": 75,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.002562999725342,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 16.7,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              }
+            ],
+            "time_unix": 1789997778.225012
+          },
+          {
+            "processes": [
+              {
+                "cpu": 16.1,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 13.9,
+                "executable": "/usr/libexec/trustd",
+                "pid": 49071
+              },
+              {
+                "cpu": 14.6,
+                "executable": "/System/Library/PrivateFrameworks/DataAccess.framework/Support/dataaccessd",
+                "pid": 66902
+              }
+            ],
+            "time_unix": 1789997780.28526
+          },
+          {
+            "processes": [
+              {
+                "cpu": 39.0,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 11.1,
+                "executable": "/System/Library/PrivateFrameworks/DataAccess.framework/Support/dataaccessd",
+                "pid": 66902
+              }
+            ],
+            "time_unix": 1789997782.255767
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.9762508869171143,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997783.4269
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997785.496366
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997787.503393
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-singbox-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-singbox-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.0248777866363525,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997788.6708
+          },
+          {
+            "processes": [
+              {
+                "cpu": 45.2,
+                "executable": "/System/Library/PrivateFrameworks/CoreSuggestions.framework/Versions/A/Support/suggestd",
+                "pid": 47436
+              },
+              {
+                "cpu": 19.0,
+                "executable": "/System/Library/PrivateFrameworks/CalendarDaemon.framework/Support/calaccessd",
+                "pid": 62911
+              }
+            ],
+            "time_unix": 1789997790.7296472
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997792.700638
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-native-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-native-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.975924015045166,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997793.859533
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997795.919712
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.9,
+                "executable": "/usr/libexec/ContinuityCaptureAgent",
+                "pid": 649
+              }
+            ],
+            "time_unix": 1789997797.9819221
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997798.9852061
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-xray-1.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-xray-1",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 496,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 496,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 5.072250127792358,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997800.143229
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997802.201706
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997804.1866171
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.9888811111450195,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997805.347832
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997807.4057238
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997809.466582
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997810.461882
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-xray-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-xray-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 496,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 496,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 5.0612711906433105,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 15.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 79625
+              }
+            ],
+            "time_unix": 1789997811.6282518
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997813.6918578
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997815.651041
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-native-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-native-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.9728498458862305,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997816.812316
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997818.8713322
+          },
+          {
+            "processes": [
+              {
+                "cpu": 24.2,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 34.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997820.814443
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-singbox-2.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-singbox-2",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.960843086242676,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 12.6,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789997821.9787462
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997824.042559
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997825.990239
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-native-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-native-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.9652960300445557,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997827.159633
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997829.218409
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997831.279947
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997832.278537
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-xray-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-xray-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 496,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 496,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 5.066045045852661,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789997833.447687
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997835.5053241
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997837.418337
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.947313070297241,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 101.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789997838.5888782
+          },
+          {
+            "processes": [],
+            "time_unix": 1789997840.652961
+          },
+          {
+            "processes": [
+              {
+                "cpu": 38.2,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              }
+            ],
+            "time_unix": 1789997842.64492
+          }
+        ]
+      },
+      "case": "wireguard-socks-udp-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/reviewed-parity-wireguard-wan-echo/wireguard-socks-udp-8-singbox-3.json"
+      ],
+      "output_relative": "wireguard-socks-udp-8-singbox-3",
+      "process_group_empty_after_run": true,
+      "relay": {
+        "dropped": 0,
+        "error": null,
+        "forwarded": 495,
+        "peak_queued_bytes": 10112,
+        "receive_buffer_bytes": 2097152,
+        "received": 495,
+        "send_buffer_bytes": 2097152
+      },
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.015046119689941,
+      "surviving_process_group": false,
+      "version": "singbox"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "source_provenance_note": "source_commit/source.patch describe the collector workspace; each frozen executable is identified by SHA256 and its adjacent binary_builds metadata when available",
+  "started_unix": 1789997579.6641421,
+  "status": "pass",
+  "suite": "new",
+  "target": "strictly lower RSS; no lower throughput, higher latency/CPU or additional failures; uncertainty is reported separately, never converted into a pass",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/reviewed-parity/xray-rust",
+      "engine_sha256": "49500f291e28ca21fff288e858e67757eafe01931fee8ec1eb2fb66ce2ea8d6e"
+    },
+    "native": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/native-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "singbox": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/singbox-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "xray": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/xray-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    }
+  },
+  "warmup": true
+}

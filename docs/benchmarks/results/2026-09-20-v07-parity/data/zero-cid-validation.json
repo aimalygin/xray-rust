@@ -1,0 +1,95 @@
+[
+  {
+    "name": "native",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "hysteria_interop_tests",
+      "--test",
+      "hysteria_native_interop_tests",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "NATIVE_HYSTERIA_BINARY": "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native"
+    },
+    "returncode": 0,
+    "seconds": 19.483339071273804
+  },
+  {
+    "name": "xray",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "hysteria_interop_tests",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "environment": {
+      "XRAY_HYSTERIA_BINARY": "/private/tmp/xray-v07-bench-20260919/bin/xray-core"
+    },
+    "returncode": 0,
+    "seconds": 3.1275367736816406
+  },
+  {
+    "name": "h3",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-transport",
+      "--test",
+      "stream_xhttp_h3_tests"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 18.900521993637085
+  },
+  {
+    "name": "format",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 1.131680965423584
+  },
+  {
+    "name": "build",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-cli"
+    ],
+    "environment": {},
+    "returncode": 0,
+    "seconds": 50.62861704826355
+  }
+]

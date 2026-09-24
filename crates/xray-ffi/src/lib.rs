@@ -1,3 +1,6 @@
+mod profile_import;
+pub use profile_import::xray_profile_import_json;
+
 use bytes::Bytes;
 use libc::{c_char, c_int, c_void};
 use std::collections::VecDeque;
@@ -24,7 +27,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 4;
+pub const XRAY_FFI_ABI_MINOR: u32 = 7;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -43,6 +46,10 @@ pub const XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH: u64 = 1 << 13;
 pub const XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT: u64 = 1 << 14;
 pub const XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE: u64 = 1 << 15;
 
+pub const XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND: u64 = 1 << 16;
+pub const XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND: u64 = 1 << 17;
+pub const XRAY_FFI_CAPABILITY_PROFILE_IMPORT: u64 = 1 << 18;
+
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
     | XRAY_FFI_CAPABILITY_SOCKET_PROTECTION
@@ -58,7 +65,10 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION
     | XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH
     | XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT
-    | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE;
+    | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE
+    | XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND
+    | XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND
+    | XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1476,6 +1486,76 @@ unsafe fn xray_core_close_connection_inner(
             set_error(error, XrayStatus::InvalidArgument, source.to_string());
             XrayStatus::InvalidArgument
         },
+    }
+}
+
+/// Queues a carrier socket rebind for live WireGuard clients (ABI 1.6).
+/// Endpoint addresses and inner flows are retained. The returned count is
+/// accepted coalesced requests, not successful binds or handshakes.
+///
+/// # Safety
+/// `handle` must be null or live; `accepted` must be null or writable. May run
+/// with data-path/snapshot calls, but not lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_rebind_wireguard(
+    handle: *mut XrayCoreHandle,
+    accepted: *mut u64,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            if accepted.is_null() {
+                set_error(error, XrayStatus::NullArgument, "accepted count is null");
+                return XrayStatus::NullArgument;
+            }
+            *accepted = 0;
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            let core = match loaded_core(handle, error) {
+                Ok(core) => core,
+                Err(status) => return status,
+            };
+            *accepted = core.rebind_wireguard();
+            XrayStatus::Ok
+        })
+    }
+}
+
+/// Queues a carrier socket rebind for live Hysteria clients (ABI 1.7).
+/// Endpoint addresses and QUIC/inner flows are retained. The returned count is
+/// accepted coalesced requests, not successful binds or path validation.
+///
+/// # Safety
+/// `handle` must be null or live; `accepted` must be null or writable. May run
+/// with data-path/snapshot calls, but not lifecycle calls or `xray_core_free`.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_rebind_hysteria(
+    handle: *mut XrayCoreHandle,
+    accepted: *mut u64,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            if accepted.is_null() {
+                set_error(error, XrayStatus::NullArgument, "accepted count is null");
+                return XrayStatus::NullArgument;
+            }
+            *accepted = 0;
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            let core = match loaded_core(handle, error) {
+                Ok(core) => core,
+                Err(status) => return status,
+            };
+            *accepted = core.rebind_hysteria();
+            XrayStatus::Ok
+        })
     }
 }
 

@@ -1,0 +1,1953 @@
+{
+  "binary_builds": {
+    "candidate": {
+      "metadata": {
+        "binary_sha256": "a6e1e11555c0972d3757f5c08a54d67c566a61f531377cfa9059a45680c9b017",
+        "clean": true,
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/protocol-followup-build",
+        "patch_base": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+        "patch_sha256": "27d0be1742b8b723297edb15299c8b9c2b0eb1173c9e04ddb858b55a0e6f8b63",
+        "purpose": "Bounded experiment: reuse empty TCP receive storage without reducing capacity, advertised credit or out-of-order data",
+        "seconds": 50.002325773239136,
+        "source_commit": "860d1ecf2a2ec504901d0c9f02eba6a4ff002f55",
+        "source_tree": "7185aa401aa32075b4d10f7f54c86f40cbf6d248",
+        "validation": "685 smoltcp library tests; regression tests fail before fix and reassembly test rejects unsafe empty-queue-only mutation"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/build.json",
+      "sha256": "7106679f014748faeacbf875af586cbcc977662b386e46496a5daf5214856c92",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/source.patch",
+        "sha256": "27d0be1742b8b723297edb15299c8b9c2b0eb1173c9e04ddb858b55a0e6f8b63"
+      }
+    },
+    "previous": {
+      "metadata": {
+        "binary_hashes": {
+          "xray-bench": "76a325733bf82ca92dc5a8e77ed2799c0cd2ef232c45e56b290e93fcd861d569",
+          "xray-rust": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4"
+        },
+        "binary_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+        "canonical_vendor_basis": {
+          "log": "accepted-canonical-vendor.log",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "unchanged": true,
+          "vendor_tree": "7d2f5c2636b9d97b1179c868f69efb8a500ee9f3"
+        },
+        "canonical_vendor_verified": true,
+        "clean": true,
+        "focused_build": {
+          "binary_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+          "change": "Coalesce immediately ready H3 response fragments into at most 16 KiB per one-slot channel handoff, without awaiting future data or changing QUIC flow-control windows",
+          "clean": true,
+          "experimental": true,
+          "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/h3-read-batch-build",
+          "patch_base": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "patch_sha256": "1fc7ff3984feb4bee7fbd89e3a7874b8e544c6663f105583d9da262e3806ae3e",
+          "performance_acceptance": "pending",
+          "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+          "source_tree": "0296e27d7dc2fb30683c80f8a0801557f84bc2eb"
+        },
+        "isolated_target": "/private/tmp/xray-v07-parity-20260920/h3-read-batch-build",
+        "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+        "patch_sha256": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe",
+        "performance_acceptance": "pending final comparison",
+        "preceding_validated_build": {
+          "binary_hashes": {
+            "xray-bench": "acf930d819c4dc25ec0fd0c84ccb8d63ee0703879d18bef34ef6b7ed8196dacf",
+            "xray-rust": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd"
+          },
+          "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+          "byte_identical_cli_to_focus": true,
+          "canonical_vendor_verified": true,
+          "clean": true,
+          "isolated_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+          "patch_base": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+          "patch_sha256": "0cee9ab1edfbe41c954be11d05fa042d1cc490cbc5faf7ab55f17cac7899ea05",
+          "performance_acceptance": "pending",
+          "preceding_runtime_build": {
+            "binary_sha256": "81d34fb6f03244e8edcac4f20e50c959ee51afafb26c4c3047e51626237da6cd",
+            "clean": true,
+            "experimental": true,
+            "isolated_fresh_target": "/private/tmp/xray-v07-parity-20260920/wg-atomic-stop-build",
+            "patch_base": "2cefea70f72de26831abd9d85edb414f3acc37cd",
+            "patch_sha256": "67205155f1af2442d57f7731fa89a10d40401f5c4e95c8aa2bfc810371827c53",
+            "source_commit": "35fd7fe807baa8f7b97a45e9025cf977e72a02a5",
+            "source_tree": "71ee6951f805cc33c88b16b6a0044928bd07f185",
+            "vendor_provenance_not_regenerated": true
+          },
+          "profile": "release",
+          "source_commit": "293ac161e8009645083dbc15e2465f4c600d3ce8",
+          "source_tree": "28cc00da2139606751e7cf1acbf83a6cd8e10c53"
+        },
+        "profile": "release",
+        "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+        "source_tree": "0296e27d7dc2fb30683c80f8a0801557f84bc2eb"
+      },
+      "path": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/build.json",
+      "sha256": "ed981258fb1861b2bccd0dfad18b2f45d6d2d64410ad800ea3731add95c11507",
+      "source_patch": {
+        "path": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/source.patch",
+        "sha256": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe"
+      }
+    }
+  },
+  "candidate_workers": null,
+  "cases": [
+    {
+      "connections": 8,
+      "id": "wireguard-socks-tcp-latency-8",
+      "iterations": 5000,
+      "path": "socks",
+      "payload_size": 1024,
+      "protocol": "wireguard",
+      "traffic": "tcp-latency"
+    }
+  ],
+  "file_hashes": {
+    "/private/tmp/xray-v07-bench-20260919/bin/xray-core": "2a950beafa07ecd4bebbcaced9ad677d7ac48a65c2e8861f21b7f78717ef56fb",
+    "/private/tmp/xray-v07-opt-20260919/bin/hysteria-native": "304d19e4518352ac823b46f2b6ebcfa1c284157debabea70f3ba4eaaa1802356",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/build.json": "ed981258fb1861b2bccd0dfad18b2f45d6d2d64410ad800ea3731add95c11507",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/source.patch": "bbd7482ef615ce7d8ea36c543d2c113c81100924bcdbcfbc852fd0f787a761fe",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench": "76a325733bf82ca92dc5a8e77ed2799c0cd2ef232c45e56b290e93fcd861d569",
+    "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-client.json": "6dbb95fa30dd82af6e4de68a4cd4bc4a1dc4a0ee949286dea273f23f3fbca86b",
+    "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client": "b342adec5d2c217bbffca675243b2ee7cf2c21ef044d242c740e6244b816129e",
+    "/private/tmp/xray-v07-parity-20260920/bin/sing-box": "b2b34ea4948148b36d4fe5a2759c9cb8a0f5356c6908b697ba2118eebe8a06b3",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/singbox-client.json": "204cc4ac5b15cad2382846da1ce58d032a151850151114165fefad4cac688468",
+    "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/build.json": "7106679f014748faeacbf875af586cbcc977662b386e46496a5daf5214856c92",
+    "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/source.patch": "27d0be1742b8b723297edb15299c8b9c2b0eb1173c9e04ddb858b55a0e6f8b63",
+    "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/xray-rust": "a6e1e11555c0972d3757f5c08a54d67c566a61f531377cfa9059a45680c9b017",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd",
+    "/private/tmp/xray-v07-parity-20260920/bin/xray-client.json": "da8b0e01f9f11549b674beddb27afbe7a60c31324960d11a9da213e370f44067",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-delayed-protocol.py": "ec98f803d101223aa2dde75d91dd47b3f017b772fc83a2e16ab6ff1d122ee72d",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance-followup.py": "23d1f27ae3e6fafe922afb397a6762de5382bb6c2dc51649f21f80a44eba8309",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-performance.py": "debd8b5371aeeb2a8edfff3ce17d858c8997a132954501db1f7f31b1476c4fe4",
+    "/private/tmp/xray-v07-parity-20260920/h3-read-batch-source/scripts/run-v07-protocol-parity.py": "38d733a9023694a5432f68dba68b1b5c4a784cbf97e532d7e8751c2904da43ee"
+  },
+  "finished_unix": 1789987954.129696,
+  "idle_connections_by_version": {
+    "candidate": 0,
+    "native": 0,
+    "previous": 0,
+    "singbox": 0,
+    "xray": 0
+  },
+  "idle_settle_seconds": 0,
+  "link_mbps_per_direction": null,
+  "one_way_delay_ms": 0,
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "process_accounting": "prepared real binary launched directly; one verified TCP echo before steady measurements; startup and lifetime CPU retained separately",
+  "reference_commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "reference_go_workers": 2,
+  "repeats": 5,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987837.833149
+          },
+          {
+            "processes": [],
+            "time_unix": 1789987839.878436
+          },
+          {
+            "processes": [
+              {
+                "cpu": 42.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11155
+              },
+              {
+                "cpu": 53.5,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987841.349321
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-candidate-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.487624168395996,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987842.506305
+          },
+          {
+            "processes": [
+              {
+                "cpu": 223.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11320
+              },
+              {
+                "cpu": 69.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11322
+              },
+              {
+                "cpu": 108.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 11323
+              }
+            ],
+            "time_unix": 1789987844.532222
+          },
+          {
+            "processes": [
+              {
+                "cpu": 39.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11320
+              }
+            ],
+            "time_unix": 1789987845.6836338
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-previous-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-previous-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.1385498046875,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 22.6,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 64408
+              }
+            ],
+            "time_unix": 1789987846.847424
+          },
+          {
+            "processes": [
+              {
+                "cpu": 192.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11492
+              },
+              {
+                "cpu": 53.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11494
+              },
+              {
+                "cpu": 106.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 11496
+              }
+            ],
+            "time_unix": 1789987848.876929
+          },
+          {
+            "processes": [
+              {
+                "cpu": 42.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11492
+              }
+            ],
+            "time_unix": 1789987850.2956412
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-singbox-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.389878988265991,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987851.448988
+          },
+          {
+            "processes": [
+              {
+                "cpu": 197.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11674
+              },
+              {
+                "cpu": 54.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11676
+              },
+              {
+                "cpu": 115.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client",
+                "pid": 11678
+              }
+            ],
+            "time_unix": 1789987853.478693
+          },
+          {
+            "processes": [
+              {
+                "cpu": 41.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11674
+              }
+            ],
+            "time_unix": 1789987854.830592
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-native-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.3333041667938232,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987855.984583
+          },
+          {
+            "processes": [],
+            "time_unix": 1789987858.041037
+          },
+          {
+            "processes": [
+              {
+                "cpu": 13.0,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 133.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11854
+              },
+              {
+                "cpu": 37.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 11858
+              },
+              {
+                "cpu": 80.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11860
+              }
+            ],
+            "time_unix": 1789987860.0971599
+          },
+          {
+            "processes": [
+              {
+                "cpu": 14.6,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 31.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 11854
+              }
+            ],
+            "time_unix": 1789987860.482669
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-xray-1.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 4.445535898208618,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 17.9,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789987861.6368608
+          },
+          {
+            "processes": [
+              {
+                "cpu": 215.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12037
+              },
+              {
+                "cpu": 66.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12039
+              },
+              {
+                "cpu": 103.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/xray-rust",
+                "pid": 12040
+              }
+            ],
+            "time_unix": 1789987863.6655948
+          },
+          {
+            "processes": [
+              {
+                "cpu": 43.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12037
+              }
+            ],
+            "time_unix": 1789987864.7968051
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-candidate-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.1174380779266357,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987865.946354
+          },
+          {
+            "processes": [],
+            "time_unix": 1789987868.005283
+          },
+          {
+            "processes": [
+              {
+                "cpu": 193.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12203
+              },
+              {
+                "cpu": 53.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12205
+              },
+              {
+                "cpu": 114.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12207
+              }
+            ],
+            "time_unix": 1789987870.066144
+          },
+          {
+            "processes": [
+              {
+                "cpu": 46.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12203
+              }
+            ],
+            "time_unix": 1789987870.4190989
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-xray-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 4.423130035400391,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987871.580805
+          },
+          {
+            "processes": [
+              {
+                "cpu": 185.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12384
+              },
+              {
+                "cpu": 51.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12386
+              },
+              {
+                "cpu": 108.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client",
+                "pid": 12388
+              }
+            ],
+            "time_unix": 1789987873.606674
+          },
+          {
+            "processes": [
+              {
+                "cpu": 50.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12384
+              }
+            ],
+            "time_unix": 1789987874.977647
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-native-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.3462231159210205,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 48.3,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 10902
+              },
+              {
+                "cpu": 10.3,
+                "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "pid": 61711
+              },
+              {
+                "cpu": 15.9,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper",
+                "pid": 61717
+              }
+            ],
+            "time_unix": 1789987876.1385212
+          },
+          {
+            "processes": [
+              {
+                "cpu": 166.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12564
+              },
+              {
+                "cpu": 45.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12566
+              },
+              {
+                "cpu": 91.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 12568
+              }
+            ],
+            "time_unix": 1789987878.164272
+          },
+          {
+            "processes": [
+              {
+                "cpu": 53.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12564
+              }
+            ],
+            "time_unix": 1789987879.544158
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-singbox-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.3604769706726074,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987880.69991
+          },
+          {
+            "processes": [
+              {
+                "cpu": 15.3,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              },
+              {
+                "cpu": 188.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12746
+              },
+              {
+                "cpu": 61.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12748
+              },
+              {
+                "cpu": 94.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 12749
+              }
+            ],
+            "time_unix": 1789987882.7256808
+          },
+          {
+            "processes": [
+              {
+                "cpu": 53.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12746
+              }
+            ],
+            "time_unix": 1789987883.865953
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-previous-2.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-previous-2",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.122358798980713,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987885.029251
+          },
+          {
+            "processes": [
+              {
+                "cpu": 167.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12911
+              },
+              {
+                "cpu": 46.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 12913
+              },
+              {
+                "cpu": 94.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 12915
+              }
+            ],
+            "time_unix": 1789987887.05506
+          },
+          {
+            "processes": [
+              {
+                "cpu": 53.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 12911
+              }
+            ],
+            "time_unix": 1789987888.412308
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-singbox-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.344980001449585,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 19.8,
+                "executable": "/System/Library/Frameworks/Security.framework/Versions/A/XPCServices/authd.xpc/Contents/MacOS/authd",
+                "pid": 452
+              }
+            ],
+            "time_unix": 1789987889.572747
+          },
+          {
+            "processes": [
+              {
+                "cpu": 195.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13102
+              },
+              {
+                "cpu": 52.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13104
+              },
+              {
+                "cpu": 112.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client",
+                "pid": 13108
+              },
+              {
+                "cpu": 19.0,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987891.5984619
+          },
+          {
+            "processes": [
+              {
+                "cpu": 41.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13102
+              },
+              {
+                "cpu": 36.5,
+                "executable": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.84/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)",
+                "pid": 13267
+              }
+            ],
+            "time_unix": 1789987892.9675689
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-native-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.3499560356140137,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987894.119652
+          },
+          {
+            "processes": [],
+            "time_unix": 1789987896.1876101
+          },
+          {
+            "processes": [
+              {
+                "cpu": 135.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13295
+              },
+              {
+                "cpu": 37.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13298
+              },
+              {
+                "cpu": 82.6,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13312
+              }
+            ],
+            "time_unix": 1789987898.24786
+          },
+          {
+            "processes": [
+              {
+                "cpu": 50.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13295
+              }
+            ],
+            "time_unix": 1789987898.582567
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-xray-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 4.418527841567993,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 20.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987899.708284
+          },
+          {
+            "processes": [
+              {
+                "cpu": 202.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13492
+              },
+              {
+                "cpu": 64.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13494
+              },
+              {
+                "cpu": 102.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/xray-rust",
+                "pid": 13495
+              }
+            ],
+            "time_unix": 1789987901.7338848
+          },
+          {
+            "processes": [
+              {
+                "cpu": 39.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13492
+              }
+            ],
+            "time_unix": 1789987902.873879
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-candidate-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.114429235458374,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987904.029064
+          },
+          {
+            "processes": [
+              {
+                "cpu": 194.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13659
+              },
+              {
+                "cpu": 63.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13661
+              },
+              {
+                "cpu": 99.1,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 13662
+              }
+            ],
+            "time_unix": 1789987906.054733
+          },
+          {
+            "processes": [
+              {
+                "cpu": 47.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13659
+              }
+            ],
+            "time_unix": 1789987907.231481
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-previous-3.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-previous-3",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.156198263168335,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987908.386556
+          },
+          {
+            "processes": [
+              {
+                "cpu": 171.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13824
+              },
+              {
+                "cpu": 46.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 13826
+              },
+              {
+                "cpu": 94.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 13828
+              }
+            ],
+            "time_unix": 1789987910.41233
+          },
+          {
+            "processes": [
+              {
+                "cpu": 53.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 13824
+              }
+            ],
+            "time_unix": 1789987911.816522
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-singbox-4.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.3697710037231445,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 17.1,
+                "executable": "/sbin/launchd",
+                "pid": 1
+              }
+            ],
+            "time_unix": 1789987912.978463
+          },
+          {
+            "processes": [
+              {
+                "cpu": 28.9,
+                "executable": "/System/Applications/Mail.app/Contents/MacOS/Mail",
+                "pid": 7275
+              },
+              {
+                "cpu": 210.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14009
+              },
+              {
+                "cpu": 67.4,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 14011
+              },
+              {
+                "cpu": 103.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 14012
+              }
+            ],
+            "time_unix": 1789987915.004312
+          },
+          {
+            "processes": [
+              {
+                "cpu": 44.2,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14009
+              }
+            ],
+            "time_unix": 1789987916.132375
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-previous-4.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-previous-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.1094048023223877,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 95.8,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987917.265389
+          },
+          {
+            "processes": [
+              {
+                "cpu": 206.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14174
+              },
+              {
+                "cpu": 65.3,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 14197
+              },
+              {
+                "cpu": 100.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/xray-rust",
+                "pid": 14198
+              },
+              {
+                "cpu": 32.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987919.291575
+          },
+          {
+            "processes": [
+              {
+                "cpu": 20.9,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              },
+              {
+                "cpu": 47.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14174
+              }
+            ],
+            "time_unix": 1789987920.480788
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-candidate-4.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.162769079208374,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 12.5,
+                "executable": "/System/Library/CoreServices/loginwindow.app/Contents/MacOS/loginwindow",
+                "pid": 416
+              }
+            ],
+            "time_unix": 1789987921.646639
+          },
+          {
+            "processes": [],
+            "time_unix": 1789987923.713867
+          },
+          {
+            "processes": [
+              {
+                "cpu": 163.0,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14360
+              },
+              {
+                "cpu": 44.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 14362
+              },
+              {
+                "cpu": 97.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14364
+              }
+            ],
+            "time_unix": 1789987925.766492
+          },
+          {
+            "processes": [
+              {
+                "cpu": 10.3,
+                "executable": "/usr/libexec/ContinuityCaptureAgent",
+                "pid": 649
+              },
+              {
+                "cpu": 38.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14360
+              }
+            ],
+            "time_unix": 1789987926.130914
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-xray-4.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 4.437826156616211,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 11.3,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987927.265516
+          },
+          {
+            "processes": [
+              {
+                "cpu": 57.7,
+                "executable": "/System/Library/PrivateFrameworks/SafariSafeBrowsing.framework/com.apple.Safari.SafeBrowsing.Service",
+                "pid": 5316
+              },
+              {
+                "cpu": 13.6,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted_helper",
+                "pid": 9280
+              },
+              {
+                "cpu": 12.8,
+                "executable": "/usr/libexec/triald_system",
+                "pid": 9282
+              },
+              {
+                "cpu": 205.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14542
+              },
+              {
+                "cpu": 57.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 14565
+              },
+              {
+                "cpu": 116.7,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client",
+                "pid": 14567
+              },
+              {
+                "cpu": 37.3,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 58765
+              },
+              {
+                "cpu": 17.4,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987929.29943
+          },
+          {
+            "processes": [
+              {
+                "cpu": 48.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14542
+              },
+              {
+                "cpu": 18.3,
+                "executable": "/usr/libexec/pkd",
+                "pid": 58771
+              }
+            ],
+            "time_unix": 1789987930.673964
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-native-4.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-4",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.3684158325195312,
+      "surviving_process_group": false,
+      "version": "native"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 17.9,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 18.1,
+                "executable": "/usr/libexec/triald_system",
+                "pid": 9282
+              },
+              {
+                "cpu": 22.7,
+                "executable": "/usr/libexec/triald",
+                "pid": 52229
+              },
+              {
+                "cpu": 16.4,
+                "executable": "/usr/libexec/spotlightknowledged.updater",
+                "pid": 63749
+              },
+              {
+                "cpu": 23.7,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1789987931.83453
+          },
+          {
+            "processes": [
+              {
+                "cpu": 17.5,
+                "executable": "/System/Applications/Music.app/Contents/PlugIns/MusicCacheExtension.appex/Contents/MacOS/MusicCacheExtension",
+                "pid": 14756
+              },
+              {
+                "cpu": 16.1,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 58713
+              },
+              {
+                "cpu": 43.5,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1789987933.89746
+          },
+          {
+            "processes": [
+              {
+                "cpu": 137.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14750
+              },
+              {
+                "cpu": 38.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 14752
+              },
+              {
+                "cpu": 83.9,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14754
+              },
+              {
+                "cpu": 29.5,
+                "executable": "/usr/libexec/triald",
+                "pid": 52229
+              },
+              {
+                "cpu": 34.9,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1789987935.955582
+          },
+          {
+            "processes": [
+              {
+                "cpu": 34.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 51.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14750
+              },
+              {
+                "cpu": 11.0,
+                "executable": "/usr/libexec/triald",
+                "pid": 52229
+              },
+              {
+                "cpu": 13.3,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 58713
+              },
+              {
+                "cpu": 13.7,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 58765
+              },
+              {
+                "cpu": 24.1,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1789987936.27186
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-xray-5.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 4.399019956588745,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 74.2,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              }
+            ],
+            "time_unix": 1789987937.437066
+          },
+          {
+            "processes": [
+              {
+                "cpu": 144.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 10.7,
+                "executable": "/usr/libexec/opendirectoryd",
+                "pid": 381
+              },
+              {
+                "cpu": 11.2,
+                "executable": "/usr/libexec/triald_system",
+                "pid": 9282
+              },
+              {
+                "cpu": 200.5,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14936
+              },
+              {
+                "cpu": 65.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 14951
+              },
+              {
+                "cpu": 98.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/xray-rust",
+                "pid": 14952
+              },
+              {
+                "cpu": 16.6,
+                "executable": "/usr/libexec/containermanagerd",
+                "pid": 46583
+              },
+              {
+                "cpu": 44.3,
+                "executable": "/System/Library/PrivateFrameworks/CacheDelete.framework/deleted",
+                "pid": 58765
+              },
+              {
+                "cpu": 38.1,
+                "executable": "/usr/libexec/pkd",
+                "pid": 58771
+              },
+              {
+                "cpu": 28.7,
+                "executable": "/System/Library/PrivateFrameworks/CloudKitDaemon.framework/Support/cloudd",
+                "pid": 66297
+              }
+            ],
+            "time_unix": 1789987939.467498
+          },
+          {
+            "processes": [
+              {
+                "cpu": 87.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 42.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 14936
+              }
+            ],
+            "time_unix": 1789987940.595592
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-candidate-5.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.0998661518096924,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 94.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 25.0,
+                "executable": "/usr/libexec/mobileassetd",
+                "pid": 58713
+              },
+              {
+                "cpu": 38.7,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              },
+              {
+                "cpu": 48.6,
+                "executable": "/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Versions/153.0.8010.48/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)",
+                "pid": 96381
+              }
+            ],
+            "time_unix": 1789987941.729065
+          },
+          {
+            "processes": [
+              {
+                "cpu": 201.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 15117
+              },
+              {
+                "cpu": 64.9,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 15119
+              },
+              {
+                "cpu": 102.6,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+                "pid": 15120
+              },
+              {
+                "cpu": 28.4,
+                "executable": "/usr/libexec/triald",
+                "pid": 52229
+              },
+              {
+                "cpu": 16.0,
+                "executable": "/usr/libexec/pkd",
+                "pid": 58771
+              }
+            ],
+            "time_unix": 1789987943.755656
+          },
+          {
+            "processes": [
+              {
+                "cpu": 38.7,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 15117
+              },
+              {
+                "cpu": 61.6,
+                "executable": "/System/Library/CoreServices/TimeMachine/backupd",
+                "pid": 80286
+              }
+            ],
+            "time_unix": 1789987944.859423
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-previous-5.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-previous-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.0844638347625732,
+      "surviving_process_group": false,
+      "version": "previous"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [
+              {
+                "cpu": 89.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 134.2,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 25.8,
+                "executable": "/usr/libexec/sysmond",
+                "pid": 2640
+              }
+            ],
+            "time_unix": 1789987946.022337
+          },
+          {
+            "processes": [
+              {
+                "cpu": 93.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 118.6,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 176.3,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 15282
+              },
+              {
+                "cpu": 49.0,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 15284
+              },
+              {
+                "cpu": 95.8,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/sing-box",
+                "pid": 15286
+              }
+            ],
+            "time_unix": 1789987948.052751
+          },
+          {
+            "processes": [
+              {
+                "cpu": 76.4,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 49.7,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/corespotlightd",
+                "pid": 708
+              },
+              {
+                "cpu": 52.8,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 15282
+              }
+            ],
+            "time_unix": 1789987949.444078
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-singbox-5.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-singbox-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.368633985519409,
+      "surviving_process_group": false,
+      "version": "singbox"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "compiler_threshold_cpu_percent": 10,
+        "sample_interval_seconds": 2,
+        "snapshots": [
+          {
+            "processes": [],
+            "time_unix": 1789987950.6166499
+          },
+          {
+            "processes": [
+              {
+                "cpu": 206.4,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 15463
+              },
+              {
+                "cpu": 56.5,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+                "pid": 15465
+              },
+              {
+                "cpu": 120.2,
+                "executable": "/private/tmp/xray-v07-parity-20260920/bin/native-wireguard-client",
+                "pid": 15467
+              }
+            ],
+            "time_unix": 1789987952.643687
+          },
+          {
+            "processes": [
+              {
+                "cpu": 89.0,
+                "executable": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd",
+                "pid": 344
+              },
+              {
+                "cpu": 44.1,
+                "executable": "/private/tmp/xray-v07-bench-20260919/bin/xray-core",
+                "pid": 15463
+              }
+            ],
+            "time_unix": 1789987954.028817
+          }
+        ]
+      },
+      "case": "wireguard-socks-tcp-latency-8",
+      "command": [
+        "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-bench",
+        "protocol-run",
+        "/private/tmp/xray-v07-parity-20260920/evidence/wg-rx-reuse-long-tcp-8/wireguard-socks-tcp-latency-8-native-5.json"
+      ],
+      "output_relative": "wireguard-socks-tcp-latency-8-native-5",
+      "process_group_empty_after_run": true,
+      "remaining_engine_processes": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.3797593116760254,
+      "surviving_process_group": false,
+      "version": "native"
+    }
+  ],
+  "schema_version": 1,
+  "smoke": false,
+  "source_commit": "c33e77b3cfab18780056b3537bbca2cf8d92c442",
+  "source_patch_sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "source_provenance_note": "source_commit/source.patch describe the collector workspace; each frozen executable is identified by SHA256 and its adjacent binary_builds metadata when available",
+  "started_unix": 1789987836.649992,
+  "status": "pass",
+  "suite": "new",
+  "target": "strictly lower RSS; no lower throughput, higher latency/CPU or additional failures; uncertainty is reported separately, never converted into a pass",
+  "versions": {
+    "candidate": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/wg-rx-reuse/xray-rust",
+      "engine_sha256": "a6e1e11555c0972d3757f5c08a54d67c566a61f531377cfa9059a45680c9b017"
+    },
+    "native": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/native-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "previous": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/final-parity/xray-rust",
+      "engine_sha256": "ec91384cc94c6b3154416c6b08286ad7d232f873c246a0ac1f5e73034be88ae4"
+    },
+    "singbox": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/singbox-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    },
+    "xray": {
+      "binary": "/private/tmp/xray-v07-parity-20260920/bin/xray-client",
+      "engine_sha256": "6b43cf7e614e992184eea2a8c11c577de4b4ab9b75f611caafab91bf85701cdd"
+    }
+  },
+  "warmup": true
+}

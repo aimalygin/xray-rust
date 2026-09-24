@@ -1,0 +1,1523 @@
+{
+  "artifact_sha256": {
+    "reality-vision-socks-download-1-baseline-1/result.json": "1a31d2491b0ce17095f3fa7a24fc1cebb5a32bb60fc4e429c1f36c7656ac2663",
+    "reality-vision-socks-download-1-baseline-2/result.json": "97289f14f279a69947b15b75f3603639628a16ee1a968dde8ca4a85180e4fcdc",
+    "reality-vision-socks-download-1-baseline-3/result.json": "33fbb51e051312dd56c54ba9e74e55028fd66ffd1372186484dc92690b650606",
+    "reality-vision-socks-download-1-baseline-4/result.json": "05de018ce3e260aae3a13e095497c1db7f8925f0d0fc4e1a3e8cdaa15e8a2aac",
+    "reality-vision-socks-download-1-baseline-5/result.json": "500ce1d5fbb99d462edcd5caba3f04d79df6264232036426d8da3a7ceca92784",
+    "reality-vision-socks-download-1-candidate-1/result.json": "512bb418b29357ed3af470b44c4dc968c5d5aea7d1735a697cf77ef157bfa8cf",
+    "reality-vision-socks-download-1-candidate-2/result.json": "66f09972b482618fd13d7a1b0ac91a5bcf84aea2258ad01f419e51234438f889",
+    "reality-vision-socks-download-1-candidate-3/result.json": "a84b7ab0c5a777f21bd9c6850dc0f3d9045a586fa7dd4bf5213df2f13ee83b7a",
+    "reality-vision-socks-download-1-candidate-4/result.json": "409d881449a21516635b790b535e70f926a30e4a87168f5d3f12aef5d7f4592f",
+    "reality-vision-socks-download-1-candidate-5/result.json": "2a9f088a61a2e46dfc3d0246fe38d21ce4b57234b44efa3294d4cb986f169bc4",
+    "reality-vision-socks-download-8-baseline-1/result.json": "f15de5aaa12eff3104de868d446c9fd4bbdd93a9025c6daf718a50bc3f56968e",
+    "reality-vision-socks-download-8-baseline-2/result.json": "3198a50735c40692686b5af49f4a11c7b3810b0ef2767d1cad39261a37a99cda",
+    "reality-vision-socks-download-8-baseline-3/result.json": "5502d7efb04ff43d21a85d0e0421e1d29bb78ea571dd840b7bc3a1c99b50f210",
+    "reality-vision-socks-download-8-baseline-4/result.json": "852ec841eda7021cac43b1aed493eb307f9a46f2425ffb65904686a823c2206e",
+    "reality-vision-socks-download-8-baseline-5/result.json": "5b1a8ce2da6fc72a12caa04fb194025413811efaf3b9ca783ca193a18655bedd",
+    "reality-vision-socks-download-8-candidate-1/result.json": "2813747bbf49fcdf9195bae0d20360cbb7bd50594fd831796737fafbbba948ca",
+    "reality-vision-socks-download-8-candidate-2/result.json": "83e1bde61dd34acd284a3c4e79e7261230ff60aeb3ab8a546c3453fd892d496c",
+    "reality-vision-socks-download-8-candidate-3/result.json": "420b430364536db43d9b00424f92b0a50f79be1f962d0ae057abc33532ac7e1b",
+    "reality-vision-socks-download-8-candidate-4/result.json": "5c0e4907fe24c3d21f172ec7f8f219fb2c902f42b09cb3a91b032e31f60f25a6",
+    "reality-vision-socks-download-8-candidate-5/result.json": "9a8d1a904eb5f63e47575ad1d8f620cd701add59fb5910cc958b255d6aed1023",
+    "reality-vision-socks-full-duplex-1-baseline-1/result.json": "f1161e25fff19f68e4179bd110c6704b3b53e473f6a46875f57210ebd1c83d49",
+    "reality-vision-socks-full-duplex-1-baseline-2/result.json": "4db41da54b3c1c83ac25f282f0ea0c580c1277e19cf086365dbb51c3fdc63b8f",
+    "reality-vision-socks-full-duplex-1-baseline-3/result.json": "080290afd98c92a834d85a6e5e323a308992d3a87b1eeb72a7f3596f9823689d",
+    "reality-vision-socks-full-duplex-1-baseline-4/result.json": "7490740dfe87d5e22828ea8c7a95c0964b7a4a278ee2802f893a257c31d21fe8",
+    "reality-vision-socks-full-duplex-1-baseline-5/result.json": "52eafcb4aedf056ec9beceb3efe9c6168063280b969940aa4a02ee9f067b027b",
+    "reality-vision-socks-full-duplex-1-candidate-1/result.json": "c4f9b8fac027a7b18a4b73aa97fbb892a576d9553b0d89ba2f752db3a96a4690",
+    "reality-vision-socks-full-duplex-1-candidate-2/result.json": "6bab3df3fff65120528647b69167dd5300573536ae0ebe7f29447bf59202aa04",
+    "reality-vision-socks-full-duplex-1-candidate-3/result.json": "3b824272668d20891f5ae49067ce8da70cbfcc3bcb3ea4213d9bc8e67b7e024a",
+    "reality-vision-socks-full-duplex-1-candidate-4/result.json": "5c3629260225fa07089678bf70ce5dd5fffe75b92e6419aabf44930bb18c7fb6",
+    "reality-vision-socks-full-duplex-1-candidate-5/result.json": "2f568b83db3dae12b54004dfc55c19b0575828ab811785b0f9139726a52f5eab",
+    "reality-vision-socks-full-duplex-8-baseline-1/result.json": "f8b0a4a8b9ab630ee00b7e8c37fac688152235affce3631fd49f4058fcd736cc",
+    "reality-vision-socks-full-duplex-8-baseline-2/result.json": "8c6f7e7402fc54d55b3f3f62921d34644db1797415b8e3d90bc2dcb3f519f2ae",
+    "reality-vision-socks-full-duplex-8-baseline-3/result.json": "f64a1430e1dff3958a521ddec27ffbc863c20ab799d103f232b01599b61b4980",
+    "reality-vision-socks-full-duplex-8-baseline-4/result.json": "1e539136199780eada38e269e19cf36731d2008a94cd8344976daf92f28c5668",
+    "reality-vision-socks-full-duplex-8-baseline-5/result.json": "70f8c25afbde1236ed44e21da344583094cc05579271a1d85801b22aa7d0e109",
+    "reality-vision-socks-full-duplex-8-candidate-1/result.json": "6d16bf0b10e200e927d1ba4ba0da68d0a2228f1b5fa43e33342ad691e37be2db",
+    "reality-vision-socks-full-duplex-8-candidate-2/result.json": "b3ac5aebc72301006340aa5fb3942a25aa38ebaa7ec05c21760b395e4cf9436f",
+    "reality-vision-socks-full-duplex-8-candidate-3/result.json": "07242375b4223eac35c51e2c04982bf7cfc925617524f13c99c812a4fb1e8785",
+    "reality-vision-socks-full-duplex-8-candidate-4/result.json": "3da6d91f361f01f1feb8e189e40b29fe0788c2d7775d16560fe75ed1f22cee6f",
+    "reality-vision-socks-full-duplex-8-candidate-5/result.json": "03334d496618c51d0bfeb4eec5eaa7a8264c787af1d61519383dc8d50c86bb56",
+    "reality-vision-socks-upload-1-baseline-1/result.json": "d25aa742062036eafc05c62dddc60b5a2ff65274ca0f556efb5d8e41b4c49076",
+    "reality-vision-socks-upload-1-baseline-2/result.json": "0f8b20978ad1d428bb1761ee2bcfc969527d625f5db12807dd286fa9b705c5a7",
+    "reality-vision-socks-upload-1-baseline-3/result.json": "42603ca125a5f8b07cea9e8feb968b01ea04a207e62aea62eb638f3738edc420",
+    "reality-vision-socks-upload-1-baseline-4/result.json": "1aefaeac3ed71556645d4ae08cb30edda3646769cd1a9e4bd4451bc6f5ce0cd3",
+    "reality-vision-socks-upload-1-baseline-5/result.json": "f5ebf45bde288c7cea7691a51528179163f4a43d301199f5d57bb76618f78712",
+    "reality-vision-socks-upload-1-candidate-1/result.json": "a419603f1160de43a8b4026e60fdd0ea7814a7ef226485235fe57eec4b95c16b",
+    "reality-vision-socks-upload-1-candidate-2/result.json": "cca0ac290e73cb2ce5fca4db73e88cb8efd69fd32d252dbd8da4cc8456a551e8",
+    "reality-vision-socks-upload-1-candidate-3/result.json": "1ace68f6fb87ad175d3e1983ebc6214826c9c87465de9b4643ac1f55d14d3229",
+    "reality-vision-socks-upload-1-candidate-4/result.json": "7cac4e58925cbe8f213526dddd4bb429f3c36be7bdefd06f58d3585fccc3f13b",
+    "reality-vision-socks-upload-1-candidate-5/result.json": "ec7f0d1f94b921495fcee812828864c6c23b4d9c142806a63b35e836dbf2c719",
+    "reality-vision-socks-upload-8-baseline-1/result.json": "ce9c93b6323ebc5bf6a5b7a5168a0813e9aa7645a72f817aa0edcb0a82936330",
+    "reality-vision-socks-upload-8-baseline-2/result.json": "6fa0eabdf36b0a414b1e9f475b19ab8f00a8e1acdba853a019b5a3c433c2fd98",
+    "reality-vision-socks-upload-8-baseline-3/result.json": "184e27cafe1d9c4d4d2aaf8b2d93817b9c8a709a9279c4983e72292ab15753fb",
+    "reality-vision-socks-upload-8-baseline-4/result.json": "4b73f8b1aa7dd363bee047e834305ec9c62535edea4fd153657d67c6b5e6d736",
+    "reality-vision-socks-upload-8-baseline-5/result.json": "223b6d9ba42f5e5f21b17017022cfacecb9dc30dbc6648b0907d75e6e6f08fdb",
+    "reality-vision-socks-upload-8-candidate-1/result.json": "8f0bcb17bcb09820f0cd0f502317797fe9510c9d5ac256888718acda832dc9ff",
+    "reality-vision-socks-upload-8-candidate-2/result.json": "6ef913ebc1b252dda8a1ed0919397e006281cf11b13d9c89079cd9e0ce585813",
+    "reality-vision-socks-upload-8-candidate-3/result.json": "87dc46d4a4979cda95a08f0bd02ce45d7458d422dd1e633d303817c6b35e6752",
+    "reality-vision-socks-upload-8-candidate-4/result.json": "0918c9794226f258a483a58039ff6f60d5720a329cbe633f18382627fe5837c8",
+    "reality-vision-socks-upload-8-candidate-5/result.json": "c2777ad4485dc88fae339ee464b64ff4efe31ed2c73dded58199ff0511dca2fc",
+    "reality-vision-tun-download-1-baseline-1/result.json": "f53d09041a061e84730ba406ed7f1328e233408d8e5b5af2538041a13b19b3eb",
+    "reality-vision-tun-download-1-baseline-2/result.json": "929193b9091638715fb51f6e0c0e9276f52dfc53890f91c6bd97055bfb65112b",
+    "reality-vision-tun-download-1-baseline-3/result.json": "8a863142b9d214df9c593b2ea023d8a4f750ea58d916a60a62871eeef4f817b5",
+    "reality-vision-tun-download-1-baseline-4/result.json": "351eec411829db7152965400af399611b72ac5d7055ee877b2a1099adfa1a49f",
+    "reality-vision-tun-download-1-baseline-5/result.json": "c0cfc2d3b40f604226a8bad0024555f0de519ab49d564d022c3f2d433437d7cd",
+    "reality-vision-tun-download-1-candidate-1/result.json": "11505a0125ced51a7b124cba4cf53adab4a309639ba4040ab55f2ec4e2cee7f0",
+    "reality-vision-tun-download-1-candidate-2/result.json": "8f1f675763ad847f0aa5f50e09d8b4dd33cef38d3cdbebb821769f24212f82df",
+    "reality-vision-tun-download-1-candidate-3/result.json": "4e33c7c4b11f5cd215002c7bebc5436851ca1148059f889380cd3bea6df34fb4",
+    "reality-vision-tun-download-1-candidate-4/result.json": "8043e366f7d8ac81b606745ce1fe626007b286fc3c3dfdd13f9e6299037e3870",
+    "reality-vision-tun-download-1-candidate-5/result.json": "d65a97e4a2c108d30c503c45205269dbf0e6fb47d70bd4d4c39810cd0d4ede28",
+    "reality-vision-tun-download-8-baseline-1/result.json": "719304414d9814a9461a6dd8b86df9fe90366a73a0cd6c563976f1fb75682fc2",
+    "reality-vision-tun-download-8-baseline-2/result.json": "794ffbf697f1c457cc59f25532599656c02942624cc83cc82e02e942e3fd1e33",
+    "reality-vision-tun-download-8-baseline-3/result.json": "7d38cb413cc1434b57f6d6834326e2edd7fbe91f5fdcc3f43fb5df87fb0372dc",
+    "reality-vision-tun-download-8-baseline-4/result.json": "19074b1cdd27f1f3e67671608148954fb0786b7cc9a4386b9fc566efb8160ab9",
+    "reality-vision-tun-download-8-baseline-5/result.json": "438b5b3ab9166c482a89c852c135b77c6ba629673dd67dfdceb17e6aaec0d681",
+    "reality-vision-tun-download-8-candidate-1/result.json": "7913b151d9dc12d68b118228a4b5cca3e6b481e5af5f6b5b9194c7860329f42f",
+    "reality-vision-tun-download-8-candidate-2/result.json": "24a520feb09d8575c46550136f990fb4a404d1889ae06ad30ce1ab7371cc04a5",
+    "reality-vision-tun-download-8-candidate-3/result.json": "83e5ce621e2d832813193e734b4cff3900fb96b473c80fb705264ca5e590c6df",
+    "reality-vision-tun-download-8-candidate-4/result.json": "3905e5530a239f85cdd0808d318a41a1f606d86b43292b3d190ebc0569a4a6b0",
+    "reality-vision-tun-download-8-candidate-5/result.json": "e98b9bb2a78628c49b84ba975d0e4c65b1c3a1d3191e8c02e6446c6486c43436",
+    "reality-vision-tun-full-duplex-1-baseline-1/result.json": "6cab2ac7ae9bf644d4aec7fd37e553fca83c9e1cc639e37e8f52e33b32d6d0c7",
+    "reality-vision-tun-full-duplex-1-baseline-2/result.json": "7eabac3f5f9b7968a53f59fe0c6b2540d230bd4b1c2ff90d602711ae1f27d0f2",
+    "reality-vision-tun-full-duplex-1-baseline-3/result.json": "af45ffd069a2d614d298be046163ca027f58cdb74b734712ca653dc71ea89215",
+    "reality-vision-tun-full-duplex-1-baseline-4/result.json": "d7bb4a371d6b31c6ad30e2f67a2b74f4662c29584adb56e3c2237bb5bc46cfbc",
+    "reality-vision-tun-full-duplex-1-baseline-5/result.json": "6d61ef63ed43efb55b93fce2c08cc4ed617b39efce029ad8f2bed1171391444d",
+    "reality-vision-tun-full-duplex-1-candidate-1/result.json": "ad8bc43ea4b0a2aa5585f524a12643717470728a44f680682e3c7269982b76d3",
+    "reality-vision-tun-full-duplex-1-candidate-2/result.json": "bc1ea89b2c5edb772f419ea2d400531c7750a2c37f406dcf08e5478af85fa9fe",
+    "reality-vision-tun-full-duplex-1-candidate-3/result.json": "7fa234031af062501786cd3cbe2752e5ca3ee0aead98b7d78d03a873b02584da",
+    "reality-vision-tun-full-duplex-1-candidate-4/result.json": "bdcabe03fefddaa4fbe98311e432b3be1ea05724b520eb0f695367618248351c",
+    "reality-vision-tun-full-duplex-1-candidate-5/result.json": "bf43eb9b5ec3f2d731bf072eb5c2d48b3aaceead1aa38199be0c51a669c63994",
+    "reality-vision-tun-full-duplex-8-baseline-1/result.json": "0fff649e4e4979306d2b38bb3c666a80c38963b0dee351137d86ad42262ebc51",
+    "reality-vision-tun-full-duplex-8-baseline-2/result.json": "da0cbfa1be8d762310b07df2dd9b2c52c9aad93bb2ac059d53a07737f4aea15c",
+    "reality-vision-tun-full-duplex-8-baseline-3/result.json": "d28a34b13a8fcf2ca7c48f368dc5fb7e179590fed31fead9612375141cb3d29f",
+    "reality-vision-tun-full-duplex-8-baseline-4/result.json": "c382cb09362f0b4966a565a9a64f9cc10882874485d8a0baab0eb03bd8e19d40",
+    "reality-vision-tun-full-duplex-8-baseline-5/result.json": "ee7264be4b70034d88efd7e0c40c8cbb0344f4ffe9c59cb65c52afe3941bdd49",
+    "reality-vision-tun-full-duplex-8-candidate-1/result.json": "274792ef3db211565e5a718316a6f01a6570c34e18f9a5f9bf611ede43bbda75",
+    "reality-vision-tun-full-duplex-8-candidate-2/result.json": "e1d91e56e26059cb89009a29bc637c3d64c38b85aee530969789d1d928dc9015",
+    "reality-vision-tun-full-duplex-8-candidate-3/result.json": "9644e8e33e52fc8a9c0ff3421a20314e4fbaa357317d80500bf52acbb2c77f58",
+    "reality-vision-tun-full-duplex-8-candidate-4/result.json": "832e99871c58a86ead6593a01bbe6ee9dbba6e789e1b6f241b66a1cb30e32084",
+    "reality-vision-tun-full-duplex-8-candidate-5/result.json": "85f431f36add7d32d4a375e54255853a456fece6a5233042738ab495ca1d4e9c",
+    "reality-vision-tun-upload-1-baseline-1/result.json": "881a030ee372f3733f4de27bc72e621c86e65e2013a0e1307caeef35f5184a97",
+    "reality-vision-tun-upload-1-baseline-2/result.json": "32bfe5363a6d34d62196ab8a6187251a216a90e833a0b338e283eb32eecccd40",
+    "reality-vision-tun-upload-1-baseline-3/result.json": "612fe3d6c6af51653afb4aeede440148b5e0808fe2d473e8826978279f25a55c",
+    "reality-vision-tun-upload-1-baseline-4/result.json": "2de2d593937f6f5b9bd5c7ec9879118113ca4729a7631c99b6dcec0a0985263a",
+    "reality-vision-tun-upload-1-baseline-5/result.json": "f4cb9a94b74028cac89c741961e97126770baae0ebc6e7ed5a2b737652e64358",
+    "reality-vision-tun-upload-1-candidate-1/result.json": "8d3d411375607e0832d172921f1b691dca9025a7329091adab88586788fa4a23",
+    "reality-vision-tun-upload-1-candidate-2/result.json": "410caaaa154bd97f584ac79e2734fcfc6c05fa64f97730569b50838441131bc4",
+    "reality-vision-tun-upload-1-candidate-3/result.json": "07790c1cebec4a5bd14b01b83a880a01c41bdecef171d1181f109fc86e9565df",
+    "reality-vision-tun-upload-1-candidate-4/result.json": "eb3acfe5dcc7495ee2bcbdb1fe0ff37230c0b9bbed526e96bafda4fcca1c16a9",
+    "reality-vision-tun-upload-1-candidate-5/result.json": "f1264939d6f56693610d50d1eb3a82fe36f9c2141c0c66316caeb501acd9574b",
+    "reality-vision-tun-upload-8-baseline-1/result.json": "b2790301b70a811a7c27fd3ef1988ca39ee55d3ad5e6b18f824eccb17eb6bced",
+    "reality-vision-tun-upload-8-baseline-2/result.json": "f54e36d79bec3f8b301540929231ef8d54d4ea4a91f90a8d0c4910e9592322cc",
+    "reality-vision-tun-upload-8-baseline-3/result.json": "40d767165337b5e8bb01dd4dc1249dc06b7f033da385ddd31b06f553516fc4c9",
+    "reality-vision-tun-upload-8-baseline-4/result.json": "adfb0235ba16ba3942968c13318b27f34d819bbe0b6fda9edd74ba4c2a006d2b",
+    "reality-vision-tun-upload-8-baseline-5/result.json": "1f9d9692fe0d5786210166c2e75840a5d9efa08658efd006783d01cafb948440",
+    "reality-vision-tun-upload-8-candidate-1/result.json": "2be92b40c329b8b29036a3a16940ec1f12bcaa2ea756af74be0c67a1c9299988",
+    "reality-vision-tun-upload-8-candidate-2/result.json": "e5421a708ebc0c0b50c239839a204b29ac1f2176f813edc55d426642b0ae97b1",
+    "reality-vision-tun-upload-8-candidate-3/result.json": "a78d41b129549207d1c1e9b8137fc1df10d0085192a0cdf0f79a53972b37cc62",
+    "reality-vision-tun-upload-8-candidate-4/result.json": "865d648c46cee982a5c1d0fdd547e9a112cdff480fd2b8cb644c33a0186d422d",
+    "reality-vision-tun-upload-8-candidate-5/result.json": "b76b480123761f2a29d452e91efaf58821401fc4ae1bbb127c694a8c644e6a09"
+  },
+  "failures": [
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "error": "io error while reading stream-transport completion marker: early eof",
+      "repeat": 1,
+      "returncode": 1,
+      "version": "candidate"
+    }
+  ],
+  "manifest_sha256": "ef7e406e04b8068fd57e61257cead1e1d937c94bd21c6b0cb3aacf7c7c10450b",
+  "rows": [
+    {
+      "case": "reality-vision-socks-upload-1",
+      "ratios": {
+        "cpu_ms": 0.875,
+        "cpu_ms_per_mib": 0.875,
+        "rss_mib": 1.056092843326886,
+        "throughput_mib_s": 0.9827899504503121
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 80,
+              "min": 70,
+              "samples": [
+                80,
+                70,
+                80,
+                70,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.5,
+              "median": 2.5,
+              "min": 2.1875,
+              "samples": [
+                2.5,
+                2.1875,
+                2.5,
+                2.1875,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.109375,
+              "median": 8.078125,
+              "min": 8.015625,
+              "samples": [
+                8.109375,
+                8.046875,
+                8.078125,
+                8.015625,
+                8.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1086.5674390644492,
+              "median": 997.2406973180646,
+              "min": 895.8733665078975,
+              "samples": [
+                1086.5674390644492,
+                997.2406973180646,
+                895.8733665078975,
+                1004.18541342235,
+                910.9034516921425
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 80,
+              "median": 70,
+              "min": 70,
+              "samples": [
+                70,
+                70,
+                70,
+                70,
+                80
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.5,
+              "median": 2.1875,
+              "min": 2.1875,
+              "samples": [
+                2.1875,
+                2.1875,
+                2.1875,
+                2.1875,
+                2.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.5625,
+              "median": 8.53125,
+              "min": 8.5,
+              "samples": [
+                8.5,
+                8.5,
+                8.5625,
+                8.546875,
+                8.53125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1007.6611215495006,
+              "median": 980.0781355042554,
+              "min": 931.2985430270841,
+              "samples": [
+                967.3908857146779,
+                931.2985430270841,
+                980.0781355042554,
+                1006.6124370993055,
+                1007.6611215495006
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-socks-download-1",
+      "ratios": {
+        "cpu_ms": 0.8888888888888888,
+        "cpu_ms_per_mib": 0.8888888888888888,
+        "rss_mib": 1.0559006211180124,
+        "throughput_mib_s": 0.9879597164355908
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 90,
+              "min": 80,
+              "samples": [
+                80,
+                90,
+                90,
+                80,
+                90
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.8125,
+              "min": 2.5,
+              "samples": [
+                2.5,
+                2.8125,
+                2.8125,
+                2.5,
+                2.8125
+              ]
+            },
+            "rss_mib": {
+              "max": 7.578125,
+              "median": 7.546875,
+              "min": 7.515625,
+              "samples": [
+                7.546875,
+                7.515625,
+                7.546875,
+                7.53125,
+                7.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 968.6927875282256,
+              "median": 956.2360064572227,
+              "min": 920.2431846142701,
+              "samples": [
+                956.2360064572227,
+                960.8179058505342,
+                920.2431846142701,
+                935.2782483477653,
+                968.6927875282256
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 80,
+              "min": 70,
+              "samples": [
+                80,
+                80,
+                90,
+                70,
+                90
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.5,
+              "min": 2.1875,
+              "samples": [
+                2.5,
+                2.5,
+                2.8125,
+                2.1875,
+                2.8125
+              ]
+            },
+            "rss_mib": {
+              "max": 8.0625,
+              "median": 7.96875,
+              "min": 7.921875,
+              "samples": [
+                7.9375,
+                7.921875,
+                8.0625,
+                7.984375,
+                7.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1089.3694157902462,
+              "median": 944.7226537849796,
+              "min": 884.0481115558212,
+              "samples": [
+                944.7226537849796,
+                954.9257442280931,
+                884.0481115558212,
+                1089.3694157902462,
+                917.9937533393817
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.051383399209486,
+        "throughput_mib_s": 1.005930989519832
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 90,
+              "samples": [
+                100,
+                100,
+                100,
+                100,
+                90
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5625,
+              "median": 1.5625,
+              "min": 1.40625,
+              "samples": [
+                1.5625,
+                1.5625,
+                1.5625,
+                1.5625,
+                1.40625
+              ]
+            },
+            "rss_mib": {
+              "max": 7.984375,
+              "median": 7.90625,
+              "min": 7.890625,
+              "samples": [
+                7.90625,
+                7.890625,
+                7.90625,
+                7.984375,
+                7.9375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1347.4050704705483,
+              "median": 1306.4434874700537,
+              "min": 1235.3552972556313,
+              "samples": [
+                1322.1854370033593,
+                1347.4050704705483,
+                1277.0415034896955,
+                1235.3552972556313,
+                1306.4434874700537
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 100,
+              "median": 100,
+              "min": 90,
+              "samples": [
+                100,
+                90,
+                100,
+                100,
+                100
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.5625,
+              "median": 1.5625,
+              "min": 1.40625,
+              "samples": [
+                1.5625,
+                1.40625,
+                1.5625,
+                1.5625,
+                1.5625
+              ]
+            },
+            "rss_mib": {
+              "max": 8.421875,
+              "median": 8.3125,
+              "min": 8.234375,
+              "samples": [
+                8.234375,
+                8.34375,
+                8.3125,
+                8.3125,
+                8.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1348.9682405873052,
+              "median": 1314.1919901024914,
+              "min": 1208.4934429789364,
+              "samples": [
+                1348.9682405873052,
+                1208.4934429789364,
+                1314.1919901024914,
+                1302.1672355882793,
+                1340.4240930088442
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-socks-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0416666666666667,
+        "cpu_ms_per_mib": 1.0416666666666667,
+        "rss_mib": 1.0419397116644824,
+        "throughput_mib_s": 0.9505877320188785
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 250,
+              "median": 240,
+              "min": 210,
+              "samples": [
+                240,
+                210,
+                250,
+                220,
+                250
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 0.9765625,
+              "median": 0.9375,
+              "min": 0.8203125,
+              "samples": [
+                0.9375,
+                0.8203125,
+                0.9765625,
+                0.859375,
+                0.9765625
+              ]
+            },
+            "rss_mib": {
+              "max": 11.984375,
+              "median": 11.921875,
+              "min": 11.609375,
+              "samples": [
+                11.890625,
+                11.609375,
+                11.953125,
+                11.984375,
+                11.921875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2420.3965836820776,
+              "median": 2363.8633549581277,
+              "min": 2127.9558116675985,
+              "samples": [
+                2369.5686443719073,
+                2363.8633549581277,
+                2284.2356510294676,
+                2420.3965836820776,
+                2127.9558116675985
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 260,
+              "median": 250,
+              "min": 190,
+              "samples": [
+                260,
+                260,
+                250,
+                190,
+                230
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.015625,
+              "median": 0.9765625,
+              "min": 0.7421875,
+              "samples": [
+                1.015625,
+                1.015625,
+                0.9765625,
+                0.7421875,
+                0.8984375
+              ]
+            },
+            "rss_mib": {
+              "max": 12.84375,
+              "median": 12.421875,
+              "min": 11.40625,
+              "samples": [
+                12.84375,
+                12.375,
+                12.828125,
+                11.40625,
+                12.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2416.9260275336783,
+              "median": 2247.059505392184,
+              "min": 2196.1163278357994,
+              "samples": [
+                2247.059505392184,
+                2202.7868919758557,
+                2196.1163278357994,
+                2403.1813840858454,
+                2416.9260275336783
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-socks-download-8",
+      "ratios": {
+        "cpu_ms": 1.0303030303030303,
+        "cpu_ms_per_mib": 1.0303030303030303,
+        "rss_mib": 1.0843170320404723,
+        "throughput_mib_s": 1.007140243023308
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 350,
+              "median": 330,
+              "min": 310,
+              "samples": [
+                350,
+                320,
+                310,
+                340,
+                330
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.3671875,
+              "median": 1.2890625,
+              "min": 1.2109375,
+              "samples": [
+                1.3671875,
+                1.25,
+                1.2109375,
+                1.328125,
+                1.2890625
+              ]
+            },
+            "rss_mib": {
+              "max": 9.40625,
+              "median": 9.265625,
+              "min": 9.203125,
+              "samples": [
+                9.25,
+                9.265625,
+                9.265625,
+                9.203125,
+                9.40625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2134.812135489688,
+              "median": 2020.7189523854126,
+              "min": 2014.64223086119,
+              "samples": [
+                2020.7189523854126,
+                2014.64223086119,
+                2134.812135489688,
+                2054.540275586402,
+                2015.4180742315007
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 350,
+              "median": 340,
+              "min": 320,
+              "samples": [
+                340,
+                320,
+                330,
+                340,
+                350
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.3671875,
+              "median": 1.328125,
+              "min": 1.25,
+              "samples": [
+                1.328125,
+                1.25,
+                1.2890625,
+                1.328125,
+                1.3671875
+              ]
+            },
+            "rss_mib": {
+              "max": 10.109375,
+              "median": 10.046875,
+              "min": 10.015625,
+              "samples": [
+                10.0625,
+                10.03125,
+                10.046875,
+                10.109375,
+                10.015625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 2173.825359456034,
+              "median": 2035.1473767872492,
+              "min": 1973.866820599493,
+              "samples": [
+                2035.1473767872492,
+                2173.825359456034,
+                2020.7328931403529,
+                1973.866820599493,
+                2127.5976845753326
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-socks-full-duplex-8",
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 610,
+              "median": 480,
+              "min": 470,
+              "samples": [
+                470,
+                570,
+                610,
+                480,
+                480
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.19140625,
+              "median": 0.9375,
+              "min": 0.91796875,
+              "samples": [
+                0.91796875,
+                1.11328125,
+                1.19140625,
+                0.9375,
+                0.9375
+              ]
+            },
+            "rss_mib": {
+              "max": 11.359375,
+              "median": 11.046875,
+              "min": 10.9375,
+              "samples": [
+                11.359375,
+                11.046875,
+                11.03125,
+                10.9375,
+                11.078125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 1544.7861659619655,
+              "median": 1201.8916883145084,
+              "min": 835.9212674819485,
+              "samples": [
+                1201.8916883145084,
+                1544.7861659619655,
+                1447.248395244622,
+                835.9212674819485,
+                1018.9123160777448
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": false,
+          "metrics": {},
+          "passed_repeats": 4
+        }
+      }
+    },
+    {
+      "case": "reality-vision-tun-upload-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0594594594594595,
+        "throughput_mib_s": 0.9977960514178985
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 60,
+              "samples": [
+                60,
+                60,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 15.0,
+              "samples": [
+                15.0,
+                15.0,
+                15.0,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 8.734375,
+              "median": 8.671875,
+              "min": 8.484375,
+              "samples": [
+                8.609375,
+                8.703125,
+                8.484375,
+                8.671875,
+                8.734375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 583.051452249981,
+              "median": 517.1661672996349,
+              "min": 459.80975371440064,
+              "samples": [
+                459.80975371440064,
+                583.051452249981,
+                480.85835139156796,
+                558.2628980013211,
+                517.1661672996349
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 50,
+              "samples": [
+                60,
+                60,
+                50,
+                50,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 12.5,
+              "samples": [
+                15.0,
+                15.0,
+                12.5,
+                12.5,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 9.234375,
+              "median": 9.1875,
+              "min": 8.828125,
+              "samples": [
+                8.9375,
+                9.203125,
+                8.828125,
+                9.1875,
+                9.234375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 537.7850462414472,
+              "median": 516.026359658504,
+              "min": 488.48494440552844,
+              "samples": [
+                502.50467172311994,
+                537.7850462414472,
+                516.026359658504,
+                531.4320113120618,
+                488.48494440552844
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0583941605839415,
+        "throughput_mib_s": 0.9591134230313945
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 50,
+              "samples": [
+                60,
+                60,
+                60,
+                60,
+                50
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 12.5,
+              "samples": [
+                15.0,
+                15.0,
+                15.0,
+                15.0,
+                12.5
+              ]
+            },
+            "rss_mib": {
+              "max": 8.578125,
+              "median": 8.5625,
+              "min": 8.5,
+              "samples": [
+                8.578125,
+                8.5625,
+                8.515625,
+                8.5,
+                8.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 565.4775663033049,
+              "median": 556.263787519471,
+              "min": 551.8224003750186,
+              "samples": [
+                551.8224003750186,
+                562.8418560723319,
+                556.0801244729751,
+                556.263787519471,
+                565.4775663033049
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 60,
+              "median": 60,
+              "min": 50,
+              "samples": [
+                50,
+                60,
+                60,
+                60,
+                60
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 15.0,
+              "median": 15.0,
+              "min": 12.5,
+              "samples": [
+                12.5,
+                15.0,
+                15.0,
+                15.0,
+                15.0
+              ]
+            },
+            "rss_mib": {
+              "max": 9.203125,
+              "median": 9.0625,
+              "min": 8.96875,
+              "samples": [
+                9.0625,
+                8.984375,
+                9.203125,
+                8.96875,
+                9.09375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 584.28279287175,
+              "median": 533.5200653562081,
+              "min": 526.2898212259263,
+              "samples": [
+                540.7049440708323,
+                584.28279287175,
+                533.5200653562081,
+                526.2898212259263,
+                530.5860999971746
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0539629005059021,
+        "throughput_mib_s": 0.9803744923899179
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 70,
+              "min": 70,
+              "samples": [
+                70,
+                70,
+                70,
+                70,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 8.75,
+              "min": 8.75,
+              "samples": [
+                8.75,
+                8.75,
+                8.75,
+                8.75,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 10.3125,
+              "median": 9.265625,
+              "min": 9.03125,
+              "samples": [
+                9.265625,
+                9.421875,
+                10.3125,
+                9.25,
+                9.03125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 703.7659218242738,
+              "median": 693.5263648382132,
+              "min": 669.2087117255488,
+              "samples": [
+                703.7659218242738,
+                686.403159925587,
+                693.5263648382132,
+                694.5047313134821,
+                669.2087117255488
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 70,
+              "median": 70,
+              "min": 70,
+              "samples": [
+                70,
+                70,
+                70,
+                70,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 8.75,
+              "median": 8.75,
+              "min": 8.75,
+              "samples": [
+                8.75,
+                8.75,
+                8.75,
+                8.75,
+                8.75
+              ]
+            },
+            "rss_mib": {
+              "max": 10.40625,
+              "median": 9.765625,
+              "min": 9.6875,
+              "samples": [
+                9.875,
+                9.703125,
+                10.40625,
+                9.6875,
+                9.765625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 686.8131868131868,
+              "median": 679.9155578872883,
+              "min": 664.799245585816,
+              "samples": [
+                679.9155578872883,
+                686.0523919345279,
+                664.799245585816,
+                671.321610715367,
+                686.8131868131868
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0545685279187818,
+        "throughput_mib_s": 1.089722379255986
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 120,
+              "min": 110,
+              "samples": [
+                130,
+                110,
+                130,
+                110,
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.0625,
+              "median": 3.75,
+              "min": 3.4375,
+              "samples": [
+                4.0625,
+                3.4375,
+                4.0625,
+                3.4375,
+                3.75
+              ]
+            },
+            "rss_mib": {
+              "max": 13.140625,
+              "median": 12.3125,
+              "min": 11.765625,
+              "samples": [
+                13.140625,
+                11.765625,
+                12.4375,
+                12.3125,
+                12.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 846.480610052227,
+              "median": 754.0345265340626,
+              "min": 667.0395556749464,
+              "samples": [
+                828.071628195839,
+                754.0345265340626,
+                675.8725007079764,
+                846.480610052227,
+                667.0395556749464
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 130,
+              "median": 120,
+              "min": 120,
+              "samples": [
+                120,
+                120,
+                120,
+                130,
+                130
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 4.0625,
+              "median": 3.75,
+              "min": 3.75,
+              "samples": [
+                3.75,
+                3.75,
+                3.75,
+                4.0625,
+                4.0625
+              ]
+            },
+            "rss_mib": {
+              "max": 13.1875,
+              "median": 12.984375,
+              "min": 12.90625,
+              "samples": [
+                12.984375,
+                13.015625,
+                13.1875,
+                12.984375,
+                12.90625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 872.7748944992435,
+              "median": 821.6882982958596,
+              "min": 761.0123842874724,
+              "samples": [
+                871.0811352735105,
+                821.6882982958596,
+                872.7748944992435,
+                761.0123842874724,
+                797.6204191226105
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-tun-download-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.07919621749409,
+        "throughput_mib_s": 0.9683111663915462
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 120,
+              "median": 120,
+              "min": 100,
+              "samples": [
+                110,
+                120,
+                120,
+                100,
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.75,
+              "min": 3.125,
+              "samples": [
+                3.4375,
+                3.75,
+                3.75,
+                3.125,
+                3.75
+              ]
+            },
+            "rss_mib": {
+              "max": 13.640625,
+              "median": 13.21875,
+              "min": 12.9375,
+              "samples": [
+                12.9375,
+                13.640625,
+                13.578125,
+                12.953125,
+                13.21875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 591.0943326521895,
+              "median": 554.5290510405001,
+              "min": 538.2251993775358,
+              "samples": [
+                591.0943326521895,
+                538.9685459135599,
+                538.2251993775358,
+                580.5146625304997,
+                554.5290510405001
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 120,
+              "median": 120,
+              "min": 110,
+              "samples": [
+                120,
+                120,
+                110,
+                120,
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.75,
+              "median": 3.75,
+              "min": 3.4375,
+              "samples": [
+                3.75,
+                3.75,
+                3.4375,
+                3.75,
+                3.75
+              ]
+            },
+            "rss_mib": {
+              "max": 14.578125,
+              "median": 14.265625,
+              "min": 13.8125,
+              "samples": [
+                13.8125,
+                14.4375,
+                13.984375,
+                14.265625,
+                14.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 587.9371753851871,
+              "median": 536.9566722110239,
+              "min": 532.2009250749742,
+              "samples": [
+                549.4179277610887,
+                536.9566722110239,
+                587.9371753851871,
+                532.7887078363711,
+                532.2009250749742
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "reality-vision-tun-full-duplex-8",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 1.0549019607843138,
+        "throughput_mib_s": 0.9798913283410274
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 170,
+              "median": 170,
+              "min": 160,
+              "samples": [
+                170,
+                170,
+                170,
+                160,
+                170
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.65625,
+              "median": 2.65625,
+              "min": 2.5,
+              "samples": [
+                2.65625,
+                2.65625,
+                2.65625,
+                2.5,
+                2.65625
+              ]
+            },
+            "rss_mib": {
+              "max": 16.25,
+              "median": 15.9375,
+              "min": 14.984375,
+              "samples": [
+                16.25,
+                14.984375,
+                15.9375,
+                16.140625,
+                15.90625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 860.7472361944212,
+              "median": 775.1132170937219,
+              "min": 671.8278441149455,
+              "samples": [
+                671.8278441149455,
+                775.1132170937219,
+                717.0235679484863,
+                860.7472361944212,
+                787.6947313684043
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 180,
+              "median": 170,
+              "min": 170,
+              "samples": [
+                170,
+                180,
+                170,
+                170,
+                170
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.8125,
+              "median": 2.65625,
+              "min": 2.65625,
+              "samples": [
+                2.65625,
+                2.8125,
+                2.65625,
+                2.65625,
+                2.65625
+              ]
+            },
+            "rss_mib": {
+              "max": 17.96875,
+              "median": 16.8125,
+              "min": 16.15625,
+              "samples": [
+                16.15625,
+                17.03125,
+                16.75,
+                16.8125,
+                17.96875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 867.1092835036699,
+              "median": 759.5267199126544,
+              "min": 672.0333076508105,
+              "samples": [
+                867.1092835036699,
+                672.0333076508105,
+                759.5267199126544,
+                815.8560813555367,
+                692.9537967642306
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "reality"
+}

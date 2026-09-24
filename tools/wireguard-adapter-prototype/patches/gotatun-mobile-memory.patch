@@ -1,0 +1,1476 @@
+--- a/gotatun/src/device/builder.rs
++++ b/gotatun/src/device/builder.rs
+@@ -47,6 +47,7 @@
+     peers: Vec<Peer>,
+     index_table: Option<IndexTable>,
+     suspended: bool,
++    limits: Option<super::DeviceLimits>,
+ 
+     #[cfg(target_os = "linux")]
+     fwmark: Option<u32>,
+@@ -82,6 +83,7 @@
+             peers: Vec::new(),
+             index_table: None,
+             suspended: false,
++            limits: None,
+             #[cfg(target_os = "linux")]
+             fwmark: None,
+         }
+@@ -109,6 +111,7 @@
+             peers: self.peers,
+             index_table: self.index_table,
+             suspended: self.suspended,
++            limits: self.limits,
+             #[cfg(target_os = "linux")]
+             fwmark: self.fwmark,
+         }
+@@ -185,6 +188,7 @@
+             peers: self.peers,
+             index_table: self.index_table,
+             suspended: self.suspended,
++            limits: self.limits,
+             #[cfg(target_os = "linux")]
+             fwmark: self.fwmark,
+         }
+@@ -192,6 +196,11 @@
+ }
+ 
+ impl<X, Y, Z> DeviceBuilder<X, Y, Z> {
++    /// Opt into immutable mobile limits. Validation precedes any socket/I/O.
++    pub fn with_limits(mut self, limits: super::DeviceLimits) -> Self {
++        self.limits = Some(limits);
++        self
++    }
+     /// Set the private key of the device.
+     pub fn with_private_key(mut self, private_key: StaticSecret) -> Self {
+         self.private_key = Some(private_key);
+@@ -268,6 +277,27 @@
+     /// Errors if the UDP socket cannot be bound.
+     #[cfg_attr(feature = "daita", doc = "Errors if DAITA initialization fails.")]
+     pub async fn build(self) -> Result<Device<(Udp, TunTx, TunRx)>, Error> {
++        if let Some(limits) = &self.limits {
++            limits.validate()?;
++            if self.private_key.is_none()
++                || self.peers.is_empty()
++                || self.peers.len() > limits.max_peers
++                || self
++                    .peers
++                    .iter()
++                    .map(|p| p.allowed_ips.len())
++                    .sum::<usize>()
++                    > limits.max_allowed_ips
++                || self.uapi.is_some()
++                || self.index_table.is_some()
++                || cfg!(feature = "daita")
++                || cfg!(feature = "tun")
++                || self.peers.iter().any(|p| p.danger_timer_params.is_some())
++            {
++                return Err(Error::InvalidMemoryLimits);
++            }
++        }
++
+         validate_peers(&self.peers)?;
+ 
+         #[cfg(target_os = "linux")]
+@@ -291,6 +321,11 @@
+             port: self.port,
+             connection: None,
+             suspended: self.suspended,
++            memory: self.limits.clone().map(super::MemoryBudget::new),
++            packet_pool: self
++                .limits
++                .as_ref()
++                .map(|l| crate::packet::PacketBufPool::new_lazy(l.cached_pool_packets)),
+             fatal_error: watch::Sender::new(None),
+         };
+ 
+--- a/gotatun/src/device/configure.rs
++++ b/gotatun/src/device/configure.rs
+@@ -461,6 +461,9 @@
+         f: impl AsyncFnOnce(&mut DeviceWrite<T>) -> X,
+     ) -> Result<X, Error> {
+         let mut state = self.inner.write().await;
++        if state.memory.is_some() {
++            return Err(Error::BoundedConfigurationImmutable);
++        }
+         let mut configurator = DeviceWrite {
+             device: &mut state,
+             reconfigure: Reconfigure::No,
+--- /dev/null
++++ b/gotatun/src/device/memory.rs
+@@ -0,0 +1,303 @@
++// SPDX-License-Identifier: MPL-2.0
++//! Optional packet-memory admission for the injected mobile device adapter.
++//! Budgets cover engine-owned packet storage, not caller adapters or process RSS.
++use crate::packet::Packet;
++use bytes::BytesMut;
++use std::sync::{Arc, Mutex};
++
++/// One normalized allocation and its temporary encryption copy.
++pub const PACKET_ALLOCATION_BYTES: usize = 4096;
++pub const PACKET_RESERVATION_BYTES: usize = PACKET_ALLOCATION_BYTES * 2;
++
++/// Immutable limits, validated before socket creation. Opt-in; stock defaults are unchanged.
++#[derive(Clone, Debug)]
++pub struct DeviceLimits {
++    pub io_queue_packets: usize,
++    pub cached_pool_packets: usize,
++    pub packet_reservations: usize,
++    pub control_reservations: usize,
++    pub pending_packets: usize,
++    pub pending_packets_per_peer: usize,
++    pub pending_bytes_per_peer: usize,
++    pub max_ip_packet_size: usize,
++    pub max_udp_packet_size: usize,
++    pub max_peers: usize,
++    pub max_allowed_ips: usize,
++    pub rate_limit_sources: usize,
++}
++impl DeviceLimits {
++    pub const fn mobile() -> Self {
++        Self {
++            io_queue_packets: 16,
++            cached_pool_packets: 32,
++            packet_reservations: 64,
++            control_reservations: 8,
++            pending_packets: 16,
++            pending_packets_per_peer: 8,
++            pending_bytes_per_peer: 12 * 1024,
++            max_ip_packet_size: 1420,
++            max_udp_packet_size: 1500,
++            max_peers: 8,
++            max_allowed_ips: 256,
++            rate_limit_sources: 128,
++        }
++    }
++    pub fn validate(&self) -> Result<(), super::Error> {
++        let valid = (1..=64).contains(&self.io_queue_packets)
++            && self.cached_pool_packets <= 128
++            && (4..=256).contains(&self.packet_reservations)
++            && (1..=16).contains(&self.control_reservations)
++            && self.control_reservations < self.packet_reservations
++            && self.pending_packets > 0
++            && self.pending_packets < self.packet_reservations - self.control_reservations
++            && (1..=32).contains(&self.pending_packets_per_peer)
++            && self.pending_packets_per_peer <= self.pending_packets
++            && (1..=64 * 1024).contains(&self.pending_bytes_per_peer)
++            && (576..=3500).contains(&self.max_ip_packet_size)
++            && self.max_udp_packet_size >= self.max_ip_packet_size + 64
++            && self.max_udp_packet_size <= PACKET_ALLOCATION_BYTES
++            && (1..=32).contains(&self.max_peers)
++            && (1..=4096).contains(&self.max_allowed_ips)
++            && (1..=4096).contains(&self.rate_limit_sources);
++        if valid {
++            Ok(())
++        } else {
++            Err(super::Error::InvalidMemoryLimits)
++        }
++    }
++}
++
++/// Live counters contain no peer identities, packet contents or keys.
++#[derive(Clone, Copy, Debug, Default)]
++pub struct MemorySnapshot {
++    pub reservations: usize,
++    pub data_reservations: usize,
++    pub peak_reservations: usize,
++    pub pending_packets: usize,
++    pub peak_pending_packets: usize,
++    pub admission_drops: u64,
++    pub oversized_drops: u64,
++    pub pending_drops: u64,
++}
++impl MemorySnapshot {
++    pub fn reserved_packet_bytes(&self) -> usize {
++        self.reservations * PACKET_RESERVATION_BYTES
++    }
++}
++#[derive(Clone)]
++pub(crate) struct MemoryBudget(Arc<BudgetInner>);
++struct BudgetInner {
++    limits: DeviceLimits,
++    state: Mutex<MemorySnapshot>,
++}
++impl MemoryBudget {
++    pub(crate) fn new(limits: DeviceLimits) -> Self {
++        Self(Arc::new(BudgetInner {
++            limits,
++            state: Mutex::new(MemorySnapshot::default()),
++        }))
++    }
++    pub(crate) fn limits(&self) -> &DeviceLimits {
++        &self.0.limits
++    }
++    pub(crate) fn snapshot(&self) -> MemorySnapshot {
++        *self.0.state.lock().unwrap()
++    }
++    /// Copy at entry so a small slice cannot retain an oversized adapter allocation.
++    /// Already-owned packets keep their reservation across queues and cryptography.
++    pub(crate) fn admit(&self, packet: Packet, max_len: usize, control: bool) -> Option<Packet> {
++        if packet.len() > max_len {
++            self.0.state.lock().unwrap().oversized_drops += 1;
++            return None;
++        }
++        if packet
++            .memory_lease()
++            .is_some_and(|l| Arc::ptr_eq(&l.budget.0, &self.0))
++        {
++            return Some(packet);
++        }
++        let lease = self.reserve(control)?;
++        let mut bytes = BytesMut::with_capacity(PACKET_ALLOCATION_BYTES);
++        bytes.extend_from_slice(&packet);
++        let mut normalized = Packet::from_bytes(bytes);
++        normalized.set_memory_lease(Some(lease));
++        Some(normalized)
++    }
++    fn reserve(&self, control: bool) -> Option<MemoryLease> {
++        let mut state = self.0.state.lock().unwrap();
++        if state.reservations >= self.limits().packet_reservations
++            || (!control
++                && state.data_reservations
++                    >= self.limits().packet_reservations - self.limits().control_reservations)
++        {
++            state.admission_drops += 1;
++            return None;
++        }
++        state.reservations += 1;
++        state.data_reservations += usize::from(!control);
++        state.peak_reservations = state.peak_reservations.max(state.reservations);
++        Some(MemoryLease {
++            budget: self.clone(),
++            control,
++            pending: false,
++        })
++    }
++    pub(crate) fn pending_drop(&self) {
++        self.0.state.lock().unwrap().pending_drops += 1;
++    }
++}
++
++pub(crate) struct MemoryLease {
++    budget: MemoryBudget,
++    control: bool,
++    pending: bool,
++}
++impl MemoryLease {
++    pub(crate) fn mark_pending(&mut self) -> bool {
++        if self.pending {
++            return true;
++        }
++        let mut state = self.budget.0.state.lock().unwrap();
++        if state.pending_packets >= self.budget.limits().pending_packets {
++            state.pending_drops += 1;
++            return false;
++        }
++        state.pending_packets += 1;
++        state.peak_pending_packets = state.peak_pending_packets.max(state.pending_packets);
++        self.pending = true;
++        true
++    }
++    pub(crate) fn clear_pending(&mut self) {
++        if self.pending {
++            self.budget.0.state.lock().unwrap().pending_packets -= 1;
++            self.pending = false;
++        }
++    }
++}
++impl Drop for MemoryLease {
++    fn drop(&mut self) {
++        let mut state = self.budget.0.state.lock().unwrap();
++        state.reservations -= 1;
++        state.data_reservations -= usize::from(!self.control);
++        state.pending_packets -= usize::from(self.pending);
++    }
++}
++
++pub(crate) fn is_control(packet: &[u8]) -> bool {
++    matches!(
++        (packet.first(), packet.len()),
++        (Some(1), 148) | (Some(2), 92) | (Some(3), 64)
++    )
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::{sync::Barrier, thread};
++
++    #[test]
++    fn data_saturation_preserves_control_slots_and_releases_all_leases() {
++        let memory = MemoryBudget::new(DeviceLimits::mobile());
++        for _ in 0..100 {
++            let data: Vec<_> = (0..56)
++                .map(|_| {
++                    memory
++                        .admit(Packet::copy_from(&[0; 1420][..]), 1420, false)
++                        .unwrap()
++                })
++                .collect();
++            assert!(
++                memory
++                    .admit(Packet::copy_from(&[0; 1][..]), 1420, false)
++                    .is_none()
++            );
++            let control: Vec<_> = (0..8)
++                .map(|_| {
++                    memory
++                        .admit(Packet::copy_from(&[1; 148][..]), 1500, true)
++                        .unwrap()
++                })
++                .collect();
++            assert!(
++                memory
++                    .admit(Packet::copy_from(&[1; 148][..]), 1500, true)
++                    .is_none()
++            );
++            assert_eq!(memory.snapshot().reserved_packet_bytes(), 512 * 1024);
++            drop((data, control));
++            assert_eq!(memory.snapshot().reservations, 0);
++        }
++        assert_eq!(memory.snapshot().peak_reservations, 64);
++    }
++
++    #[test]
++    fn small_slice_cannot_retain_large_adapter_allocation() {
++        let memory = MemoryBudget::new(DeviceLimits::mobile());
++        let mut large = BytesMut::zeroed(4 * 1024 * 1024);
++        let slice = large.split_to(1420);
++        let old = slice.as_ptr();
++        drop(large);
++        let packet = memory
++            .admit(Packet::from_bytes(slice), 1420, false)
++            .unwrap();
++        assert_ne!(packet.as_ptr(), old);
++        let mut packet = memory.admit(packet, 1420, false).unwrap();
++        assert_eq!(packet.buf_mut().capacity(), PACKET_ALLOCATION_BYTES);
++        assert_eq!(memory.snapshot().reservations, 1);
++        drop(packet);
++        assert_eq!(memory.snapshot().reservations, 0);
++        assert!(
++            memory
++                .admit(Packet::copy_from(&[0; 1421][..]), 1420, false)
++                .is_none()
++        );
++        assert_eq!(memory.snapshot().oversized_drops, 1);
++    }
++
++    #[test]
++    fn concurrent_admission_stays_bounded_under_pressure() {
++        let memory = MemoryBudget::new(DeviceLimits::mobile());
++        let barrier = Barrier::new(16);
++        thread::scope(|scope| {
++            for _ in 0..16 {
++                let memory = &memory;
++                let barrier = &barrier;
++                scope.spawn(move || {
++                    for _ in 0..100 {
++                        let held: Vec<_> = (0..8)
++                            .filter_map(|_| {
++                                memory.admit(Packet::copy_from(&[0; 1420][..]), 1420, false)
++                            })
++                            .collect();
++                        barrier.wait();
++                        for _ in 0..100 {
++                            drop(memory.admit(Packet::copy_from(&[0; 1420][..]), 1420, false));
++                        }
++                        assert!(memory.snapshot().reservations <= 56);
++                        barrier.wait();
++                        drop(held);
++                        barrier.wait();
++                    }
++                });
++            }
++        });
++        let stats = memory.snapshot();
++        assert_eq!(stats.reservations, 0);
++        assert_eq!(stats.peak_reservations, 56);
++        assert!(stats.admission_drops >= 160_000);
++    }
++
++    #[test]
++    fn transferred_lease_survives_original_packet_drop() {
++        let memory = MemoryBudget::new(DeviceLimits::mobile());
++        let mut input = memory
++            .admit(Packet::copy_from(&[0; 1420][..]), 1420, false)
++            .unwrap();
++        let mut output = Packet::from_bytes(BytesMut::zeroed(1452));
++        input.transfer_memory_to(&mut output);
++        drop(input);
++        assert_eq!(memory.snapshot().reservations, 1);
++        drop(output);
++        assert_eq!(memory.snapshot().reservations, 0);
++    }
++}
+--- /dev/null
++++ b/gotatun/src/device/memory_tests.rs
+@@ -0,0 +1,278 @@
++// SPDX-License-Identifier: MPL-2.0
++//! No sockets, system TUN or remote traffic: exercise real device workers with bounded adapters.
++use super::{Device, DeviceBuilder, DeviceLimits, DeviceState, Error, Peer};
++use crate::{
++    packet::{Ip, Packet, PacketBufPool},
++    tun::{IpRecv, IpSend, MtuWatcher},
++    udp::{UdpRecv, UdpSend, UdpTransportFactory, UdpTransportFactoryParams},
++    x25519::{PublicKey, StaticSecret},
++};
++use std::{
++    future::pending,
++    io,
++    net::{Ipv4Addr, SocketAddr},
++    sync::{
++        Arc,
++        atomic::{AtomicBool, AtomicUsize, Ordering},
++    },
++    time::Duration,
++};
++use tokio::{
++    sync::{Notify, mpsc},
++    time::{sleep, timeout},
++};
++
++#[derive(Default)]
++struct State {
++    binds: AtomicUsize,
++    consumed: AtomicUsize,
++    writes: AtomicUsize,
++    blocked: AtomicBool,
++    wake: Notify,
++}
++struct Factory(Arc<State>);
++#[derive(Clone)]
++struct Udp(Arc<State>);
++impl UdpTransportFactory for Factory {
++    type Send = Udp;
++    type Recv = Udp;
++    async fn bind(&mut self, _: &UdpTransportFactoryParams) -> io::Result<(Udp, Udp)> {
++        self.0.binds.fetch_add(1, Ordering::SeqCst);
++        Ok((Udp(self.0.clone()), Udp(self.0.clone())))
++    }
++}
++impl UdpSend for Udp {
++    type SendManyBuf = ();
++    async fn send_to(&self, _packet: Packet, _: SocketAddr) -> io::Result<()> {
++        while self.0.blocked.load(Ordering::SeqCst) {
++            self.0.wake.notified().await;
++        }
++        self.0.writes.fetch_add(1, Ordering::SeqCst);
++        Ok(())
++    }
++    // A maliciously large batching hint must not preallocate this much storage.
++    fn max_number_of_packets_to_send(&self) -> usize {
++        usize::MAX
++    }
++}
++impl UdpRecv for Udp {
++    type RecvManyBuf = ();
++    async fn recv_from(&mut self, _: &mut PacketBufPool) -> io::Result<(Packet, SocketAddr)> {
++        pending().await
++    }
++    async fn recv_many_from(
++        &mut self,
++        _: &mut (),
++        _: &mut PacketBufPool,
++        _: &mut Vec<(Packet, SocketAddr)>,
++    ) -> io::Result<()> {
++        panic!("bounded device must receive single packets")
++    }
++}
++struct IpTx;
++struct IpRx(mpsc::Receiver<Packet<Ip>>, Arc<State>);
++impl IpSend for IpTx {
++    async fn send(&mut self, _: Packet<Ip>) -> io::Result<()> {
++        Ok(())
++    }
++}
++impl IpRecv for IpRx {
++    async fn recv<'a>(
++        &'a mut self,
++        _: &mut PacketBufPool,
++    ) -> io::Result<impl Iterator<Item = Packet<Ip>> + 'a> {
++        let packet = self
++            .0
++            .recv()
++            .await
++            .ok_or_else(|| io::Error::other("closed"))?;
++        self.1.consumed.fetch_add(1, Ordering::SeqCst);
++        Ok(std::iter::once(packet))
++    }
++    fn mtu(&self) -> MtuWatcher {
++        MtuWatcher::new(1420)
++    }
++}
++type TestDevice = Device<(Factory, IpTx, IpRx)>;
++fn builder(state: Arc<State>) -> (DeviceBuilder<Factory, IpTx, IpRx>, mpsc::Sender<Packet<Ip>>) {
++    let (tx, rx) = mpsc::channel(8);
++    let builder = DeviceBuilder::new()
++        .with_udp(Factory(state.clone()))
++        .with_ip_pair(IpTx, IpRx(rx, state))
++        .with_private_key(StaticSecret::from([0x42; 32]))
++        .with_peer(
++            Peer::new(PublicKey::from(&StaticSecret::from([0x53; 32])))
++                .with_endpoint((Ipv4Addr::LOCALHOST, 51820).into())
++                .with_allowed_ip("0.0.0.0/0".parse().unwrap()),
++        )
++        .with_limits(DeviceLimits::mobile());
++    (builder, tx)
++}
++async fn drained(device: &TestDevice) {
++    timeout(Duration::from_secs(3), async {
++        loop {
++            if device.memory_snapshot().await.unwrap().reservations == 0 {
++                break;
++            }
++            sleep(Duration::from_millis(1)).await;
++        }
++    })
++    .await
++    .expect("all engine reservations must be released");
++}
++
++#[tokio::test]
++async fn unreachable_peer_flood_and_repeated_suspend_release_memory() {
++    timeout(Duration::from_secs(20), async {
++        let state = Arc::new(State::default());
++        let (builder, tx) = builder(state.clone());
++        let device = builder.build().await.unwrap();
++        let mut accepted = 0;
++        for generation in 0..5 {
++            for _ in 0..10_000 {
++                tx.send(super::tests::mock::packet([0; 1400]))
++                    .await
++                    .unwrap();
++                accepted += 1;
++            }
++            while state.consumed.load(Ordering::SeqCst) < accepted {
++                tokio::task::yield_now().await;
++            }
++            // Wait until the final input has passed the worker into the peer queue.
++            timeout(Duration::from_secs(3), async {
++                loop {
++                    let stats = device.memory_snapshot().await.unwrap();
++                    if stats.pending_packets == 8 && stats.reservations == 8 {
++                        break;
++                    }
++                    sleep(Duration::from_millis(1)).await;
++                }
++            })
++            .await
++            .unwrap();
++            let stats = device.memory_snapshot().await.unwrap();
++            assert!(stats.peak_reservations <= 64);
++            assert_eq!(stats.peak_pending_packets, 8);
++            assert!(stats.pending_drops >= (generation + 1) * (10_000 - 8));
++            device.suspend().await;
++            drained(&device).await;
++            assert!(device.inner.read().await.peers_by_idx.lock().is_empty());
++            device.resume().await.unwrap();
++            assert_eq!(state.binds.load(Ordering::SeqCst), generation as usize + 2);
++        }
++        assert!(matches!(
++            device
++                .write(async |_| panic!("immutable callback must not execute"))
++                .await,
++            Err(Error::BoundedConfigurationImmutable)
++        ));
++        // Stop with another state owner retained, as a core diagnostic handle might do.
++        let inner = device.inner.clone();
++        Device::stop_inner(inner.clone()).await;
++        drained(&device).await;
++        device.stop().await;
++        assert_eq!(
++            inner
++                .read()
++                .await
++                .memory
++                .as_ref()
++                .unwrap()
++                .snapshot()
++                .reservations,
++            0
++        );
++    })
++    .await
++    .unwrap();
++}
++
++#[tokio::test]
++async fn blocked_udp_queue_cancellation_releases_every_lease() {
++    let memory = super::memory::MemoryBudget::new(DeviceLimits::mobile());
++    let state = Arc::new(State::default());
++    state.blocked.store(true, Ordering::SeqCst);
++    let udp = crate::udp::buffer::BufferedUdpSend::with_memory(
++        16,
++        Udp(state.clone()),
++        Some(memory.clone()),
++    );
++    let sender = tokio::spawn(async move {
++        for _ in 0..10_000 {
++            udp.send_to(
++                Packet::copy_from(&[0; 1420][..]),
++                (Ipv4Addr::LOCALHOST, 1).into(),
++            )
++            .await
++            .unwrap();
++        }
++    });
++    sleep(Duration::from_millis(30)).await;
++    let stats = memory.snapshot();
++    assert!(
++        stats.reservations >= 17 && stats.reservations <= 34,
++        "{stats:?}"
++    );
++    assert_eq!(state.writes.load(Ordering::SeqCst), 0);
++    sender.abort();
++    assert!(sender.await.unwrap_err().is_cancelled());
++    timeout(Duration::from_secs(3), async {
++        while memory.snapshot().reservations != 0 {
++            sleep(Duration::from_millis(1)).await;
++        }
++    })
++    .await
++    .unwrap();
++}
++
++#[tokio::test]
++async fn invalid_limits_and_peer_count_fail_before_bind() {
++    for case in 0..5 {
++        let state = Arc::new(State::default());
++        let (mut builder, _tx) = builder(state.clone());
++        let mut limits = DeviceLimits::mobile();
++        match case {
++            0 => limits.io_queue_packets = 0,
++            1 => limits.packet_reservations = 0,
++            2 => limits.max_ip_packet_size = usize::MAX,
++            3 => limits.pending_packets = 64,
++            _ => {
++                limits.max_peers = 1;
++                builder =
++                    builder.with_peer(Peer::new(PublicKey::from(&StaticSecret::from([0x64; 32]))));
++            }
++        }
++        assert!(matches!(
++            builder.with_limits(limits).build().await,
++            Err(Error::InvalidMemoryLimits)
++        ));
++        assert_eq!(state.binds.load(Ordering::SeqCst), 0);
++    }
++}
++
++#[tokio::test]
++async fn handshake_index_map_prunes_expired_entries_without_waiting_for_timer() {
++    let (builder, _tx) = builder(Arc::new(State::default()));
++    let device = builder.suspended(true).build().await.unwrap();
++    let state = device.inner.read().await;
++    let peer = state.peers.values().next().unwrap();
++    let mut peer_state = peer.lock().await;
++    for _ in 0..10_000 {
++        let packet = peer_state
++            .tunnel
++            .format_handshake_initiation(true)
++            .unwrap()
++            .into();
++        DeviceState::<(Factory, IpTx, IpRx)>::register_handshake_idx(
++            &state.index_table,
++            &state.peers_by_idx,
++            &packet,
++            peer,
++        );
++        // Noise retains both the current and previous handshake.
++        assert!(state.peers_by_idx.lock().len() <= 2);
++    }
++    drop(peer_state);
++    drop(state);
++    device.stop().await;
++}
+--- a/gotatun/src/device/mod.rs
++++ b/gotatun/src/device/mod.rs
+@@ -57,6 +57,11 @@
+ pub use crate::device::transports::DeviceTransports;
+ pub use builder::DeviceBuilder;
+ pub use peer::Peer;
++pub mod memory;
++#[cfg(test)]
++mod memory_tests;
++use memory::MemoryBudget;
++pub use memory::{DeviceLimits, MemorySnapshot};
+ 
+ /// The number of handshakes per second to tolerate before using cookies
+ const HANDSHAKE_RATE_LIMIT: u64 = 100;
+@@ -68,6 +73,10 @@
+ #[derive(Debug, thiserror::Error)]
+ #[non_exhaustive]
+ pub enum Error {
++    #[error("invalid bounded-device memory configuration")]
++    InvalidMemoryLimits,
++    #[error("bounded device configuration is immutable; rebuild the device")]
++    BoundedConfigurationImmutable,
+     /// Multiple peers have the same public key
+     #[error("Multiple peers have the same public key")]
+     DuplicatePeer,
+@@ -126,6 +135,8 @@
+     peers_by_ip: AllowedIps<Arc<Mutex<PeerState>>>,
+     peers_by_idx: parking_lot::Mutex<HashMap<u32, Arc<Mutex<PeerState>>>>,
+     index_table: IndexTable,
++    memory: Option<MemoryBudget>,
++    packet_pool: Option<PacketBufPool>,
+ 
+     rate_limiter: Option<Arc<RateLimiter>>,
+ 
+@@ -176,7 +187,14 @@
+             return Ok(());
+         }
+ 
+-        let pool = PacketBufPool::new_lazy(MAX_PACKET_BUFS);
++        let memory = device.memory.clone();
++        let capacity = memory
++            .as_ref()
++            .map_or(MAX_PACKET_BUFS, |m| m.limits().io_queue_packets);
++        let pool = device
++            .packet_pool
++            .clone()
++            .unwrap_or_else(|| PacketBufPool::new_lazy(MAX_PACKET_BUFS));
+ 
+         // clean up existing connection
+         if let Some(conn) = device.connection.take() {
+@@ -185,16 +203,19 @@
+ 
+         let (udp_tx, udp_rx) = device.open_listen_socket().await?;
+         let (buffered_ip_tx, buffered_ip_rx) = crate::tun::buffer::channel(
+-            MAX_PACKET_BUFS,
++            capacity,
++            memory.clone(),
+             pool.clone(),
+             Arc::clone(&device.tun_tx),
+             Arc::clone(&device.tun_rx),
+         )
+         .await;
+ 
+-        let buffered_udp_tx = BufferedUdpSend::new(MAX_PACKET_BUFS, udp_tx.clone());
+-
+-        let buffered_udp_rx = BufferedUdpReceive::new(MAX_PACKET_BUFS, udp_rx, pool.clone());
++        let buffered_udp_tx =
++            BufferedUdpSend::with_memory(capacity, udp_tx.clone(), memory.clone());
++
++        let buffered_udp_rx =
++            BufferedUdpReceive::with_memory(capacity, udp_rx, pool.clone(), memory.clone());
+ 
+         // Start DAITA/hooks tasks
+         #[cfg(feature = "daita")]
+@@ -260,6 +281,15 @@
+ }
+ 
+ impl<T: DeviceTransports> Device<T> {
++    /// Packet admission counters for bounded devices.
++    pub async fn memory_snapshot(&self) -> Option<MemorySnapshot> {
++        self.inner
++            .read()
++            .await
++            .memory
++            .as_ref()
++            .map(MemoryBudget::snapshot)
++    }
+     /// Stop tunneling traffic and shut down the [`Device`].
+     pub async fn stop(self) {
+         Self::stop_inner(self.inner.clone()).await
+@@ -277,6 +307,10 @@
+         if let Some(connection) = device.connection.take() {
+             connection.stop().await;
+         }
++        for peer in device.peers.values() {
++            peer.lock().await.reset();
++        }
++        device.peers_by_idx.lock().clear();
+     }
+ 
+     /// Suspend the device, stopping all tunnel activity.
+@@ -305,6 +339,10 @@
+             connection.stop().await;
+         }
+ 
++        for peer in device.peers.values() {
++            peer.lock().await.reset();
++        }
++        device.peers_by_idx.lock().clear();
+         device.suspended = true;
+     }
+ 
+@@ -435,7 +473,9 @@
+             rate_limiter,
+         );
+ 
+-        if let Some(timer_params) = peer_builder.danger_timer_params {
++        tunn.set_memory_budget(self.memory.clone());
++
++        if let Some(timer_params) = peer_builder.danger_timer_params.clone() {
+             tunn.dangerously_set_timer_params(timer_params);
+         }
+ 
+@@ -491,7 +531,11 @@
+             return Reconfigure::No;
+         }
+ 
+-        let rate_limiter = Arc::new(RateLimiter::new(&public_key, HANDSHAKE_RATE_LIMIT));
++        let mut limiter = RateLimiter::new(&public_key, HANDSHAKE_RATE_LIMIT);
++        if let Some(memory) = &self.memory {
++            limiter.set_source_limit(memory.limits().rate_limit_sources);
++        }
++        let rate_limiter = Arc::new(limiter);
+ 
+         for peer in self.peers.values_mut() {
+             peer.lock().await.tunnel.set_static_private(
+@@ -540,6 +584,7 @@
+ 
+     /// If `packet` is a handshake init or response, register its `sender_idx` in `peers_by_idx`.
+     fn register_handshake_idx(
++        index_table: &IndexTable,
+         peers_by_idx: &parking_lot::Mutex<HashMap<u32, Arc<Mutex<PeerState>>>>,
+         packet: &WgKind,
+         peer: &Arc<Mutex<PeerState>>,
+@@ -549,7 +594,9 @@
+             WgKind::HandshakeResp(p) => p.sender_idx.get(),
+             _ => return,
+         };
+-        peers_by_idx.lock().insert(sender_idx, Arc::clone(peer));
++        let mut entries = peers_by_idx.lock();
++        entries.retain(|idx, _| index_table.in_use(*idx));
++        entries.insert(sender_idx, Arc::clone(peer));
+     }
+ 
+     #[instrument(level = Level::TRACE, skip_all)]
+@@ -583,7 +630,12 @@
+                 match p.update_timers() {
+                     Ok(Some(packet)) => {
+                         // Register sender_idx from outgoing handshake packets
+-                        Self::register_handshake_idx(&device.peers_by_idx, &packet, peer);
++                        Self::register_handshake_idx(
++                            &device.index_table,
++                            &device.peers_by_idx,
++                            &packet,
++                            peer,
++                        );
+ 
+                         drop(p);
+ 
+@@ -681,7 +733,12 @@
+                 // Flush pending queue
+                 TunnResult::WriteToNetwork(packet) => {
+                     // Register sender_idx from outgoing handshake packets
+-                    Self::register_handshake_idx(&device_guard.peers_by_idx, &packet, &peer_arc);
++                    Self::register_handshake_idx(
++                        &device_guard.index_table,
++                        &device_guard.peers_by_idx,
++                        &packet,
++                        &peer_arc,
++                    );
+ 
+                     // TODO: does this end up with the packets being out-of-order?
+                     let packets =
+@@ -832,7 +889,12 @@
+                 };
+ 
+                 // Register sender_idx from outgoing handshake packets
+-                Self::register_handshake_idx(&device_guard.peers_by_idx, &packet, &peer_arc);
++                Self::register_handshake_idx(
++                    &device_guard.index_table,
++                    &device_guard.peers_by_idx,
++                    &packet,
++                    &peer_arc,
++                );
+ 
+                 #[cfg(feature = "daita")]
+                 let packet = match daita {
+--- a/gotatun/src/noise/mod.rs
++++ b/gotatun/src/noise/mod.rs
+@@ -78,6 +78,8 @@
+     session_counter: usize,
+     /// Queue to store blocked packets.
+     packet_queue: VecDeque<Packet>,
++    #[cfg(feature = "device")]
++    memory: Option<crate::device::memory::MemoryBudget>,
+ 
+     /// Keeps tabs on the expiring timers.
+     timers: timers::Timers,
+@@ -138,6 +140,8 @@
+             rx_bytes: Default::default(),
+ 
+             packet_queue: VecDeque::new(),
++            #[cfg(feature = "device")]
++            memory: None,
+             timers: Timers::new(persistent_keepalive),
+ 
+             rate_limiter,
+@@ -441,15 +445,42 @@
+     }
+ 
+     /// Push packet to the back of the queue.
+-    fn queue_packet(&mut self, packet: Packet) {
++    #[cfg(feature = "device")]
++    pub(crate) fn set_memory_budget(
++        &mut self,
++        memory: Option<crate::device::memory::MemoryBudget>,
++    ) {
++        self.memory = memory;
++    }
++    #[cfg_attr(not(feature = "device"), expect(unused_mut))]
++    fn queue_packet(&mut self, mut packet: Packet) {
++        #[cfg(feature = "device")]
++        if let Some(memory) = &self.memory {
++            let bytes: usize = self.packet_queue.iter().map(|p| p.len()).sum();
++            if self.packet_queue.len() >= memory.limits().pending_packets_per_peer
++                || packet.len() > memory.limits().pending_bytes_per_peer.saturating_sub(bytes)
++            {
++                memory.pending_drop();
++                return;
++            }
++            if !packet.memory_lease_mut().is_some_and(|l| l.mark_pending()) {
++                return;
++            }
++        }
+         if self.packet_queue.len() < MAX_QUEUE_DEPTH {
+             // Drop if too many are already in queue
+             self.packet_queue.push_back(packet);
+         }
+     }
+ 
++    #[cfg_attr(not(feature = "device"), expect(unused_mut))]
+     fn dequeue_packet(&mut self) -> Option<Packet> {
+-        self.packet_queue.pop_front()
++        let mut packet = self.packet_queue.pop_front()?;
++        #[cfg(feature = "device")]
++        if let Some(lease) = packet.memory_lease_mut() {
++            lease.clear_pending();
++        }
++        Some(packet)
+     }
+ 
+     fn estimate_loss(&self) -> f32 {
+@@ -545,6 +576,87 @@
+     #[cfg(feature = "mock_instant")]
+     use mock_instant::thread_local::MockClock;
+ 
++    #[cfg(feature = "device")]
++    #[test]
++    fn bounded_source_table_overflow_requires_and_accepts_cookie() {
++        let (mut a, mut b) = create_two_tuns();
++        Arc::get_mut(&mut b.rate_limiter)
++            .unwrap()
++            .set_source_limit(1);
++        let first = SocketAddr::new(Ipv4Addr::new(192, 0, 2, 1).into(), 1234);
++        let overflow = SocketAddr::new(Ipv4Addr::new(192, 0, 2, 2).into(), 1234);
++        let init = a.format_handshake_initiation(true).unwrap();
++        b.rate_limiter.verify_handshake(first, init).unwrap();
++        let init = a.format_handshake_initiation(true).unwrap();
++        let Err(TunnResult::WriteToNetwork(WgKind::CookieReply(cookie))) =
++            b.rate_limiter.verify_handshake(overflow, init)
++        else {
++            panic!("overflow must require a cookie");
++        };
++        a.handle_cookie_reply(&cookie).unwrap();
++        let init = a.format_handshake_initiation(true).unwrap();
++        b.rate_limiter
++            .verify_handshake(overflow, init)
++            .expect("valid cookie accepted without allocating a source entry");
++    }
++
++    #[cfg(feature = "device")]
++    #[test]
++    fn bounded_pending_queue_enforces_peer_bytes_and_device_total() {
++        use crate::device::memory::{DeviceLimits, MemoryBudget};
++        let mut limits = DeviceLimits::mobile();
++        limits.pending_bytes_per_peer = 3000;
++        let memory = MemoryBudget::new(limits);
++        let mut peers: Vec<_> = (0..9)
++            .map(|_| {
++                let (mut tun, _) = create_two_tuns();
++                tun.set_memory_budget(Some(memory.clone()));
++                tun
++            })
++            .collect();
++        for tun in &mut peers {
++            for _ in 0..1000 {
++                let packet = memory
++                    .admit(Packet::copy_from(&[0; 1420][..]), 1420, false)
++                    .unwrap();
++                tun.queue_packet(packet);
++            }
++            assert!(tun.packet_queue.len() <= 2);
++        }
++        assert_eq!(memory.snapshot().pending_packets, 16);
++        assert_eq!(memory.snapshot().reservations, 16);
++        assert!(peers.last().unwrap().packet_queue.is_empty());
++        let packet = peers[0].dequeue_packet().unwrap();
++        assert_eq!(memory.snapshot().pending_packets, 15);
++        peers[0].queue_packet(packet);
++        assert_eq!(memory.snapshot().pending_packets, 16);
++        for peer in &mut peers {
++            peer.reset();
++        }
++        assert_eq!(memory.snapshot().reservations, 0);
++    }
++
++    #[cfg(feature = "device")]
++    #[test]
++    fn bounded_packet_reservation_survives_real_encryption_and_decryption() {
++        use crate::device::memory::{DeviceLimits, MemoryBudget};
++        let memory = MemoryBudget::new(DeviceLimits::mobile());
++        let (mut a, mut b) = create_two_tuns_and_handshake();
++        a.set_memory_budget(Some(memory.clone()));
++        let input = create_ipv4_udp_packet().into_bytes();
++        let expected = input.to_vec();
++        let input = memory.admit(input, 1420, false).unwrap();
++        let encrypted = a.handle_outgoing_packet(input, None).unwrap();
++        assert_eq!(memory.snapshot().reservations, 1);
++        let TunnResult::WriteToTunnel(plain) = b.handle_incoming_packet(encrypted) else {
++            panic!("decrypt");
++        };
++        assert_eq!(&*plain, &expected);
++        assert_eq!(memory.snapshot().reservations, 1);
++        drop(plain);
++        assert_eq!(memory.snapshot().reservations, 0);
++    }
++
+     fn create_two_tuns() -> (Tunn, Tunn) {
+         create_two_tuns_with_keepalive(None)
+     }
+--- a/gotatun/src/noise/rate_limiter.rs
++++ b/gotatun/src/noise/rate_limiter.rs
+@@ -67,6 +67,7 @@
+     mac1_key: [u8; 32],
+     cookie_key: Key,
+     limit: u64,
++    source_limit: usize,
+     /// Per-source-IP packet counts, reset every `RESET_PERIOD`
+     ip_counts: Mutex<IpCounts>,
+ }
+@@ -89,6 +90,7 @@
+             mac1_key: b2s_hash(LABEL_MAC1, public_key.as_bytes()),
+             cookie_key: b2s_hash(LABEL_COOKIE, public_key.as_bytes()).into(),
+             limit,
++            source_limit: usize::MAX,
+             ip_counts: Mutex::new(IpCounts {
+                 counts: HashMap::new(),
+                 last_reset: Instant::now(),
+@@ -141,10 +143,18 @@
+     ///
+     /// Counters are cleared every `RESET_PERIOD` by [`try_reset_count`](Self::try_reset_count),
+     /// so each IP is independently allowed `limit` handshakes per period.
++    #[cfg(feature = "device")]
++    pub(crate) fn set_source_limit(&mut self, sources: usize) {
++        self.source_limit = sources;
++    }
+     fn is_under_load(&self, src_addr: IpAddr) -> bool {
+         let mut ip_counts = self.ip_counts.lock();
++        if ip_counts.counts.len() >= self.source_limit && !ip_counts.counts.contains_key(&src_addr)
++        {
++            return true;
++        }
+         let count = ip_counts.counts.entry(src_addr).or_insert(0);
+-        *count += 1;
++        *count = count.saturating_add(1);
+         *count > self.limit
+     }
+ 
+@@ -230,3 +240,25 @@
+         Ok(handshake)
+     }
+ }
++
++#[cfg(all(test, feature = "device"))]
++mod bounded_tests {
++    use super::*;
++    use std::net::Ipv4Addr;
++    #[test]
++    fn unique_source_flood_keeps_existing_counters_and_bounds_table() {
++        let key = crate::x25519::PublicKey::from(&crate::x25519::StaticSecret::from([0x42; 32]));
++        let mut limiter = RateLimiter::new(&key, 2);
++        limiter.set_source_limit(128);
++        let first = IpAddr::V4(Ipv4Addr::from(1));
++        assert!(!limiter.is_under_load(first));
++        for n in 2..100_000 {
++            assert_eq!(limiter.is_under_load(Ipv4Addr::from(n).into()), n > 128);
++        }
++        assert_eq!(limiter.ip_counts.lock().counts.len(), 128);
++        assert!(!limiter.is_under_load(first));
++        assert!(limiter.is_under_load(first));
++        limiter.ip_counts.lock().counts.clear();
++        assert!(!limiter.is_under_load(Ipv4Addr::from(100_000).into()));
++    }
++}
+--- a/gotatun/src/noise/session.rs
++++ b/gotatun/src/noise/session.rs
+@@ -226,7 +226,8 @@
+     /// Returns `Err(packet)` (the original, un-encapsulated packet) once the sending counter has
+     /// reached `REJECT_AFTER_MESSAGES`: the session must then be replaced by a fresh handshake
+     /// before more transport data can be sent, so the AEAD nonce can never wrap.
+-    pub(super) fn format_packet_data(&self, packet: Packet) -> Result<Packet<WgData>, Packet> {
++    #[cfg_attr(not(feature = "device"), expect(unused_mut))]
++    pub(super) fn format_packet_data(&self, mut packet: Packet) -> Result<Packet<WgData>, Packet> {
+         // Check before incrementing so an exhausted counter is never advanced (and thus can never
+         // wrap back around to a previously used value).
+         if self.sending_key_counter.load(Ordering::Relaxed) >= REJECT_AFTER_MESSAGES {
+@@ -268,6 +269,9 @@
+             .expect("encryption must succeed");
+ 
+         data.tag_mut().copy_from_slice(tag.as_ref());
++
++        #[cfg(feature = "device")]
++        packet.transfer_memory_to(&mut buf);
+ 
+         // this won't panic since we've correctly initialized a WgData packet
+         let packet = buf.try_into_wg().expect("is a wireguard packet");
+--- a/gotatun/src/packet/mod.rs
++++ b/gotatun/src/packet/mod.rs
+@@ -127,6 +127,8 @@
+     // If the [BytesMut] was allocated by a [PacketBufPool], this will return the buffer to be
+     // re-used later.
+     _return_to_pool: Option<ReturnToPool>,
++    #[cfg(feature = "device")]
++    memory_lease: Option<crate::device::memory::MemoryLease>,
+ }
+ 
+ /// Plain ol' data. A helper trait for types that can be cast to/from bytes.
+@@ -165,6 +167,8 @@
+             inner: PacketInner {
+                 buf: BytesMut::from(payload.as_bytes()),
+                 _return_to_pool: None,
++                #[cfg(feature = "device")]
++                memory_lease: None,
+             },
+             _kind: PhantomData::<T>,
+         }
+@@ -255,6 +259,8 @@
+             inner: PacketInner {
+                 buf: BytesMut::default(),
+                 _return_to_pool: None,
++                #[cfg(feature = "device")]
++                memory_lease: None,
+             },
+             _kind: PhantomData,
+         }
+@@ -271,6 +277,8 @@
+             inner: PacketInner {
+                 buf: bytes,
+                 _return_to_pool: Some(return_to_pool),
++                #[cfg(feature = "device")]
++                memory_lease: None,
+             },
+             _kind: PhantomData::<[u8]>,
+         }
+@@ -282,11 +290,29 @@
+             inner: PacketInner {
+                 buf: bytes,
+                 _return_to_pool: None,
++                #[cfg(feature = "device")]
++                memory_lease: None,
+             },
+             _kind: PhantomData::<[u8]>,
+         }
+     }
+ 
++    #[cfg(feature = "device")]
++    pub(crate) fn memory_lease(&self) -> Option<&crate::device::memory::MemoryLease> {
++        self.inner.memory_lease.as_ref()
++    }
++    #[cfg(feature = "device")]
++    pub(crate) fn memory_lease_mut(&mut self) -> Option<&mut crate::device::memory::MemoryLease> {
++        self.inner.memory_lease.as_mut()
++    }
++    #[cfg(feature = "device")]
++    pub(crate) fn set_memory_lease(&mut self, lease: Option<crate::device::memory::MemoryLease>) {
++        self.inner.memory_lease = lease;
++    }
++    #[cfg(feature = "device")]
++    pub(crate) fn transfer_memory_to(&mut self, output: &mut Self) {
++        output.inner.memory_lease = self.inner.memory_lease.take();
++    }
+     /// See [`BytesMut::truncate`].
+     pub fn truncate(&mut self, new_len: usize) {
+         self.inner.buf.truncate(new_len);
+@@ -512,7 +538,9 @@
+         Self {
+             inner: PacketInner {
+                 buf: self.inner.buf.clone(),
+-                _return_to_pool: None, // Clone does not return to pool
++                _return_to_pool: None,
++                #[cfg(feature = "device")]
++                memory_lease: None, // Clone does not return to pool
+             },
+             _kind: PhantomData,
+         }
+--- a/gotatun/src/packet/pool.rs
++++ b/gotatun/src/packet/pool.rs
+@@ -77,6 +77,7 @@
+                 let return_to_pool = ReturnToPool {
+                     pointer_to_start_of_allocation: Some(pointer_to_start_of_allocation),
+                     queue: self.queue.clone(),
++                    capacity: self.capacity,
+                 };
+ 
+                 return Some(Packet::new_from_pool(return_to_pool, buf));
+@@ -106,6 +107,7 @@
+         let return_to_pool = ReturnToPool {
+             pointer_to_start_of_allocation: Some(pointer_to_start_of_allocation),
+             queue: self.queue.clone(),
++            capacity: self.capacity,
+         };
+ 
+         Packet::new_from_pool(return_to_pool, buf)
+@@ -123,13 +125,14 @@
+     // Note: Option is faster than mem::take
+     pointer_to_start_of_allocation: Option<BytesMut>,
+     queue: Arc<Mutex<VecDeque<BytesMut>>>,
++    capacity: usize,
+ }
+ 
+ impl Drop for ReturnToPool {
+     fn drop(&mut self) {
+         let p = self.pointer_to_start_of_allocation.take().unwrap();
+         let mut queue_g = self.queue.lock().unwrap();
+-        if queue_g.len() < queue_g.capacity() {
++        if queue_g.len() < self.capacity {
+             // Add the packet back to the pool unless we're at capacity
+             queue_g.push_back(p);
+         }
+--- a/gotatun/src/tun/buffer.rs
++++ b/gotatun/src/tun/buffer.rs
+@@ -11,6 +11,7 @@
+ 
+ //! Generic buffered IP send and receive implementations.
+ 
++use crate::device::memory::MemoryBudget;
+ use std::{io, sync::Arc, time::Duration};
+ 
+ use crate::{
+@@ -34,13 +35,14 @@
+ /// Panics if one of the locks is already taken.
+ pub async fn channel<S: IpSend, R: IpRecv>(
+     capacity: usize,
++    memory: Option<MemoryBudget>,
+     pool: PacketBufPool,
+     send: Arc<Mutex<S>>,
+     recv: Arc<Mutex<R>>,
+ ) -> (BufferedIpSend, BufferedIpRecv<R>) {
+     let token = CancellationToken::new();
+-    let buffer_send = BufferedIpSend::new(capacity, send, token.clone());
+-    let buffer_recv = BufferedIpRecv::new(capacity, pool, recv, token).await;
++    let buffer_send = BufferedIpSend::new(capacity, send, token.clone(), memory.clone());
++    let buffer_recv = BufferedIpRecv::new(capacity, pool, recv, token, memory).await;
+     (buffer_send, buffer_recv)
+ }
+ 
+@@ -50,6 +52,7 @@
+ /// processed on another task. This means [`IpSend::send`] won't block unless the channel is full.
+ #[derive(Clone)]
+ pub struct BufferedIpSend {
++    memory: Option<MemoryBudget>,
+     tx: mpsc::Sender<Packet<Ip>>,
+     _task: Arc<Task>,
+ }
+@@ -63,7 +66,12 @@
+     ///
+     /// # Panics
+     /// Panics if the lock is already taken.
+-    fn new<I: IpSend>(capacity: usize, inner: Arc<Mutex<I>>, token: CancellationToken) -> Self {
++    fn new<I: IpSend>(
++        capacity: usize,
++        inner: Arc<Mutex<I>>,
++        token: CancellationToken,
++        memory: Option<MemoryBudget>,
++    ) -> Self {
+         let (tx, mut rx) = mpsc::channel::<Packet<Ip>>(capacity);
+ 
+         let drop_guard = token.clone().drop_guard();
+@@ -91,6 +99,7 @@
+         });
+ 
+         Self {
++            memory,
+             tx,
+             _task: Arc::new(task),
+         }
+@@ -99,6 +108,20 @@
+ 
+ impl IpSend for BufferedIpSend {
+     async fn send(&mut self, packet: Packet<Ip>) -> io::Result<()> {
++        let packet = if let Some(memory) = &self.memory {
++            let Some(packet) = memory.admit(
++                packet.into_bytes(),
++                memory.limits().max_ip_packet_size,
++                false,
++            ) else {
++                return Ok(());
++            };
++            packet
++                .try_into_ip()
++                .expect("IP packet remains valid after normalization")
++        } else {
++            packet
++        };
+         self.tx
+             .send(packet)
+             .await
+@@ -112,6 +135,7 @@
+ /// This will spawn a background task that continuously calls [`IpRecv::recv`] until the buffer is
+ /// full. Any call to [`IpRecv::recv`] on _this_ object will not block unless the buffer is empty.
+ pub struct BufferedIpRecv<I> {
++    bounded: bool,
+     rx: mpsc::Receiver<Packet<Ip>>,
+     rx_packet_buf: Vec<Packet<Ip>>,
+     _task: Arc<Task>,
+@@ -130,7 +154,9 @@
+         mut pool: PacketBufPool,
+         inner: Arc<Mutex<I>>,
+         token: CancellationToken,
++        memory: Option<MemoryBudget>,
+     ) -> Self {
++        let bounded = memory.is_some();
+         let (tx, rx) = mpsc::channel::<Packet<Ip>>(capacity);
+ 
+         // We use a timeout instead of a try_lock().expect() because there may still be an old
+@@ -149,6 +175,20 @@
+                 match inner.recv(&mut pool).await {
+                     Ok(packets) => {
+                         for packet in packets {
++                            let packet = if let Some(memory) = &memory {
++                                let Some(packet) = memory.admit(
++                                    packet.into_bytes(),
++                                    memory.limits().max_ip_packet_size,
++                                    false,
++                                ) else {
++                                    continue;
++                                };
++                                packet
++                                    .try_into_ip()
++                                    .expect("IP packet remains valid after normalization")
++                            } else {
++                                packet
++                            };
+                             if tx.send(packet).await.is_err() {
+                                 return;
+                             }
+@@ -170,6 +210,7 @@
+         });
+ 
+         Self {
++            bounded,
+             rx,
+             rx_packet_buf: vec![],
+             _task: Arc::new(task),
+@@ -184,7 +225,11 @@
+         &'a mut self,
+         _pool: &mut PacketBufPool,
+     ) -> io::Result<impl Iterator<Item = Packet<Ip>> + 'a> {
+-        let max_n = self.rx.max_capacity();
++        let max_n = if self.bounded {
++            1
++        } else {
++            self.rx.max_capacity()
++        };
+         let n = self.rx.recv_many(&mut self.rx_packet_buf, max_n).await;
+         if n == 0 {
+             // Channel is closed
+--- a/gotatun/src/udp/buffer.rs
++++ b/gotatun/src/udp/buffer.rs
+@@ -16,6 +16,7 @@
+ use futures::{FutureExt, select};
+ use tokio::{io, sync::mpsc};
+ 
++use crate::device::memory::{MemoryBudget, is_control};
+ use crate::packet::{Packet, PacketBufPool};
+ use crate::task::Task;
+ use crate::udp::{UdpRecv, UdpSend};
+@@ -28,6 +29,7 @@
+ #[derive(Clone)]
+ pub struct BufferedUdpSend {
+     _send_task: Arc<Task>,
++    memory: Option<MemoryBudget>,
+ 
+     /// Channel where IPv4 packets are sent to `_send_task`
+     send_tx_v4: mpsc::Sender<(Packet, SocketAddr)>,
+@@ -38,7 +40,12 @@
+ 
+ impl BufferedUdpSend {
+     /// Wrap a [`UdpSend`] into a [`BufferedUdpSend`] with `capacity`.
+-    pub fn new(capacity: usize, udp_tx: impl UdpSend + 'static) -> Self {
++    pub(crate) fn with_memory(
++        capacity: usize,
++        udp_tx: impl UdpSend + 'static,
++        memory: Option<MemoryBudget>,
++    ) -> Self {
++        let bounded = memory.is_some();
+         let (send_tx_v4, mut send_rx_v4) = mpsc::channel::<(Packet, SocketAddr)>(capacity);
+         let (send_tx_v6, mut send_rx_v6) = mpsc::channel::<(Packet, SocketAddr)>(capacity);
+ 
+@@ -46,6 +53,11 @@
+             let mut buf_v4 = vec![];
+             let mut buf_v6 = vec![];
+             let max_packet_count = udp_tx.max_number_of_packets_to_send();
++            let max_packet_count = if bounded {
++                max_packet_count.clamp(1, capacity)
++            } else {
++                max_packet_count
++            };
+             let mut send_many_buf = Default::default();
+ 
+             loop {
+@@ -84,6 +96,7 @@
+ 
+         Self {
+             _send_task: Arc::new(send_task),
++            memory,
+             send_tx_v4,
+             send_tx_v6,
+         }
+@@ -94,6 +107,16 @@
+     type SendManyBuf = ();
+ 
+     async fn send_to(&self, packet: Packet, destination: SocketAddr) -> io::Result<()> {
++        let packet = if let Some(memory) = &self.memory {
++            let control = is_control(&packet);
++            let Some(packet) = memory.admit(packet, memory.limits().max_udp_packet_size, control)
++            else {
++                return Ok(());
++            };
++            packet
++        } else {
++            packet
++        };
+         let tx = match destination {
+             SocketAddr::V4(..) => &self.send_tx_v4,
+             SocketAddr::V6(..) => &self.send_tx_v6,
+@@ -125,10 +148,11 @@
+ 
+ impl BufferedUdpReceive {
+     /// Wrap a [`UdpRecv`] into a [`BufferedUdpReceive`] with `capacity`.
+-    pub fn new(
++    pub(crate) fn with_memory(
+         capacity: usize,
+         mut udp_rx: impl UdpRecv + 'static,
+         mut recv_pool: PacketBufPool,
++        memory: Option<MemoryBudget>,
+     ) -> Self {
+         let (recv_tx, recv_rx) = mpsc::channel::<(Packet, SocketAddr)>(capacity);
+ 
+@@ -137,6 +161,21 @@
+             let mut packet_bufs = vec![];
+ 
+             loop {
++                if let Some(memory) = &memory {
++                    let Ok((packet, src)) = udp_rx.recv_from(&mut recv_pool).await else {
++                        return;
++                    };
++                    let control = is_control(&packet);
++                    let Some(packet) =
++                        memory.admit(packet, memory.limits().max_udp_packet_size, control)
++                    else {
++                        continue;
++                    };
++                    if recv_tx.send((packet, src)).await.is_err() {
++                        return;
++                    }
++                    continue;
++                }
+                 // Read packets from the socket.
+                 let Ok(()) = udp_rx
+                     .recv_many_from(&mut recv_many_buf, &mut recv_pool, &mut packet_bufs)

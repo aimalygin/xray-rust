@@ -35,6 +35,7 @@ SENSITIVE_CONFIG_FIELDS = frozenset(
         "id",
         "password",
         "privatekey",
+        "presharedkey",
         "publickey",
         "secret",
         "secretkey",
@@ -48,6 +49,7 @@ NETWORK_CONFIG_FIELDS = frozenset(
     {
         "address",
         "dest",
+        "endpoint",
         "server",
         "servername",
         "servernames",
@@ -63,17 +65,23 @@ RESERVED_TEST_HOST_SUFFIXES = (
     "test",
 )
 
-# These SHA-256 digests represent reviewed deterministic UUID, short-ID, and
-# X25519 test vectors. Keeping only digests here prevents the scanner from
-# echoing credential-shaped fixture values in logs.
+# These SHA-256 digests represent reviewed deterministic UUID, short-ID,
+# X25519 and Hysteria authentication test vectors. Keeping only digests here
+# prevents the scanner from echoing credential-shaped values in logs.
 APPROVED_TEST_CREDENTIAL_DIGESTS = frozenset(
     {
+        # WireGuard PSK: repeated synthetic 0x64 bytes, hex encoded.
+        "f572435c3fd11241828de21d1f590ee80ca6331356a2ae1f978ea655052737d7",
+        # WireGuard example keys: repeated synthetic 0x42 / 0x53 bytes.
+        "2d23b34a69ee132da2f1ade478741b06190067c4e249a71e7a2fe79ef959309e",
+        "2954fb4e2f086a9706ad69dd33cb676a508ab5816b8a42617ddec899f0554b95",
         "0f007385b6f9d4b7eeb2748605afe1a984a0a3bfa3f014d09e2a784ce9e5cd1a",
         "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1",
         "56d5fa7333f6d747db42c239407e5da4c32f4c79f35d092b134fd35a402d9c5c",
         "811de8804c16858aed0005d14b32269fecf6958183ed0d26b75944fc10d7f66c",
         "81626265a14b6f89251789d8e011e6fb0ca2dd94c8f8805ef6080fbd3c24f9d0",
         "9f9f5111f7b27a781f1f1ddde5ebc2dd2b796bfc7365c9c28b548e564176929f",
+        "c39868b4550d5eb2caebd6f45e46405a18f9cceb50289363cc5fc7b030f78290",
         "f920f1583dc9da3bc0569e6e1dc5f231b1292cbe378c62c0d88f599a7e68dab1",
     }
 )
@@ -245,7 +253,10 @@ def scan_scalar(
         return violations
 
     normalized_field = normalized_field_name(owner_field)
-    if normalized_field in SENSITIVE_CONFIG_FIELDS:
+    hysteria_auth = normalized_field == "auth" and any(
+        normalized_field_name(part) == "hysteriasettings" for part in path[:-1]
+    )
+    if normalized_field in SENSITIVE_CONFIG_FIELDS or hysteria_auth:
         digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
         if digest not in APPROVED_TEST_CREDENTIAL_DIGESTS:
             violations.append(
@@ -556,6 +567,22 @@ class JsonFixtureSafetyTests(unittest.TestCase):
             ],
             violations,
         )
+
+    def test_hysteria_auth_is_a_secret_but_socks_auth_is_a_mode(self) -> None:
+        for block, value, rejected in [
+            ("hysteriaSettings", "unreviewed-test-value", True),
+            ("hysteriaSettings", "synthetic-example-auth", False),
+            ("settings", "noauth", False),
+        ]:
+            violations = scan_scalar(
+                file_path=CONFIG_FIXTURE_ROOT / "synthetic.json",
+                path=("streamSettings", block, "auth"),
+                owner_field="auth",
+                value=value,
+                is_config_fixture=True,
+            )
+            self.assertEqual(bool(violations), rejected)
+            self.assertNotIn(value, str(violations))
 
     def test_retired_value_detection_does_not_echo_the_value(self) -> None:
         retired_value = "synthetic-retired-value"

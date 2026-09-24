@@ -15,11 +15,14 @@ public enum XrayMobileExplicitDNSConfiguration: Equatable, Sendable {
 public enum XrayMobileDNSPreflightError: Error, Equatable, LocalizedError, Sendable {
     case unavailable
     case unsafeFakeIPFreedomRouting
+    case unsafeFakeIPWireguardRouting
 
     public var errorDescription: String? {
         switch self {
         case .unavailable:
             return "DNS requires enabled dns.fakeIp, at least one dns.servers upstream, or explicit IP servers; fake-IP cannot be combined with explicit servers."
+        case .unsafeFakeIPWireguardRouting:
+            return "Fake-IP without dns.servers cannot use WireGuard as the default or from a TUN domain-capable routing rule."
         case .unsafeFakeIPFreedomRouting:
             return "Fake-IP without dns.servers cannot use Freedom as the default or from a TUN domain-capable routing rule."
         }
@@ -64,27 +67,32 @@ public enum XrayMobileDNSPreflight {
         guard fakeIPIsEnabled, !hasConfiguredServers else {
             return
         }
-        try validateFakeIPRoutingTopology(root)
+        try validateFakeIPRoutingTopology(root, protocolName: "freedom", error: .unsafeFakeIPFreedomRouting)
+        try validateFakeIPRoutingTopology(root, protocolName: "wireguard", error: .unsafeFakeIPWireguardRouting)
     }
 
-    private static func validateFakeIPRoutingTopology(_ root: [String: Any]?) throws {
+    private static func validateFakeIPRoutingTopology(
+        _ root: [String: Any]?,
+        protocolName: String,
+        error: XrayMobileDNSPreflightError
+    ) throws {
         guard let root else {
             return
         }
         let outbounds = root["outbounds"] as? [[String: Any]] ?? []
         if let defaultOutbound = outbounds.first,
-           (defaultOutbound["protocol"] as? String)?.lowercased() == "freedom"
+           (defaultOutbound["protocol"] as? String)?.lowercased() == protocolName
         {
-            throw XrayMobileDNSPreflightError.unsafeFakeIPFreedomRouting
+            throw error
         }
 
-        let freedomTags = Set(outbounds.compactMap { outbound -> String? in
-            guard (outbound["protocol"] as? String)?.lowercased() == "freedom" else {
+        let localResolutionTags = Set(outbounds.compactMap { outbound -> String? in
+            guard (outbound["protocol"] as? String)?.lowercased() == protocolName else {
                 return nil
             }
             return outbound["tag"] as? String
         })
-        guard !freedomTags.isEmpty else {
+        guard !localResolutionTags.isEmpty else {
             return
         }
 
@@ -97,10 +105,21 @@ public enum XrayMobileDNSPreflight {
         }
         let tunInboundTags = Set(tunInbounds.compactMap { $0["tag"] as? String })
         let routing = root["routing"] as? [String: Any]
+        let balancers = routing?["balancers"] as? [[String: Any]] ?? []
+        let localResolutionBalancers = Set(balancers.compactMap { balancer -> String? in
+            let selectors = balancer["selector"] as? [String] ?? []
+            let selectsLocal = localResolutionTags.contains { tag in
+                selectors.contains { tag.hasPrefix($0) }
+            }
+            let fallback = balancer["fallbackTag"] as? String
+            guard selectsLocal || fallback.map(localResolutionTags.contains) == true else { return nil }
+            return balancer["tag"] as? String
+        })
         let rules = routing?["rules"] as? [[String: Any]] ?? []
         for rule in rules {
-            guard let outboundTag = rule["outboundTag"] as? String,
-                  freedomTags.contains(outboundTag),
+            let selectsLocal = (rule["outboundTag"] as? String).map(localResolutionTags.contains) == true
+                || (rule["balancerTag"] as? String).map(localResolutionBalancers.contains) == true
+            guard selectsLocal,
                   routingRuleAppliesToTun(rule, tunInboundTags: tunInboundTags)
             else {
                 continue
@@ -111,7 +130,7 @@ public enum XrayMobileDNSPreflight {
             let ips = rule["ip"] as? [Any] ?? []
             let isIPOnly = domains.isEmpty && !ips.isEmpty
             if !isIPOnly {
-                throw XrayMobileDNSPreflightError.unsafeFakeIPFreedomRouting
+                throw error
             }
         }
     }

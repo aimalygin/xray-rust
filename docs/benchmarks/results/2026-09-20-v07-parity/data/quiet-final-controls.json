@@ -1,0 +1,15 @@
+{
+  "phases": [
+    {
+      "name": "wireguard",
+      "command": [
+        "python3",
+        "-u",
+        "run-wireguard-ambient-confirmation.py"
+      ],
+      "returncode": 1,
+      "seconds": 547.8045301437378
+    }
+  ],
+  "complete": false
+}

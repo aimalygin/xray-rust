@@ -1,0 +1,8 @@
+{
+  "compiler_load_detected": false,
+  "runs_observed": 20,
+  "compiler_sample_interval_seconds": 2,
+  "compiler_threshold_cpu_percent": 10,
+  "driver_sha256": "b222041bf00c1434ca570aad497d01ee9bf0c8857cf62b8555cc144ef3c6717d",
+  "purpose": "cold concurrent setup and sustained full-duplex reliability; no competitor-parity claim"
+}

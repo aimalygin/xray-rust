@@ -1,0 +1,300 @@
+{
+  "blocked_by": null,
+  "build": {
+    "app_code_sha256": {
+      "PlugIns/Tunnel.appex/Tunnel": "52b88624956c9ca56327147925b66d0421f942cbfc9662e0e240290e010d07ad",
+      "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "695ec69a703050cf20a2ebc2a63ab4c7420190db7f5d364e149eca503c7432f3",
+      "PlugIns/Tunnel.appex/__preview.dylib": "3a842d0e95a87f37a69cdc69a80b7240002fa98c94e3e7842de98907c94738ac",
+      "XrayClient": "dcf8856186a5e9c3c031a1d6eb4b8d41a1235f5bd048b770fff7107be3afe1f9",
+      "XrayClient.debug.dylib": "1bacb645d4e513e5bf1e72e4560ba76b9afeb4ba40d2d4f96075929e1c957953",
+      "__preview.dylib": "97dc13b0f9a622f70c0941d3e33d70fe678274ece4108da83bc5c693982c6fda"
+    },
+    "base_commit": "98c55e01765a7bcd964300130ff560c5bb06f4fa",
+    "ios_static_library_sha256": "82e3e7ce364c3ea735f3c31d768986dee89b7faed2a11c9dd3acfd896944bcfd",
+    "source_sha256": {
+      "Cargo.lock": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+      "crates/xray-core-rs/src/lib.rs": "2d43354394dc97743ba9c8b8d1581cc6f7706dae491ebbc4311e7aae384ab171",
+      "crates/xray-core-rs/src/outbound.rs": "2a6bda05a9176ccbf2977dbebeb1706e62939870863e2e923794b077279f3f6d",
+      "crates/xray-core-rs/src/outbound/hysteria.rs": "ec9973ae3e56b862b31069a24062269a2cdff62269e61f2694fca3141ce14389",
+      "crates/xray-ffi/include/xray_ffi.h": "4f7b40af03cfb0aae61c1b82a2db3c0a3ca6bd40214d2baf7af76abf8b1bbe42",
+      "crates/xray-ffi/src/lib.rs": "eec56a4289ec633fa50f7f0227b46c9c3d4c3c1581ffdac571e9a31916be8a6b",
+      "crates/xray-transport/src/hysteria/client.rs": "3f96d731ccf7cf10047aefe019607a367d4783b0f3a2f10466bb71c8107bf682",
+      "platform/apple/Sources/XrayAppleClient/Debug/XrayDeviceProbeSignals.swift": "2e0d3360b4042380779df22b16d9840c8af32c1c2db4a43f0e193eaa218efc34",
+      "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "89916f934acf41dc38c39dba275d522d232b2f71b176528784c2d0c9f59642b9",
+      "platform/apple/Sources/XrayAppleClient/XrayClientTunnelController.swift": "dfc6ca5a765d005b0adc506d25f6255af9fbc994dcd5ae4c297e99027cbb6a11",
+      "platform/apple/Sources/XrayAppleShared/XrayTunnelProviderMessage.swift": "ffd39bbb51062eb1f1c74eb6d6362f071417e125a58e7f8e3776c1fde1c910e2",
+      "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelNetworkObserver.swift": "88a382c45029c170b23e8b74171cb8045589ce11a81e30333603ede2a9a04de5",
+      "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift": "1aaa0d0aea0bcf25ce12d1411599afa3f2068b39c5c8c9a89035de518a0b10d6",
+      "platform/apple/Sources/XrayMobileAdapter/XrayCore.swift": "e653b46b7b84fb852a56f2a3398bfc1f0940c12602924815fbfe24fda24a9c95",
+      "platform/apple/Tests/XrayAppleTunnelTests/XrayPacketTunnelNetworkObserverTests.swift": "94fdc67a8992021990232e5d60b7c9a13658975c27cb08bde057b4545b5d2006",
+      "scripts/run-v07-apple-protocol-fixture.py": "b8b167a5bb97dd32f9b18da932885b9399ddbec6eeac8e5c496d4b11c85e3dd7"
+    }
+  },
+  "cleanup": {
+    "device_fixture_overwritten_with_zero_bytes": false,
+    "device_fixture_removed": true,
+    "local_ephemeral_fixture_and_ssh_helpers_removed": true,
+    "normal_app_launch_blocked_by_lock": false,
+    "normal_app_relaunched_without_probe_or_console": true,
+    "original_three_services_active": true,
+    "original_udp_53053_restored": true,
+    "other_service_pids_unchanged": true,
+    "temporary_vps_unit_and_directory_removed": true
+  },
+  "diagnostic_build": {
+    "app_code_sha256": {
+      "PlugIns/Tunnel.appex/Tunnel": "52b88624956c9ca56327147925b66d0421f942cbfc9662e0e240290e010d07ad",
+      "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "695ec69a703050cf20a2ebc2a63ab4c7420190db7f5d364e149eca503c7432f3",
+      "PlugIns/Tunnel.appex/__preview.dylib": "3a842d0e95a87f37a69cdc69a80b7240002fa98c94e3e7842de98907c94738ac",
+      "XrayClient": "c16c69feeb99349c312e149c9688b09653c51ddd95607826907bc35cc6b01c9c",
+      "XrayClient.debug.dylib": "4420095b13e5c1e7ceaada256e2207b736b38e659bcb71f43224c63db63165d6",
+      "__preview.dylib": "97dc13b0f9a622f70c0941d3e33d70fe678274ece4108da83bc5c693982c6fda"
+    },
+    "base_commit": "98c55e01765a7bcd964300130ff560c5bb06f4fa",
+    "ios_static_library_sha256": "82e3e7ce364c3ea735f3c31d768986dee89b7faed2a11c9dd3acfd896944bcfd",
+    "source_sha256": {
+      "Cargo.lock": "ea16fed04ab9e425ea6deaa573e918c879c3bebff2a4f36e71c437b104ccdc97",
+      "crates/xray-core-rs/src/lib.rs": "2d43354394dc97743ba9c8b8d1581cc6f7706dae491ebbc4311e7aae384ab171",
+      "crates/xray-core-rs/src/outbound.rs": "2a6bda05a9176ccbf2977dbebeb1706e62939870863e2e923794b077279f3f6d",
+      "crates/xray-core-rs/src/outbound/hysteria.rs": "ec9973ae3e56b862b31069a24062269a2cdff62269e61f2694fca3141ce14389",
+      "crates/xray-ffi/include/xray_ffi.h": "4f7b40af03cfb0aae61c1b82a2db3c0a3ca6bd40214d2baf7af76abf8b1bbe42",
+      "crates/xray-ffi/src/lib.rs": "eec56a4289ec633fa50f7f0227b46c9c3d4c3c1581ffdac571e9a31916be8a6b",
+      "crates/xray-transport/src/hysteria/client.rs": "3f96d731ccf7cf10047aefe019607a367d4783b0f3a2f10466bb71c8107bf682",
+      "platform/apple/Sources/XrayAppleClient/Debug/XrayDeviceProbeSignals.swift": "2e0d3360b4042380779df22b16d9840c8af32c1c2db4a43f0e193eaa218efc34",
+      "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "0dbddf4eb47f9fbf32191a5de9bd17074bc0134ee454f7ec727e373fb6ef243a",
+      "platform/apple/Sources/XrayAppleClient/XrayClientTunnelController.swift": "dfc6ca5a765d005b0adc506d25f6255af9fbc994dcd5ae4c297e99027cbb6a11",
+      "platform/apple/Sources/XrayAppleShared/XrayTunnelProviderMessage.swift": "ffd39bbb51062eb1f1c74eb6d6362f071417e125a58e7f8e3776c1fde1c910e2",
+      "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelNetworkObserver.swift": "88a382c45029c170b23e8b74171cb8045589ce11a81e30333603ede2a9a04de5",
+      "platform/apple/Sources/XrayAppleTunnel/XrayPacketTunnelProvider.swift": "1aaa0d0aea0bcf25ce12d1411599afa3f2068b39c5c8c9a89035de518a0b10d6",
+      "platform/apple/Sources/XrayMobileAdapter/XrayCore.swift": "e653b46b7b84fb852a56f2a3398bfc1f0940c12602924815fbfe24fda24a9c95",
+      "platform/apple/Tests/XrayAppleTunnelTests/XrayPacketTunnelNetworkObserverTests.swift": "94fdc67a8992021990232e5d60b7c9a13658975c27cb08bde057b4545b5d2006",
+      "scripts/run-v07-apple-protocol-fixture.py": "347fb4afaf0a42b4f4a69c4cbe0a741ede9c1e699785ee8a3bb933b2f47885b4"
+    }
+  },
+  "diagnostic_runs": [
+    {
+      "applied_callbacks": 1,
+      "file": "diagnostic-1-events.jsonl",
+      "ignored_callbacks": 3,
+      "matches_device_report": true,
+      "result": "failed",
+      "sha256": "7ceda547a6ad66cdab1ec6ee228e4c841d5eb23787a51808165f521b86e2156e"
+    },
+    {
+      "applied_callbacks": 1,
+      "file": "diagnostic-2-events.jsonl",
+      "ignored_callbacks": 2,
+      "matches_device_report": true,
+      "result": "failed",
+      "sha256": "2b79015ea72f554f7ba0e90938e5deb5385654a94cfd09a20c23bccc880a62f6"
+    }
+  ],
+  "handover_verified": true,
+  "limitations": [
+    "Two bounded device runs are not a universal loss-free handover or latency guarantee.",
+    "Filtering reduces unnecessary migrations; the exact cause of the historical UDP packet loss is unconfirmed without its packet capture.",
+    "Fresh application flows are exercised on device; no new Rust transport continuity claim.",
+    "The original two diagnostic runs remain failed; OS DNS negative caching is inferred from NoSuchRecord and absence of the probe query at the server.",
+    "Signature detects primary interface, local address changes and outages, not gateway-only changes at unchanged addresses.",
+    "No Android, Linux CI, sustained load, energy or release acceptance."
+  ],
+  "release_acceptance": false,
+  "runs": [
+    {
+      "after_close_tcp": 0,
+      "after_close_udp": 6,
+      "closure": {
+        "closedIDs": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22
+        ],
+        "cycle": 1,
+        "event": "connection-close-verified",
+        "newIDs": [],
+        "protocol": "hysteria2",
+        "seconds": 2.064953124994645,
+        "time": "2026-09-15T13:31:00Z"
+      },
+      "dns_anchor_queries": 4,
+      "end_utc": "2026-09-15T13:31:01Z",
+      "event_count": 101,
+      "event_file": "transitions-1-events.jsonl",
+      "event_sha256": "76cf0d8afe0725ff681da70d99a8b7183057848ac16eb973addd6cfafdaa7f48",
+      "lock_seconds": 38.977074041671585,
+      "matches_device_report": true,
+      "max_sampled_drops_and_tun_loop_exits": 0,
+      "max_sampled_footprint_bytes": 4883208,
+      "max_sampled_rss_bytes": 30900224,
+      "max_sampled_threads": 10,
+      "observer_applied_callbacks": 4,
+      "observer_ignored_callbacks": 9,
+      "result": "passed",
+      "runtime_count": 1,
+      "stages": {
+        "after-unlock": {
+          "activeRecoverySeconds": 1.9817238333343994,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 2.8437445416639093,
+          "stage": "after-unlock",
+          "time": "2026-09-15T13:30:58Z"
+        },
+        "cellular": {
+          "activeRecoverySeconds": 5.07096487499075,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 5.1662129999895114,
+          "stage": "cellular",
+          "time": "2026-09-15T13:29:57Z"
+        },
+        "wifi": {
+          "activeRecoverySeconds": 2.751234833325725,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 2.7926387499901466,
+          "stage": "wifi",
+          "time": "2026-09-15T13:30:13Z"
+        },
+        "wifi-baseline": {
+          "activeRecoverySeconds": 2.7591185833443888,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 6.235845916642575,
+          "stage": "wifi-baseline",
+          "time": "2026-09-15T13:29:27Z"
+        }
+      },
+      "start_utc": "2026-09-15T13:29:21Z",
+      "tcp_echoes": 12,
+      "udp_echo_seconds": [
+        0.18501033331267536,
+        0.18799837501137517,
+        0.33292883331887424,
+        0.22024599998258054,
+        0.1991987916699145,
+        0.25464091665344313,
+        0.18965270832995884,
+        0.1881570416444447
+      ],
+      "udp_echoes": 8
+    },
+    {
+      "after_close_tcp": 0,
+      "after_close_udp": 0,
+      "closure": {
+        "closedIDs": [
+          16,
+          17,
+          18,
+          19,
+          20
+        ],
+        "cycle": 1,
+        "event": "connection-close-verified",
+        "newIDs": [],
+        "protocol": "hysteria2",
+        "seconds": 2.113403916649986,
+        "time": "2026-09-15T13:33:06Z"
+      },
+      "dns_anchor_queries": 4,
+      "end_utc": "2026-09-15T13:33:06Z",
+      "event_count": 97,
+      "event_file": "transitions-2-events.jsonl",
+      "event_sha256": "7ee76e2bc1124f0c6289dcfd78947dd604d70f917552a5a58a36b52107c8c9bb",
+      "lock_seconds": 57.853278791648336,
+      "matches_device_report": true,
+      "max_sampled_drops_and_tun_loop_exits": 0,
+      "max_sampled_footprint_bytes": 4817648,
+      "max_sampled_rss_bytes": 29229056,
+      "max_sampled_threads": 10,
+      "observer_applied_callbacks": 4,
+      "observer_ignored_callbacks": 6,
+      "result": "passed",
+      "runtime_count": 1,
+      "stages": {
+        "after-unlock": {
+          "activeRecoverySeconds": 2.145599791663699,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.0236438749998342,
+          "stage": "after-unlock",
+          "time": "2026-09-15T13:33:04Z"
+        },
+        "cellular": {
+          "activeRecoverySeconds": 6.342948500008788,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 6.4435312083223835,
+          "stage": "cellular",
+          "time": "2026-09-15T13:31:45Z"
+        },
+        "wifi": {
+          "activeRecoverySeconds": 2.743001541675767,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 2.784331916656811,
+          "stage": "wifi",
+          "time": "2026-09-15T13:31:54Z"
+        },
+        "wifi-baseline": {
+          "activeRecoverySeconds": 3.0180775833432563,
+          "event": "transition-recovered",
+          "protocol": "hysteria2",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 6.459512875007931,
+          "stage": "wifi-baseline",
+          "time": "2026-09-15T13:31:33Z"
+        }
+      },
+      "start_utc": "2026-09-15T13:31:26Z",
+      "tcp_echoes": 12,
+      "udp_echo_seconds": [
+        0.18502050000824966,
+        0.22834041668102145,
+        0.2639099166553933,
+        0.27025662499363534,
+        0.1821556666691322,
+        0.2428702083416283,
+        0.18854420832940377,
+        0.21200362499803305
+      ],
+      "udp_echoes": 8
+    }
+  ],
+  "schema": "xray-v07-hysteria-udp-investigation/1",
+  "status": "two-physical-sequences-passed",
+  "verification": {
+    "fixture_dns_A_AAAA_unknown_name_checks": true,
+    "macos_release_tunnel_build": true,
+    "observer_tests": 5,
+    "private_log_sha256": {
+      "device-build-final.log": "7b3f3e896217017837fbff2441985932ac74c70a31007163f95808c8eb32a05d",
+      "device-install-final.log": "09de059fcfad4815f7cb77c6d25cc0058b8df1b0a4121cc99ef7fffbb968b5b3",
+      "swift-release.log": "56c9365b55c607ffaa3b0373a95530b1329a6e6b3e7dbc0cbb663e2c4079a81e",
+      "swift-tests-final.log": "3a54947d74f43ca6b461acfd644b8bb59ee363169ae06696419ceb9f4141dce9"
+    },
+    "same_rust_library_as_2026_09_14": true,
+    "selected_swift_tests": 167,
+    "signed_device_debug_build": true
+  }
+}

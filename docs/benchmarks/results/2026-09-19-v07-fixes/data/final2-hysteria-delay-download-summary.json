@@ -1,0 +1,270 @@
+{
+  "artifact_sha256": {
+    "hysteria2-tun-download-1-baseline-1/result.json": "0ed1d1ec02bd241193fbde43234064211a9dd108b23b102344e2420c0b9373b4",
+    "hysteria2-tun-download-1-baseline-2/result.json": "207c5fad4d4e679c07f58020721304538dceb1739bafab9f87230e8672c0e11e",
+    "hysteria2-tun-download-1-baseline-3/result.json": "4e76be461f307f96e829490b831c3733bf75bd5fd50c503b1abd8a20d92fd874",
+    "hysteria2-tun-download-1-baseline-4/result.json": "499aea4be8e0ae83576ad4b8334414cd4a64e540db78b7a44beed3783dd75ea7",
+    "hysteria2-tun-download-1-baseline-5/result.json": "d3bdd388ee9fa35395588d5723aeb43fc60b00a09fd7d59ddbfc3a1afc57e383",
+    "hysteria2-tun-download-1-candidate-1/result.json": "fb1ef7a1df558ebeea782ed66e76803aece09d262cda09e87844f0e33f8b4323",
+    "hysteria2-tun-download-1-candidate-2/result.json": "21dece82e29434d77dc33f9553016da317dbaff056ac2fefda38008fd5ae547a",
+    "hysteria2-tun-download-1-candidate-3/result.json": "0852c78bde1c472c201a145b930034afa260eb1e1ebf4d0d3728a83a01877661",
+    "hysteria2-tun-download-1-candidate-4/result.json": "f70156636984d419c94e48411ab2797ee2431db4a588c56deb65f886e8cc4132",
+    "hysteria2-tun-download-1-candidate-5/result.json": "6494b8ab6a1994b1a239a506e0aa00716e6f2a5173de741994b8226e211444d0",
+    "hysteria2-tun-download-8-baseline-1/result.json": "4dda010e7901cec9498be0216129825f76b7a157fb2d36bd49468644634c7a2a",
+    "hysteria2-tun-download-8-baseline-2/result.json": "924156cf769e768251806ea00e751c152bb7af568e8bdd0f172c5e7dc0c1b87b",
+    "hysteria2-tun-download-8-baseline-3/result.json": "63b3170b8d45205e7bc735177d1b783ddf620a8906a96b8534cf5617e18ef502",
+    "hysteria2-tun-download-8-baseline-4/result.json": "5ccc7dcae1772a3e8466d76171fd5b1fdab5655bbd6101b91d176d447fdf90a7",
+    "hysteria2-tun-download-8-baseline-5/result.json": "2979d3138a6f40e54e657e77f28a14525c6a8b570f0eb95209b5de0e90c59119",
+    "hysteria2-tun-download-8-candidate-1/result.json": "a989255ddbfa8ce363b715c6a9a240ed556a57a82e0244419f51ecd539b49896",
+    "hysteria2-tun-download-8-candidate-2/result.json": "16ac201b65122bd94212f0384dd6a3202102c9d15364d63ea146a062849456df",
+    "hysteria2-tun-download-8-candidate-3/result.json": "86595e2d73a157a8681b82d75e3231fe7dfef980ff319a2cb7298382ebb565f4",
+    "hysteria2-tun-download-8-candidate-4/result.json": "c592bae6cd05300353bce4c66f2d916c4bb87d76307659c67364f2234f1d4814",
+    "hysteria2-tun-download-8-candidate-5/result.json": "d3a8a1223283e28f709319bad83e33d2a46330e3e801eb40f69fe79321337d07"
+  },
+  "failures": [],
+  "manifest_sha256": "e7c510aef13eb40b59ec34320b4f6612208c4cb640699d550365d81e07d8f58d",
+  "rows": [
+    {
+      "case": "hysteria2-tun-download-1",
+      "ratios": {
+        "cpu_ms": 1.0,
+        "cpu_ms_per_mib": 1.0,
+        "rss_mib": 0.9813874788494078,
+        "throughput_mib_s": 1.0023108326719983
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 80,
+              "min": 80,
+              "samples": [
+                90,
+                80,
+                80,
+                80,
+                90
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 22.5,
+              "median": 20.0,
+              "min": 20.0,
+              "samples": [
+                22.5,
+                20.0,
+                20.0,
+                20.0,
+                22.5
+              ]
+            },
+            "rss_mib": {
+              "max": 9.34375,
+              "median": 9.234375,
+              "min": 9.140625,
+              "samples": [
+                9.34375,
+                9.140625,
+                9.234375,
+                9.328125,
+                9.171875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 7.516233886084752,
+              "median": 7.4291267069727995,
+              "min": 7.425563942575329,
+              "samples": [
+                7.516233886084752,
+                7.425563942575329,
+                7.459472327855655,
+                7.4291267069727995,
+                7.4289611348920825
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 90,
+              "median": 80,
+              "min": 70,
+              "samples": [
+                90,
+                80,
+                80,
+                90,
+                70
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 22.5,
+              "median": 20.0,
+              "min": 17.5,
+              "samples": [
+                22.5,
+                20.0,
+                20.0,
+                22.5,
+                17.5
+              ]
+            },
+            "rss_mib": {
+              "max": 9.109375,
+              "median": 9.0625,
+              "min": 9.0,
+              "samples": [
+                9.046875,
+                9.0,
+                9.0625,
+                9.109375,
+                9.0625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 7.496572079967854,
+              "median": 7.446294175691688,
+              "min": 7.40551089720836,
+              "samples": [
+                7.4757872147846065,
+                7.446294175691688,
+                7.496572079967854,
+                7.441712779999582,
+                7.40551089720836
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    },
+    {
+      "case": "hysteria2-tun-download-8",
+      "ratios": {
+        "cpu_ms": 0.96875,
+        "cpu_ms_per_mib": 0.96875,
+        "rss_mib": 0.9696531791907514,
+        "throughput_mib_s": 1.000085813905521
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 660,
+              "median": 640,
+              "min": 600,
+              "samples": [
+                650,
+                660,
+                600,
+                640,
+                640
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 20.625,
+              "median": 20.0,
+              "min": 18.75,
+              "samples": [
+                20.3125,
+                20.625,
+                18.75,
+                20.0,
+                20.0
+              ]
+            },
+            "rss_mib": {
+              "max": 10.890625,
+              "median": 10.8125,
+              "min": 10.8125,
+              "samples": [
+                10.8125,
+                10.8125,
+                10.8125,
+                10.890625,
+                10.859375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 10.9139254382401,
+              "median": 10.872683941894092,
+              "min": 10.865140798458274,
+              "samples": [
+                10.870684196290833,
+                10.872683941894092,
+                10.9139254382401,
+                10.887413356467489,
+                10.865140798458274
+              ]
+            }
+          },
+          "passed_repeats": 5
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 670,
+              "median": 620,
+              "min": 610,
+              "samples": [
+                610,
+                630,
+                620,
+                670,
+                620
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 20.9375,
+              "median": 19.375,
+              "min": 19.0625,
+              "samples": [
+                19.0625,
+                19.6875,
+                19.375,
+                20.9375,
+                19.375
+              ]
+            },
+            "rss_mib": {
+              "max": 10.609375,
+              "median": 10.484375,
+              "min": 10.453125,
+              "samples": [
+                10.484375,
+                10.453125,
+                10.609375,
+                10.453125,
+                10.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 10.877369933530346,
+              "median": 10.873616969366642,
+              "min": 10.868780239674436,
+              "samples": [
+                10.868780239674436,
+                10.869812439164843,
+                10.875492127871373,
+                10.877369933530346,
+                10.873616969366642
+              ]
+            }
+          },
+          "passed_repeats": 5
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

@@ -37,7 +37,10 @@ mod websocket;
 mod websocket_frame;
 mod xhttp;
 
-pub(crate) use xhttp::{connect_h2, connect_quic_transport, H3ConnectConfig};
+pub(crate) use xhttp::{
+    configure_quic_datagram_socket, connect_h2, connect_quic_transport,
+    connect_quic_transport_with_datagrams, H3ConnectConfig, H3Error,
+};
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
 /// and nothing else should. The five gRPC names on the line below are the

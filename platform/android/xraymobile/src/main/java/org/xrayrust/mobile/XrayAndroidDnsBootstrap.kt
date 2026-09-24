@@ -167,7 +167,7 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
 
     val carrierBootstrapDomains = linkedSetOf<String>()
     val dnsBootstrapDomains = linkedSetOf<AndroidDnsBootstrapDomain>()
-    collectVlessBootstrapDomains(root, carrierBootstrapDomains)
+    collectOutboundBootstrapDomains(root, carrierBootstrapDomains)
     if (dnsServers != null) {
         for (index in 0 until dnsServers.length()) {
             val rawServer = dnsServers.get(index)
@@ -201,6 +201,7 @@ internal fun prepareAndroidVpnConfigWithinDeadline(
             resolvedAddresses = resolvedAddresses,
             activeAliases = mutableSetOf(),
             depth = 0,
+            rejectsTunnelOwnedAddress = true,
             resolveSystemBootstrapAddresses = resolveSystemBootstrapAddresses,
         ) || modified
     }
@@ -253,6 +254,7 @@ internal data class AndroidDnsPreflightRoutingRule(
     val appliesToTun: Boolean,
     val hasDomainMatchers: Boolean,
     val hasIpMatchers: Boolean,
+    val selectsWireguard: Boolean = false,
 ) {
     val canSelectDomainTraffic: Boolean
         get() = hasDomainMatchers || !hasIpMatchers
@@ -263,21 +265,23 @@ internal data class AndroidDnsPreflightTopology(
     val hasDnsServers: Boolean,
     val defaultOutboundIsFreedom: Boolean,
     val routingRules: List<AndroidDnsPreflightRoutingRule>,
+    val defaultOutboundIsWireguard: Boolean = false,
 )
 
 internal fun validateAndroidDnsPreflightTopology(topology: AndroidDnsPreflightTopology) {
     if (!topology.fakeIpEnabled || topology.hasDnsServers) {
         return
     }
-    require(!topology.defaultOutboundIsFreedom) {
-        "fake-IP with a default Freedom outbound requires at least one dns.servers upstream"
+    require(!topology.defaultOutboundIsFreedom && !topology.defaultOutboundIsWireguard) {
+        "fake-IP with a default Freedom or WireGuard outbound requires at least one dns.servers upstream"
     }
     require(
         topology.routingRules.none { rule ->
-            rule.selectsFreedom && rule.appliesToTun && rule.canSelectDomainTraffic
+            (rule.selectsFreedom || rule.selectsWireguard) &&
+                rule.appliesToTun && rule.canSelectDomainTraffic
         },
     ) {
-        "fake-IP with a TUN domain route to Freedom requires at least one dns.servers upstream"
+        "fake-IP with a TUN domain route to Freedom or WireGuard requires at least one dns.servers upstream"
     }
 }
 
@@ -301,14 +305,33 @@ private fun androidDnsPreflightTopology(
         ?.equals("freedom", ignoreCase = true) == true
     val tunInboundTags = tunInboundTags(root)
     val routingRules = mutableListOf<AndroidDnsPreflightRoutingRule>()
-    val rawRules = root.optJSONObject("routing")?.optJSONArray("rules")
+    val routing = root.optJSONObject("routing")
+    val balancerProtocolsByTag = mutableMapOf<String, Set<String>>()
+    val balancers = routing?.optJSONArray("balancers")
+    if (balancers != null) {
+        for (index in 0 until balancers.length()) {
+            val balancer = balancers.getJSONObject(index)
+            val selectors = balancer.optJSONArray("selector")
+            val prefixes = if (selectors == null) emptyList() else
+                (0 until selectors.length()).map(selectors::getString)
+            val protocols = outboundProtocolsByTag.filterKeys { tag ->
+                prefixes.any(tag::startsWith) || tag == balancer.optString("fallbackTag")
+            }.values.map { it.lowercase(Locale.ROOT) }.toSet()
+            balancerProtocolsByTag[balancer.optString("tag")] = protocols
+        }
+    }
+    val rawRules = routing?.optJSONArray("rules")
     if (rawRules != null) {
         for (index in 0 until rawRules.length()) {
             val rule = rawRules.getJSONObject(index)
             val outboundProtocol = outboundProtocolsByTag[rule.optString("outboundTag")]
+            val balancerProtocols = balancerProtocolsByTag[rule.optString("balancerTag")].orEmpty()
             routingRules.add(
                 AndroidDnsPreflightRoutingRule(
-                    selectsFreedom = outboundProtocol.equals("freedom", ignoreCase = true),
+                    selectsFreedom = outboundProtocol.equals("freedom", ignoreCase = true) ||
+                        "freedom" in balancerProtocols,
+                    selectsWireguard = outboundProtocol.equals("wireguard", ignoreCase = true) ||
+                        "wireguard" in balancerProtocols,
                     appliesToTun = routingRuleAppliesToTun(rule, tunInboundTags),
                     hasDomainMatchers = hasArrayEntries(rule, "domain") ||
                         hasArrayEntries(rule, "domains"),
@@ -321,6 +344,8 @@ private fun androidDnsPreflightTopology(
         fakeIpEnabled = fakeIpEnabled,
         hasDnsServers = hasDnsServers,
         defaultOutboundIsFreedom = defaultOutboundIsFreedom,
+        defaultOutboundIsWireguard = outbounds?.optJSONObject(0)?.optString("protocol")
+            ?.equals("wireguard", ignoreCase = true) == true,
         routingRules = routingRules,
     )
 }
@@ -465,25 +490,62 @@ private fun AndroidDnsHostTarget.toJsonValue(): Any = when (this) {
     is AndroidDnsHostTarget.Addresses -> JSONArray(values)
 }
 
-private fun collectVlessBootstrapDomains(
+private fun collectOutboundBootstrapDomains(
     root: JSONObject,
     bootstrapDomains: MutableSet<String>,
 ) {
     val outbounds = root.optJSONArray("outbounds") ?: return
     for (outboundIndex in 0 until outbounds.length()) {
         val outbound = outbounds.optJSONObject(outboundIndex) ?: continue
-        if (!outbound.optString("protocol").trim().equals("vless", ignoreCase = true)) {
-            continue
+        val protocol = outbound.optString("protocol").lowercase(Locale.ROOT)
+        if (protocol !in listOf("vless", "hysteria", "wireguard")) continue
+        val settings = outbound.getJSONObject("settings")
+        val addresses = when (protocol) {
+            "vless" -> {
+                val servers = settings.getJSONArray("vnext")
+                (0 until servers.length()).map { servers.getJSONObject(it).getString("address") }
+            }
+            "hysteria" -> listOf(settings.getString("address"))
+            else -> {
+                val peers = settings.getJSONArray("peers")
+                require(peers.length() in 1..8) { "invalid WireGuard bootstrap peer count" }
+                (0 until peers.length()).map {
+                    wireguardBootstrapHost(peers.getJSONObject(it).getString("endpoint"))
+                }
+            }
         }
-        val vnext = outbound.getJSONObject("settings").getJSONArray("vnext")
-        for (serverIndex in 0 until vnext.length()) {
-            val serverAddress = vnext.getJSONObject(serverIndex).getString("address")
-            require(serverAddress.isNotEmpty()) { "VLESS bootstrap domain must not be empty" }
-            if (!isIpLiteral(serverAddress)) {
-                bootstrapDomains.add(serverAddress)
+        for (address in addresses) {
+            require(address.isNotEmpty()) { "carrier bootstrap host must not be empty" }
+            if (isIpLiteral(address)) {
+                require(canonicalIpAddress(address) !in XRAY_TUN_OWNED_ADDRESSES) {
+                    "carrier endpoint cannot point at a tunnel-local address"
+                }
+            } else {
+                bootstrapDomains.add(normalizeBootstrapDomain(address))
             }
         }
     }
+}
+
+// Core validation owns key material and the complete peer schema.
+// Parse only host:port here; never pass a key, URL or inner address to the resolver.
+private fun wireguardBootstrapHost(endpoint: String): String {
+    val separator = endpoint.lastIndexOf(':')
+    require(endpoint.length <= 260 && separator > 0) { "invalid WireGuard bootstrap endpoint" }
+    val port = endpoint.substring(separator + 1)
+    require(port.isNotEmpty() && port.all { it in '0'..'9' } &&
+        port.toIntOrNull()?.let { it in 1..65535 } == true
+    ) { "invalid WireGuard bootstrap endpoint" }
+    val host = endpoint.substring(0, separator)
+    if (host.startsWith('[') && host.endsWith(']')) {
+        val address = host.substring(1, host.length - 1)
+        require(':' in address && isIpLiteral(address)) { "invalid WireGuard bootstrap endpoint" }
+        return address
+    }
+    require(host.length <= 253 && host.all {
+        it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it in "-._"
+    }) { "invalid WireGuard bootstrap endpoint" }
+    return host
 }
 
 internal fun dnsServerBootstrapDomain(server: Any): String? =

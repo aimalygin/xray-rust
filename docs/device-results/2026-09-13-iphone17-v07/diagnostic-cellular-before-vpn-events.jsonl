@@ -1,0 +1,13 @@
+{"event":"abi","major":1,"minor":5,"protocol":"setup","time":"2026-09-13T18:30:43Z"}
+{"event":"import","protocol":"wireguard","result":"passed","time":"2026-09-13T18:30:43Z"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:30:43Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":[],"event":"carrier-path-detail","interface":"unavailable","protocol":"wireguard","time":"2026-09-13T18:30:43Z","unsatisfiedReason":"notAvailable"}
+{"event":"app-active","protocol":"wireguard","time":"2026-09-13T18:30:43Z"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:31:10Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:31:47Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:32:10Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:32:26Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:32:48Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:33:02Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:33:05Z","unsatisfiedReason":"notAvailable"}
+{"availableInterfaces":["cellular","cellular"],"event":"system-path","protocol":"wireguard","status":"satisfied","supportsIPv4":false,"supportsIPv6":true,"time":"2026-09-13T18:33:24Z","unsatisfiedReason":"notAvailable"}

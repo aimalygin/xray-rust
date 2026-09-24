@@ -1207,14 +1207,14 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
     }
 
-    func testNetworkSettingsInstallIPv6DefaultRoute() throws {
+    func testNetworkSettingsInstallUsableIPv6InterfaceAndDefaultRoute() throws {
         let settings = XrayPacketTunnelProvider.networkSettings(
             resolvedDNSConfiguration: .localDNSAnchor
         )
 
         let ipv6Settings = try XCTUnwrap(settings.ipv6Settings)
         XCTAssertEqual(ipv6Settings.addresses, [XrayPacketTunnelProvider.tunnelLocalIPv6Address])
-        XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [128])
+        XCTAssertEqual(ipv6Settings.networkPrefixLengths.map(\.intValue), [120])
         XCTAssertEqual(ipv6Settings.includedRoutes?.count, 1)
         XCTAssertEqual(ipv6Settings.includedRoutes?.first?.destinationAddress, "::")
         XCTAssertEqual(
@@ -1961,6 +1961,117 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         )
         XCTAssertFalse(summary.contains("secret"))
         XCTAssertFalse(summary.contains("203.0.113.10"))
+    }
+
+    func testV07CanonicalProfilesPassCoreValidationAfterPinning() throws {
+        // Follow the source symlink when running the package against a local
+        // test-only XCFramework, and use the same fixtures as the Rust parser.
+        var repository = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath()
+        for _ in 0..<5 { repository.deleteLastPathComponent() }
+        for name in ["hysteria2", "wireguard", "wireguard-psk", "wireguard-multi-peer"] {
+            let fixture = repository.appendingPathComponent("tests/fixtures/configs/\(name).json")
+            var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
+            root["inbounds"] = [["tag": "tun-in", "protocol": "tun", "settings": [:]]]
+            root["dns"] = ["servers": ["192.0.2.53"]]
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: root), as: UTF8.self)
+            let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json), resolveAddress: { _ in ["2001:db8::8", "192.0.2.8"] }
+            )
+            XCTAssertNoThrow(try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                prepared.json, geodataSelection: .init(directory: nil, policy: .fallbackToDefaults)
+            ), name)
+            if name == "wireguard" {
+                var fakeRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? [String: Any])
+                fakeRoot["dns"] = ["fakeIp": ["enabled": true, "ipv4Pool": "198.19.0.0/16"]]
+                assertInvalidDNSRoutingTopology(String(
+                    decoding: try JSONSerialization.data(withJSONObject: fakeRoot), as: UTF8.self
+                ))
+            }
+        }
+    }
+
+    func testV07PinningPreservesProfilesAndResolvesAllCarrierHosts() throws {
+        let json = #"{"dns":{"servers":["192.0.2.53"]},"outbounds":[{"protocol":"hysteria","settings":{"address":"Hy.Example.","port":443},"streamSettings":{"hysteriaSettings":{"auth":"synthetic-auth"},"tlsSettings":{"serverName":"tls.example"}}},{"protocol":"wireguard","settings":{"secretKey":"synthetic-key","address":["10.0.0.1/32"],"peers":[{"endpoint":"WG.Example.:51820","preSharedKey":"synthetic-psk","allowedIPs":["0.0.0.0/0"]},{"endpoint":"hy.example:51821"},{"endpoint":"[2001:db8::7]:51820"},{"endpoint":"192.0.2.7:51820"}]}}]}"#
+        var queries: [String] = []
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolvedConfig(json: json),
+            resolveAddress: { domain in
+                queries.append(domain)
+                return domain == "hy.example" ? ["2001:db8::8", "192.0.2.8"] : ["192.0.2.9"]
+            }
+        )
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? NSDictionary)
+        let original = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+        XCTAssertEqual(root["outbounds"] as? NSArray, original["outbounds"] as? NSArray)
+        XCTAssertEqual(queries, ["hy.example", "wg.example"])
+        let hosts = try XCTUnwrap((root["dns"] as? NSDictionary)?["hosts"] as? NSDictionary)
+        XCTAssertEqual(hosts["full:hy.example"] as? [String], ["2001:db8::8", "192.0.2.8"])
+        XCTAssertEqual(hosts["full:wg.example"] as? [String], ["192.0.2.9"])
+        XCTAssertEqual(prepared.excludedServerAddresses,
+                       ["2001:db8::7", "192.0.2.7", "2001:db8::8", "192.0.2.8", "192.0.2.9"])
+        XCTAssertFalse(prepared.excludedServerAddresses.contains("192.0.2.53"))
+        let summary = XrayPacketTunnelProvider.configSummary(prepared.json)
+        for secret in ["synthetic-auth", "synthetic-key", "synthetic-psk"] {
+            XCTAssertFalse(summary.contains(secret))
+        }
+    }
+
+    func testV07PinningUsesExistingAliasForEveryPeerWithoutLookup() throws {
+        let json = #"{"dns":{"hosts":{"WG.Example.":"Alias.Example.","full:alias.example":["2001:db8::8","192.0.2.8"]}},"outbounds":[{"protocol":"wireguard","settings":{"peers":[{"endpoint":"WG.Example.:51820"},{"endpoint":"alias.example:51821"}]}}]}"#
+        let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+            resolvedConfig(json: json),
+            resolveAddress: { _ in XCTFail("pinned aliases must skip system DNS"); return nil }
+        )
+        XCTAssertEqual(prepared.excludedServerAddresses, ["2001:db8::8", "192.0.2.8"])
+    }
+
+    func testV07PinningFailsIfLastPeerLookupFailsOrIsCancelled() throws {
+        let json = #"{"outbounds":[{"protocol":"wireguard","settings":{"peers":[{"endpoint":"first.example:51820"},{"endpoint":"last.example:51821"}]}}]}"#
+        for cancel in [false, true] {
+            var queries: [String] = []
+            XCTAssertThrowsError(try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json),
+                shouldContinue: { !cancel || queries.isEmpty },
+                resolveAddress: { domain in
+                    queries.append(domain)
+                    return domain == "first.example" ? ["192.0.2.8"] : nil
+                }
+            ))
+            XCTAssertEqual(queries, cancel ? ["first.example"] : ["first.example", "last.example"])
+        }
+    }
+
+    func testV07PinningRejectsTunnelOwnedCarriersAndAliases() throws {
+        for address in ["198.18.0.1", "198.18.0.2", "fd00:7872::2"] {
+            let endpoint = address.contains(":") ? "[\(address)]:51820" : "\(address):51820"
+            for outbound in [
+                #"{"protocol":"hysteria","settings":{"address":"\#(address)"}}"#,
+                #"{"protocol":"wireguard","settings":{"peers":[{"endpoint":"\#(endpoint)"}]}}"#,
+                #"{"protocol":"wireguard","settings":{"peers":[{"endpoint":"wg.example:51820"}]}}"#,
+            ] {
+                for pin in [false, true] {
+                    let hosts = pin ? #", "dns":{"hosts":{"wg.example":"alias.example","alias.example":"\#(address)"}}"# : ""
+                    XCTAssertThrowsError(try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                        resolvedConfig(json: #"{"outbounds":[\#(outbound)]\#(hosts)}"#),
+                        resolveAddress: { _ in [address] }
+                    ))
+                }
+            }
+        }
+    }
+
+    func testWireguardPinningRejectsMalformedEndpointsWithoutEchoingInput() throws {
+        for endpoint in ["secret@host:51820", "secret:0", "secret:65536", "secret:+1",
+                         "secret:١", "secret:", "[secret]:51820", "2001:db8::7:51820",
+                         "https://secret:51820", "secret:51820/path", "[fe80::1%1]:51820"] {
+            let json = #"{"outbounds":[{"protocol":"wireguard","settings":{"peers":[{"endpoint":"\#(endpoint)"}]}}]}"#
+            XCTAssertThrowsError(try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json),
+                resolveAddress: { _ in XCTFail("invalid endpoint must not reach DNS"); return nil }
+            ), endpoint) { error in
+                XCTAssertFalse(error.localizedDescription.contains(endpoint))
+            }
+        }
     }
 
     func testConfigPinningAddsExactBootstrapHostsAndKeepsVLESSDomain() throws {

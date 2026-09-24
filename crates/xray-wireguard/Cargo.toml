@@ -1,0 +1,25 @@
+[package]
+name = "xray-wireguard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Bounded WireGuard client with a userspace TCP/UDP interface"
+
+[dependencies]
+bytes.workspace = true
+gotatun = { path = "../../vendor/gotatun", version = "=0.9.1", default-features = false, features = ["ring", "device"] }
+rand.workspace = true
+socket2 = "0.6.5"
+smoltcp = { workspace = true, features = ["socket-udp", "socket-tcp-reno"] }
+thiserror.workspace = true
+tokio.workspace = true
+x25519-dalek.workspace = true
+xray-proxy = { path = "../xray-proxy" }
+xray-transport = { path = "../xray-transport" }
+
+[dev-dependencies]
+base64.workspace = true
+serde_json.workspace = true

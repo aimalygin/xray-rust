@@ -5869,7 +5869,7 @@ fn removed_transports_say_they_were_removed() {
 
 #[test]
 fn transports_xray_still_has_but_we_do_not_say_so() {
-    for network in ["kcp", "mkcp", "hysteria"] {
+    for network in ["kcp", "mkcp"] {
         let error = parse_xray_json(&raw_with_stream_settings(&format!(
             r#""network": "{network}", "security": "none""#
         )))

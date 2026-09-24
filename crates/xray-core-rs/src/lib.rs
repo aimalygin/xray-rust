@@ -222,6 +222,10 @@ struct RuntimeState {
 
 #[derive(Debug, Error)]
 pub enum CoreError {
+    #[error(transparent)]
+    Hysteria(#[from] xray_transport::hysteria::HysteriaError),
+    #[error(transparent)]
+    Wireguard(#[from] xray_wireguard::Error),
     #[error("core is already running")]
     AlreadyRunning,
     #[error("core is already stopped")]
@@ -590,6 +594,23 @@ impl Core {
             return Err(CoreError::InvalidFakeIpConfiguration);
         }
         ensure_effective_dns_tag(&mut config);
+        for outbound in &config.outbounds {
+            if matches!(
+                outbound.settings,
+                xray_config::OutboundSettings::Wireguard(_)
+            ) {
+                outbound::WireguardOutbound::new(outbound)?;
+            }
+            if matches!(
+                outbound.settings,
+                xray_config::OutboundSettings::Hysteria(_)
+            ) || matches!(
+                outbound.stream.transport,
+                xray_config::StreamTransport::Hysteria(_)
+            ) {
+                outbound::HysteriaOutbound::new(outbound)?;
+            }
+        }
         let config = Arc::new(config);
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
@@ -703,6 +724,19 @@ impl Core {
 
     pub fn close_connection(&self, id: ConnectionId) -> Result<u64, ConnectionCloseError> {
         self.connection_registry.close(id)
+    }
+
+    /// Queues fresh protected carrier sockets for live Hysteria connections.
+    /// Retains QUIC state and endpoints; count denotes acceptance, not recovery.
+    pub fn rebind_hysteria(&self) -> u64 {
+        self.outbound_factory().rebind_hysteria()
+    }
+
+    /// Rebinds live WireGuard carrier transports after an OS network change.
+    /// Returns accepted (coalesced) requests, not completed handshakes. Lazy
+    /// outbounds remain lazy; current endpoints and inner flows are retained.
+    pub fn rebind_wireguard(&self) -> u64 {
+        self.outbound_factory().rebind_wireguard()
     }
 
     fn runtime_dns_resolvers(
@@ -1001,6 +1035,7 @@ impl Core {
 
     pub async fn stop(&mut self) -> Result<(), CoreError> {
         self.shutdown.signal();
+        self.outbound_factory().close_sessions();
         if let Some(runtime) = self.runtime.take() {
             for task in runtime.tasks {
                 task.abort();

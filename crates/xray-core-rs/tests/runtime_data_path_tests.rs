@@ -71,6 +71,9 @@ use xray_tun::{TunEndpoint, TunError, TunStats};
 #[path = "runtime_data_path_tests/tun_download_backpressure.rs"]
 mod tun_download_backpressure;
 
+#[path = "runtime_data_path_tests/tun_upload_backpressure.rs"]
+mod tun_upload_backpressure;
+
 fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
     let mut matchers = IpMatcherSet::builder();
     matchers.insert_cidr(cidr.cidr(), false);
@@ -91,6 +94,8 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         TcpOutbound::Vless(outbound) => Ok(*outbound),
         TcpOutbound::Freedom
         | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::Hysteria(_)
+        | TcpOutbound::Wireguard(_)
         | TcpOutbound::Chained { .. } => Err(CoreError::NoSupportedOutbound),
     }
 }
@@ -9328,10 +9333,13 @@ impl TunTcpClient {
             .add_default_ipv4_route(SmolIpv4Address::new(10, 10, 0, 1))
             .unwrap();
 
-        let tcp_socket = smol_tcp::Socket::new(
+        let mut tcp_socket = smol_tcp::Socket::new(
             smol_tcp::SocketBuffer::new(vec![0; 8192]),
             smol_tcp::SocketBuffer::new(vec![0; 8192]),
         );
+        // Keep the synthetic local link independent of Cargo's unified
+        // congestion-control features enabled for the WireGuard Internet path.
+        tcp_socket.set_congestion_control(smol_tcp::CongestionControl::None);
         let mut sockets = SocketSet::new(Vec::new());
         let tcp = sockets.add(tcp_socket);
 
@@ -9414,10 +9422,12 @@ impl TunTcpMultiClient {
         let mut sockets = SocketSet::new(Vec::new());
         let tcp = (0..flow_count)
             .map(|_| {
-                sockets.add(smol_tcp::Socket::new(
+                let mut socket = smol_tcp::Socket::new(
                     smol_tcp::SocketBuffer::new(vec![0; 8192]),
                     smol_tcp::SocketBuffer::new(vec![0; 8192]),
-                ))
+                );
+                socket.set_congestion_control(smol_tcp::CongestionControl::None);
+                sockets.add(socket)
             })
             .collect();
 
@@ -11780,4 +11790,248 @@ fn httpupgrade_host_falls_back_past_tls_to_the_destination() {
     // No wsSettings.host and no TLS, so the destination address stands in --
     // and never with a port.
     assert_eq!(upgrade.host, "203.0.113.10");
+}
+
+#[path = "hysteria_runtime/support.rs"]
+mod hysteria_support;
+
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
+async fn hysteria_runtime_tun_tcp_udp_and_host_close() {
+    timeout(hysteria_support::DEADLINE, async {
+        let server = hysteria_support::ReferenceServer::start().await;
+        let (tcp_address, _tcp) = hysteria_support::tcp_echo().await;
+        let (udp_address, _udp) = hysteria_support::udp_echo().await;
+        let (mut core, protector, bootstrap, _) = hysteria_support::core(&server);
+        core.start().await.unwrap();
+        let mut client = TunTcpClient::new();
+        client.connect(tcp_address);
+        pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+        let payload = b"tun tcp over hysteria";
+        client.send_payload(payload);
+        let mut received = Vec::new();
+        pump_tun_until(&mut client, core.tun(), |client| {
+            received.extend_from_slice(&client.recv_available());
+            received.len() >= payload.len()
+        })
+        .await;
+        assert_eq!(received, payload);
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let udp_payload = vec![0xa5; 1200];
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_ip,
+                49154,
+                Ipv4Addr::LOCALHOST,
+                udp_address.port(),
+                &udp_payload,
+            )))
+            .await
+            .unwrap();
+        let reply = poll_tun_outbound_until_with_timeout(
+            core.tun(),
+            hysteria_support::DEADLINE,
+            |packet| ipv4_udp_payload(packet).is_some_and(|p| p == udp_payload),
+        )
+        .await;
+        assert_ipv4_udp_packet(
+            &reply,
+            Ipv4Addr::LOCALHOST,
+            udp_address.port(),
+            client_ip,
+            49154,
+            &udp_payload,
+        );
+        assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+        assert_eq!(bootstrap.0.load(Ordering::SeqCst), 1);
+        let connections = core.connection_snapshot().connections;
+        assert_eq!(connections.len(), 2);
+        for connection in connections {
+            core.close_connection(connection.id).unwrap();
+        }
+        wait_for_empty_connection_snapshot(&core).await;
+        let accounting = core.outbound_accounting_snapshot();
+        let proxy = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("proxy"))
+            .unwrap();
+        assert_eq!(proxy.host_closed_connections, 2);
+        assert_eq!(
+            proxy.uplink_bytes,
+            (payload.len() + udp_payload.len()) as u64
+        );
+        assert_eq!(proxy.downlink_bytes, proxy.uplink_bytes);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
+async fn hysteria_runtime_tun_dns_wire_and_managed_destination_lookup() {
+    timeout(hysteria_support::DEADLINE, async {
+        let server = hysteria_support::ReferenceServer::start().await;
+        let upstream = spawn_observed_udp_dns_a_server(Ipv4Addr::LOCALHOST).await;
+        let upstream_probe = upstream.probe();
+        let (echo_address, _tcp) = hysteria_support::tcp_echo().await;
+        let (_, protector, _, dialer) = hysteria_support::core(&server);
+        let mut json = hysteria_support::profile(server.address);
+        json["dns"] = serde_json::json!({
+            "queryStrategy":"UseIPv4", "hosts":{"bootstrap.example":"127.0.0.1"},
+            "servers":[{"address":"127.0.0.1","port":upstream.addr().port()}]
+        });
+        let config = parse_xray_json(&json.to_string()).unwrap().config;
+        let mut core = Core::with_transport_dialer_and_tun_options(config, dialer, TunRuntimeOptions { dns_bootstrap: DnsBootstrapMode::StaticOnly, ..Default::default() }).unwrap();
+        core.start().await.unwrap();
+        let query = build_dns_a_query(0x7262, "wire-hysteria.example");
+        let anchor = Ipv4Addr::new(198,18,0,1);
+        let client_ip = Ipv4Addr::new(10,10,0,2);
+        core.tun().push_inbound(Bytes::from(ipv4_udp_packet(client_ip, 53044, anchor, 53, &query))).await.unwrap();
+        let reply = poll_tun_outbound_until_with_timeout(core.tun(), hysteria_support::DEADLINE, |packet| ipv4_udp_payload(packet).is_some_and(|p| p.get(..2) == Some(&0x7262_u16.to_be_bytes()))).await;
+        let response = ipv4_udp_payload(&reply).unwrap();
+        assert_eq!(dns_response_answer_ipv4(response), Some(Ipv4Addr::LOCALHOST));
+        assert_ipv4_udp_packet(&reply, anchor, 53, client_ip, 53044, response);
+        assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+        assert_eq!(upstream_probe.snapshot().len(), 1);
+        core.stop().await.unwrap();
+
+        // IPOnDemand forces a managed lookup through Hysteria. The selected
+        // Freedom TCP route then consumes the answer locally.
+        json["outbounds"].as_array_mut().unwrap().push(serde_json::json!({"tag":"direct","protocol":"freedom"}));
+        json["routing"] = serde_json::json!({"domainStrategy":"IPOnDemand", "rules":[{"type":"field","network":"tcp","ip":["127.0.0.1"],"outboundTag":"direct"}]});
+        let (_, second_protector, _, dialer) = hysteria_support::core(&server);
+        let mut managed = Core::with_transport_dialer_and_tun_options(parse_xray_json(&json.to_string()).unwrap().config, dialer, TunRuntimeOptions { dns_bootstrap: DnsBootstrapMode::StaticOnly, ..Default::default() }).unwrap();
+        managed.start().await.unwrap();
+        let (mut tcp, _) = hysteria_support::socks(managed.inbound_addr(Some("socks-in")).unwrap(), 1, "lookup-hysteria.example", echo_address.port()).await;
+        hysteria_support::echo(&mut tcp, b"routed managed dns").await;
+        assert_eq!(second_protector.0.load(Ordering::SeqCst), 2);
+        assert!(upstream_probe.snapshot().len() >= 2);
+        managed.stop().await.unwrap();
+        upstream.stop().await;
+    }).await.unwrap();
+}
+
+#[path = "wireguard_runtime/support.rs"]
+mod wireguard_support;
+
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
+    timeout(wireguard_support::DEADLINE, async {
+        let server = wireguard_support::ReferenceServer::start().await;
+        let (tcp_address, _tcp) = wireguard_support::tcp_echo().await;
+        let (udp_address, _udp) = wireguard_support::udp_echo().await;
+        let (mut core, protector, bootstrap, _) = wireguard_support::core(&server);
+        core.start().await.unwrap();
+        let mut client = TunTcpClient::new();
+        client.connect(SocketAddr::new(
+            wireguard_support::INNER_IP.into(),
+            tcp_address.port(),
+        ));
+        pump_tun_until(&mut client, core.tun(), TunTcpClient::may_send).await;
+        let payload = b"tun tcp over wireguard";
+        client.send_payload(payload);
+        let mut received = Vec::new();
+        pump_tun_until(&mut client, core.tun(), |client| {
+            received.extend_from_slice(&client.recv_available());
+            received.len() >= payload.len()
+        })
+        .await;
+        assert_eq!(received, payload);
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let udp_payload = vec![0xa5; 1200];
+        core.tun()
+            .push_inbound(Bytes::from(ipv4_udp_packet(
+                client_ip,
+                49154,
+                wireguard_support::INNER_IP,
+                udp_address.port(),
+                &udp_payload,
+            )))
+            .await
+            .unwrap();
+        let reply = poll_tun_outbound_until_with_timeout(
+            core.tun(),
+            wireguard_support::DEADLINE,
+            |packet| ipv4_udp_payload(packet).is_some_and(|p| p == udp_payload),
+        )
+        .await;
+        assert_ipv4_udp_packet(
+            &reply,
+            wireguard_support::INNER_IP,
+            udp_address.port(),
+            client_ip,
+            49154,
+            &udp_payload,
+        );
+        assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+        assert_eq!(bootstrap.0.load(Ordering::SeqCst), 1);
+        let connections = core.connection_snapshot().connections;
+        assert_eq!(connections.len(), 2);
+        for connection in connections {
+            core.close_connection(connection.id).unwrap();
+        }
+        wait_for_empty_connection_snapshot(&core).await;
+        let accounting = core.outbound_accounting_snapshot();
+        let proxy = accounting
+            .outbounds
+            .iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("proxy"))
+            .unwrap();
+        assert_eq!(proxy.host_closed_connections, 2);
+        assert_eq!(
+            proxy.uplink_bytes,
+            (payload.len() + udp_payload.len()) as u64
+        );
+        assert_eq!(proxy.downlink_bytes, proxy.uplink_bytes);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
+    timeout(wireguard_support::DEADLINE, async {
+        let server = wireguard_support::ReferenceServer::start().await;
+        let upstream = spawn_observed_udp_dns_a_server(wireguard_support::INNER_IP).await;
+        let upstream_probe = upstream.probe();
+        let (echo_address, _tcp) = wireguard_support::tcp_echo().await;
+        let (_, protector, _, dialer) = wireguard_support::core(&server);
+        let mut json = wireguard_support::profile(server.address);
+        json["dns"] = serde_json::json!({
+            "queryStrategy":"UseIPv4", "hosts":{"bootstrap.example":"127.0.0.1"},
+            "servers":[{"address":"198.51.100.7","port":upstream.addr().port()}]
+        });
+        let config = parse_xray_json(&json.to_string()).unwrap().config;
+        let mut core = Core::with_transport_dialer_and_tun_options(config, dialer, TunRuntimeOptions { dns_bootstrap: DnsBootstrapMode::StaticOnly, ..Default::default() }).unwrap();
+        core.start().await.unwrap();
+        let query = build_dns_a_query(0x7262, "wire-wireguard.example");
+        let anchor = Ipv4Addr::new(198,18,0,1);
+        let client_ip = Ipv4Addr::new(10,10,0,2);
+        core.tun().push_inbound(Bytes::from(ipv4_udp_packet(client_ip, 53044, anchor, 53, &query))).await.unwrap();
+        let reply = poll_tun_outbound_until_with_timeout(core.tun(), wireguard_support::DEADLINE, |packet| ipv4_udp_payload(packet).is_some_and(|p| p.get(..2) == Some(&0x7262_u16.to_be_bytes()))).await;
+        let response = ipv4_udp_payload(&reply).unwrap();
+        assert_eq!(dns_response_answer_ipv4(response), Some(wireguard_support::INNER_IP));
+        assert_ipv4_udp_packet(&reply, anchor, 53, client_ip, 53044, response);
+        assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+        assert_eq!(upstream_probe.snapshot().len(), 1);
+        core.stop().await.unwrap();
+
+        // IPOnDemand performs target DNS inside WireGuard before TCP opens;
+        // both the DNS request and TCP stream reuse the same protected device.
+        json["routing"] = serde_json::json!({"domainStrategy":"IPOnDemand", "rules":[{"type":"field","network":"tcp","ip":["198.51.100.7"],"outboundTag":"proxy"}]});
+        let (_, second_protector, _, dialer) = wireguard_support::core(&server);
+        let mut managed = Core::with_transport_dialer_and_tun_options(parse_xray_json(&json.to_string()).unwrap().config, dialer, TunRuntimeOptions { dns_bootstrap: DnsBootstrapMode::StaticOnly, ..Default::default() }).unwrap();
+        managed.start().await.unwrap();
+        let (mut tcp, _) = wireguard_support::socks(managed.inbound_addr(Some("socks-in")).unwrap(), 1, "lookup-wireguard.example", echo_address.port()).await;
+        wireguard_support::echo(&mut tcp, b"routed managed dns").await;
+        assert_eq!(second_protector.0.load(Ordering::SeqCst), 1);
+        assert!(upstream_probe.snapshot().len() >= 2);
+        managed.stop().await.unwrap();
+        upstream.stop().await;
+    }).await.unwrap();
 }

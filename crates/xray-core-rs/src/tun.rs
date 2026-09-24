@@ -1,6 +1,8 @@
+mod datagram;
+
 use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant as StdInstant;
 
@@ -67,6 +69,8 @@ const STACK_EVENT_CHANNEL_DEPTH: usize = 64;
 const TCP_BRIDGE_CHANNEL_DEPTH: usize = 256;
 const MOBILE_TCP_BRIDGE_CHANNEL_DEPTH: usize = 128;
 const LOW_MEMORY_TCP_BRIDGE_CHANNEL_DEPTH: usize = 64;
+const PACKET_TRANSPORT_UPLOAD_QUEUE_PACKETS: usize = 8;
+const PACKET_TRANSPORT_UPLOAD_BATCH_BYTES: usize = 64 * 1024;
 // Burst-heavy UDP (DNS fan-out, QUIC fallback retries) overflows a 64-deep
 // channel and surfaces as udp_channel_dropped_packets.
 const UDP_BRIDGE_CHANNEL_DEPTH: usize = 256;
@@ -419,6 +423,8 @@ impl TcpRemoteBufferState {
 struct TcpUploadBufferState {
     pending_bytes: AtomicUsize,
     pending_max_bytes: AtomicUsize,
+    capacity_waiting: AtomicBool,
+    capacity_available: tokio::sync::Notify,
 }
 
 impl TcpUploadBufferState {
@@ -441,13 +447,18 @@ impl TcpUploadBufferState {
 
         let _ = self
             .pending_bytes
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |pending| {
                 Some(pending.saturating_sub(bytes))
             });
+        // Only wake a stack that encountered backpressure. Normal traffic
+        // must not schedule a second actor turn for every released packet.
+        if self.capacity_waiting.swap(false, Ordering::SeqCst) {
+            self.capacity_available.notify_one();
+        }
     }
 
     fn pending_bytes(&self) -> usize {
-        self.pending_bytes.load(Ordering::Relaxed)
+        self.pending_bytes.load(Ordering::SeqCst)
     }
 
     fn pending_max_bytes(&self) -> usize {
@@ -875,6 +886,7 @@ pub(crate) async fn serve_tun_endpoint(
     let udp_task_permits = Arc::new(Semaphore::new(udp_task_limit));
     let dns_udp_task_permits = Arc::new(Semaphore::new(dns_udp_task_limit(udp_task_limit)));
     let mut flow_budget_state = FlowBudgetState::new(runtime_policy.flows);
+    let upload_capacity = Arc::clone(&flow_budget_state.tcp_upload);
     let mut udp_flows = HashMap::new();
     let mut delayed_stack_events = VecDeque::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
@@ -974,6 +986,9 @@ pub(crate) async fn serve_tun_endpoint(
                         Some(tun.as_ref()),
                     );
                 }
+            }
+            () = upload_capacity.capacity_available.notified() => {
+                tcp_stack_dirty = true;
             }
             joined = bridge_tasks.join_next(), if !bridge_tasks.is_empty() => {
                 if let Some(result) = joined {
@@ -1543,15 +1558,26 @@ impl TunRuntimeContext {
 #[derive(Debug)]
 struct TcpFlow {
     generation: u64,
-    to_remote: mpsc::Sender<StackToRemoteData>,
+    to_remote: Option<mpsc::Sender<StackToRemoteData>>,
     task: Option<AbortHandle>,
     remote_open: bool,
+    upload_queue_packets: Option<usize>,
     pending_remote: VecDeque<Bytes>,
     pending_remote_bytes: usize,
     has_deferred_remote_data: bool,
     pending_remote_delivery: Option<DownloadDelivery>,
     remote_closed: bool,
     remote_aborted: bool,
+}
+
+impl TcpFlow {
+    fn upload_queue_full(&self) -> bool {
+        self.to_remote.as_ref().is_some_and(|sender| {
+            self.upload_queue_packets.is_some_and(|limit| {
+                !sender.is_closed() && sender.max_capacity() - sender.capacity() >= limit
+            })
+        })
+    }
 }
 
 impl Drop for TcpFlow {
@@ -1773,6 +1799,7 @@ enum StackEvent {
     RemoteOpened {
         handle: SocketHandle,
         generation: u64,
+        upload_queue_packets: Option<usize>,
     },
     RemoteData {
         handle: SocketHandle,
@@ -1948,9 +1975,10 @@ fn open_ready_tcp_flows(
             handle,
             TcpFlow {
                 generation,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: false,
+                upload_queue_packets: None,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -2047,9 +2075,10 @@ fn insert_aborted_tcp_flow(
         handle,
         TcpFlow {
             generation,
-            to_remote,
+            to_remote: Some(to_remote),
             task: None,
             remote_open: false,
+            upload_queue_packets: None,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
             has_deferred_remote_data: false,
@@ -2237,12 +2266,17 @@ fn try_apply_stack_event(
     device: &mut PacketDevice,
 ) -> Result<(), StackEvent> {
     match event {
-        StackEvent::RemoteOpened { handle, generation } => {
+        StackEvent::RemoteOpened {
+            handle,
+            generation,
+            upload_queue_packets,
+        } => {
             if let Some(flow) = tcp_flows
                 .get_mut(&handle)
                 .filter(|flow| flow.generation == generation)
             {
                 flow.remote_open = true;
+                flow.upload_queue_packets = upload_queue_packets;
             }
         }
         StackEvent::RemoteData {
@@ -2472,22 +2506,60 @@ fn read_socket_data_to_remote(
     flows: &mut HashMap<SocketHandle, TcpFlow>,
     flow_budget_state: &mut FlowBudgetState,
 ) {
+    flow_budget_state
+        .tcp_upload
+        .capacity_waiting
+        .store(false, Ordering::SeqCst);
     for (handle, flow) in flows {
         // Until the remote stream exists, leave client data in smoltcp's fixed
         // receive window instead of growing the bridge upload queues.
         if !flow.remote_open {
             continue;
         }
+        let Some(to_remote) = flow.to_remote.as_ref() else {
+            continue;
+        };
         let socket = sockets.get_mut::<tcp::Socket>(*handle);
         while socket.can_recv() {
-            let max_read = flow_budget_state
+            if flow.upload_queue_full() {
+                flow_budget_state
+                    .tcp_upload
+                    .capacity_waiting
+                    .store(true, Ordering::SeqCst);
+                if flow.upload_queue_full() {
+                    tun.record_tcp_stack_to_remote_backpressure();
+                    break;
+                }
+            }
+            let mut max_read = flow_budget_state
                 .available_upload_bytes()
                 .min(TCP_BUFFER_SIZE);
+            if max_read == 0 {
+                flow_budget_state
+                    .tcp_upload
+                    .capacity_waiting
+                    .store(true, Ordering::SeqCst);
+                // Release can race with arming the wakeup. Check again after
+                // registration so already-freed capacity cannot be missed.
+                max_read = flow_budget_state
+                    .available_upload_bytes()
+                    .min(TCP_BUFFER_SIZE);
+            }
             if max_read == 0 {
                 tun.record_tcp_stack_to_remote_backpressure();
                 break;
             }
-            let permit = match flow.to_remote.try_reserve() {
+            let permit = match to_remote.try_reserve().or_else(|error| {
+                if matches!(error, mpsc::error::TrySendError::Full(_)) {
+                    flow_budget_state
+                        .tcp_upload
+                        .capacity_waiting
+                        .store(true, Ordering::SeqCst);
+                    to_remote.try_reserve()
+                } else {
+                    Err(error)
+                }
+            }) {
                 Ok(permit) => permit,
                 Err(mpsc::error::TrySendError::Full(_)) => {
                     tun.record_tcp_stack_to_remote_backpressure();
@@ -2518,6 +2590,20 @@ fn read_socket_data_to_remote(
             };
             tun.record_tcp_stack_to_remote(data.len());
             permit.send(StackToRemoteData::tracked(data, reservation));
+        }
+        // may_recv remains true while bytes preceding FIN are buffered. Drop
+        // the sole sender only after draining them, including under pressure;
+        // the bridge then consumes the queued tail before shutting down upload.
+        if !socket.may_recv()
+            && matches!(
+                socket.state(),
+                tcp::State::CloseWait
+                    | tcp::State::Closing
+                    | tcp::State::LastAck
+                    | tcp::State::TimeWait
+            )
+        {
+            flow.to_remote = None;
         }
     }
 }
@@ -2581,7 +2667,7 @@ async fn open_tcp_bridge_stream(
                 )
                 .await?);
             }
-            TcpOutbound::Vless(_)
+            TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_)
                 if upstream
                     .socket_addr()
                     .is_some_and(socket_addr_has_nonzero_scope) =>
@@ -2592,7 +2678,7 @@ async fn open_tcp_bridge_stream(
                 )
                 .into());
             }
-            TcpOutbound::Vless(_) => {}
+            TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {}
             TcpOutbound::Chained { .. } => {
                 if matches!(outbound.primary(), TcpOutbound::Vless(_))
                     && upstream
@@ -2612,7 +2698,8 @@ async fn open_tcp_bridge_stream(
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             context.dns_resolver.as_ref()
         }
-        TcpOutbound::Vless(_) => context.bootstrap_dns_resolver(),
+        TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) => context.bootstrap_dns_resolver(),
+        TcpOutbound::Wireguard(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
     open_tcp_stream_with_resolvers_and_dialer(
@@ -2651,7 +2738,7 @@ async fn bridge_tcp_flow(
                 () = wait_for_tun_shutdown(&mut shutdown) => false,
                 result = tokio::time::timeout(
                     context.inbound_policy.handshake,
-                    context.stack_tx.send(StackEvent::RemoteOpened { handle, generation }),
+                    context.stack_tx.send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets: None }),
                 ) => matches!(result, Ok(Ok(()))),
             };
             if !opened {
@@ -2967,6 +3054,9 @@ async fn bridge_tcp_flow_inner(
         );
         let mut connection_close = connection.close_receiver();
         let policy_timeout = match outbound.primary() {
+            TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
+                effective_policy_for_level(&context.config, Some(0)).handshake
+            }
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
                 context.inbound_policy.handshake
             }
@@ -3093,7 +3183,14 @@ async fn bridge_tcp_flow_inner(
     let bridge_operation_timeout =
         is_dns_proxy.then_some(bridge_idle_timeout.min(dns_operation_timeout));
     connection.mark_active();
-    if !client_already_opened
+    let packet_transport = matches!(
+        outbound.primary(),
+        TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_)
+    );
+    // QUIC and the WireGuard TCP stack already have send windows. A short
+    // bridge queue feeds them without keeping another 8 MiB per flow in TUN.
+    let upload_queue_packets = packet_transport.then_some(PACKET_TRANSPORT_UPLOAD_QUEUE_PACKETS);
+    if (!client_already_opened || packet_transport)
         && !matches!(
             tokio::select! {
                 biased;
@@ -3102,7 +3199,7 @@ async fn bridge_tcp_flow_inner(
                     bridge_operation_timeout,
                     context
                         .stack_tx
-                        .send(StackEvent::RemoteOpened { handle, generation }),
+                        .send(StackEvent::RemoteOpened { handle, generation, upload_queue_packets }),
                 ) => result,
             },
             Some(Ok(()))
@@ -3172,6 +3269,17 @@ async fn bridge_tcp_flow_inner(
         context.tun.record_tcp_remote_write_error();
         let _ = await_with_optional_timeout(bridge_operation_timeout, close_guard.close()).await;
         return;
+    }
+    let mut context = context;
+    if packet_transport {
+        // These transports already buffer and packetize writes. Multi-megabyte
+        // bridge batches only duplicate their queued data and retain large
+        // allocations until the last packet is acknowledged.
+        context.runtime_policy.tcp_upload.max_batch_bytes = context
+            .runtime_policy
+            .tcp_upload
+            .max_batch_bytes
+            .min(PACKET_TRANSPORT_UPLOAD_BATCH_BYTES);
     }
     let termination;
     if let (Some(start), Some(open_duration_ms)) = (tcp_timing_start, tcp_open_duration_ms) {
@@ -3323,90 +3431,124 @@ where
     let mut read_buffer = vec![0; TCP_DOWNLOAD_CHUNK_SIZE];
     let mut pending_download: Option<PendingDownload<'_>> = None;
     let mut remote_read_end = None;
+    let mut upload_open = true;
+    let mut active_idle_timeout = idle_timeout;
     let upload_policy = context.runtime_policy.tcp_upload;
     let mut upload_batch = BytesMut::new();
     let mut upload_reservations = Vec::with_capacity(upload_policy.max_batch_messages.min(64));
+    // Keep the current upload batch alive across download/cancellation polls,
+    // but return to select after each completed batch. An unbounded upload
+    // loop consumes the task's cooperative budget before download can run.
     let idle_sleep = tokio::time::sleep(idle_timeout);
     tokio::pin!(idle_sleep);
 
-    let termination = loop {
-        if pending_download.is_none() {
-            if let Some(end) = remote_read_end.take() {
-                match end {
-                    RemoteReadEnd::Closed => context.tun.record_tcp_remote_closed(),
-                    RemoteReadEnd::Failed => context.tun.record_tcp_remote_read_error(),
-                }
-                break TcpBridgeTermination::Graceful;
-            }
-        }
-        tokio::select! {
-            changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() {
-                    break TcpBridgeTermination::Graceful;
-                }
-            }
-            () = wait_for_connection_close(&mut connection_close) => {
-                break TcpBridgeTermination::HostClosed;
-            }
-            () = &mut idle_sleep => break TcpBridgeTermination::Graceful,
-            data = from_stack.recv() => {
-                let Some(data) = data else {
-                    break TcpBridgeTermination::Graceful;
-                };
-                if !client_upload_allowed {
-                    break TcpBridgeTermination::Graceful;
-                }
-                let write = await_with_optional_timeout(
+    let termination = 'bridge: loop {
+        let upload = async {
+            let Some(data) = from_stack.recv().await else {
+                // Half-close the transport after its queued upload drains. Keep
+                // reading: a server may generate its response only after EOF.
+                return match await_with_optional_timeout(
                     operation_timeout,
-                    write_stack_batch_to_remote(
-                        remote_writer,
-                        target,
-                        outbound_tag,
-                        data,
-                        &mut from_stack,
-                        context.tun.as_ref(),
-                        upload_policy,
-                        &mut upload_batch,
-                        &mut upload_reservations,
-                        Some(traffic.as_ref()),
-                    ),
+                    remote_writer.shutdown(),
                 )
-                .await;
-                if !matches!(write, Some(Ok(()))) {
-                    context.tun.record_tcp_remote_write_error();
-                    break TcpBridgeTermination::Graceful;
-                }
-                idle_sleep
-                    .as_mut()
-                    .reset(TokioInstant::now() + idle_timeout);
+                .await
+                {
+                    Some(Ok(())) => Ok(false),
+                    _ => {
+                        context.tun.record_tcp_remote_write_error();
+                        Err(())
+                    }
+                };
+            };
+            if !client_upload_allowed {
+                return Err(());
             }
-            delivered = async { pending_download.as_mut().expect("pending download").await }, if pending_download.is_some() => {
-                pending_download = None;
-                if !matches!(delivered, Some(Ok(()))) {
-                    break TcpBridgeTermination::Graceful;
-                }
-                idle_sleep.as_mut().reset(TokioInstant::now() + idle_timeout);
+            let write = await_with_optional_timeout(
+                operation_timeout,
+                write_stack_batch_to_remote(
+                    remote_writer,
+                    target,
+                    outbound_tag,
+                    data,
+                    &mut from_stack,
+                    context.tun.as_ref(),
+                    upload_policy,
+                    &mut upload_batch,
+                    &mut upload_reservations,
+                    Some(traffic.as_ref()),
+                ),
+            )
+            .await;
+            if !matches!(write, Some(Ok(()))) {
+                context.tun.record_tcp_remote_write_error();
+                return Err(());
             }
-            (read, end) = read_remote_batch(remote_reader, &mut read_buffer), if pending_download.is_none() => {
-                remote_read_end = end;
-                if read == 0 {
-                    continue;
+            Ok(true)
+        };
+        tokio::pin!(upload);
+        loop {
+            if pending_download.is_none() {
+                if let Some(end) = remote_read_end.take() {
+                    match end {
+                        RemoteReadEnd::Closed => context.tun.record_tcp_remote_closed(),
+                        RemoteReadEnd::Failed => context.tun.record_tcp_remote_read_error(),
+                    }
+                    break 'bridge TcpBridgeTermination::Graceful;
                 }
-                timing.record_first_byte(context.tun.as_ref(), target);
-                context.tun.record_tcp_remote_read(read);
-                traffic.record_downlink(read as u64);
-                timing.record_remote_read(context.tun.as_ref(), target, read);
-                pending_download = Some(Box::pin(await_with_optional_timeout(
-                    operation_timeout,
-                    context.send_remote_data(
-                        handle,
-                        generation,
-                        Bytes::copy_from_slice(&read_buffer[..read]),
-                    ),
-                )));
-                idle_sleep
-                    .as_mut()
-                    .reset(TokioInstant::now() + idle_timeout);
+            }
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() {
+                        break 'bridge TcpBridgeTermination::Graceful;
+                    }
+                }
+                () = wait_for_connection_close(&mut connection_close) => {
+                    break 'bridge TcpBridgeTermination::HostClosed;
+                }
+                () = &mut idle_sleep => break 'bridge TcpBridgeTermination::Graceful,
+                wrote = &mut upload, if upload_open => {
+                    match wrote {
+                        Ok(true) => {},
+                        Ok(false) => {
+                            upload_open = false;
+                            // Packet-up transports may leave their independent
+                            // download open after upload EOF. Apply the configured
+                            // one-direction inactivity bound, refreshed by replies.
+                            active_idle_timeout = idle_timeout.min(context.inbound_policy.downlink_only);
+                        },
+                        Err(()) => break 'bridge TcpBridgeTermination::Graceful,
+                    }
+                    idle_sleep.as_mut().reset(TokioInstant::now() + active_idle_timeout);
+                    break;
+                }
+                delivered = async { pending_download.as_mut().expect("pending download").await }, if pending_download.is_some() => {
+                    pending_download = None;
+                    if !matches!(delivered, Some(Ok(()))) {
+                        break 'bridge TcpBridgeTermination::Graceful;
+                    }
+                    idle_sleep.as_mut().reset(TokioInstant::now() + active_idle_timeout);
+                }
+                (read, end) = read_remote_batch(remote_reader, &mut read_buffer), if pending_download.is_none() => {
+                    remote_read_end = end;
+                    if read == 0 {
+                        continue;
+                    }
+                    timing.record_first_byte(context.tun.as_ref(), target);
+                    context.tun.record_tcp_remote_read(read);
+                    traffic.record_downlink(read as u64);
+                    timing.record_remote_read(context.tun.as_ref(), target, read);
+                    pending_download = Some(Box::pin(await_with_optional_timeout(
+                        operation_timeout,
+                        context.send_remote_data(
+                            handle,
+                            generation,
+                            Bytes::copy_from_slice(&read_buffer[..read]),
+                        ),
+                    )));
+                    idle_sleep
+                        .as_mut()
+                        .reset(TokioInstant::now() + active_idle_timeout);
+                }
             }
         }
     };
@@ -4117,6 +4259,21 @@ async fn bridge_udp_flow(
     }
 
     match outbound {
+        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+            datagram::bridge(
+                key,
+                generation,
+                dial_target,
+                outbound,
+                context,
+                from_stack,
+                shutdown,
+                first_payload,
+                connection,
+                connection_close,
+            )
+            .await
+        }
         UdpOutbound::Freedom => {
             bridge_udp_freedom_flow(
                 key,
@@ -4855,6 +5012,9 @@ fn add_tcp_listener(
         tcp::SocketBuffer::new(vec![0; TCP_BUFFER_SIZE]),
     );
     socket.set_nagle_enabled(false);
+    // This socket terminates the host's local TUN link. Keep its existing
+    // policy explicit when WireGuard enables smoltcp's Internet TCP features.
+    socket.set_congestion_control(tcp::CongestionControl::None);
     if socket.listen(endpoint).is_ok() {
         listeners.insert(
             endpoint,
@@ -6854,7 +7014,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upload_tcp_data_backpressures_when_combined_budget_is_full() {
+    async fn upload_tcp_data_and_fin_backpressure_when_combined_budget_is_full() {
         let client_ip = Ipv4Addr::new(10, 10, 0, 2);
         let server_ip = Ipv4Addr::new(203, 0, 113, 7);
         let client_port = 49_152;
@@ -6907,7 +7067,7 @@ mod tests {
             server_port,
             client_seq + 1,
             server_seq + 1,
-            TCP_ACK,
+            TCP_ACK | 0x01,
             &payload,
         )));
         iface.poll(Instant::now(), &mut device, &mut sockets);
@@ -6925,9 +7085,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -6944,6 +7105,18 @@ mod tests {
         let stats = tun.stats().await;
         assert_eq!(stats.tcp_stack_to_remote_bytes, 0);
         assert_eq!(stats.tcp_stack_to_remote_backpressure_events, 1);
+        assert!(tcp_flows[&handle].to_remote.is_some());
+        assert!(sockets.get::<tcp::Socket>(handle).can_recv());
+        flow_budget_state
+            .record_pending_remote_remove_flow(MOBILE_TCP_REMOTE_BUFFER_POLICY.hard_total_bytes);
+        read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
+        assert!(tcp_flows[&handle].to_remote.is_none());
+        assert_eq!(from_stack.recv().await.unwrap().data.as_ref(), &payload);
+        assert!(
+            from_stack.recv().await.is_none(),
+            "EOF must follow the queued tail"
+        );
+        assert_eq!(flow_budget_state.pending_upload_bytes(), 0);
     }
 
     #[test]
@@ -6961,9 +7134,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: NORMAL_TCP_REMOTE_PENDING_LIMIT,
                 has_deferred_remote_data: false,
@@ -7015,9 +7189,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7064,9 +7239,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 2,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: false,
+                upload_queue_packets: None,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7083,6 +7259,7 @@ mod tests {
             StackEvent::RemoteOpened {
                 handle,
                 generation: 1,
+                upload_queue_packets: Some(8),
             },
             StackEvent::RemoteData {
                 handle,
@@ -7111,6 +7288,7 @@ mod tests {
 
         let flow = tcp_flows.get(&handle).unwrap();
         assert!(!flow.remote_open);
+        assert_eq!(flow.upload_queue_packets, None);
         assert!(!flow.remote_closed);
         assert!(!flow.remote_aborted);
         assert!(flow.pending_remote.is_empty());
@@ -7129,9 +7307,10 @@ mod tests {
         let (to_remote, _from_stack) = mpsc::channel(1);
         let flow = TcpFlow {
             generation: 1,
-            to_remote,
+            to_remote: Some(to_remote),
             task: Some(task),
             remote_open: false,
+            upload_queue_packets: None,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
             has_deferred_remote_data: false,
@@ -7183,9 +7362,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote,
                 pending_remote_bytes: 1024 * 1024,
                 has_deferred_remote_data: false,
@@ -7239,9 +7419,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7299,9 +7480,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote,
                 pending_remote_bytes: PRESSURE_TCP_REMOTE_PENDING_LIMIT,
                 has_deferred_remote_data: false,
@@ -7395,9 +7577,10 @@ mod tests {
             handle,
             TcpFlow {
                 generation: 1,
-                to_remote,
+                to_remote: Some(to_remote),
                 task: None,
                 remote_open: true,
+                upload_queue_packets: None,
                 pending_remote,
                 pending_remote_bytes: TCP_BUFFER_SIZE,
                 has_deferred_remote_data: false,

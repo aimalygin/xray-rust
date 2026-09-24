@@ -1,0 +1,150 @@
+{
+  "artifact_sha256": {
+    "wireguard-socks-full-duplex-8-candidate-1/result.json": "dc217ac7f519f03d5119a1e8e06f7ac3c79da86c3d11c0e04c4b8f2d02855167",
+    "wireguard-socks-full-duplex-8-candidate-10/result.json": "cfce4fe3198d869a68ae1095a9556a21af4f9121b888131fb10ab834bd1b03df",
+    "wireguard-socks-full-duplex-8-candidate-11/result.json": "650f8fd7c6e9f7bcff42de9e4bf56df2d58290c3a7d3103921153e68a451dcaf",
+    "wireguard-socks-full-duplex-8-candidate-12/result.json": "53a40c2d489f78ee9d0093e38a0c9d821c1de70f9bf6dfbd767724afff2f7d73",
+    "wireguard-socks-full-duplex-8-candidate-13/result.json": "ffe081b4175dd488562320bffb6cc5bafaf936c6066086da9b04f0088b3babf7",
+    "wireguard-socks-full-duplex-8-candidate-14/result.json": "94a5cbb5be955f69d5a790b11ea0e7b5520785dc109bc37046ac38180530ee0d",
+    "wireguard-socks-full-duplex-8-candidate-15/result.json": "b7e5ddd76d337797946958f97e24314dedd06ee07bb678633cbc45ccb1c3644b",
+    "wireguard-socks-full-duplex-8-candidate-16/result.json": "5c17db7966fc148e6336de9a480368e768788949ccccd287b43de116ccd46228",
+    "wireguard-socks-full-duplex-8-candidate-17/result.json": "48a57f92ec5c736220733fcae1bd496017232b954de7aa737eeeea07c7485d4c",
+    "wireguard-socks-full-duplex-8-candidate-18/result.json": "20ace2e090a6a921af8b9aca8f9ad86322343a17783c1fb937a1d17a41e2cde4",
+    "wireguard-socks-full-duplex-8-candidate-19/result.json": "3e21bb7439271aa78718d7c8ce367cc5a3dff462b6c5af2cc2ba7fc228c08866",
+    "wireguard-socks-full-duplex-8-candidate-2/result.json": "206e57b904373ad8a62de791e6c5253e5e0829d14b8d7e330b51a4b39538c7fe",
+    "wireguard-socks-full-duplex-8-candidate-20/result.json": "1a0d3c8b1ffdf5a00bb14a6c54ab3be42604ce8f523b7720f10a41c1c819b8f5",
+    "wireguard-socks-full-duplex-8-candidate-3/result.json": "603d1f7532d97dedfb1fd3704a7b1031fd2f3cefb51d63a47dbdc5bfaadfbc06",
+    "wireguard-socks-full-duplex-8-candidate-4/result.json": "4463735c828433eda1fb505d6a42518d851f2a9f99aa05c5746b0db5d14325a7",
+    "wireguard-socks-full-duplex-8-candidate-5/result.json": "aaef87911cff68b391f6425b8ede85ea62123e45cb5c1a3b11c9c79c19c4cb33",
+    "wireguard-socks-full-duplex-8-candidate-6/result.json": "8a32ed8f6a0a00f0e56ea4807aeb43e413dcf2979c61db36a52a92e35d59a256",
+    "wireguard-socks-full-duplex-8-candidate-7/result.json": "b82d2ec6af8d82f3a0f7555f8eeab1bf05365e5c3843c5ab9fd6df6160b9f234",
+    "wireguard-socks-full-duplex-8-candidate-8/result.json": "755ac8d49430a29ba2ee1ef58c795c672574236bff1f4c2418ff9270d98f76ff",
+    "wireguard-socks-full-duplex-8-candidate-9/result.json": "72d2a75105f71a6fb2632f3a4eb1bab755d4ea4a941b5b8652560e608615fc96"
+  },
+  "failures": [],
+  "manifest_sha256": "90dca06ab220fdd730732186f16acc0840178d63127cc211daeeb256e02bd2fb",
+  "rows": [
+    {
+      "case": "wireguard-socks-full-duplex-8",
+      "review": [],
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 3700,
+              "median": 3505.0,
+              "min": 3340,
+              "samples": [
+                3480,
+                3610,
+                3550,
+                3410,
+                3410,
+                3340,
+                3590,
+                3490,
+                3580,
+                3700,
+                3440,
+                3510,
+                3610,
+                3470,
+                3470,
+                3510,
+                3570,
+                3530,
+                3500,
+                3480
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 7.2265625,
+              "median": 6.845703125,
+              "min": 6.5234375,
+              "samples": [
+                6.796875,
+                7.05078125,
+                6.93359375,
+                6.66015625,
+                6.66015625,
+                6.5234375,
+                7.01171875,
+                6.81640625,
+                6.9921875,
+                7.2265625,
+                6.71875,
+                6.85546875,
+                7.05078125,
+                6.77734375,
+                6.77734375,
+                6.85546875,
+                6.97265625,
+                6.89453125,
+                6.8359375,
+                6.796875
+              ]
+            },
+            "rss_mib": {
+              "max": 28.859375,
+              "median": 28.1796875,
+              "min": 27.734375,
+              "samples": [
+                28.15625,
+                28.25,
+                28.203125,
+                27.96875,
+                28.203125,
+                28.421875,
+                28.015625,
+                28.25,
+                27.75,
+                28.34375,
+                27.953125,
+                28.5,
+                28.125,
+                28.859375,
+                27.75,
+                28.28125,
+                28.140625,
+                27.921875,
+                27.734375,
+                28.265625
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 285.87817654610706,
+              "median": 268.94146697663825,
+              "min": 253.16169875342783,
+              "samples": [
+                272.14843176177754,
+                261.2355800459921,
+                264.3695261195607,
+                278.4081875932856,
+                280.39795795630647,
+                285.87817654610706,
+                263.81781786876087,
+                268.65311987752256,
+                262.2170459325451,
+                253.16169875342783,
+                271.53739211438887,
+                268.95613828364094,
+                260.7094887942657,
+                273.6685550420558,
+                275.67038566225574,
+                268.9267956696355,
+                265.5551960434965,
+                268.568631528046,
+                273.9231819437269,
+                272.96057002304656
+              ]
+            }
+          },
+          "passed_repeats": 20
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "new"
+}

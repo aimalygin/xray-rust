@@ -1,0 +1,648 @@
+{
+  "artifact_sha256": {
+    "vless-tls-tun-full-duplex-1-baseline-1/result.json": "5c4881761f73b83be0ff23b67962c06ffaa094d920cebd6646a21d7ed55461de",
+    "vless-tls-tun-full-duplex-1-baseline-2/result.json": "5b2e851e6964cfc2d849884d599240f5ad28551ee201e5b6832a5e6b36bc90e6",
+    "vless-tls-tun-full-duplex-1-baseline-3/result.json": "5a3f2810d5620cdcce80f2a4691f0838f60da7dd78537b759eec84da9d54c674",
+    "vless-tls-tun-full-duplex-1-candidate-1/result.json": "211e656aff06087e87e4efd01fe2f86b72e24fbffc6f58790aced3bb52b4b590",
+    "vless-tls-tun-full-duplex-1-candidate-2/result.json": "1ab03996c3c3ee3924eb23814f6b7f6ecd839083ed4d5b59f32722de1b227986",
+    "vless-tls-tun-full-duplex-1-candidate-3/result.json": "b216a30e413b19a30cd76e7dd605e115a05929cfa79c0ff179c3bc3f0d1bebb9",
+    "vless-tls-tun-full-duplex-1-workers12-1/result.json": "c060e63d4e9aa67628651428d48690b8212ecb31c56c4649f8139d5bd0e2310f",
+    "vless-tls-tun-full-duplex-1-workers12-2/result.json": "bcdba3ed241a12f07099e77212db604d0486f8bfe23b4c05a096b0bc201563de",
+    "vless-tls-tun-full-duplex-1-workers12-3/result.json": "0fd2b9f4c379ff846b115338566f67129000a9035c5925e9f4c1108c90d5013d",
+    "xhttp-h1-tun-download-1-baseline-1/result.json": "504f0148743016e3e760923f8cc53f4d4f417aaf1da853842cdc45f7d3c41a3d",
+    "xhttp-h1-tun-download-1-baseline-2/result.json": "16fa6d0c4656c65c0ebebed227750df3a40a804db8acdd904b47fff880b3ce57",
+    "xhttp-h1-tun-download-1-baseline-3/result.json": "88fa7fd69f7840f3948be0a8bbaaf80e5530c53096fda5a11c41d34e28114acb",
+    "xhttp-h1-tun-download-1-candidate-1/result.json": "478380163f7edd49c2819e3cd97fc6d5f52534450f0525f76855354a73886f92",
+    "xhttp-h1-tun-download-1-candidate-2/result.json": "4bb8a1e66903e2d1f6c37679e5c32375e2c4b3f9187d4fe42a205f06995ff8db",
+    "xhttp-h1-tun-download-1-candidate-3/result.json": "eb9f1642003aa2636450304128bbe8f649abaeb8abba9da79f9d4b177f61cc5b",
+    "xhttp-h1-tun-download-1-workers12-1/result.json": "7517ffe71770fc86e4464013877b2a3b78eb8eec63dc4f2842bbe415b32300d7",
+    "xhttp-h1-tun-download-1-workers12-2/result.json": "79b79e4da169294667d5dd5f26c429c10d83ec1625f128dcaa2a80bf2205ef5a",
+    "xhttp-h1-tun-download-1-workers12-3/result.json": "a11fcd7761cfc119e2b4e4324ec79c795e9e07f1e988e71f71b004f49453a6e6",
+    "xhttp-h2-tun-full-duplex-1-baseline-1/result.json": "bc53c8200445ecaf3417c42da97b17fa744cba0e3c4ec24c4261abfa524d75b7",
+    "xhttp-h2-tun-full-duplex-1-baseline-2/result.json": "0e1323e24d2cfb6e6692638251dffe314923dc4bf0f378eb0c3ee1783aee816d",
+    "xhttp-h2-tun-full-duplex-1-baseline-3/result.json": "8c60769ff167a58e61a95391273c133868a4a873e7d56ebb8a86d5f747662375",
+    "xhttp-h2-tun-full-duplex-1-candidate-1/result.json": "2bf37ec87571bfca418f19de3162785f293daa9461a29d78af65766ea56e313a",
+    "xhttp-h2-tun-full-duplex-1-candidate-2/result.json": "f17beba4c8b093deb4a0efd39d4b28f8b6fd80e4708c348991ad6c60a6038066",
+    "xhttp-h2-tun-full-duplex-1-candidate-3/result.json": "879ee153d3a82a9957e2b1e2e6818e71ce1b0140b2afb4120c482aadb35e10fd",
+    "xhttp-h2-tun-full-duplex-1-workers12-1/result.json": "d23bcf8e371fdaf3294c87241a0b6d11af05d9b674d0763397371765c4ee6b7b",
+    "xhttp-h2-tun-full-duplex-1-workers12-2/result.json": "83a4b20161dc5121811c408537083aab1d12e11ae1a446c9546e55f0ce301797",
+    "xhttp-h2-tun-full-duplex-1-workers12-3/result.json": "218806c916b1e5805b6d1599cb0d8303130d723a6946a6273ce755470c897350",
+    "xhttp-h2-tun-upload-8-baseline-1/result.json": "23426fed47a1aa6cdceeec13b0eed3f0e5502312341851af73cab76cf5bd1473",
+    "xhttp-h2-tun-upload-8-baseline-2/result.json": "9c1d655713a207475e059ba6bee67f69c9e0f1bb9eacc353b097215502fbd761",
+    "xhttp-h2-tun-upload-8-baseline-3/result.json": "aa545706b3108e1cd66287bd67212b3af70c2a8d25e96cd4aa3d739e4e77bd9e",
+    "xhttp-h2-tun-upload-8-candidate-1/result.json": "e03bb073e6cfd529baf94dc5230a11e76f634f29040be15b3bc26d3e97c972aa",
+    "xhttp-h2-tun-upload-8-candidate-2/result.json": "58053454492176f96b46282dfabc1f0d76316d52fd638ecec75e217cead01430",
+    "xhttp-h2-tun-upload-8-candidate-3/result.json": "b0cd4bdde7a4143a5357a4ed47cf07b3a8a28596b53e92d746a15f7a95fa3de8",
+    "xhttp-h2-tun-upload-8-workers12-1/result.json": "767d73804cbec45069efb84d0846ebceec5de434f97b92805697b105dbfb22fc",
+    "xhttp-h2-tun-upload-8-workers12-2/result.json": "77340eb630dfe8205821349a6d0d999d7e1bbe3438c67dfc094a70e4a3c87cb7",
+    "xhttp-h2-tun-upload-8-workers12-3/result.json": "55bad55603efce02d21055887d4f1dba425be89a2878ddd24da8f06735208588"
+  },
+  "failures": [],
+  "manifest_sha256": "b090532acc14780e0cd4752466d2136ae89c234dfbba72f4eba9ab694ef98a88",
+  "rows": [
+    {
+      "case": "vless-tls-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 0.8333333333333334,
+        "cpu_ms_per_mib": 0.8333333333333334,
+        "rss_mib": 0.9449838187702265,
+        "throughput_mib_s": 1.035328244188283
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2130,
+              "median": 2100,
+              "min": 2050,
+              "samples": [
+                2100,
+                2130,
+                2050
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.080078125,
+              "median": 2.05078125,
+              "min": 2.001953125,
+              "samples": [
+                2.05078125,
+                2.080078125,
+                2.001953125
+              ]
+            },
+            "rss_mib": {
+              "max": 9.671875,
+              "median": 9.65625,
+              "min": 9.609375,
+              "samples": [
+                9.65625,
+                9.671875,
+                9.609375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 707.5976714790435,
+              "median": 700.681339934768,
+              "min": 692.1479595121941,
+              "samples": [
+                692.1479595121941,
+                707.5976714790435,
+                700.681339934768
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1790,
+              "median": 1750,
+              "min": 1740,
+              "samples": [
+                1750,
+                1790,
+                1740
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.748046875,
+              "median": 1.708984375,
+              "min": 1.69921875,
+              "samples": [
+                1.708984375,
+                1.748046875,
+                1.69921875
+              ]
+            },
+            "rss_mib": {
+              "max": 10.0,
+              "median": 9.125,
+              "min": 9.109375,
+              "samples": [
+                9.109375,
+                9.125,
+                10.0
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 738.8958843752514,
+              "median": 725.4351814101567,
+              "min": 721.2466083853672,
+              "samples": [
+                721.2466083853672,
+                725.4351814101567,
+                738.8958843752514
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2110,
+              "median": 2010,
+              "min": 1980,
+              "samples": [
+                2110,
+                2010,
+                1980
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.060546875,
+              "median": 1.962890625,
+              "min": 1.93359375,
+              "samples": [
+                2.060546875,
+                1.962890625,
+                1.93359375
+              ]
+            },
+            "rss_mib": {
+              "max": 10.171875,
+              "median": 9.890625,
+              "min": 9.453125,
+              "samples": [
+                10.171875,
+                9.890625,
+                9.453125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 714.2929389283025,
+              "median": 712.205199254445,
+              "min": 685.2336661858097,
+              "samples": [
+                685.2336661858097,
+                712.205199254445,
+                714.2929389283025
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "xhttp-h1-tun-download-1",
+      "ratios": {
+        "cpu_ms": 0.9611650485436893,
+        "cpu_ms_per_mib": 0.9611650485436893,
+        "rss_mib": 0.9966832504145937,
+        "throughput_mib_s": 0.9729231728582536
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1050,
+              "median": 1030,
+              "min": 1010,
+              "samples": [
+                1010,
+                1030,
+                1050
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.05078125,
+              "median": 2.01171875,
+              "min": 1.97265625,
+              "samples": [
+                1.97265625,
+                2.01171875,
+                2.05078125
+              ]
+            },
+            "rss_mib": {
+              "max": 9.453125,
+              "median": 9.421875,
+              "min": 9.328125,
+              "samples": [
+                9.328125,
+                9.421875,
+                9.453125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 587.3077574378814,
+              "median": 584.3181338339601,
+              "min": 574.6985594090702,
+              "samples": [
+                587.3077574378814,
+                584.3181338339601,
+                574.6985594090702
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1030,
+              "median": 990,
+              "min": 970,
+              "samples": [
+                1030,
+                970,
+                990
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.01171875,
+              "median": 1.93359375,
+              "min": 1.89453125,
+              "samples": [
+                2.01171875,
+                1.89453125,
+                1.93359375
+              ]
+            },
+            "rss_mib": {
+              "max": 9.421875,
+              "median": 9.390625,
+              "min": 9.25,
+              "samples": [
+                9.25,
+                9.390625,
+                9.421875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 580.4101654573558,
+              "median": 568.4966527283501,
+              "min": 563.1056889757193,
+              "samples": [
+                568.4966527283501,
+                563.1056889757193,
+                580.4101654573558
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 1140,
+              "median": 1050,
+              "min": 1030,
+              "samples": [
+                1140,
+                1050,
+                1030
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.2265625,
+              "median": 2.05078125,
+              "min": 2.01171875,
+              "samples": [
+                2.2265625,
+                2.05078125,
+                2.01171875
+              ]
+            },
+            "rss_mib": {
+              "max": 10.03125,
+              "median": 9.8125,
+              "min": 9.578125,
+              "samples": [
+                9.8125,
+                10.03125,
+                9.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 577.8410104881812,
+              "median": 576.1176177963641,
+              "min": 542.3673990786843,
+              "samples": [
+                542.3673990786843,
+                577.8410104881812,
+                576.1176177963641
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-full-duplex-1",
+      "ratios": {
+        "cpu_ms": 0.7761194029850746,
+        "cpu_ms_per_mib": 0.7761194029850746,
+        "rss_mib": 1.0959377700950734,
+        "throughput_mib_s": 1.0434828840513777
+      },
+      "review": [],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2760,
+              "median": 2680,
+              "min": 2670,
+              "samples": [
+                2670,
+                2760,
+                2680
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.6953125,
+              "median": 2.6171875,
+              "min": 2.607421875,
+              "samples": [
+                2.607421875,
+                2.6953125,
+                2.6171875
+              ]
+            },
+            "rss_mib": {
+              "max": 19.203125,
+              "median": 18.078125,
+              "min": 17.953125,
+              "samples": [
+                18.078125,
+                19.203125,
+                17.953125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 691.6794224611915,
+              "median": 688.3147864527876,
+              "min": 685.7058291859236,
+              "samples": [
+                688.3147864527876,
+                691.6794224611915,
+                685.7058291859236
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2110,
+              "median": 2080,
+              "min": 2040,
+              "samples": [
+                2080,
+                2110,
+                2040
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.060546875,
+              "median": 2.03125,
+              "min": 1.9921875,
+              "samples": [
+                2.03125,
+                2.060546875,
+                1.9921875
+              ]
+            },
+            "rss_mib": {
+              "max": 20.546875,
+              "median": 19.8125,
+              "min": 19.703125,
+              "samples": [
+                19.703125,
+                20.546875,
+                19.8125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 727.4238004868373,
+              "median": 718.244698502963,
+              "min": 711.3958962270439,
+              "samples": [
+                727.4238004868373,
+                718.244698502963,
+                711.3958962270439
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 2700,
+              "median": 2610,
+              "min": 2600,
+              "samples": [
+                2600,
+                2700,
+                2610
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 2.63671875,
+              "median": 2.548828125,
+              "min": 2.5390625,
+              "samples": [
+                2.5390625,
+                2.63671875,
+                2.548828125
+              ]
+            },
+            "rss_mib": {
+              "max": 19.328125,
+              "median": 19.3125,
+              "min": 18.5625,
+              "samples": [
+                18.5625,
+                19.3125,
+                19.328125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 700.8510652131991,
+              "median": 700.4492040940709,
+              "min": 699.2911678100289,
+              "samples": [
+                699.2911678100289,
+                700.8510652131991,
+                700.4492040940709
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    },
+    {
+      "case": "xhttp-h2-tun-upload-8",
+      "ratios": {
+        "cpu_ms": 0.7043859649122807,
+        "cpu_ms_per_mib": 0.7043859649122807,
+        "rss_mib": 1.1969924812030075,
+        "throughput_mib_s": 1.054001187045891
+      },
+      "review": [
+        "rss_mib"
+      ],
+      "versions": {
+        "baseline": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 12700,
+              "median": 11400,
+              "min": 11270,
+              "samples": [
+                11270,
+                11400,
+                12700
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.1005859375,
+              "median": 2.783203125,
+              "min": 2.75146484375,
+              "samples": [
+                2.75146484375,
+                2.783203125,
+                3.1005859375
+              ]
+            },
+            "rss_mib": {
+              "max": 25.3125,
+              "median": 20.78125,
+              "min": 15.1875,
+              "samples": [
+                25.3125,
+                20.78125,
+                15.1875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 812.742160802835,
+              "median": 778.7020304216662,
+              "min": 691.0218064918065,
+              "samples": [
+                812.742160802835,
+                778.7020304216662,
+                691.0218064918065
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 8140,
+              "median": 8030,
+              "min": 7390,
+              "samples": [
+                7390,
+                8030,
+                8140
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 1.9873046875,
+              "median": 1.96044921875,
+              "min": 1.80419921875,
+              "samples": [
+                1.80419921875,
+                1.96044921875,
+                1.9873046875
+              ]
+            },
+            "rss_mib": {
+              "max": 25.578125,
+              "median": 24.875,
+              "min": 22.265625,
+              "samples": [
+                24.875,
+                22.265625,
+                25.578125
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 904.1673067193303,
+              "median": 820.7528644194816,
+              "min": 811.5297522108538,
+              "samples": [
+                904.1673067193303,
+                820.7528644194816,
+                811.5297522108538
+              ]
+            }
+          },
+          "passed_repeats": 3
+        },
+        "workers12": {
+          "complete": true,
+          "metrics": {
+            "cpu_ms": {
+              "max": 12610,
+              "median": 11950,
+              "min": 10980,
+              "samples": [
+                10980,
+                11950,
+                12610
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 3.07861328125,
+              "median": 2.91748046875,
+              "min": 2.6806640625,
+              "samples": [
+                2.6806640625,
+                2.91748046875,
+                3.07861328125
+              ]
+            },
+            "rss_mib": {
+              "max": 28.640625,
+              "median": 25.65625,
+              "min": 22.984375,
+              "samples": [
+                25.65625,
+                28.640625,
+                22.984375
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 849.6303169503789,
+              "median": 738.8527608207843,
+              "min": 696.7565452257325,
+              "samples": [
+                849.6303169503789,
+                738.8527608207843,
+                696.7565452257325
+              ]
+            }
+          },
+          "passed_repeats": 3
+        }
+      }
+    }
+  ],
+  "smoke": false,
+  "suite": "tun"
+}

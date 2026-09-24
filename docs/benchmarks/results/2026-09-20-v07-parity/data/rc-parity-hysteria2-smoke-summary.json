@@ -1,0 +1,89 @@
+{
+  "artifact_sha256": {
+    "hysteria2-socks-full-duplex-8-candidate-1/result.json": "57aeeeaeb3befcd5f5def9e9c2c5ef9852a62d1d81c14ce92190557b026fac36"
+  },
+  "failures": [],
+  "manifest_sha256": "c206fa86c2be1857757ffbafc28ddcbc81269355013e713bb802fabba05b6a4a",
+  "parity": {
+    "complete": false,
+    "environmental_interference_detected": false,
+    "metrics_without_supporting_interval": 0,
+    "point_deficit_metrics": 0,
+    "reference_comparisons": 0,
+    "scope": "observed workload and host only; no practical regression allowance",
+    "status": "not_met"
+  },
+  "rows": [
+    {
+      "case": "hysteria2-socks-full-duplex-8",
+      "comparisons": {},
+      "review": [],
+      "versions": {
+        "candidate": {
+          "complete": true,
+          "metrics": {
+            "client_cpu_total_millis": {
+              "max": 140,
+              "median": 140,
+              "min": 140,
+              "samples": [
+                140
+              ]
+            },
+            "client_startup_cpu_millis": {
+              "max": 20,
+              "median": 20,
+              "min": 20,
+              "samples": [
+                20
+              ]
+            },
+            "client_startup_seconds": {
+              "max": 1.524909625,
+              "median": 1.524909625,
+              "min": 1.524909625,
+              "samples": [
+                1.524909625
+              ]
+            },
+            "cpu_ms": {
+              "max": 120,
+              "median": 120,
+              "min": 120,
+              "samples": [
+                120
+              ]
+            },
+            "cpu_ms_per_mib": {
+              "max": 30.0,
+              "median": 30.0,
+              "min": 30.0,
+              "samples": [
+                30.0
+              ]
+            },
+            "rss_mib": {
+              "max": 11.1875,
+              "median": 11.1875,
+              "min": 11.1875,
+              "samples": [
+                11.1875
+              ]
+            },
+            "throughput_mib_s": {
+              "max": 9.625890766094276,
+              "median": 9.625890766094276,
+              "min": 9.625890766094276,
+              "samples": [
+                9.625890766094276
+              ]
+            }
+          },
+          "passed_repeats": 1
+        }
+      }
+    }
+  ],
+  "smoke": true,
+  "suite": "new"
+}

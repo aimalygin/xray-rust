@@ -1,0 +1,15 @@
+{
+  "inbounds": [{
+    "tag": "socks-in", "protocol": "socks", "listen": "127.0.0.1", "port": 1080,
+    "settings": {"auth": "noauth", "udp": true}
+  }],
+  "outbounds": [{
+    "tag": "proxy", "protocol": "hysteria",
+    "settings": {"version": 2, "address": "server.example", "port": 443},
+    "streamSettings": {
+      "network": "hysteria", "security": "tls",
+      "tlsSettings": {"serverName": "server.example", "alpn": ["h3"]},
+      "hysteriaSettings": {"version": 2, "auth": "synthetic-example-auth"}
+    }
+  }]
+}

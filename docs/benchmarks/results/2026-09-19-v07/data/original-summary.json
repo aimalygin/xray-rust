@@ -1,0 +1,1317 @@
+{
+  "baseline_commit": "ed5258a3a589c2a1f9330142f37c8f3d28a640fa",
+  "candidate_commit": "7f87ffe7eaf4ed088a45172d2468df956f26550b",
+  "repeats": 5,
+  "rows": [
+    {
+      "id": "route",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            417,
+            399,
+            384,
+            387,
+            374
+          ],
+          "median": 387,
+          "min": 374,
+          "max": 417
+        },
+        "candidate": {
+          "samples": [
+            361,
+            396,
+            358,
+            366,
+            363
+          ],
+          "median": 363,
+          "min": 358,
+          "max": 396
+        }
+      },
+      "maximum": 500,
+      "candidate_baseline_ratio": 0.937984496124031,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "dns-selector-last_hit_avg_ns",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            28179,
+            28513,
+            29380,
+            27851,
+            27419
+          ],
+          "median": 28179,
+          "min": 27419,
+          "max": 29380
+        },
+        "candidate": {
+          "samples": [
+            27130,
+            27217,
+            27292,
+            27053,
+            26992
+          ],
+          "median": 27130,
+          "min": 26992,
+          "max": 27292
+        }
+      },
+      "maximum": 30000,
+      "candidate_baseline_ratio": 0.9627736967245112,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "dns-selector-semantic_miss_avg_ns",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            28207,
+            28138,
+            29206,
+            27957,
+            28562
+          ],
+          "median": 28207,
+          "min": 27957,
+          "max": 29206
+        },
+        "candidate": {
+          "samples": [
+            26694,
+            27466,
+            26834,
+            27068,
+            26800
+          ],
+          "median": 26834,
+          "min": 26694,
+          "max": 27466
+        }
+      },
+      "maximum": 30000,
+      "candidate_baseline_ratio": 0.9513241393980217,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "phase2-rss",
+      "unit": "KiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            8000,
+            8224,
+            8160,
+            8240,
+            8208
+          ],
+          "median": 8208,
+          "min": 8000,
+          "max": 8240
+        },
+        "candidate": {
+          "samples": [
+            9424,
+            9344,
+            9552,
+            9328,
+            9472
+          ],
+          "median": 9424,
+          "min": 9328,
+          "max": 9552
+        }
+      },
+      "maximum": 10240,
+      "candidate_baseline_ratio": 1.1481481481481481,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "round_robin_selection",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            136,
+            112,
+            110,
+            111,
+            214
+          ],
+          "median": 112,
+          "min": 110,
+          "max": 214
+        },
+        "candidate": {
+          "samples": [
+            125,
+            121,
+            105,
+            103,
+            119
+          ],
+          "median": 119,
+          "min": 103,
+          "max": 125
+        }
+      },
+      "maximum": 200,
+      "candidate_baseline_ratio": 1.0625,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "chain_selection",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            362,
+            343,
+            347,
+            358,
+            344
+          ],
+          "median": 347,
+          "min": 343,
+          "max": 362
+        },
+        "candidate": {
+          "samples": [
+            317,
+            343,
+            333,
+            335,
+            328
+          ],
+          "median": 333,
+          "min": 317,
+          "max": 343
+        }
+      },
+      "maximum": 600,
+      "candidate_baseline_ratio": 0.9596541786743515,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "override_switch",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            140,
+            111,
+            112,
+            114,
+            122
+          ],
+          "median": 114,
+          "min": 111,
+          "max": 140
+        },
+        "candidate": {
+          "samples": [
+            113,
+            111,
+            113,
+            133,
+            107
+          ],
+          "median": 113,
+          "min": 107,
+          "max": 133
+        }
+      },
+      "maximum": 250,
+      "candidate_baseline_ratio": 0.9912280701754386,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "selection_snapshot",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            1648,
+            1555,
+            1560,
+            1615,
+            1703
+          ],
+          "median": 1615,
+          "min": 1555,
+          "max": 1703
+        },
+        "candidate": {
+          "samples": [
+            1546,
+            1499,
+            1488,
+            1483,
+            1490
+          ],
+          "median": 1490,
+          "min": 1483,
+          "max": 1546
+        }
+      },
+      "maximum": 3000,
+      "candidate_baseline_ratio": 0.9226006191950464,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "health_snapshot",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            1820,
+            1710,
+            1693,
+            1689,
+            1927
+          ],
+          "median": 1710,
+          "min": 1689,
+          "max": 1927
+        },
+        "candidate": {
+          "samples": [
+            1637,
+            1607,
+            1613,
+            1615,
+            1663
+          ],
+          "median": 1615,
+          "min": 1607,
+          "max": 1663
+        }
+      },
+      "maximum": 3500,
+      "candidate_baseline_ratio": 0.9444444444444444,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "dns_cache_hit",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            177,
+            154,
+            157,
+            159,
+            159
+          ],
+          "median": 159,
+          "min": 154,
+          "max": 177
+        },
+        "candidate": {
+          "samples": [
+            152,
+            156,
+            149,
+            151,
+            152
+          ],
+          "median": 152,
+          "min": 149,
+          "max": 156
+        }
+      },
+      "maximum": 300,
+      "candidate_baseline_ratio": 0.9559748427672956,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "connection_snapshot",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            2899,
+            2718,
+            2721,
+            2739,
+            2777
+          ],
+          "median": 2739,
+          "min": 2718,
+          "max": 2899
+        },
+        "candidate": {
+          "samples": [
+            2675,
+            2600,
+            2596,
+            2659,
+            2600
+          ],
+          "median": 2600,
+          "min": 2596,
+          "max": 2675
+        }
+      },
+      "maximum": 5000,
+      "candidate_baseline_ratio": 0.9492515516611902,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "accounting_snapshot",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            46,
+            45,
+            47,
+            46,
+            45
+          ],
+          "median": 46,
+          "min": 45,
+          "max": 47
+        },
+        "candidate": {
+          "samples": [
+            41,
+            45,
+            47,
+            43,
+            45
+          ],
+          "median": 45,
+          "min": 41,
+          "max": 47
+        }
+      },
+      "maximum": 100,
+      "candidate_baseline_ratio": 0.9782608695652174,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "connection_close",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            630,
+            1149,
+            1847,
+            755,
+            2533
+          ],
+          "median": 1149,
+          "min": 630,
+          "max": 2533
+        },
+        "candidate": {
+          "samples": [
+            1117,
+            4436,
+            6490,
+            3521,
+            1072
+          ],
+          "median": 3521,
+          "min": 1072,
+          "max": 6490
+        }
+      },
+      "maximum": 4000,
+      "candidate_baseline_ratio": 3.064403829416884,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "diagnostic_queue_round_trip",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            70,
+            70,
+            69,
+            69,
+            67
+          ],
+          "median": 69,
+          "min": 67,
+          "max": 70
+        },
+        "candidate": {
+          "samples": [
+            70,
+            74,
+            68,
+            66,
+            66
+          ],
+          "median": 68,
+          "min": 66,
+          "max": 74
+        }
+      },
+      "maximum": 150,
+      "candidate_baseline_ratio": 0.9855072463768116,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tun_stats_snapshot",
+      "unit": "ns",
+      "versions": {
+        "baseline": {
+          "samples": [
+            17,
+            16,
+            16,
+            17,
+            16
+          ],
+          "median": 16,
+          "min": 16,
+          "max": 17
+        },
+        "candidate": {
+          "samples": [
+            18,
+            16,
+            16,
+            15,
+            17
+          ],
+          "median": 16,
+          "min": 15,
+          "max": 18
+        }
+      },
+      "maximum": 50,
+      "candidate_baseline_ratio": 1.0,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "idle-peak_rss_kib",
+      "unit": "KiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            4416,
+            4480,
+            4464,
+            4512,
+            4480
+          ],
+          "median": 4480,
+          "min": 4416,
+          "max": 4512
+        },
+        "candidate": {
+          "samples": [
+            4784,
+            4752,
+            4768,
+            4752,
+            4768
+          ],
+          "median": 4768,
+          "min": 4752,
+          "max": 4784
+        }
+      },
+      "maximum": 5120,
+      "candidate_baseline_ratio": 1.0642857142857143,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "idle-cpu_millis",
+      "unit": "ms",
+      "versions": {
+        "baseline": {
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "candidate": {
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "median": 0,
+          "min": 0,
+          "max": 0
+        }
+      },
+      "candidate_baseline_ratio": null,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "flows-100-peak_rss_kib",
+      "unit": "KiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            7232,
+            6848,
+            6832,
+            6896,
+            6784
+          ],
+          "median": 6848,
+          "min": 6784,
+          "max": 7232
+        },
+        "candidate": {
+          "samples": [
+            8240,
+            8288,
+            8640,
+            8304,
+            8304
+          ],
+          "median": 8304,
+          "min": 8240,
+          "max": 8640
+        }
+      },
+      "maximum": 7500,
+      "candidate_baseline_ratio": 1.2126168224299065,
+      "candidate_budget_failed": true
+    },
+    {
+      "id": "flows-100-cpu_millis",
+      "unit": "ms",
+      "versions": {
+        "baseline": {
+          "samples": [
+            20,
+            10,
+            10,
+            20,
+            10
+          ],
+          "median": 10,
+          "min": 10,
+          "max": 20
+        },
+        "candidate": {
+          "samples": [
+            20,
+            20,
+            20,
+            20,
+            20
+          ],
+          "median": 20,
+          "min": 20,
+          "max": 20
+        }
+      },
+      "candidate_baseline_ratio": 2.0,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "flows-1000-peak_rss_kib",
+      "unit": "KiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            23632,
+            23648,
+            23584,
+            23808,
+            23616
+          ],
+          "median": 23632,
+          "min": 23584,
+          "max": 23808
+        },
+        "candidate": {
+          "samples": [
+            31632,
+            31680,
+            31680,
+            31664,
+            31680
+          ],
+          "median": 31680,
+          "min": 31632,
+          "max": 31680
+        }
+      },
+      "maximum": 25000,
+      "candidate_baseline_ratio": 1.3405551794177386,
+      "candidate_budget_failed": true
+    },
+    {
+      "id": "flows-1000-cpu_millis",
+      "unit": "ms",
+      "versions": {
+        "baseline": {
+          "samples": [
+            100,
+            120,
+            130,
+            100,
+            110
+          ],
+          "median": 110,
+          "min": 100,
+          "max": 130
+        },
+        "candidate": {
+          "samples": [
+            110,
+            140,
+            120,
+            110,
+            130
+          ],
+          "median": 120,
+          "min": 110,
+          "max": 140
+        }
+      },
+      "candidate_baseline_ratio": 1.0909090909090908,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tcp-peak_rss_kib",
+      "unit": "KiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            4896,
+            4816,
+            4864,
+            4864,
+            4864
+          ],
+          "median": 4864,
+          "min": 4816,
+          "max": 4896
+        },
+        "candidate": {
+          "samples": [
+            5280,
+            5280,
+            5312,
+            5296,
+            5296
+          ],
+          "median": 5296,
+          "min": 5280,
+          "max": 5312
+        }
+      },
+      "candidate_baseline_ratio": 1.0888157894736843,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tcp-cpu_millis",
+      "unit": "ms",
+      "versions": {
+        "baseline": {
+          "samples": [
+            30,
+            30,
+            30,
+            30,
+            30
+          ],
+          "median": 30,
+          "min": 30,
+          "max": 30
+        },
+        "candidate": {
+          "samples": [
+            30,
+            30,
+            20,
+            30,
+            30
+          ],
+          "median": 30,
+          "min": 20,
+          "max": 30
+        }
+      },
+      "candidate_baseline_ratio": 1.0,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tcp-latency",
+      "unit": "us",
+      "versions": {
+        "baseline": {
+          "samples": [
+            41,
+            40,
+            41,
+            41,
+            40
+          ],
+          "median": 41,
+          "min": 40,
+          "max": 41
+        },
+        "candidate": {
+          "samples": [
+            40,
+            41,
+            41,
+            41,
+            40
+          ],
+          "median": 41,
+          "min": 40,
+          "max": 41
+        }
+      },
+      "maximum": 55,
+      "candidate_baseline_ratio": 1.0,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tun-fd-peak_rss_kib",
+      "unit": "KiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            5872,
+            5888,
+            5984,
+            5936,
+            5984
+          ],
+          "median": 5936,
+          "min": 5872,
+          "max": 5984
+        },
+        "candidate": {
+          "samples": [
+            6416,
+            6400,
+            6448,
+            6384,
+            6416
+          ],
+          "median": 6416,
+          "min": 6384,
+          "max": 6448
+        }
+      },
+      "maximum": 8192,
+      "candidate_baseline_ratio": 1.0808625336927224,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tun-fd-cpu_millis",
+      "unit": "ms",
+      "versions": {
+        "baseline": {
+          "samples": [
+            110,
+            110,
+            160,
+            130,
+            150
+          ],
+          "median": 130,
+          "min": 110,
+          "max": 160
+        },
+        "candidate": {
+          "samples": [
+            320,
+            330,
+            310,
+            320,
+            340
+          ],
+          "median": 320,
+          "min": 310,
+          "max": 340
+        }
+      },
+      "candidate_baseline_ratio": 2.4615384615384617,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "tun-fd-latency",
+      "unit": "us",
+      "versions": {
+        "baseline": {
+          "samples": [
+            2345,
+            2348,
+            2384,
+            2375,
+            2378
+          ],
+          "median": 2375,
+          "min": 2345,
+          "max": 2384
+        },
+        "candidate": {
+          "samples": [
+            2475,
+            2480,
+            2474,
+            2472,
+            2489
+          ],
+          "median": 2475,
+          "min": 2472,
+          "max": 2489
+        }
+      },
+      "candidate_baseline_ratio": 1.0421052631578946,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "v06-process-throughput",
+      "unit": "MiB/s",
+      "versions": {
+        "baseline": {
+          "samples": [
+            513.8106687066671,
+            495.25221776777704,
+            538.340274979953,
+            486.3973437406642,
+            484.9801424437822
+          ],
+          "median": 495.25221776777704,
+          "min": 484.9801424437822,
+          "max": 538.340274979953
+        },
+        "candidate": {
+          "samples": [
+            529.1158388991079,
+            528.770117651189,
+            516.5619277027704,
+            530.958400875405,
+            545.2376897764384
+          ],
+          "median": 529.1158388991079,
+          "min": 516.5619277027704,
+          "max": 545.2376897764384
+        }
+      },
+      "candidate_baseline_ratio": 1.0683765158770262,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "v06-vless-encryption-throughput",
+      "unit": "MiB/s",
+      "versions": {
+        "baseline": {
+          "samples": [
+            288.4357542928013,
+            274.4662731317417,
+            286.26359754136814,
+            268.75972694621214,
+            288.7841202790649
+          ],
+          "median": 286.26359754136814,
+          "min": 268.75972694621214,
+          "max": 288.7841202790649
+        },
+        "candidate": {
+          "samples": [
+            278.7961388254239,
+            296.7475996749397,
+            274.8024401482816,
+            280.77451457577354,
+            244.56527059431892
+          ],
+          "median": 278.7961388254239,
+          "min": 244.56527059431892,
+          "max": 296.7475996749397
+        }
+      },
+      "candidate_baseline_ratio": 0.9739140471227219,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "v06-ip-on-demand-latency",
+      "unit": "ms",
+      "versions": {
+        "baseline": {
+          "samples": [
+            0.2163330209441483,
+            0.19120849901810288,
+            0.22449996322393417,
+            0.23535394575446844,
+            0.2151250373572111
+          ],
+          "median": 0.2163330209441483,
+          "min": 0.19120849901810288,
+          "max": 0.23535394575446844
+        },
+        "candidate": {
+          "samples": [
+            0.21416699746623635,
+            0.21368754096329212,
+            0.2067919704131782,
+            0.21612452110275626,
+            0.22931245621293783
+          ],
+          "median": 0.21416699746623635,
+          "min": 0.2067919704131782,
+          "max": 0.22931245621293783
+        }
+      },
+      "candidate_baseline_ratio": 0.9899875503588924,
+      "candidate_budget_failed": false
+    },
+    {
+      "id": "v06-xhttp-memory",
+      "unit": "MiB",
+      "versions": {
+        "baseline": {
+          "samples": [
+            18.96875,
+            19.1875,
+            19.109375,
+            19.21875,
+            18.984375
+          ],
+          "median": 19.109375,
+          "min": 18.96875,
+          "max": 19.21875
+        },
+        "candidate": {
+          "samples": [
+            20.0,
+            20.015625,
+            19.875,
+            19.921875,
+            19.90625
+          ],
+          "median": 19.921875,
+          "min": 19.875,
+          "max": 20.015625
+        }
+      },
+      "candidate_baseline_ratio": 1.0425183973834833,
+      "candidate_budget_failed": false
+    }
+  ],
+  "artifact_sha256": {
+    "baseline-regression/phase2-1/1789827998131/phase2-probe/result.json": "98aa98aa7324e98c5a735646be9021e194e5492bf2765906c369ccbd71e74524",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/summary.json": "49c7998bda0c96b9668a2cf9fd38a97a2700c02d20284ebfe495bcd94407c87d",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-001/stderr.log": "96a09c0c09531123262f734190cbbb3f3b126a8cd6fe400ea3c2430ea44278cd",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-001/result.json": "29d254c0e9a52076a457a49fe09016b754399070c11ce6aec22454ecd94a3c8b",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-001/config.json": "2a962b3f3bf69f76d47dd484fdf77050926020337edb8a049eaefec92361823c",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-001/samples.csv": "977cdbd9e1f012014e4c10920eb6c28e19342df84b575f87b1050f58f8bac347",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-005/stderr.log": "b6fb28b3565c32362e5d6f5d9333e7be05aaad4738132113d5df58d4579ad0b3",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-005/result.json": "1a109352d3c57378d26358cf62a3f45c4b744905ebe5ae72eb17b71de083ca34",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-005/config.json": "8cfc98ed99eeeffef4404b2398d49d5e4b23c450a6d514eae5892ce7d7ce1a74",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-005/samples.csv": "9cf5b7b976bd1309babeb6af91d8f1c8e9fa62d6a9c17019d94c1ce028b13453",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-002/stderr.log": "1226af8419323d98eb927cf419207849cb15e1e3ea66b40b377cefb089efdbc0",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-002/result.json": "ee13c464cd1b9b6fe24c2786c43290cc01778403bc6f91501a04bede75d3d1a7",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-002/config.json": "ebaef71e4f58d4a897ded33c0fc1a8753dbbe04754f36cc8ddc1185d27bd1841",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-002/samples.csv": "9b6db0771ee62965370496410481ee60ca7f1adb36d1bf74ec643d0be2163036",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-003/stderr.log": "9ef5a0d08a3cf8f540ced83dd60d294c4e68730b850cd54866a1fbde9d727cda",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-003/result.json": "a5dd04ba93b144b240ea4177fc5b85aec6cc7ac08e0ea1b22ab3d1e03416c473",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-003/config.json": "8e67cb6a36f091640a8eb50db620586a93bd24616d01a82e01eaf1f28d5e5943",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-003/samples.csv": "37212771a3a8e2f5f9a24dcfeaec58cdee667d75f0467513a742ff0d362c2003",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-004/stderr.log": "7660cf4fdee395a366f3b8eab6435fd53b29227dc634fbc3b35d18c67fa71948",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-004/result.json": "e4da03b0928aef428660d0f464ba96bcf87ef60a9bc390d3fbaa914f3df5b179",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-004/config.json": "82b801e17402f90c01eaa1358ec56e2044e74e136f5416b6a3bf5b2c80dd732c",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-004/samples.csv": "e1975d6a3cedc103a592e61afaaef920adb02216005b55fedb1cff1af4149f32",
+    "baseline-regression/process-flows-1000/1789828075436/xray-rust/many-idle-flows/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/summary.json": "da17f4c3612f218ef8ae2bddfda0d4488ab6f9696362f10e91d58edaff767930",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-001/stderr.log": "86f492604f28478b3ce85352fff50f7042f9ff20651f23c85e419e3b0d906622",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-001/result.json": "ff32f9ab9b7c55e5dd8f07ffbdd27fbba85c663596a64317135678c1eaed924c",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-001/config.json": "d8f042a9df3f4d0b214b1e58660b35802730e9f9d35810aadfec87e95b49f230",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-001/samples.csv": "e4198f3c2babb467cacdfa1ac744c7b56db534eb77de61618f446b713a8243a7",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-005/stderr.log": "7934bc3d27c36fb7694aeb110a382243966d1b41165fe38e9fa0b04e4bff97d4",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-005/result.json": "c3f8a6c6a071bb21830f170852726cf4e457af8ec445c5f4b1911851607fbf21",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-005/config.json": "953039869fe723a98e30601be65535573629b28f9199a002c693e07d66b862c6",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-005/samples.csv": "bb1cca126a129a2f63d92a1ff543ef4a18cda919d6a39d96ca9487b343c68016",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-002/stderr.log": "fff07a8851c2e05560e8d9757b7e8a95dc1b6c15ee1ccd5792854f4c52d0b209",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-002/result.json": "e73c6400ec1ae6f8458c7ce4aece627a63f9be8e487333cff73978dc1c65a5cb",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-002/config.json": "0179fe40b8e3c7380b45553e6d556b6805da15d86d16b28fe756ad4108510217",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-002/samples.csv": "d25377585e7e45fba435648a76e97abfaa860a818a21364a50c74df90852bf4e",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-003/stderr.log": "60bce24b26c071687801712a626decb840ff2c937737a391e08b7cd3b0cfa471",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-003/result.json": "948f491ae7685a27d1aaa80e2996e2d30e5f0f67a3c0e36fcfd7b1a1b9734999",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-003/config.json": "714dd509816a18c1de65711fae9e1e00b78ea119193b2aa320cdc39c5775e8dc",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-003/samples.csv": "07216e948b3503c120c8d6218d1ea0911930e29d82de44839885cb5ce20f0793",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-004/stderr.log": "220c95c0b8d37b81165bf5d2ba412bde336b60bcf22bf8d188db0d92182cf47c",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-004/result.json": "2fe78243599df3e94fc64d9384d4c7cfd5821270ecff158d52961fae21985d60",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-004/config.json": "22a3c5589bc4f1af09e54fb6f4f38ba54356fa1c55a107aa343c41be8068b864",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-004/samples.csv": "afe25797725e699da8b71ba9dbb9a1fe17f0fef35098ca354584769e74ac5342",
+    "baseline-regression/process-idle/1789828037574/xray-rust/idle/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/dns-2/1789828007992/dns-policy-probe/result.json": "1325735a52d4c7fb54e80e86fa5b8109b7cb826bbe3b64211850c03b06db55fb",
+    "baseline-regression/dns-5/1789828037423/dns-policy-probe/result.json": "3dc6e08b69e2d8c77a6d5766af6d5fb658d6daf4515970a797019945eeee1ff9",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/summary.json": "8dcc416ffbcb51a653835f742f8f1d76038b8d73b3baea3b3aa3717e333554d1",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-001/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-001/result.json": "cf1321d66445531dcf0571d2b0815243767a6dbb5c52b1b170876b2f7c3c7f82",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-001/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-001/samples.csv": "91dc49ac17cb8ae8911725648b1203c0748c6e84b3dd66428b75a642f11664b9",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-005/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-005/result.json": "9b6f9a2a18e973767b837d85140cb7b2cc7615de1587d02fb25eb9b163643ae7",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-005/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-005/samples.csv": "a441431e3d44536ef4448bf512da3e5172c206aed349461f99fa0f5920107a27",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-002/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-002/result.json": "007c058fae1bc5c104ed3ea02a4ff0e12999fcd26c0bced5f3906ad75bfd6ae0",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-002/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-002/samples.csv": "e0ea607956fdd6c294101c5457b74a57e328660d39a14b04ddf24800b3dcff1e",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-003/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-003/result.json": "6d102d7b35e817a020680cb126d6787d7b06f25b97458d02a9705fce6938ea8a",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-003/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-003/samples.csv": "04403f953061da68dfb04e3e17a8304b15b96e1861bda3bd4871330f1e1ffdfd",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-004/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-004/result.json": "310300008b34d169e5aca1a3fad081baedfeba771234ad903f62982a969c8dcc",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-004/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-004/samples.csv": "9e391677a1ba863daa5fafe1fd1a8774ab9cc4a87ca788e7bf8b3bd1e6c94745",
+    "baseline-regression/process-tun-fd/1789828104232/xray-rust/tun-tcp-freedom/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/route-1/1789827992167/route-probe/result.json": "2b70885befbedfb2fe8a9cc4266cb14199660f8fc69f0c8c9497ed281d3924dd",
+    "baseline-regression/dns-4/1789828027775/dns-policy-probe/result.json": "481009f541fad6378ef0642d80520fb2e8ff1440b3a381fbaec110c67c2ae220",
+    "baseline-regression/dns-3/1789828018008/dns-policy-probe/result.json": "9db815a6ef34a3d2312ac07f23e5339fb2219634d924ea3a583931898f7607d2",
+    "baseline-regression/phase2-2/1789828008130/phase2-probe/result.json": "32096166ac1545698b27ba8f86a54e09e0ca857dcf3b917bb01520a8dba4b2be",
+    "baseline-regression/phase2-5/1789828037570/phase2-probe/result.json": "0464757d222614bab47f50c452a4628bb6b7b7e9551428d6f13f7dba38afabbb",
+    "baseline-regression/phase2-4/1789828027905/phase2-probe/result.json": "4f34bcc20a770a9828ec4fcc66c27586215244d43ac483bc7190ed19b5648e6a",
+    "baseline-regression/phase2-3/1789828018144/phase2-probe/result.json": "d7d80efe10bfd69c8a9f986047c82cd4c83c847340d459a2db2238037fa7d3fe",
+    "baseline-regression/dns-1/1789827997982/dns-policy-probe/result.json": "dbf0ef0dcb076342e4596350019b6df24fbc71c4490329553289257e6bebc9d6",
+    "baseline-regression/route-3/1789828011975/route-probe/result.json": "b9ee0d064e128df134dabbabe7a51b3deff2c2614cdd0bb3d74319f86a4e919c",
+    "baseline-regression/route-4/1789828022023/route-probe/result.json": "68b93af0797c8eec677196d766a8a7f9d57ea3529bc4ea9e40d2d58a8cd3b5e8",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/summary.json": "0b9b62e139c5ab70f0c6871cfb2282783ad074026c7e0db72d32cf6db4d26fa9",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-001/stderr.log": "501f7a1dfd5f5f50ebfb2af82bcf57f96111a6ea364c9fe7d716b9a43ab87c3e",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-001/result.json": "4c562eee58d69b017c8fe06f1ef24e70ee74d572a27ff2acc218cf002e2b6493",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-001/config.json": "1fcade7be076eba940aa703888f20687b9611a2353fe3b0fe22802552e2dafad",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-001/samples.csv": "7c35c2673aaa8e56ddcc5b854ed36730377d868a5d6acb6131ba71c5f7d4d0f8",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-005/stderr.log": "ed8b9f53bddd2824fe377ff60af8b58c234a6255a1b659f42b133ddfc3bd9478",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-005/result.json": "a87060103e079ede3ac0ab8922ef62df3d6a515eea6b91c06cc55da416891885",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-005/config.json": "aca8f31d779b7e901e287e0b0133af18653ba3caff6d1a358acd6113faf597c0",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-005/samples.csv": "174d0165678c9cd052deb6a59eed865bfc4e771b3d0735bdda0759f20b7224ef",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-002/stderr.log": "52927586315fa66d61c6714a37e4bb197eebd57ba0fb96b6f504f89fdf30ea79",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-002/result.json": "fae9188ca19c4b34a49fcab54852a251aefe6fd121053b9ccc58ec939a50bd9e",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-002/config.json": "382f1670e7099f1fdd7fe74ba94462697ed8bb36d7a45ffd231921a9190f14ae",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-002/samples.csv": "37aac41f3088b300062a687aa2492f4428307839301dbfcb23229c1d19f7ab96",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-003/stderr.log": "e2ff6e2ecf45aaff2e92df363e9cba722dd7b4e4642e5585e90101591e3afdc1",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-003/result.json": "45076e20d383ed7723783884b8a60b33c2bfc3a7c5456936aaeab437ea30745d",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-003/config.json": "4a9f5589fb25d54123369c2e604453d4630e6d7b85b05a1d4653b9ac3861be58",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-003/samples.csv": "adc5619aa85fd648ec212a4cb069c55ba4c9774616319836107a6d3ef7fc2cfc",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-004/stderr.log": "3d5cc7dfcf1cb3f724647ece524f3838992449a760b8ce86caa0879916a6bd20",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-004/result.json": "fbc74b3ec16d5a7adbea018b34a777b755c43e00285b0bfcc15b5daa0adae21a",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-004/config.json": "d22ed876a620036d238e374b6e18da4e81bb3dd351e8493d096d773ad5051b05",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-004/samples.csv": "f36692506c16631c4784d51b1b7a8981e640f6c60358460addb65a6917ff567b",
+    "baseline-regression/process-flows-100/1789828049248/xray-rust/many-idle-flows/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/route-5/1789828031656/route-probe/result.json": "fb4f053d4c2f041bde755ee42515fd2e16109bad1fa456f48d3dbedd8d4bac05",
+    "baseline-regression/route-2/1789828002133/route-probe/result.json": "5bed3f93426269b780a7236955cc40e695e803bed7034f2ca57929ca7eef8e7f",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/summary.json": "d6b29f6ea905fbea7e92f0d06d9e759786376e2e62201d597183d10a0b660bda",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-001/stderr.log": "6de8c31301a86719e217a49a4a2010d1659a1ba2f95a0d13f306623996db791c",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-001/result.json": "f5808235e8ea1282533ee82eaca39795639ed76d2b6b285143cba6cb78df4fb8",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-001/config.json": "2f5ebce18f6c7072d7dd15dfe908be65ce30ef625de0cf03b74e1ba87a701bfc",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-001/samples.csv": "f7d24f2a458a6b7e786c70cb99552cc83f04dec6af6e59c395875df5d9902c22",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-005/stderr.log": "e6aa6e12634535e026b35f884f69b2e11fcc502e275199f873bf72c5fbeae855",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-005/result.json": "943d1ce0ccee6c9ed600a24146b51e5ab146480480f563d1df9169865270aae2",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-005/config.json": "303dbcf608c80fedbf99c2a66a23aa423e5788b618bb223e3a016029255fef53",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-005/samples.csv": "14cbe17c24c01c1684a51f6402cc4aa68e4ffdc2835f7ffa03f535bbd155c28f",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-002/stderr.log": "7eb531ee7cb8c20839a343dbcf1edce755370c9eabe2ca3dd0ecf6e274f77e2d",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-002/result.json": "2dd24f6e7f9a9afc4bfaf4eed3bf211edec94750b378248fe2934b6a4860dcc7",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-002/config.json": "fe3a128d91032dadc6e31d682a16f58ed71738494e5d51324f05453d9526899e",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-002/samples.csv": "109e1b0ba04acf41ea0a10838494883ae0cea648e5f0ca3844f788990bb7e7e9",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-003/stderr.log": "3d928f017cbb4afb260e245c1d6fac6a0258786d129e577da7c09e0c7b59fd14",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-003/result.json": "7efd769c2c2a369596a00d7220106b8f3bd126d942de65a3a8dbe95b6f153324",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-003/config.json": "d7fef431eae09d0fd2de652d36c6d8ba964ac78ebfd2efcdafd432c6fcff9312",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-003/samples.csv": "b377316d906298530bdf22a72cd4df142b95075b7e5d58b6ca99e159582b2d2d",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-004/stderr.log": "565ce2ada4b9e82e8d69a156ff1703d517b182ad41d3eeaf2086af248dba531d",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-004/result.json": "0310a255757e84f2d1e4b0a55a5a42dca0fb752510d91c3d4491b7bc11e3cafd",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-004/config.json": "918b8c618f5b4e72b6a3cbced061477a11d8099af771a6bd0dc948ebee003820",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-004/samples.csv": "f3569284fdb37c4188c5e44bf81a5c3f75f220062d3782d93199fcf4cf629d5e",
+    "baseline-regression/process-tcp/1789828103042/xray-rust/tcp-freedom/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "baseline-features/build-manifest.json": "86ee0cd08f65bb4ebd1f6385aaab6acd9af2cd6b05ad85581f9883cacde6a09c",
+    "baseline-features/performance.json": "e7b39ebc4fae1d47139a98ca3b01d3352b0ae2fc63d4056134e73799fd6d893e",
+    "baseline-features/benchmark-raw.json": "437b1d3e4248e5f0f5be61754d52f7c28073cf83958028aad13fe44964e0c798",
+    "candidate-regression/phase2-1/1789828563502/phase2-probe/result.json": "78612a1c3fbcd2380fa3c29bb2744acc8fef867c8fe64a884fa8b07a414661fa",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/summary.json": "b76caef4503a5888eb21a1e2f83e94c3fbdbc74aca6bc1a8cd5053ead2ca3d01",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-001/stderr.log": "be2338b03133fe796f2ec0f25a7d487b33d355d236ba78f9f17768b426f20ce6",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-001/result.json": "13693ada2c65285e03466ff8048f0332b2e9e7b843fabaf20061f52dd5fb8c7e",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-001/config.json": "b9f1906c837cb9a2f2f3f0f922f5e4b7d1371da5c3fcbdade4b6d5c931af04da",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-001/samples.csv": "332e6e0d1eca561f4ab02234dfd2988e972bb3a2d4c80fcfa6d7fc4f9a9f43bd",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-005/stderr.log": "221f3dbb003c0e770204de22adbcaf0fb2c3a372b5a0b07fdece4305670670cd",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-005/result.json": "dba1f8838720d2f62c00eff3ec80b4d1d1d96f1ec536e9f046ed670ad773b19f",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-005/config.json": "3d448673c90a7b7f774671f85c6531e4e68395a6b35d9f89b875ecf782518b68",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-005/samples.csv": "fa65a00966447ecf74c749d2823da8d07f709701c871a8447e862ba791c080b2",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-002/stderr.log": "4e9049137525ccd40e59577cceec28ad43c1e2ffdf48c179166acb839354fd18",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-002/result.json": "fcd28ceec77d455881b74900f0baaf633e73c9212d29512926f84c6a6893d614",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-002/config.json": "9839b9442932079b833aa624d34ecee30c9619fcc51c627f443f32eebf5ed16a",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-002/samples.csv": "a2acb88eb3cf86cefede7dc975cf3b896f8803768cafca773f9ec08fa3be409c",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-003/stderr.log": "144d0e3e53eea2b5af62bf4e48d540780406f822ac0f87b6a262eb59e74f032f",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-003/result.json": "d76c7ccd44e7eb38c6c622c157a33e837b933910242249ad578cba24e225608e",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-003/config.json": "33e172728d21e1bdee505f9bcd12f6bc644b82a2f8a7223155f9622b6c665289",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-003/samples.csv": "4d81ffb50d2d55a099ca7262365e43c68f1d0b0edc5a8892568db69830606a83",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-004/stderr.log": "08f3790d5c0530c2b9c2fd1137d0602f56a2c07ecf541bba6c6081905fcc33f6",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-004/result.json": "88d27da9304e57ce7a3a651a0ff848646a02e8988a5353471e395b1209b49e8e",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-004/config.json": "2bbb887bf7e0ea4bce7f0d2d0fe018a4f0d49c62ff93f0c18fed7b40f5b54195",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-004/samples.csv": "f1cec22d7a68fca904db2b4ea92c61035fd27f37ed221e429d13d9a6699bcc2f",
+    "candidate-regression/process-flows-1000/1789828639035/xray-rust/many-idle-flows/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/summary.json": "e216b647da59ba7153f2478e8640289b7dcb519f1d171716a4c3ac1888267549",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-001/stderr.log": "eec135a1bc85dae9241d4ff1cc84c8aee17ce25e01093fdf9641c41de0354513",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-001/result.json": "538d94628d74383fba4d0051619736bfcc4bf2d00541c4c6ab016ada5d967c0e",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-001/config.json": "278c0855c6fd6c56d70a18a8ab8f18bb61f82bd055e6c0cef2814e3a450d6b3e",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-001/samples.csv": "08b94f322c910163a47cc4fc1fe8b1a821994c68717f6c2ed264012c9706be1a",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-005/stderr.log": "4ff18406148e66c679ea999481b71c157f47f9c1ce55bf02b91ecfdaa4d180e9",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-005/result.json": "d465d1a10a083c77147d1d0657baec672d000d807145289b030f344d37975406",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-005/config.json": "7ad951d0bd18a150de29c1b19a0fcb2e84e4d9b7b3f62d9baee7bf5c8feb5a0d",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-005/samples.csv": "97769f4d523a382a909ccb5ef483ff74af19cad29afb650b26eabb0ef9f737c2",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-002/stderr.log": "f9ce00579eb64338490f4a334feae96050adce94d4a7c6a3783a862f0a9f54b1",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-002/result.json": "cb601a6e033f280525ca591a50c6e3af4c7c7e2c726379728d9a21e00fdca07b",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-002/config.json": "c332f53c691929cbb144c7d08f516890806626c15b62e3bfcbd042435d5ccbf3",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-002/samples.csv": "d2815ebd9418b5b7c15458780ea05c2b079418304543b63a0a6b82d6d740f603",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-003/stderr.log": "7bdbd98de74ff4fd546826cf3c2df974b9dd68dc506b07cb53f92d0c8add749e",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-003/result.json": "b6fc4075f033529a961dc280a701a4044352b03d184f18fe9ee89a8a8fca0c99",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-003/config.json": "2e19661611e379ae9fec1005b734e15ca3a0629e4624f191ec3eae657dd7be31",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-003/samples.csv": "8bccfa0a04161b2351abbbf521260bea3dadc9113a988642bf59ded361762b2a",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-004/stderr.log": "a329f6ae2e661b7c2234967df727ec5738fda72ec45e5588b6aeaeeaecf9680e",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-004/result.json": "17011d32050b39c5518d12cbd66a9690032126f824592d6db2e5a5c82b84b950",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-004/config.json": "4bd7092f70d935c60ebed8067b4d74befc41f0e6d95dc3830b03bc2c13d56607",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-004/samples.csv": "e0ae7a1403e263c660187d2c95c92d006127e5e1907ca4bc599128cbfd1cfb72",
+    "candidate-regression/process-idle/1789828601218/xray-rust/idle/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/dns-2/1789828573110/dns-policy-probe/result.json": "8e51d5455ba32f70f7ea2a96c64e74621a10ccac0225917c05237fa2692bf9c8",
+    "candidate-regression/dns-5/1789828601088/dns-policy-probe/result.json": "cc0a5eeaf68b28fa65320fbfa8ce385b1cd66ab7ed7cd13500c452668fe37a4f",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/summary.json": "209d259e8316b6b1c2ef6379d7333f57b18a5e97d86fcf0f43be9121a829c322",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-001/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-001/result.json": "f6d8bbb273da5927bfd3edfca3b963336282df8ddb613dc4fac950c19c8b7733",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-001/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-001/samples.csv": "caca4afae4e067d9b106606f5eeb30dc004e76a40e65d3b8c71a41ba7339b838",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-005/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-005/result.json": "709667fd2d0d4cac9848d1defbe3ae8561bb29737b08d0d1f4713783ee3bb4a3",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-005/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-005/samples.csv": "33cf1683ffafe88dd2bf56f886686ce0b78b146780209eb7ac1dff02cbd3c5b1",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-002/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-002/result.json": "6225f79b95398170913ff68ae5cb96448cb9826b181a43f32a67eca89b65dd16",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-002/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-002/samples.csv": "ce373d2a0d595eb8bc88db4aedd22aa31054e74736d0e3c89da812e4ae7f47ae",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-003/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-003/result.json": "a3f224e1536c05080265e5ef03c91e05cd875ce6b4d081f194e158257f4b2496",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-003/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-003/samples.csv": "19e6c35cf7f7e9188b6b00d5c0467dcb0131e485ce0b59967514b6e8ff6c393a",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-004/stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-004/result.json": "1f0b6726fba6de1383b21c61213f6fbcb38e9e011132579d50dfa4f405854574",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-004/config.json": "8ef342bafa56aa5cdad9e8e91634a6c85d6620fd8e73a3f3b17b79aa8bf16dc7",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-004/samples.csv": "249a806cff0b9957ff3d7264706490d231a755d99c6fa7d89843520b5eee6547",
+    "candidate-regression/process-tun-fd/1789828668021/xray-rust/tun-tcp-freedom/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/route-1/1789828557809/route-probe/result.json": "20ab658bd81a540af7ed65c320bdb70c60ff751531f17baa2c5693765dfd7c2d",
+    "candidate-regression/dns-4/1789828591777/dns-policy-probe/result.json": "8eebe2198d202e9ec8fbb006a306de1f59305deaf7072813310bcc0c2af9e831",
+    "candidate-regression/dns-3/1789828582398/dns-policy-probe/result.json": "5b97bd329d40849f170e7364cc5f9be817feadebe0b5272a382719e8b9d05971",
+    "candidate-regression/phase2-2/1789828573232/phase2-probe/result.json": "229e0d215e00e1655e6632edd3610a66159c17281cb6c9ad32e10a96aa34b647",
+    "candidate-regression/phase2-5/1789828601214/phase2-probe/result.json": "a8dcbea1d0c4ef75793927ac1e7529c5c92c5216300d43fb6322afae5ed64f3f",
+    "candidate-regression/phase2-4/1789828591896/phase2-probe/result.json": "9387e290254f5cbed267ea833dab31f2ca1529c9b972cf10e40586b5d07d0364",
+    "candidate-regression/phase2-3/1789828582523/phase2-probe/result.json": "460d175ed7ac468e91893a49ea565fb7c0026e30023bd46fbab86046067e2532",
+    "candidate-regression/dns-1/1789828563359/dns-policy-probe/result.json": "8ab8a041a063df7f43139f74f45c4e2caa1ec4ae084f5aeddb549f5c29374be6",
+    "candidate-regression/route-3/1789828576818/route-probe/result.json": "fcf8bed95c639d844b6445126e3e8882d5db1ce8b8cd6e1e57e2852678e0b98c",
+    "candidate-regression/route-4/1789828586195/route-probe/result.json": "a678c5dbe915c20c97afee56ded89151351abd34759c9652ef4f51b99f22493d",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/summary.json": "8b0b7d89fa31b8b036cc138a35cea3cff570dea3ce4b4e6601e62ac924f2c475",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-001/stderr.log": "d210d22297244397989a6ff3e77a861b88ffd193e783a0a7c1ff4bba75a76bcf",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-001/result.json": "ac59c7e25fbd010bbe782e44d06adcc910e774b61b92ca12b9d44ceef406c315",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-001/config.json": "c4fa09be5cae5d2f4369a0b8d18bb45ca8c116ae97fb92fc64cdad732159d613",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-001/samples.csv": "3427c13828f08d7be7b4a8677521444bed8720907b5990d9e4364fb7df8a3bf4",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-005/stderr.log": "92750a91ec4c650965e9e276f6fa6571b0979edd6ff585bab253189153dc9e9e",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-005/result.json": "b17b6e306931f28bf58e50c45f01d49c664cf0d5c3c0ce3c9b27b0e540435772",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-005/config.json": "18d6b54012e2874b72fd4516eb57c49afd23da512a41b2802bc7b879ce2562a9",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-005/samples.csv": "d95388356ea1c1746f687ee0347e49a7b792f38c2ce29cf5c0f457fd3599f24f",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-002/stderr.log": "f052a6ea248f4f18aa4c0f885dc349ec6d10fd2fc41ed3aed86a5aa0d668aea6",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-002/result.json": "57550fe8e0f8cbb9b682a1c692a9a976dffa417f16c13bf4133e97460346204f",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-002/config.json": "e43d6c1aba844a156245b58e5ae2e492154f91ba1404a9f049f12bc6293c89fc",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-002/samples.csv": "5324400f89f06866041aee4ca248832c441646e040447ddac49c5c9866250b26",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-003/stderr.log": "26dcf57298dfac67238bf0de2c4dfff36cf3804c0c615c69ec28fbe1fc812ef6",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-003/result.json": "52544d37139af8e0705bb337929f5d3756c6bba98c366d8e6e8809c19594277e",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-003/config.json": "56f055ea79174e3c4158265c7e857f963a20beb5f39fa554aeb042f3c9fb7947",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-003/samples.csv": "6b5dcb4efc4522b83dd03ed275e7a8b4eab72b04f62d1db2e018bfe60fb95169",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-004/stderr.log": "09b1ab373442b9615770f0a4807971a1e2c64c3c90ad4ee613ad13164f730395",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-004/result.json": "f341093c1e62b8ee5313a53961f086033bc906d006f63611869436acb6fb874c",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-004/config.json": "63bf3592d0e382bfaa6f0cde2be9e94b7151fae5bcd010057247de998a6d3406",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-004/samples.csv": "dbc0136e9fbe45605843d6f583506708bc84c0091a73cf5e6b61cfb3ee0dbfc7",
+    "candidate-regression/process-flows-100/1789828612765/xray-rust/many-idle-flows/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/route-5/1789828595538/route-probe/result.json": "66ca7a849e27295dce0c02f925bbc41e481dc9af05fcba865e07e219da215343",
+    "candidate-regression/route-2/1789828567468/route-probe/result.json": "d739c19125be05dfaa0200d7e5acc5548d3c055ff62a593ef6128b14832bfe0c",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/summary.json": "1275738f95f9110421898fe3403cefc59908f8ae16fadb4d9bc66d71511a7230",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-001/stderr.log": "3fc5eabaa70722b8712450a9a2af6ca48dc1392b27b93bfeab1a7fe3319e4f90",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-001/result.json": "6e1ace1d4c0f3bcb3b71d7c2de84f8cbb8557c8bf85333b268fed2193994b989",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-001/config.json": "97f9f8451e7062066162c2e1fdb60cdfa222766d5c0207fdda39fe2840672587",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-001/samples.csv": "636084948c5a26a17cae455717d15c218857bb61ec8542a54cc8e5d9d044bb97",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-001/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-005/stderr.log": "57ceb01987e0662ee48059838cad655b1c5bc6b1d98a6e808dab4fbb43b25e2f",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-005/result.json": "3620d83a1463e1a118a2f3b2149a5e26df9331fc98fe6ff3352f80949d8528f9",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-005/config.json": "967c49e3d6f8a6b53f6a7a27c6f6cf40ccbd22f27dd4d05d489978af392b712a",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-005/samples.csv": "d10c68571ff96c416800b0a2f331fb824f21ebb4a1cfb6a50d569a8ea57379e1",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-005/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-002/stderr.log": "5a58ba5d37c23a121033fda85a59d5c89c8bc1a203f2793bb1b2a98384036b44",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-002/result.json": "14718f15fa6c9aec032906c7b0a5d778ac496ae9c1c9d4f8b5a30b5f50730e34",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-002/config.json": "97dcacc3f13bc391781141c70da0858926c0cd576ea9b4e283615d105ebb9802",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-002/samples.csv": "84265d86709e112b6697c628d8df65831c228bde624ea295b41212a4ff075f13",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-002/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-003/stderr.log": "142aa07ce84e4c6df38c7e6580031739867da9e26a2da44af0fe8109a7910f4a",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-003/result.json": "4f582ceb4cb9454786e0b539b8ed53a77b3875ae02971024351f38b169f5298a",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-003/config.json": "87e6238c911a5ffe141caa84ff0da63ce69541fc98c5ee43e55c6ec61c344280",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-003/samples.csv": "26926824c31416848c8998ba9974169640d3fc5a2b32e1bdeeb98c8be4d6fbf3",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-003/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-004/stderr.log": "9a8f9af1f2a806884d7b124a568804fa1b434a67e2308d0ce9f5bf8727706595",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-004/result.json": "17bd4c49bd96682c3505177b5021b3e1ca9cb6cb1469471e6b3b824fdac85ceb",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-004/config.json": "81ee7976ffbc138436e36d2686abc3ec6596ecd1e856aae6712cf3a5d2b07853",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-004/samples.csv": "56cf396424155e6070a6fec2eae9e43b67b8ed79384f152e2b27ad9d6a1a3b8a",
+    "candidate-regression/process-tcp/1789828666829/xray-rust/tcp-freedom/run-004/stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-features/build-manifest.json": "9742cadeb55dad9d04355bd186e2ec70714beb1c8d70eb52ab359546f5b1f315",
+    "candidate-features/performance.json": "c2a21ffccbcda055011079c68f5334b38f9d4dbdaad9b34dbaea0f6cda29e618",
+    "candidate-features/benchmark-raw.json": "a4524b012c3bb40f6afdac6b0fea3681118d7e5b694e973c6b68ff81e64d585f"
+  }
+}

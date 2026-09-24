@@ -1,0 +1,11 @@
+{
+  "status": "passed",
+  "reconstructed_source_tree": "1a8d391146eaf898e2b4824c736391fbdccb8f4f",
+  "reconstructed_analysis_delivery_tree": "a3ba84fcb44ea2796cc3945102b42c3de689b1ad",
+  "analysis_patch_sha256": "83eae17e1165aba69422d75221d6021e2bf9a9f3d8a144fd766fc1dd961a6210",
+  "source_commit": "b9577f874b3f102880ae078038855803d85f5d04",
+  "full_patch_sha256": "0c6f675f859ee98cb8f399c46752f20087be658abc7734ecd57314fea1cba73c",
+  "archive_sha256": "781d633694c6a34da50abe7ca1e6726caad34b01b2cff52c18f8583e3d8d83ae",
+  "archive_files_verified": 86611,
+  "scope": "Exact source reconstruction and every archived file hash; this is not a performance acceptance decision."
+}

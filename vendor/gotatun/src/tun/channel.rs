@@ -1,0 +1,781 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// This file incorporates work covered by the following copyright and
+// permission notice:
+//
+//   Copyright (c) Mullvad VPN AB. All rights reserved.
+//
+// SPDX-License-Identifier: MPL-2.0
+
+//! Implementations of [`IpSend`] and [`IpRecv`] using tokio channels.
+
+use either::Either;
+use futures::{FutureExt as _, select};
+use std::{io, iter};
+use tokio::sync::mpsc;
+
+use crate::{
+    packet::{Ip, Ipv4, Ipv6, Packet, PacketBufPool, Udp},
+    tun::{IpRecv, IpSend, MtuWatcher},
+};
+
+pub use crate::udp::channel::new_udp_tun_channel;
+pub use fragmentation::Ipv4Fragments;
+
+/// An implementation of [`IpRecv`] using tokio channels. Create using
+/// [`new_udp_tun_channel`].
+pub struct TunChannelRx {
+    pub(crate) tun_rx_v4: mpsc::Receiver<Packet<Ipv4<Udp>>>,
+    pub(crate) tun_rx_v6: mpsc::Receiver<Packet<Ipv6<Udp>>>,
+    pub(crate) mtu: MtuWatcher,
+}
+
+/// An implementation of [`IpSend`] using tokio channels. Create using
+/// [`new_udp_tun_channel`].
+pub struct TunChannelTx {
+    pub(crate) tun_tx_v4: mpsc::Sender<Packet<Ipv4<Udp>>>,
+    pub(crate) tun_tx_v6: mpsc::Sender<Packet<Ipv6<Udp>>>,
+
+    /// Fragmented IPv4 packets waiting to be reassembled.
+    pub(crate) fragments_v4: Ipv4Fragments,
+    // TODO: Ipv6 fragments?
+}
+
+impl IpSend for TunChannelTx {
+    async fn send(&mut self, packet: Packet<Ip>) -> io::Result<()> {
+        let ip_packet = match packet.try_into_ipvx() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::trace!("Invalid IP packet: {e:?}");
+                return Ok(());
+            }
+        };
+
+        match ip_packet {
+            Either::Left(ipv4) => {
+                let ipv4 = if ipv4.header.fragment_offset() == 0 && !ipv4.header.more_fragments() {
+                    ipv4
+                } else if let Some(ipv4) = self.fragments_v4.assemble_ipv4_fragment(ipv4) {
+                    ipv4
+                } else {
+                    // No complete IPv4 packet was reassembled, nothing to do
+                    return Ok(());
+                };
+
+                match ipv4.try_into_udp() {
+                    Ok(udp_packet) => {
+                        self.tun_tx_v4
+                            .send(udp_packet)
+                            .await
+                            .map_err(|e| io::Error::new(io::ErrorKind::BrokenPipe, e))?;
+                    }
+                    Err(e) => tracing::trace!("Invalid UDP packet: {e:?}"),
+                }
+            }
+            Either::Right(ipv6) => match ipv6.try_into_udp() {
+                Ok(udp_packet) => {
+                    self.tun_tx_v6
+                        .send(udp_packet)
+                        .await
+                        .map_err(|e| io::Error::new(io::ErrorKind::BrokenPipe, e))?;
+                }
+                Err(e) => tracing::trace!("Invalid UDP packet: {e:?}"),
+            },
+        }
+
+        Ok(())
+    }
+}
+
+impl IpRecv for TunChannelRx {
+    async fn recv<'a>(
+        &'a mut self,
+        _pool: &mut PacketBufPool,
+    ) -> io::Result<impl Iterator<Item = Packet<Ip>> + Send + 'a> {
+        let packet = select! {
+            packet = self.tun_rx_v4.recv().fuse() => packet.map(Packet::<Ip>::from),
+            packet = self.tun_rx_v6.recv().fuse() => packet.map(Packet::<Ip>::from),
+        };
+
+        let Some(packet) = packet else {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "channel closed",
+            ));
+        };
+        Ok(iter::once(packet))
+    }
+
+    fn mtu(&self) -> MtuWatcher {
+        self.mtu.clone()
+    }
+}
+
+mod fragmentation {
+    use zerocopy::{FromBytes, FromZeros};
+
+    use crate::packet::{Decoder, IpNextProtocol, Ipv4Decoder, Ipv4Header};
+    use std::{collections::VecDeque, net::Ipv4Addr};
+
+    use crate::packet::{Ipv4, Packet};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct FragmentId {
+        identification: u16,
+        source_ip: Ipv4Addr,
+        destination_ip: Ipv4Addr,
+        protocol: IpNextProtocol,
+    }
+
+    // TODO: Switch to a total memory limit
+    /// The maximum number of unique fragmented IPv4 that can be concurrently assembled.
+    /// When this limit is reached, the fragments belonging to the oldest packet is dropped
+    /// to make space.
+    ///
+    /// The sum of all fragments for a given packet cannot exceed the maximum IPv4 length,
+    /// which is 65535 bytes. In total, this means that the maximum size that can be
+    /// buffered is 64 * 65535 = 4194304 bytes, or 4 MiB.
+    const MAX_CONCURRENT_FRAGS: usize = 64;
+
+    /// A buffer for reconstructing fragmented IPv4 packets.
+    #[derive(Debug)]
+    pub struct Ipv4Fragments {
+        // The `VecDeque` is holds the fragments for each unique packet being assembled.
+        // It is also a FIFO queue, so that the oldest fragments are dropped when the maximum
+        // number of fragments is reached. The inner `Vec` is used to store the fragments.
+        // INVARIANT: The inner `Vec` must always be sorted by fragment_offset, and only its
+        // last fragment may have the more-fragments flag unset.
+        fragments: VecDeque<(FragmentId, Vec<Packet<Ipv4>>)>,
+    }
+
+    impl Default for Ipv4Fragments {
+        fn default() -> Self {
+            Self {
+                fragments: VecDeque::with_capacity(MAX_CONCURRENT_FRAGS),
+            }
+        }
+    }
+
+    impl Ipv4Fragments {
+        /// Return the number of unique packets that are currently being assembled.
+        pub fn incomplete_packet_count(&self) -> usize {
+            self.fragments.len()
+        }
+
+        /// Add an [`Ipv4`] packet to the buffer and try to reassemble it.
+        ///
+        /// If all fragments are present in the buffer, this returns `Some` of the assembled
+        /// packed, and all fragments are dropped.
+        ///
+        /// If adding this packet causes the internal buffer to exceed its capacity,
+        /// the oldest fragment is dropped.
+        pub fn assemble_ipv4_fragment(
+            &mut self,
+            ipv4_packet: Packet<Ipv4>,
+        ) -> Option<Packet<Ipv4>> {
+            let fragment_map = &mut self.fragments;
+            let header = ipv4_packet.header;
+            let fragment_offset = header.fragment_offset();
+            let more_fragments = header.more_fragments();
+            debug_assert!(more_fragments || fragment_offset != 0);
+
+            // All fragments except the last must have a length that is a multiple of 8
+            // bytes, and the reassembled packet must not exceed the maximum IPv4 length.
+            let fragment_len = ipv4_packet.payload.len();
+            if (more_fragments && fragment_len % 8 != 0)
+                || fragment_len + usize::from(fragment_offset) * 8 > Ipv4::MAX_LEN - Ipv4Header::LEN
+            {
+                tracing::trace!(
+                    "Invalid fragment size: {fragment_len} or fragment offset: {fragment_offset}, dropping"
+                );
+                return None;
+            }
+
+            let id = get_frag_id(&ipv4_packet);
+
+            let Some(frag_pos) = fragment_map.iter_mut().position(|(id2, _)| id2 == &id) else {
+                if fragment_map.len() >= MAX_CONCURRENT_FRAGS {
+                    let (dropped_id, _) =
+                        fragment_map.pop_front().expect("Fragment map is not empty");
+                    tracing::trace!(
+                        "Fragment map at full capacity {MAX_CONCURRENT_FRAGS}, dropping oldest fragment with ID {dropped_id:?} to make space"
+                    );
+                    // TODO: send "Fragment Reassembly Timeout" ICMP message, per RFC792
+                }
+                // Since this was the first fragment, we don't check if the packet
+                // can be reassembled yet.
+                fragment_map.push_back((id, vec![ipv4_packet]));
+                return None;
+            };
+            let (_, fragments) = fragment_map
+                .get_mut(frag_pos)
+                .expect("Fragment exists because of the above check");
+
+            // Check if the fragment with the same offset already exists.
+            let Err(i) =
+                fragments.binary_search_by_key(&fragment_offset, |f| f.header.fragment_offset())
+            else {
+                tracing::trace!(
+                    "Fragment with offset {fragment_offset} already existed for for ID {id:?} and was dropped"
+                );
+                return None;
+            };
+
+            if let Some(prev_i) = i.checked_sub(1)
+                && !fragments[prev_i].header.more_fragments()
+            {
+                tracing::trace!(
+                    "Fragment with offset {fragment_offset} follows a terminal fragment for ID {id:?}, dropping",
+                );
+                return None;
+            }
+            if !more_fragments && fragments.get(i).is_some() {
+                tracing::trace!(
+                    "Terminal fragment with offset {fragment_offset} precedes another fragment for ID {id:?}, dropping",
+                );
+                return None;
+            }
+
+            // Check if the new fragment overlaps with existing fragments.
+            // Note that the fragments are sorted by fragment_offset, so we only need to check
+            // the previous and next fragments.
+            if let Some(prev_i) = i.checked_sub(1)
+                && let prev_frag_offset = &fragments[prev_i].header.fragment_offset()
+                && let prev_frag_len = &fragments[prev_i].payload.len()
+                && prev_frag_offset + (prev_frag_len / 8) as u16 > fragment_offset
+            {
+                tracing::trace!(
+                    "Fragment with offset {fragment_offset} overlaps with existing fragment with offset {prev_frag_offset} and length {prev_frag_len} for ID {id:?}, dropping",
+                );
+                return None;
+            }
+            if let Some(next_frag) = fragments.get(i)
+                && let next_frag_offset = next_frag.header.fragment_offset()
+                && fragment_offset + (fragment_len / 8) as u16 > next_frag_offset
+            {
+                tracing::trace!(
+                    "Fragment with offset {fragment_offset} and length {fragment_len} overlaps with existing fragment with offset {next_frag_offset} for ID {id:?}, dropping",
+                );
+                return None;
+            }
+
+            fragments.insert(i, ipv4_packet);
+
+            let [first, .., last] = &fragments[..] else {
+                unreachable!("There are at least 2 fragments.");
+            };
+            // Check that we have the first and last fragment
+            if last.header.more_fragments() || first.header.fragment_offset() != 0 {
+                return None;
+            }
+
+            // Check if the IP packet can be reassembled.
+            // The fragments must be consecutive, i.e. each fragment must begin where the previous
+            // one ended. Note that fragment offset is given in units of 8 bytes.
+            let fragment_offsets = fragments.iter().map(|f| f.header.fragment_offset());
+            let fragment_ends = fragments
+                .iter()
+                .map(|f| f.header.fragment_offset() + (f.payload.len() / 8) as u16);
+            if !fragment_offsets
+                .skip(1)
+                .eq(fragment_ends.take(fragments.len() - 1))
+            {
+                return None;
+            }
+
+            let len =
+                last.header.fragment_offset() as usize * 8 + last.payload.len() + Ipv4Header::LEN;
+            let (_, packet_fragments) = fragment_map
+                .remove(frag_pos)
+                .expect("The same fragment as we accessed above must exist");
+            // To potentially avoid allocating a new packet, we will use the first fragment
+            // and extend it with the payloads of the other fragments.
+            let mut remaining_fragments = packet_fragments.into_iter();
+            let first_packet = remaining_fragments
+                .next()
+                .expect("At least one fragment exists");
+
+            let mut bytes = first_packet.into_bytes();
+            let additional_bytes_needed = len.saturating_sub(bytes.buf_mut().len());
+            bytes.buf_mut().reserve(additional_bytes_needed);
+            for frag in remaining_fragments {
+                bytes.buf_mut().extend_from_slice(&frag.payload);
+            }
+
+            // The header of the first packet is updated to reflect that the packet is no
+            // longer fragmented.
+            {
+                let ip = Ipv4::<[u8]>::mut_from_bytes(&mut bytes).expect("valid IP packet buffer");
+                ip.header.total_len = (len as u16).into();
+
+                // This sets `more_fragments`, `dont_fragment`, and `fragment_offset` to zero.
+                ip.header.flags_and_fragment_offset.zero();
+
+                // We do not need to recompute the checksum, because the checksum is
+                // only read by the `ExitDevice` and discarded
+                ip.header.header_checksum.zero();
+            }
+
+            let decoder = if cfg!(debug_assertions) {
+                Ipv4Decoder {
+                    checksum: false,
+                    ..Ipv4Decoder::CHECK_ALL
+                }
+            } else {
+                Ipv4Decoder::UNCHECKED
+            };
+
+            let reassmebled_packet = decoder
+                .decode_owned(bytes)
+                .expect("Previously valid IPv4 packet should still be valid");
+            Some(reassmebled_packet)
+        }
+    }
+
+    fn get_frag_id(ipv4_packet: &Packet<Ipv4>) -> FragmentId {
+        FragmentId {
+            identification: ipv4_packet.header.identification.get(),
+            source_ip: ipv4_packet.header.source(),
+            destination_ip: ipv4_packet.header.destination(),
+            protocol: ipv4_packet.header.next_protocol(),
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+        use crate::packet::{IpNextProtocol, Ipv4FlagsFragmentOffset, Ipv4Header, Udp, UdpHeader};
+        use bytes::BytesMut;
+        use rand::rng;
+        use rand::seq::SliceRandom;
+        use std::collections::HashMap;
+        use std::net::Ipv4Addr;
+        use zerocopy::IntoBytes;
+
+        fn make_ip_fragment(
+            identification: u16,
+            source_ip: Ipv4Addr,
+            destination_ip: Ipv4Addr,
+            offset: u16,
+            more_fragments: bool,
+            payload: &[u8],
+        ) -> Packet<Ipv4> {
+            make_ip_fragment_with_protocol(
+                identification,
+                source_ip,
+                destination_ip,
+                IpNextProtocol::Udp,
+                offset,
+                more_fragments,
+                payload,
+            )
+        }
+
+        fn make_ip_fragment_with_protocol(
+            identification: u16,
+            source_ip: Ipv4Addr,
+            destination_ip: Ipv4Addr,
+            protocol: IpNextProtocol,
+            offset: u16,
+            more_fragments: bool,
+            payload: &[u8],
+        ) -> Packet<Ipv4> {
+            // Build a minimal IP fragment
+            let total_len = Ipv4Header::LEN + payload.len();
+            let mut buf = BytesMut::zeroed(total_len);
+            let ipv4 = Ipv4::<[u8]>::mut_from_bytes(&mut buf).unwrap();
+            ipv4.header = Ipv4Header::new_for_length(
+                source_ip,
+                destination_ip,
+                protocol,
+                payload.len() as u16,
+            );
+            ipv4.header.identification = identification.into();
+            let mut flags = Ipv4FlagsFragmentOffset::new();
+            flags.set_more_fragments(more_fragments);
+            flags.set_fragment_offset(offset);
+            ipv4.header.flags_and_fragment_offset = flags;
+            ipv4.payload.copy_from_slice(payload);
+
+            Packet::from_bytes(buf)
+                .try_into_ipvx()
+                .unwrap()
+                .unwrap_left()
+        }
+
+        #[test]
+        fn test_fragments_with_different_protocols_are_reassembled_separately() {
+            let mut fragments = Ipv4Fragments::default();
+            let src = Ipv4Addr::new(192, 0, 2, 1);
+            let dst = Ipv4Addr::new(192, 0, 2, 2);
+            let id = 42;
+
+            let udp_first = make_ip_fragment_with_protocol(
+                id,
+                src,
+                dst,
+                IpNextProtocol::Udp,
+                0,
+                true,
+                b"UDP_____",
+            );
+            let udp_last = make_ip_fragment_with_protocol(
+                id,
+                src,
+                dst,
+                IpNextProtocol::Udp,
+                1,
+                false,
+                b"payload",
+            );
+            let tcp_first = make_ip_fragment_with_protocol(
+                id,
+                src,
+                dst,
+                IpNextProtocol::Tcp,
+                0,
+                true,
+                b"TCP_____",
+            );
+            let tcp_last = make_ip_fragment_with_protocol(
+                id,
+                src,
+                dst,
+                IpNextProtocol::Tcp,
+                1,
+                false,
+                b"payload",
+            );
+
+            assert!(fragments.assemble_ipv4_fragment(udp_first).is_none());
+            assert!(fragments.assemble_ipv4_fragment(tcp_first).is_none());
+            assert_eq!(fragments.incomplete_packet_count(), 2);
+
+            let udp = fragments
+                .assemble_ipv4_fragment(udp_last)
+                .expect("UDP fragments should reassemble");
+            assert_eq!(udp.header.next_protocol(), IpNextProtocol::Udp);
+            assert_eq!(udp.payload, *b"UDP_____payload");
+
+            let tcp = fragments
+                .assemble_ipv4_fragment(tcp_last)
+                .expect("TCP fragments should reassemble");
+            assert_eq!(tcp.header.next_protocol(), IpNextProtocol::Tcp);
+            assert_eq!(tcp.payload, *b"TCP_____payload");
+            assert_eq!(fragments.incomplete_packet_count(), 0);
+        }
+
+        fn make_udp_bytes(payload: &[u8]) -> BytesMut {
+            let len = UdpHeader::LEN + payload.len();
+            let mut buf = BytesMut::zeroed(len);
+            let udp = Udp::<[u8]>::mut_from_bytes(&mut buf).unwrap();
+            udp.header.source_port = 1234u16.into();
+            udp.header.destination_port = 5678u16.into();
+            udp.header.length = (len as u16).into();
+            udp.header.checksum = 0.into();
+            assert_eq!(udp.payload.len(), payload.len());
+            udp.payload.copy_from_slice(payload);
+            buf
+        }
+
+        #[test]
+        fn test_ipv4_defragmentation() {
+            let mut fragments = Ipv4Fragments::default();
+            let src1 = Ipv4Addr::new(10, 0, 0, 1);
+            let dst1 = Ipv4Addr::new(10, 0, 0, 2);
+            let src2 = Ipv4Addr::new(10, 0, 0, 3);
+            let dst2 = Ipv4Addr::new(10, 0, 0, 4);
+            let id1 = 100;
+            let id2 = 200;
+            // Two packets
+            let payload1 = make_udp_bytes(b"ABCDEFGHIJKLMN");
+            let payload2 = make_udp_bytes(b"MY SLIGHTLY LONGER PACKET");
+
+            // Split each into 3 fragments
+            let mut all_frags = vec![
+                (
+                    id1,
+                    make_ip_fragment(id1, src1, dst1, 0, true, &payload1[0..8]),
+                ),
+                (
+                    id1,
+                    make_ip_fragment(id1, src1, dst1, 1, true, &payload1[8..16]),
+                ),
+                (
+                    id1,
+                    make_ip_fragment(id1, src1, dst1, 2, false, &payload1[16..]),
+                ),
+                (
+                    id2,
+                    make_ip_fragment(id2, src2, dst2, 0, true, &payload2[0..16]),
+                ),
+                (
+                    id2,
+                    make_ip_fragment(id2, src2, dst2, 2, true, &payload2[16..24]),
+                ),
+                (
+                    id2,
+                    make_ip_fragment(id2, src2, dst2, 3, true, &payload2[24..32]),
+                ),
+                (
+                    id2,
+                    make_ip_fragment(id2, src2, dst2, 4, false, &payload2[32..]),
+                ),
+            ];
+            all_frags.shuffle(&mut rng());
+            let mut seen = HashMap::new();
+            for (id, frag) in all_frags {
+                let res = fragments.assemble_ipv4_fragment(frag.clone());
+                let count = seen.entry(id).or_insert(0);
+                *count += 1;
+                if let Some(ip_packet) = res {
+                    let udp_packet = ip_packet.try_into_udp().unwrap();
+                    tracing::debug!(
+                        "Reassembled UDP payload (ascii): {:?}",
+                        String::from_utf8_lossy(&udp_packet.payload.payload)
+                    );
+
+                    if id == id1 {
+                        assert_eq!(*count, 3, "Should reassemble on last fragment");
+                        assert_eq!(udp_packet.payload.as_bytes(), &payload1[..]);
+                    } else {
+                        assert_eq!(*count, 4, "Should reassemble on last fragment");
+                        assert_eq!(udp_packet.payload.as_bytes(), &payload2[..]);
+                    }
+                    assert_eq!(udp_packet.header.fragment_offset(), 0);
+                    assert!(!udp_packet.header.more_fragments());
+                    assert_eq!(
+                        udp_packet.header.source(),
+                        if id == id1 { src1 } else { src2 }
+                    );
+                    assert_eq!(
+                        udp_packet.header.destination(),
+                        if id == id1 { dst1 } else { dst2 }
+                    );
+                }
+
+                // Last fragment for this id
+            }
+
+            assert_eq!(
+                fragments.incomplete_packet_count(),
+                0,
+                "All fragments should be processed"
+            );
+        }
+
+        #[test]
+        fn test_ipv4_defragmentation_single_packet() {
+            let mut fragments = Ipv4Fragments::default();
+            let src = Ipv4Addr::new(192, 168, 1, 1);
+            let dst = Ipv4Addr::new(192, 168, 1, 2);
+            let id = 42;
+            let payload = make_udp_bytes(b"HELLOFRAGMENTS");
+            // Split into 3 fragments
+            let mut frags = vec![
+                make_ip_fragment(id, src, dst, 0, true, &payload[0..8]),
+                make_ip_fragment(id, src, dst, 1, true, &payload[8..16]),
+                make_ip_fragment(id, src, dst, 2, false, &payload[16..]),
+            ];
+            frags.shuffle(&mut rng());
+            let mut count = 0;
+            for frag in frags {
+                let res = fragments.assemble_ipv4_fragment(frag.clone());
+                count += 1;
+                if let Some(ip_packet) = res {
+                    let udp_packet = ip_packet.try_into_udp().unwrap();
+                    tracing::debug!(
+                        "Reassembled UDP payload (ascii): {:?}",
+                        String::from_utf8_lossy(&udp_packet.payload.payload)
+                    );
+                    assert_eq!(count, 3, "Should reassemble on last fragment");
+                    assert_eq!(udp_packet.payload.as_bytes(), &payload[..]);
+                    assert_eq!(udp_packet.header.fragment_offset(), 0);
+                    assert!(!udp_packet.header.more_fragments());
+                    assert_eq!(udp_packet.header.source(), src);
+                    assert_eq!(udp_packet.header.destination(), dst);
+                } else {
+                    assert!(count < 3, "Should not reassemble until last fragment");
+                }
+            }
+            assert_eq!(
+                fragments.incomplete_packet_count(),
+                0,
+                "All fragments should be processed"
+            );
+        }
+
+        #[test]
+        fn test_reassembled_ipv4_packet_length_limit() {
+            const FRAGMENT_PAYLOAD_LEN: usize = 1480;
+
+            let mut fragments = Ipv4Fragments::default();
+            let src = Ipv4Addr::new(192, 0, 2, 1);
+            let dst = Ipv4Addr::new(192, 0, 2, 2);
+            let max_payload_len = Ipv4::MAX_LEN - Ipv4Header::LEN;
+            let fragment_payload = vec![0; FRAGMENT_PAYLOAD_LEN];
+            let full_fragment_count = max_payload_len / FRAGMENT_PAYLOAD_LEN;
+            let last_offset =
+                u16::try_from(full_fragment_count * FRAGMENT_PAYLOAD_LEN / 8).unwrap();
+            let insert_full_fragments = |fragments: &mut Ipv4Fragments, id| {
+                for i in 0..full_fragment_count {
+                    let offset = u16::try_from(i * FRAGMENT_PAYLOAD_LEN / 8).unwrap();
+                    let fragment = make_ip_fragment(id, src, dst, offset, true, &fragment_payload);
+                    assert!(fragments.assemble_ipv4_fragment(fragment).is_none());
+                }
+            };
+
+            insert_full_fragments(&mut fragments, 42);
+            let last_payload = vec![0; max_payload_len % FRAGMENT_PAYLOAD_LEN];
+            let last = make_ip_fragment(42, src, dst, last_offset, false, &last_payload);
+            let packet = fragments
+                .assemble_ipv4_fragment(last)
+                .expect("Maximum-size IPv4 packet should be reassembled");
+            assert_eq!(packet.as_bytes().len(), Ipv4::MAX_LEN);
+
+            insert_full_fragments(&mut fragments, 43);
+            let oversized_last_payload = vec![0; last_payload.len() + 1];
+            let oversized_last =
+                make_ip_fragment(43, src, dst, last_offset, false, &oversized_last_payload);
+            assert!(fragments.assemble_ipv4_fragment(oversized_last).is_none());
+        }
+
+        #[test]
+        fn test_fragment_eviction_max_concurrent_frags() {
+            let mut fragments = Ipv4Fragments::default();
+            let src = Ipv4Addr::new(1, 2, 3, 4);
+            let dst = Ipv4Addr::new(5, 6, 7, 8);
+            let payload = make_udp_bytes(b"0123456789");
+
+            let id = 1000;
+            // Each packet will be split into 2 fragments
+            let old_frag_first_half = make_ip_fragment(id, src, dst, 0, true, &payload[0..8]);
+            let old_frag_second_half = make_ip_fragment(id, src, dst, 1, false, &payload[8..]);
+            // Only insert the first fragment for now
+            assert!(
+                fragments
+                    .assemble_ipv4_fragment(old_frag_first_half)
+                    .is_none()
+            );
+
+            let mut second_halves = Vec::new();
+            for i in 0..super::MAX_CONCURRENT_FRAGS {
+                let id = 1000 + i as u16;
+                // Each packet will be split into 2 fragments
+                let frag1 = make_ip_fragment(id, src, dst, 0, true, &payload[0..8]);
+                let frag2 = make_ip_fragment(id, src, dst, 1, false, &payload[8..]);
+                // Only insert the first fragment for now
+                assert!(fragments.assemble_ipv4_fragment(frag1).is_none());
+                second_halves.push(frag2);
+            }
+            for second_half in second_halves {
+                // Insert the second fragment for all but the oldest
+                let res = fragments.assemble_ipv4_fragment(second_half);
+                assert!(res.is_some(), "Should reassemble remaining fragments");
+            }
+            assert!(
+                fragments
+                    .assemble_ipv4_fragment(old_frag_second_half)
+                    .is_none(),
+                "Should not reassemble oldest fragment, as first half should have been discarded"
+            );
+
+            assert_eq!(
+                fragments.incomplete_packet_count(),
+                1,
+                "Only second half of the first packet should be left"
+            );
+        }
+
+        #[test]
+        /// Test that overlapping fragments are detected and dropped.
+        fn test_fragmentation_overlap() {
+            let src = Ipv4Addr::new(192, 168, 1, 1);
+            let dst = Ipv4Addr::new(192, 168, 1, 2);
+            let id = 42;
+            let payload = make_udp_bytes(b"HELLOFRAGMENTS");
+            // Create two overlapping fragments
+            // Note that the `fragmentation_offset` is in units of 8 bytes and should be `2`
+            // for the second fragment to not overlap with the first.
+            let frag1 = make_ip_fragment(id, src, dst, 0, true, &payload[0..16]);
+            let frag2 = make_ip_fragment(id, src, dst, 1, false, &payload[16..]);
+            let id = get_frag_id(&frag1);
+            let frag_is_buffered = |fragments: &Ipv4Fragments, frag: &Packet<Ipv4>| {
+                fragments
+                    .fragments
+                    .iter()
+                    .find(|(id2, _)| id2 == &id)
+                    .expect("Fragment ID should exist")
+                    .1
+                    .iter()
+                    .any(|f| f.as_bytes() == frag.as_bytes())
+            };
+
+            // Assert that after insert both fragments, no packet is reassembled
+            {
+                let mut fragments = Ipv4Fragments::default();
+                fragments.assemble_ipv4_fragment(frag1.clone());
+                assert!(frag_is_buffered(&fragments, &frag1));
+                fragments.assemble_ipv4_fragment(frag2.clone());
+                assert!(
+                    !frag_is_buffered(&fragments, &frag2),
+                    "Second fragment should be dropped because it overlaps with the first"
+                );
+            }
+
+            // Repeat in reverse order
+            {
+                let mut fragments = Ipv4Fragments::default();
+                fragments.assemble_ipv4_fragment(frag2.clone());
+                assert!(frag_is_buffered(&fragments, &frag2));
+                fragments.assemble_ipv4_fragment(frag1.clone());
+                assert!(
+                    !frag_is_buffered(&fragments, &frag1),
+                    "First fragment should be dropped because it overlaps with the second"
+                );
+            }
+        }
+
+        #[test]
+        fn test_fragment_after_terminal_fragment_is_dropped() {
+            let mut fragments = Ipv4Fragments::default();
+            let src = Ipv4Addr::new(192, 0, 2, 1);
+            let dst = Ipv4Addr::new(192, 0, 2, 2);
+            let id = 42;
+
+            let terminal = make_ip_fragment(id, src, dst, 1, false, b"terminal");
+            let conflicting = make_ip_fragment(id, src, dst, 2, false, b"conflict");
+            let first = make_ip_fragment(id, src, dst, 0, true, b"first___");
+
+            assert!(fragments.assemble_ipv4_fragment(terminal).is_none());
+            assert!(fragments.assemble_ipv4_fragment(conflicting).is_none());
+
+            let packet = fragments
+                .assemble_ipv4_fragment(first)
+                .expect("fragments up to the first terminal fragment should reassemble");
+            assert_eq!(packet.payload, *b"first___terminal");
+        }
+
+        #[test]
+        fn test_terminal_fragment_before_buffered_fragment_is_dropped() {
+            let mut fragments = Ipv4Fragments::default();
+            let src = Ipv4Addr::new(192, 0, 2, 1);
+            let dst = Ipv4Addr::new(192, 0, 2, 2);
+            let id = 42;
+
+            let later = make_ip_fragment(id, src, dst, 2, false, b"later___");
+            let conflicting_terminal = make_ip_fragment(id, src, dst, 1, false, b"terminal");
+            let first = make_ip_fragment(id, src, dst, 0, true, b"first___");
+
+            assert!(fragments.assemble_ipv4_fragment(later).is_none());
+            assert!(
+                fragments
+                    .assemble_ipv4_fragment(conflicting_terminal)
+                    .is_none()
+            );
+            assert!(fragments.assemble_ipv4_fragment(first).is_none());
+        }
+    }
+}

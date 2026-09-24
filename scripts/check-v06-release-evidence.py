@@ -41,6 +41,27 @@ MEASUREMENT_COMPARISONS = {
 REQUIRED_PERFORMANCE_ARTIFACTS = {"benchmark-raw", "build-manifest"}
 
 
+class EvidencePolicy:
+    """Versioned requirements; v0.6 callers retain their original contract."""
+
+    schema_version = 1
+    label = "v0.6"
+    unique_transitions = False
+    measurement_comparisons = MEASUREMENT_COMPARISONS
+    performance_artifacts = REQUIRED_PERFORMANCE_ARTIFACTS
+
+    @staticmethod
+    def scenarios(platform: str) -> set[str]:
+        return REQUIRED_SCENARIOS
+
+    @staticmethod
+    def transitions(scenario: str) -> set[str]:
+        return set()
+
+
+V06_POLICY = EvidencePolicy()
+
+
 class ValidationError(Exception):
     pass
 
@@ -140,6 +161,7 @@ def validate_device(
     raw: Any,
     label: str,
     expected_files: dict[str, str],
+    policy: EvidencePolicy = V06_POLICY,
 ) -> str:
     device = require_object(raw, label)
     require_fields(
@@ -181,7 +203,8 @@ def validate_device(
             {"id", "durationSeconds", "transitions", "trafficResult", "result"},
             scenario_label,
         )
-        scenario_ids.append(require_string(scenario["id"], f"{scenario_label}.id", 64))
+        scenario_id = require_string(scenario["id"], f"{scenario_label}.id", 64)
+        scenario_ids.append(scenario_id)
         require_int(scenario["durationSeconds"], f"{scenario_label}.durationSeconds", 1)
         transitions = scenario["transitions"]
         if not isinstance(transitions, list) or not transitions:
@@ -192,10 +215,17 @@ def validate_device(
                 f"{scenario_label}.transitions[{transition_index}]",
                 128,
             )
+        required_transitions = policy.transitions(scenario_id)
+        if (required_transitions or policy.unique_transitions) and (
+            len(transitions) != len(set(transitions))
+            or not required_transitions <= set(transitions)
+        ):
+            fail(f"{scenario_label}.transitions must include {sorted(required_transitions)!r} without duplicates")
         require_pass(scenario["trafficResult"], f"{scenario_label}.trafficResult")
         require_pass(scenario["result"], f"{scenario_label}.result")
-    if len(scenario_ids) != len(set(scenario_ids)) or set(scenario_ids) != REQUIRED_SCENARIOS:
-        fail(f"{label}.scenarios must be exactly {sorted(REQUIRED_SCENARIOS)!r}")
+    required_scenarios = policy.scenarios(platform)
+    if len(scenario_ids) != len(set(scenario_ids)) or set(scenario_ids) != required_scenarios:
+        fail(f"{label}.scenarios must be exactly {sorted(required_scenarios)!r}")
 
     limit_fields = {
         "residentMemoryGrowthBytes",
@@ -229,6 +259,7 @@ def validate_manifest(
     data: bytes,
     expected_revision: str,
     expected_tree: str,
+    policy: EvidencePolicy = V06_POLICY,
 ) -> dict[str, str]:
     if len(data) > MAX_MANIFEST_BYTES:
         fail("manifest.json exceeds 1 MiB")
@@ -242,8 +273,8 @@ def validate_manifest(
         {"schemaVersion", "candidate", "devices", "performance", "result"},
         "manifest",
     )
-    if manifest["schemaVersion"] != 1:
-        fail("manifest.schemaVersion must be 1")
+    if type(manifest["schemaVersion"]) is not int or manifest["schemaVersion"] != policy.schema_version:
+        fail(f"manifest.schemaVersion must be {policy.schema_version}")
     require_pass(manifest["result"], "manifest.result")
 
     candidate = require_object(manifest["candidate"], "manifest.candidate")
@@ -260,7 +291,7 @@ def validate_manifest(
     if not isinstance(devices, list):
         fail("manifest.devices must be an array")
     platforms = [
-        validate_device(device, f"manifest.devices[{index}]", expected_files)
+        validate_device(device, f"manifest.devices[{index}]", expected_files, policy)
         for index, device in enumerate(devices)
     ]
     if len(platforms) != 2 or set(platforms) != REQUIRED_PLATFORMS:
@@ -293,7 +324,7 @@ def validate_manifest(
         comparison = require_string(
             measurement["comparison"], f"{label}.comparison", 16
         )
-        expected_comparison = MEASUREMENT_COMPARISONS.get(measurement_id)
+        expected_comparison = policy.measurement_comparisons.get(measurement_id)
         if comparison != expected_comparison:
             fail(
                 f"{label}.comparison must be {expected_comparison!r} "
@@ -314,7 +345,7 @@ def validate_manifest(
             fail(f"{label} median exceeds its explicit maximum")
         if comparison == "at-least" and median < threshold:
             fail(f"{label} median is below its explicit minimum")
-    required_measurements = set(MEASUREMENT_COMPARISONS)
+    required_measurements = set(policy.measurement_comparisons)
     if (
         len(measurement_ids) != len(set(measurement_ids))
         or set(measurement_ids) != required_measurements
@@ -325,14 +356,14 @@ def validate_manifest(
         )
     validate_artifacts(
         performance["artifacts"],
-        REQUIRED_PERFORMANCE_ARTIFACTS,
+        policy.performance_artifacts,
         "manifest.performance.artifacts",
         expected_files,
     )
     return expected_files
 
 
-def validate_archive(path: pathlib.Path, revision: str, tree: str) -> None:
+def validate_archive(path: pathlib.Path, revision: str, tree: str, policy: EvidencePolicy = V06_POLICY) -> None:
     if path.stat().st_size > MAX_ARCHIVE_BYTES:
         fail("evidence ZIP exceeds 256 MiB")
     with zipfile.ZipFile(path) as archive:
@@ -359,7 +390,7 @@ def validate_archive(path: pathlib.Path, revision: str, tree: str) -> None:
             manifest_data = archive.read("manifest.json")
         except KeyError:
             fail("evidence ZIP is missing manifest.json")
-        expected_files = validate_manifest(manifest_data, revision, tree)
+        expected_files = validate_manifest(manifest_data, revision, tree, policy)
         files = {name for name in names if not name.endswith("/")}
         expected_names = {"manifest.json", *expected_files}
         if files != expected_names:
@@ -381,7 +412,7 @@ def validate_archive(path: pathlib.Path, revision: str, tree: str) -> None:
                 fail(f"artifact checksum differs: {artifact_path}")
 
 
-def main() -> int:
+def main(policy: EvidencePolicy = V06_POLICY) -> int:
     if len(sys.argv) != 4:
         print(
             f"usage: {sys.argv[0]} <evidence.zip> <expected-revision> <expected-tree>",
@@ -389,11 +420,11 @@ def main() -> int:
         )
         return 2
     try:
-        validate_archive(pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3])
+        validate_archive(pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], policy)
     except (OSError, ValidationError, zipfile.BadZipFile) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    print(f"v0.6 release evidence passed for {sys.argv[2]}")
+    print(f"{policy.label} release evidence passed for {sys.argv[2]}")
     return 0
 
 

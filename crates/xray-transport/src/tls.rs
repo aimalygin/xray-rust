@@ -137,6 +137,17 @@ impl TlsConnector {
         self
     }
 
+    /// Whether cached sessions may be reused under this connector's trust and
+    /// socket-protection policy. Clones retain identity; new policies do not.
+    pub fn shares_session_context(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.source, &other.source)
+            && match (&self.socket_protector, &other.socket_protector) {
+                (None, None) => true,
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                _ => false,
+            }
+    }
+
     pub(crate) fn socket_protector_arc(&self) -> Option<Arc<dyn SocketProtector>> {
         self.socket_protector.clone()
     }
