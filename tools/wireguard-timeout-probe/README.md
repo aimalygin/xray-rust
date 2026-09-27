@@ -64,6 +64,19 @@ successive runs should be collected/removed by the test harness.
 | inner-queued | success (0/1) | remaining queue capacity | 0 |
 | udp-open | flow ID | local inner port | IPv6 (0/1) |
 | udp-enqueued / udp-delivered / udp-drop-* | flow ID | payload bytes | 0 |
+| udp-remote | flow ID | anonymous remote-address tag | remote port |
+| udp-source-address-tags | dropped flow ID | expected address tag | observed address tag |
+| udp-source-ports | dropped flow ID | expected source port | observed source port |
+| outer-pending-at-stop | family index | queue state: 0=empty, 1=empty datagram, 2=nonempty datagram | local port |
+
+Source mismatch records preserve address equality using at most 64 anonymous
+tags per client; addresses themselves are never serialized. Tag zero means
+unavailable or capacity exhausted. The source filter remains strict.
+After engine shutdown, an opt-in nonblocking `MSG_PEEK` observes whether the
+carrier socket still has unread data. It neither consumes a packet nor changes
+normal receive scheduling, and cannot prove where a packet absent from that
+queue was lost. Inspection errors are recorded as `outer-inspect-error` with
+family index and OS error code.
 
 Lifecycle markers include carrier publication, rebind request, stop and engine
 shutdown. Ring allocation and all recording expressions are compiled out of
@@ -72,3 +85,36 @@ normal builds. Run resource/performance comparisons with this feature disabled.
 These experiments do not establish the cause of a historical mobile timeout
 without matching evidence from that failed mobile run. Collect the adapter
 ring and simultaneous server echo/outer-packet metadata when reproducing it.
+
+## Reference fixture: UDP source-port reuse
+
+The pinned Xray-core WireGuard inbound retains UDP associations by the inner
+source endpoint. Its Freedom redirect mode cannot retain the correct reply
+source when that association subsequently targets another address or port.
+After a client restart, a reused inner port can therefore receive a reply
+labelled with its older destination. A strict client must discard that reply.
+This is separate from carrier loss before the client's UDP receive hook.
+
+`scripts/check-wireguard-redirect-reuse.py` reproduces this with the official
+wireguard-go raw client, without our engine or userspace stack. Build the
+existing `tools/wireguard-reference` for Linux, then run the script in a fresh
+Linux network namespace (for example `unshare --net python3 ...`). Pass
+`--fixture-dir` for an existing private fixture, `--xray-binary`, `--go-binary`
+and `--output`. It checks first destination, reused source port/new destination,
+and fresh source port/new destination with and without redirect. All requests
+are single-send. Synthetic addresses are provisioned only inside that namespace.
+
+For physical restart/UDP acceptance, use
+`scripts/run-v07-apple-protocol-fixture.py --direct-targets` after provisioning
+`198.51.100.7/32`, `198.51.100.53/32` and `2001:db8::7/128` on the fixture host's
+loopback. The supervising runner must remove only addresses it added, including
+on timeout/failure. TCP/UDP echo and DNS then bind at their actual synthetic
+destinations; outbound policy allows only those targets. Legacy redirect mode
+is retained for reproducing older evidence, and is unsuitable for judging
+source-port reuse across different targets.
+
+Reference behavior is in the pinned
+[WireGuard UDP association](https://github.com/XTLS/Xray-core/blob/v26.7.28/proxy/wireguard/tun.go)
+and [Freedom reply-source handling](https://github.com/XTLS/Xray-core/blob/v26.7.28/proxy/freedom/freedom.go).
+The physical DNS failure that led to this reproducer does not establish the
+cause of earlier failures without matching packet evidence.

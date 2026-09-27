@@ -24,6 +24,7 @@ struct Buffer {
     start: Instant,
     events: VecDeque<Event>,
     omitted: u64,
+    addresses: Vec<smoltcp::wire::IpAddress>,
 }
 pub(crate) struct Trace {
     buffer: Option<Mutex<Buffer>>,
@@ -40,6 +41,7 @@ impl Trace {
                 start: Instant::now(),
                 events: VecDeque::with_capacity(CAPACITY),
                 omitted: 0,
+                addresses: Vec::new(),
             })
         });
         Self {
@@ -65,6 +67,22 @@ impl Trace {
             buffer.omitted += 1;
         }
         buffer.events.push_back(Event { us, event, a, b, c });
+    }
+    /// Anonymous per-client equality tags. Addresses never enter the output.
+    /// Zero means the optional bounded alias table is unavailable/full.
+    pub(crate) fn address_tag(&self, address: smoltcp::wire::IpAddress) -> u64 {
+        let Some(buffer) = &self.buffer else { return 0 };
+        let Ok(mut buffer) = buffer.lock() else {
+            return 0;
+        };
+        if let Some(index) = buffer.addresses.iter().position(|a| *a == address) {
+            return index as u64 + 1;
+        }
+        if buffer.addresses.len() == 64 {
+            return 0;
+        }
+        buffer.addresses.push(address);
+        buffer.addresses.len() as u64
     }
     pub(crate) fn flush(&self) {
         if self.flushed.swap(true, Ordering::AcqRel) {
@@ -112,12 +130,50 @@ impl Drop for Trace {
 mod tests {
     use super::*;
     #[test]
+    fn address_tags_preserve_equality_without_unbounded_storage() {
+        let trace = Trace {
+            buffer: Some(Mutex::new(Buffer {
+                start: Instant::now(),
+                events: VecDeque::new(),
+                omitted: 0,
+                addresses: Vec::new(),
+            })),
+            path: None,
+            flushed: AtomicBool::new(false),
+        };
+        for index in 0..64 {
+            let address = smoltcp::wire::IpAddress::v4(192, 0, 2, index);
+            assert_eq!(trace.address_tag(address), u64::from(index) + 1);
+            assert_eq!(trace.address_tag(address), u64::from(index) + 1);
+        }
+        assert_eq!(
+            trace.address_tag(smoltcp::wire::IpAddress::v4(192, 0, 2, 64)),
+            0
+        );
+        assert_eq!(
+            trace.address_tag(smoltcp::wire::IpAddress::v4(192, 0, 2, 0)),
+            1
+        );
+        assert_eq!(
+            trace
+                .buffer
+                .as_ref()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .addresses
+                .len(),
+            64
+        );
+    }
+    #[test]
     fn trace_is_bounded_and_counts_omitted_events() {
         let trace = Trace {
             buffer: Some(Mutex::new(Buffer {
                 start: Instant::now(),
                 events: VecDeque::new(),
                 omitted: 0,
+                addresses: Vec::new(),
             })),
             path: None,
             flushed: AtomicBool::new(false),

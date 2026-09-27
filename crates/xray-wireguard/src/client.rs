@@ -232,6 +232,8 @@ impl Client {
             task_stop.close();
             drop(stack_task);
             device.stop().await;
+            #[cfg(feature = "diagnostics")]
+            carrier.inspect_pending_after_stop();
             diagnostic!(task_stop.0, "engine-stopped", 0, 0, 0);
             finished.send_replace(true);
         });

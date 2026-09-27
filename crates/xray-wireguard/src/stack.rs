@@ -437,6 +437,25 @@ impl Stack {
                             }
                         } else {
                             stack_diagnostic!(self, "udp-drop-source", id, payload.len(), 0);
+                            #[cfg(feature = "diagnostics")]
+                            if let Some(stop) = &self.diagnostic {
+                                let expected = stop.0.diagnostic.address_tag(flow.remote.addr);
+                                let observed = stop.0.diagnostic.address_tag(meta.endpoint.addr);
+                                diagnostic!(
+                                    stop.0,
+                                    "udp-source-address-tags",
+                                    id,
+                                    expected,
+                                    observed
+                                );
+                                diagnostic!(
+                                    stop.0,
+                                    "udp-source-ports",
+                                    id,
+                                    flow.remote.port,
+                                    meta.endpoint.port
+                                );
+                            }
                         }
                         progress = true;
                     }
@@ -533,6 +552,11 @@ impl Stack {
                     return;
                 }
                 stack_diagnostic!(self, "udp-open", flow.id, port, remote.is_ipv6());
+                #[cfg(feature = "diagnostics")]
+                if let Some(stop) = &self.diagnostic {
+                    let tag = stop.0.diagnostic.address_tag(endpoint(remote).addr);
+                    diagnostic!(stop.0, "udp-remote", flow.id, tag, remote.port());
+                }
                 self.flows.insert(
                     flow.id,
                     Entry::Udp(UdpFlow {

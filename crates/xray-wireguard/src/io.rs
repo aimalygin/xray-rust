@@ -42,6 +42,38 @@ pub(crate) struct Udp {
     stop: Stop,
 }
 impl Factory {
+    #[cfg(feature = "diagnostics")]
+    pub(crate) fn inspect_pending_after_stop(&self) {
+        if let Some(sockets) = self.carrier.borrow().as_ref() {
+            for (family, socket) in sockets.iter().enumerate() {
+                if let Some(socket) = socket {
+                    // Non-consuming and nonblocking; only after engine shutdown.
+                    let mut byte = [std::mem::MaybeUninit::uninit(); 1];
+                    let state = match socket2::SockRef::from(socket.as_ref()).peek(&mut byte) {
+                        Ok(n) => n + 1,
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => 0,
+                        Err(e) => {
+                            diagnostic!(
+                                self.stop.0,
+                                "outer-inspect-error",
+                                family,
+                                e.raw_os_error().unwrap_or(0),
+                                0
+                            );
+                            continue;
+                        }
+                    };
+                    diagnostic!(
+                        self.stop.0,
+                        "outer-pending-at-stop",
+                        family,
+                        state,
+                        socket.local_addr().map(|a| a.port()).unwrap_or(0)
+                    );
+                }
+            }
+        }
+    }
     /// Publish a complete, protected socket set in one step. The engine and its
     /// sessions keep running; the receive half drains one retired set briefly.
     pub(crate) fn rebind(&self) -> io::Result<()> {
