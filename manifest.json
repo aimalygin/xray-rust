@@ -1,0 +1,520 @@
+{
+  "schemaVersion": 3,
+  "candidate": {
+    "revision": "353316687b22c2fabbaf37ab5668dda05a972f46",
+    "tree": "f5aacb1fb5a5bbda9eac83a7330059219ce6b0ce",
+    "dirty": false
+  },
+  "devices": [
+    {
+      "platform": "apple",
+      "physical": true,
+      "model": "iPhone 17 Pro Max",
+      "osVersion": "Version 27.0 (Build 24A437)",
+      "architecture": "arm64",
+      "durationSeconds": 480,
+      "scenarios": [
+        {
+          "durationSeconds": 37,
+          "id": "vless-encryption",
+          "result": "pass",
+          "trafficResult": "pass",
+          "transitions": [
+            "begin",
+            "connected",
+            "fresh-connections-pass",
+            "provider-close-accepted-8",
+            "remote-flow-closure-observed",
+            "fresh-traffic-after-cancellation-pass",
+            "disconnected",
+            "pass"
+          ]
+        },
+        {
+          "durationSeconds": 38,
+          "id": "ip-on-demand",
+          "result": "pass",
+          "trafficResult": "pass",
+          "transitions": [
+            "begin",
+            "as-is-connected",
+            "as-is-blocked",
+            "connected",
+            "fresh-connections-pass",
+            "provider-close-accepted-8",
+            "remote-flow-closure-observed",
+            "fresh-traffic-after-cancellation-pass",
+            "disconnected",
+            "pass"
+          ]
+        },
+        {
+          "durationSeconds": 37,
+          "id": "xhttp-download-session",
+          "result": "pass",
+          "trafficResult": "pass",
+          "transitions": [
+            "begin",
+            "connected",
+            "fresh-connections-pass",
+            "provider-close-accepted-8",
+            "remote-flow-closure-observed",
+            "fresh-traffic-after-cancellation-pass",
+            "disconnected",
+            "pass"
+          ]
+        },
+        {
+          "durationSeconds": 37,
+          "id": "cancellation",
+          "result": "pass",
+          "trafficResult": "pass",
+          "transitions": [
+            "begin",
+            "connected",
+            "fresh-connections-pass",
+            "provider-close-accepted-8",
+            "remote-flow-closure-observed",
+            "fresh-traffic-after-cancellation-pass",
+            "disconnected",
+            "pass"
+          ]
+        },
+        {
+          "durationSeconds": 38,
+          "id": "host-adapter-projection",
+          "result": "pass",
+          "trafficResult": "pass",
+          "transitions": [
+            "begin",
+            "connected",
+            "fresh-connections-pass",
+            "provider-close-accepted-8",
+            "remote-flow-closure-observed",
+            "fresh-traffic-after-cancellation-pass",
+            "disconnected",
+            "packet-flow-adapter-pass",
+            "pass"
+          ]
+        },
+        {
+          "id": "legacy-regression",
+          "durationSeconds": 147,
+          "transitions": [
+            "vless-reality",
+            "xhttp-h1",
+            "xhttp-h2",
+            "xhttp-h3"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "durationSeconds": 1,
+          "id": "profile-import",
+          "result": "pass",
+          "trafficResult": "pass",
+          "transitions": [
+            "hysteria2-link",
+            "wireguard-file",
+            "invalid-input-redaction"
+          ]
+        },
+        {
+          "id": "wireguard",
+          "durationSeconds": 73,
+          "transitions": [
+            "ipv4-tcp",
+            "ipv6-tcp",
+            "ipv4-udp",
+            "ipv6-udp",
+            "routed-dns",
+            "start-stop",
+            "cancel-active-flow",
+            "reconnect",
+            "wifi-cellular-wifi",
+            "lock-wake",
+            "resource-recovery"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "hysteria2",
+          "durationSeconds": 72,
+          "transitions": [
+            "ipv4-tcp",
+            "ipv6-tcp",
+            "ipv4-udp",
+            "ipv6-udp",
+            "routed-dns",
+            "start-stop",
+            "cancel-active-flow",
+            "reconnect",
+            "wifi-cellular-wifi",
+            "lock-wake",
+            "resource-recovery"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        }
+      ],
+      "limits": {
+        "residentMemoryGrowthBytes": 33554432,
+        "threadGrowth": 8,
+        "fatalErrors": 0,
+        "unrecoveredTransitions": 0
+      },
+      "observed": {
+        "residentMemoryGrowthBytes": 3407872,
+        "threadGrowth": 0,
+        "fatalErrors": 0,
+        "unrecoveredTransitions": 0
+      },
+      "artifacts": [
+        {
+          "kind": "resource-profile",
+          "path": "apple/resource-profile.json",
+          "sha256": "a716a3b273abf043ef0d314527a18b187ec9e608a4bca247499dbec6515c0054"
+        },
+        {
+          "kind": "sanitized-log",
+          "path": "apple/sanitized-log.json",
+          "sha256": "dae604f0e081c942f0d76a7b6b32712119e71a03ba20b37f7cf6e62791c4744f"
+        },
+        {
+          "kind": "transition-timeline",
+          "path": "apple/transition-timeline.json",
+          "sha256": "ae3e81ea7cd52150969b1497da5dc4ca4755ebe47ded821014ddd32714fa3e9d"
+        }
+      ],
+      "result": "pass"
+    },
+    {
+      "platform": "android",
+      "physical": true,
+      "model": "Samsung SM-A145F",
+      "osVersion": "Android 15 (API 35)",
+      "architecture": "arm64-v8a",
+      "durationSeconds": 919,
+      "scenarios": [
+        {
+          "id": "vless-encryption",
+          "durationSeconds": 45,
+          "transitions": [
+            "begin",
+            "connected-file-descriptor",
+            "provider-close-requested",
+            "eight-echo-flows-cancelled-and-recovered-file-descriptor",
+            "disconnected-file-descriptor",
+            "pass"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "ip-on-demand",
+          "durationSeconds": 57,
+          "transitions": [
+            "begin",
+            "connected-file-descriptor-AsIs",
+            "AsIs-negative-control-blocked",
+            "disconnected-file-descriptor",
+            "connected-file-descriptor",
+            "provider-close-requested",
+            "eight-echo-flows-cancelled-and-recovered-file-descriptor",
+            "pass"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "xhttp-download-session",
+          "durationSeconds": 54,
+          "transitions": [
+            "begin",
+            "connected-file-descriptor",
+            "provider-close-requested",
+            "eight-echo-flows-cancelled-and-recovered-file-descriptor",
+            "disconnected-file-descriptor",
+            "pass"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "cancellation",
+          "durationSeconds": 44,
+          "transitions": [
+            "begin",
+            "connected-file-descriptor",
+            "provider-close-requested",
+            "eight-echo-flows-cancelled-and-recovered-file-descriptor",
+            "disconnected-file-descriptor",
+            "pass"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "host-adapter-projection",
+          "durationSeconds": 87,
+          "transitions": [
+            "begin",
+            "connected-file-descriptor",
+            "provider-close-requested",
+            "eight-echo-flows-cancelled-and-recovered-file-descriptor",
+            "disconnected-file-descriptor",
+            "connected-packet-pump",
+            "eight-echo-flows-cancelled-and-recovered-packet-pump",
+            "disconnected-packet-pump",
+            "pass"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "hysteria2-file-descriptor",
+          "durationSeconds": 110,
+          "transitions": [
+            "cancel-active-flow",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "hysteria2-packet-pump",
+          "durationSeconds": 111,
+          "transitions": [
+            "cancel-active-flow",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "wireguard-file-descriptor",
+          "durationSeconds": 108,
+          "transitions": [
+            "cancel-active-flow",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "wireguard-packet-pump",
+          "durationSeconds": 109,
+          "transitions": [
+            "cancel-active-flow",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "legacy-regression",
+          "durationSeconds": 172,
+          "transitions": [
+            "vless-reality",
+            "xhttp-h1",
+            "xhttp-h2",
+            "xhttp-h3"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        },
+        {
+          "id": "profile-import",
+          "durationSeconds": 1,
+          "transitions": [
+            "hysteria2-link",
+            "wireguard-file",
+            "invalid-input-redaction"
+          ],
+          "trafficResult": "pass",
+          "result": "pass"
+        }
+      ],
+      "limits": {
+        "residentMemoryGrowthBytes": 33554432,
+        "threadGrowth": 8,
+        "fatalErrors": 0,
+        "unrecoveredTransitions": 0
+      },
+      "observed": {
+        "residentMemoryGrowthBytes": 14159872,
+        "threadGrowth": 2,
+        "fatalErrors": 0,
+        "unrecoveredTransitions": 0
+      },
+      "artifacts": [
+        {
+          "kind": "resource-profile",
+          "path": "android/resource-profile.json",
+          "sha256": "f13ea9201c9e60b4a90e85b471ac61a4b8a79905e5303e0e86dbd54bf7853c06"
+        },
+        {
+          "kind": "sanitized-log",
+          "path": "android/sanitized-log.json",
+          "sha256": "6e8840b3b822a2a4cf1391926ab5c83b0b7505df8b41bfffce52360e02e0d371"
+        },
+        {
+          "kind": "transition-timeline",
+          "path": "android/transition-timeline.json",
+          "sha256": "092ac7ffebe8c016efa7d1de4fda1d461c7c9a08593d0d4d71d6d03073a73138"
+        }
+      ],
+      "result": "pass"
+    }
+  ],
+  "performance": {
+    "artifacts": [
+      {
+        "kind": "benchmark-raw",
+        "path": "benchmark-raw.json",
+        "sha256": "8ab7f083c32fa9950afa5b84b5a707d5a30405f26d509efe88535bc64cfbb1c1"
+      },
+      {
+        "kind": "build-manifest",
+        "path": "build-manifest.json",
+        "sha256": "427c781f424f61b8d2edaefe5adaf1ecaa4fc8e08eb3231d15fbe54a1865ed5e"
+      },
+      {
+        "kind": "protocol-comparisons",
+        "path": "performance/protocol-comparisons.tar.gz",
+        "sha256": "83d32188e7c0627ffd46b72898a51135d1e8af7e46f3f5465c1fc70f8626165e"
+      },
+      {
+        "kind": "known-limitations",
+        "path": "performance/known-limitations.md",
+        "sha256": "ea3c57c98c9fef9d8ed66d856e96f33a81f4df5408ff19d644d8ec3f5a0134d4"
+      },
+      {
+        "kind": "release-decisions",
+        "path": "performance/release-decisions.json",
+        "sha256": "90573b6cc57ed8abab12c90c267ecdddac24f6062eebb54e178a17240420ddfc"
+      }
+    ],
+    "clean": true,
+    "measurements": [
+      {
+        "comparison": "at-least",
+        "id": "process-throughput",
+        "samples": [
+          496.2387968124505,
+          550.3064725566992,
+          542.1695677475385,
+          537.7906498147362,
+          601.589508447705
+        ],
+        "threshold": 10,
+        "unit": "MiB/s"
+      },
+      {
+        "comparison": "at-least",
+        "id": "vless-encryption-throughput",
+        "samples": [
+          254.48260572095572,
+          280.2724335828353,
+          276.063962131875,
+          298.32077846050896,
+          284.53033214150986
+        ],
+        "threshold": 261.61602116239226,
+        "unit": "MiB/s"
+      },
+      {
+        "comparison": "at-most",
+        "id": "ip-on-demand-latency",
+        "samples": [
+          0.24645849771331996,
+          0.2325209934497252,
+          0.21599949832307175,
+          0.21108349756104872,
+          0.20837449847022071
+        ],
+        "threshold": 1.2121669967891648,
+        "unit": "ms"
+      },
+      {
+        "comparison": "at-most",
+        "id": "xhttp-memory",
+        "samples": [
+          18.859375,
+          18.890625,
+          18.8125,
+          18.75,
+          18.90625
+        ],
+        "threshold": 64,
+        "unit": "MiB"
+      }
+    ],
+    "profile": "release",
+    "result": "pass"
+  },
+  "acceptance": {
+    "release": "0.7.0",
+    "ownerDecisionsSha256": "90573b6cc57ed8abab12c90c267ecdddac24f6062eebb54e178a17240420ddfc",
+    "notTested": [
+      {
+        "platform": "android",
+        "scenario": "hysteria2-file-descriptor",
+        "transition": "wifi-cellular-wifi"
+      },
+      {
+        "platform": "android",
+        "scenario": "hysteria2-packet-pump",
+        "transition": "wifi-cellular-wifi"
+      },
+      {
+        "platform": "android",
+        "scenario": "wireguard-file-descriptor",
+        "transition": "wifi-cellular-wifi"
+      },
+      {
+        "platform": "android",
+        "scenario": "wireguard-packet-pump",
+        "transition": "wifi-cellular-wifi"
+      }
+    ],
+    "acceptedCases": [
+      "v07-android-wireguard-timeout-owner-acceptance"
+    ]
+  },
+  "result": "accepted-with-exceptions"
+}
