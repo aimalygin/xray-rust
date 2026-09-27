@@ -27,6 +27,9 @@ type config struct {
 	RedirectPort uint16 `json:"redirectPort"`
 	PacketSocket string `json:"packetSocket"`
 	PacketClient string `json:"packetClient"`
+	// Optional raw-client mode for engine comparisons. It never installs routes.
+	Endpoint string `json:"endpoint"`
+	Verbose  bool   `json:"verbose"`
 }
 
 func readConfig(path string) (config, error) {
@@ -62,6 +65,12 @@ func readConfig(path string) (config, error) {
 	}
 	if (c.PacketSocket == "") != (c.PacketClient == "") {
 		return c, errors.New("incomplete packet bridge")
+	}
+	if c.Endpoint != "" {
+		peer, err := netip.ParseAddrPort(c.Endpoint)
+		if err != nil || !peer.Addr().IsLoopback() || peer.Port() == 0 || c.PacketSocket == "" {
+			return c, errors.New("raw client requires a packet bridge and loopback endpoint")
+		}
 	}
 	return c, nil
 }
@@ -106,9 +115,16 @@ func run(c config) error {
 	}
 	// Only the injected I/O boundary is ours; authentication, replay, peer source
 	// checks, rekeying and all packet cryptography remain in official wireguard-go.
-	dev := device.NewDevice(tun, &loopbackBind{ip: address.Addr()}, device.NewLogger(device.LogLevelError, "reference: "))
+	level := device.LogLevelError
+	if c.Verbose {
+		level = device.LogLevelVerbose
+	}
+	dev := device.NewDevice(tun, &loopbackBind{ip: address.Addr()}, device.NewLogger(level, "reference: "))
 	defer dev.Close()
 	uapi := fmt.Sprintf("private_key=%s\nlisten_port=%d\nreplace_peers=true\npublic_key=%s\nreplace_allowed_ips=true\nallowed_ip=10.44.0.2/32\nallowed_ip=fd44::2/128\n", c.PrivateKey, address.Port(), c.PeerKey)
+	if c.Endpoint != "" {
+		uapi = fmt.Sprintf("private_key=%s\nlisten_port=%d\nreplace_peers=true\npublic_key=%s\nreplace_allowed_ips=true\nallowed_ip=0.0.0.0/0\nallowed_ip=::/0\nendpoint=%s\n", c.PrivateKey, address.Port(), c.PeerKey, c.Endpoint)
+	}
 	if c.PresharedKey != "" {
 		uapi += "preshared_key=" + c.PresharedKey + "\n"
 	}

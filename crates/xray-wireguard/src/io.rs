@@ -91,9 +91,17 @@ impl Factory {
                 return Err(closed());
             }
             socket.set_nonblocking(true)?;
+            diagnostic!(
+                self.stop.0,
+                "socket-protected",
+                index,
+                socket.local_addr().map(|a| a.port()).unwrap_or(0),
+                0
+            );
             sockets[index] = Some(Arc::new(UdpSocket::from_std(socket)?));
         }
         self.carrier.send_replace(Some(Arc::new(sockets)));
+        diagnostic!(self.stop.0, "carrier-published", 0, 0, 0);
         Ok(())
     }
 }
@@ -137,7 +145,16 @@ impl UdpSend for Udp {
                 )
             })?;
         match socket.try_send_to(&packet, destination) {
-            Ok(n) if n == packet.len() => return Ok(()),
+            Ok(n) if n == packet.len() => {
+                diagnostic!(
+                    self.stop.0,
+                    "outer-sent",
+                    packet.first().copied().unwrap_or(0),
+                    n,
+                    socket.local_addr().map(|a| a.port()).unwrap_or(0)
+                );
+                return Ok(());
+            }
             Ok(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::WriteZero,
@@ -145,12 +162,26 @@ impl UdpSend for Udp {
                 ))
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
-            Err(error) => return Err(error),
+            Err(error) => {
+                diagnostic!(
+                    self.stop.0,
+                    "outer-send-error",
+                    error.raw_os_error().unwrap_or(0),
+                    0,
+                    0
+                );
+                return Err(error);
+            }
         }
         tokio::select! { biased;
             _ = self.stop.cancelled() => Err(closed()),
             result = socket.send_to(&packet, destination) => {
+                #[cfg(feature = "diagnostics")]
+                if let Err(error) = &result {
+                    diagnostic!(self.stop.0, "outer-send-error", error.raw_os_error().unwrap_or(0), 0, 0);
+                }
                 if result? != packet.len() { return Err(io::Error::new(io::ErrorKind::WriteZero, "short WireGuard datagram")); }
+                diagnostic!(self.stop.0, "outer-sent", packet.first().copied().unwrap_or(0), packet.len(), socket.local_addr().map(|a| a.port()).unwrap_or(0));
                 Ok(())
             }
         }
@@ -204,6 +235,11 @@ impl UdpRecv for Udp {
                             if let Some(socket) = &sockets[index] {
                                 let mut buf = tokio::io::ReadBuf::new(&mut packet);
                                 if let std::task::Poll::Ready(result) = socket.poll_recv_from(cx, &mut buf) {
+                                    #[cfg(feature = "diagnostics")]
+                                    match &result {
+                                        Ok(_) => { diagnostic!(self.stop.0, "outer-received", buf.filled().first().copied().unwrap_or(0), buf.filled().len(), socket.local_addr().map(|a| a.port()).unwrap_or(0)); }
+                                        Err(error) => { diagnostic!(self.stop.0, "outer-receive-error", error.raw_os_error().unwrap_or(0), 0, 0); }
+                                    }
                                     self.next = 1 - index;
                                     return std::task::Poll::Ready(result.map(|source| (buf.filled().len(), source)));
                                 }
@@ -231,9 +267,19 @@ pub(crate) struct IpRx {
 }
 impl IpSend for IpTx {
     async fn send(&mut self, packet: Packet<Ip>) -> io::Result<()> {
+        diagnostic!(
+            self.stop.0,
+            "inner-decrypted",
+            packet.header.version(),
+            packet.rest.len() + 1,
+            self.tx.capacity()
+        );
         tokio::select! { biased;
             _ = self.stop.cancelled() => Err(closed()),
-            result = self.tx.send(packet) => result.map_err(|_| closed()),
+            result = self.tx.send(packet) => {
+                diagnostic!(self.stop.0, "inner-queued", result.is_ok(), self.tx.capacity(), 0);
+                result.map_err(|_| closed())
+            },
         }
     }
 }
@@ -254,6 +300,16 @@ impl IpRecv for IpRx {
         }
         // One notification exposes all newly freed channel slots to the stack.
         self.wake.notify_one();
+        #[cfg(feature = "diagnostics")]
+        for packet in &self.batch {
+            diagnostic!(
+                self.stop.0,
+                "inner-to-engine",
+                packet.header.version(),
+                packet.rest.len() + 1,
+                0
+            );
+        }
         Ok(self.batch.drain(..))
     }
     fn mtu(&self) -> MtuWatcher {

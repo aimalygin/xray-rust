@@ -26,6 +26,15 @@ use tokio::{
     sync::{mpsc, oneshot, Notify, OwnedSemaphorePermit},
 };
 
+macro_rules! stack_diagnostic {
+    ($stack:expr, $event:expr, $a:expr, $b:expr, $c:expr) => {
+        #[cfg(feature = "diagnostics")]
+        if let Some(stop) = &$stack.diagnostic {
+            diagnostic!(stop.0, $event, $a, $b, $c);
+        }
+    };
+}
+
 // Bound receive bursts independently of the send window for delayed paths.
 // At most 32 MiB of backing storage across 16 TCP slots; active windows start smaller.
 const TCP_RECEIVE_BUFFER: usize = 1024 * 1024;
@@ -104,6 +113,8 @@ impl Entry {
 }
 
 pub(crate) struct Stack {
+    #[cfg(feature = "diagnostics")]
+    diagnostic: Option<Stop>,
     interface: Interface,
     device: Packets,
     sockets: SocketSet<'static>,
@@ -161,6 +172,8 @@ impl Stack {
             }
         }
         Self {
+            #[cfg(feature = "diagnostics")]
+            diagnostic: None,
             interface,
             device,
             sockets: SocketSet::new(vec![]),
@@ -185,6 +198,10 @@ impl Stack {
         }
     }
     pub(crate) async fn run(mut self, stop: Stop) {
+        #[cfg(feature = "diagnostics")]
+        {
+            self.diagnostic = Some(stop.clone());
+        }
         loop {
             let mut delay = if self.device.tx.capacity() == 0 {
                 None
@@ -233,6 +250,13 @@ impl Stack {
             if self.device.rx.is_none() {
                 match self.incoming.poll_recv(cx) {
                     Poll::Ready(Some(packet)) => {
+                        stack_diagnostic!(
+                            self,
+                            "stack-received",
+                            packet.header.version(),
+                            packet.rest.len() + 1,
+                            0
+                        );
                         self.device.rx = Some(packet);
                         progress = true;
                     }
@@ -407,7 +431,12 @@ impl Stack {
                             // leaving bounded storage and other flows able to progress.
                             if let Ok(slot) = flow.incoming.try_reserve() {
                                 slot.send(Bytes::copy_from_slice(payload));
+                                stack_diagnostic!(self, "udp-delivered", id, payload.len(), 0);
+                            } else {
+                                stack_diagnostic!(self, "udp-drop-app-full", id, payload.len(), 0);
                             }
+                        } else {
+                            stack_diagnostic!(self, "udp-drop-source", id, payload.len(), 0);
                         }
                         progress = true;
                     }
@@ -503,6 +532,7 @@ impl Stack {
                     let _ = reply.send(Err(Error::NoRoute));
                     return;
                 }
+                stack_diagnostic!(self, "udp-open", flow.id, port, remote.is_ipv6());
                 self.flows.insert(
                     flow.id,
                     Entry::Udp(UdpFlow {
@@ -521,7 +551,14 @@ impl Stack {
                     Some(Entry::Udp(flow)) if !flow.flow.closed.load(Ordering::Acquire) => {
                         let socket = self.sockets.get_mut::<udp::Socket>(flow.handle);
                         match socket.send_slice(&payload, flow.remote) {
-                            Ok(()) | Err(udp::SendError::BufferFull) => Ok(()),
+                            Ok(()) => {
+                                stack_diagnostic!(self, "udp-enqueued", id, payload.len(), 0);
+                                Ok(())
+                            }
+                            Err(udp::SendError::BufferFull) => {
+                                stack_diagnostic!(self, "udp-drop-send-full", id, payload.len(), 0);
+                                Ok(())
+                            }
                             Err(_) => Err(Error::NoRoute),
                         }
                     }
