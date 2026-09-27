@@ -99,9 +99,12 @@ for name in ['v0.7.0-rc.1-wireguard-official-20260927','v0.7.0-rc.1-direct-udp-2
   data=p.read_bytes();assert sha(data)==digest,(name,rel,'original manifest differs')
   comparison_files[f'{name}/{rel}']=data
  comparison_files[f'{name}/manifest.json']=(root/'manifest.json').read_bytes()
-for dirname in ['performance-v05','performance-v05-attempt-1']:
- for p in sorted((PARTS/dirname).rglob('*')):
-  if p.is_file() and p.suffix in {'.json','.csv','.log','.md','.txt'} and p.name!='config.json':comparison_files['candidate-3533166/'+str(p.relative_to(PARTS))]=p.read_bytes()
+for source, label in [(PARTS/'performance-v05','candidate-3533166/performance-v05'), (MOBILE/'Artifacts/v0.7.0-rc.1-v05-perf-3533166','candidate-3533166/performance-v05-first-failed-attempt')]:
+ assert source.is_dir(), source
+ for p in sorted(source.rglob('*')):
+  if p.is_file() and p.suffix in {'.json','.csv','.log','.md','.txt'} and p.name!='config.json':comparison_files[label+'/'+str(p.relative_to(source))]=p.read_bytes()
+comparison_files['candidate-3533166/final-devices-summary.json']=(FINAL/'summary.json').read_bytes()
+comparison_files['candidate-3533166/final-devices-README.md']=(FINAL/'README.md').read_bytes()
 comparison_files['README.md']=b'''# Retained comparisons and failures\n\nThe historical archive retains its dated source identities. The Android control\nreports retain candidate 3533166 or explicitly diagnostic 684eca5/earlier commits.\nThese are not new stable-version measurements. Original manifest hashes are\nretained; this package selects reports, raw samples, header captures, analyses\nand test descriptions. APKs, native binaries and credential-bearing profiles\nare excluded; their recorded build hashes remain in the reports.\n\nOfficial WireGuard: 3000/3000; xray-rust: 2999/3000; direct UDP: 4999/5000.\nThe investigated case is accepted by the owner for 0.7 only; root cause is not\nproved. No statistical equivalence or new CPU/RSS/throughput parity is claimed.\n'''
 comparison_files['selected-files.json']=dump({name:sha(data) for name,data in sorted(comparison_files.items())})
 buffer=io.BytesIO()

@@ -5,9 +5,9 @@ Measured core: `353316687b22c2fabbaf37ab5668dda05a972f46`, tree
 The owner selected direct stable publication without a public RC.
 
 Archive: `v07-release-evidence.zip`, SHA-256
-`53871410835d25e0af0b51f94d71a3d9551bd5e5a7182c0c318738182d7b1e6d`.
+`b10aa3e1c6c0451f0d52b0ed13b0272d805fb88cbdbebd94f7c7069cb531330b`.
 Schema 3 result: **accepted-with-exceptions**. It contains 12 top-level files,
-including 957 files in the comparison/diagnostic package plus the original
+including 1,079 files in the comparison/diagnostic package plus the original
 historical protocol archive. Original source identities and failures remain intact.
 
 - iPhone 17 Pro Max: nine scenarios, including both protocols, cellular/Wi-Fi,

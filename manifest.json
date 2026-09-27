@@ -416,7 +416,7 @@
       {
         "kind": "protocol-comparisons",
         "path": "performance/protocol-comparisons.tar.gz",
-        "sha256": "83d32188e7c0627ffd46b72898a51135d1e8af7e46f3f5465c1fc70f8626165e"
+        "sha256": "3feb3556a3f6700b96dc6432f400fefe634ce4d05defbceb9a82700c64bc1595"
       },
       {
         "kind": "known-limitations",
