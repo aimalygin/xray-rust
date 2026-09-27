@@ -110,7 +110,7 @@ def reserve_udp(bind):
         return sock.getsockname()[1]
 
 
-def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test"):
+def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test", direct_targets=False):
     def save(name, value):
         (root / name).write_text(json.dumps(value, indent=2) + "\n")
 
@@ -160,6 +160,16 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", po
         server = json.loads((root / "server.json").read_text())
         server["inbounds"] = [server["inbounds"][0 if protocol == "wireguard" else 1]]
         save("server.json", server)
+    if direct_targets:
+        # Freedom redirect cannot preserve a new UDP reply source when the
+        # WireGuard inbound reuses a retained source-port association. Bind the
+        # synthetic services at their actual destinations instead. The runner
+        # must provision these addresses on loopback and own their cleanup.
+        server = json.loads((root / "server.json").read_text())
+        settings = server["outbounds"][1]["settings"]
+        settings.pop("redirect")
+        settings["finalRules"][0]["ip"] = ["198.51.100.7/32", "198.51.100.53/32", "2001:db8::7/128"]
+        save("server.json", server)
     common = {
         "inbounds": [{"tag": "tun-in", "protocol": "tun"}],
         "dns": {"servers": [f"198.51.100.53:{dns_port}"]},
@@ -201,18 +211,26 @@ async def serve(args):
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
-    transports, child, tcp = [], None, None
+    transports, child, tcp, tcp6 = [], None, None, None
     try:
-        tcp = await asyncio.start_server(tcp_echo, "127.0.0.1", 0, limit=8192)
+        echo_bind = "198.51.100.7" if args.direct_targets else "127.0.0.1"
+        dns_bind = "198.51.100.53" if args.direct_targets else "127.0.0.1"
+        tcp = await asyncio.start_server(tcp_echo, echo_bind, 0, limit=8192)
         # Each fixture gets a fresh name so an OS-level negative answer from a
         # previous, stopped VPN does not poison the next baseline before DNS I/O.
         probe_host = f"v07-probe-{secrets.token_hex(6)}.test"
-        for protocol in (Echo, lambda: DNS(probe_host)):
-            transport, _ = await loop.create_datagram_endpoint(protocol, local_addr=("127.0.0.1", 0))
+        for protocol, address in ((Echo, echo_bind), (lambda: DNS(probe_host), dns_bind)):
+            transport, _ = await loop.create_datagram_endpoint(protocol, local_addr=(address, 0))
             transports.append(transport)
-        write_fixtures(args.output, args.bind, tcp.sockets[0].getsockname()[1],
-                       *(transport.get_extra_info("sockname")[1] for transport in transports),
-                       protocol=args.protocol, port=args.port, mode=args.mode, probe_host=probe_host)
+        tcp_port = tcp.sockets[0].getsockname()[1]
+        udp_port, dns_port = (transport.get_extra_info("sockname")[1] for transport in transports)
+        if args.direct_targets:
+            tcp6 = await asyncio.start_server(tcp_echo, "2001:db8::7", tcp_port, limit=8192)
+            transport, _ = await loop.create_datagram_endpoint(Echo, local_addr=("2001:db8::7", udp_port))
+            transports.append(transport)
+        write_fixtures(args.output, args.bind, tcp_port, udp_port, dns_port,
+                       protocol=args.protocol, port=args.port, mode=args.mode, probe_host=probe_host,
+                       direct_targets=args.direct_targets)
         with (args.output / "server.log").open("wb") as log:
             child = await asyncio.create_subprocess_exec(
                 str(args.reference_binary), "run", "-config", str(args.output / "server.json"),
@@ -240,9 +258,10 @@ async def serve(args):
             except TimeoutError:
                 child.kill()
                 await child.wait()
-        if tcp:
-            tcp.close()
-            await tcp.wait_closed()
+        for server in (tcp, tcp6):
+            if server:
+                server.close()
+                await server.wait_closed()
         for transport in transports:
             transport.close()
         for name in ("server-wg.pem", "client-wg.pem", "tls.key", "tls.crt", "server.json", "v07-probe.json"):
@@ -259,6 +278,7 @@ def main():
     parser.add_argument("--port", type=int, help="explicit carrier UDP port; requires a single protocol")
     parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
+    parser.add_argument("--direct-targets", action="store_true", help="use pre-provisioned synthetic loopback addresses, avoiding redirect UDP source aliasing")
     args = parser.parse_args()
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:

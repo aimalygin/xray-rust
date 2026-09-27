@@ -54,6 +54,22 @@ func TestConfigRejectsPublicListenersAndRedactsBadKeys(t *testing.T) {
 			t.Fatalf("accepted listener %s", listen)
 		}
 	}
+	for _, endpoint := range []string{"192.0.2.7:43210", "127.0.0.1:0", "bad"} {
+		c := base
+		c.Endpoint, c.PacketSocket, c.PacketClient = endpoint, "server.sock", "client.sock"
+		if err := check(c); err == nil {
+			t.Fatalf("accepted endpoint %s", endpoint)
+		}
+	}
+	c := base
+	c.Endpoint = "127.0.0.1:43211"
+	if err := check(c); err == nil {
+		t.Fatal("raw client accepted without packet bridge")
+	}
+	c.PacketSocket, c.PacketClient = "server.sock", "client.sock"
+	if err := check(c); err != nil {
+		t.Fatal(err)
+	}
 	base.PresharedKey = "synthetic-malformed-secret"
 	if err := check(base); err == nil || strings.Contains(err.Error(), base.PresharedKey) {
 		t.Fatalf("bad key error: %v", err)

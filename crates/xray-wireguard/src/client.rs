@@ -54,20 +54,25 @@ pub enum Error {
 }
 
 #[derive(Clone)]
-pub(crate) struct Stop(Arc<StopState>);
-struct StopState {
+pub(crate) struct Stop(pub(crate) Arc<StopState>);
+pub(crate) struct StopState {
     closed: AtomicBool,
     wake: Notify,
+    #[cfg(feature = "diagnostics")]
+    pub(crate) diagnostic: crate::diagnostics::Trace,
 }
 impl Stop {
     pub(crate) fn new() -> Self {
         Self(Arc::new(StopState {
             closed: AtomicBool::new(false),
             wake: Notify::new(),
+            #[cfg(feature = "diagnostics")]
+            diagnostic: crate::diagnostics::Trace::new(),
         }))
     }
     pub(crate) fn close(&self) {
         if !self.0.closed.swap(true, Ordering::AcqRel) {
+            diagnostic!(self.0, "stop", 0, 0, 0);
             self.0.wake.notify_waiters();
         }
     }
@@ -129,6 +134,7 @@ impl Client {
     ) -> Result<Self, Error> {
         config.validate()?;
         let stop = Stop::new();
+        diagnostic!(stop.0, "start", config.peers.len(), config.mtu, 0);
         // If creation is cancelled or fails, every injected I/O boundary is cancelled.
         let mut guard = StartGuard(Some(stop.clone()));
         let wake = Arc::new(Notify::new());
@@ -226,6 +232,9 @@ impl Client {
             task_stop.close();
             drop(stack_task);
             device.stop().await;
+            #[cfg(feature = "diagnostics")]
+            carrier.inspect_pending_after_stop();
+            diagnostic!(task_stop.0, "engine-stopped", 0, 0, 0);
             finished.send_replace(true);
         });
         // Drop must no longer cancel after the owner has taken responsibility.
@@ -254,6 +263,7 @@ impl Client {
             return false;
         }
         if !self.0.rebind.pending.swap(true, Ordering::AcqRel) {
+            diagnostic!(self.0.stop.0, "rebind-requested", 0, 0, 0);
             self.0.rebind.wake.notify_one();
         }
         true
@@ -267,6 +277,8 @@ impl Client {
         if !*done.borrow() {
             let _ = done.changed().await;
         }
+        #[cfg(feature = "diagnostics")]
+        self.0.stop.0.diagnostic.flush();
     }
     pub fn available_tcp_slots(&self) -> usize {
         self.0.tcp.available_permits()
