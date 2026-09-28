@@ -55,15 +55,24 @@ Local validation also passed all 59 evidence/promotion tests, the complete
 core repository-script checks, all 28 mobile release-script tests and the
 mobile metadata/adapter synchronization checks.
 
-## Publication status
+## Stable 0.7.0 publication completed
 
-Core PR #37 is ready and still requires one approving review under the main
-branch protection rule. The owner is arranging that review. Mobile PR #31
-retains an explicit preparation commit pin until the stable core tag exists.
+- [Core source release](https://github.com/aimalygin/xray-rust/releases/tag/v0.7.0): exact commit `67969094b352f948c6b8b9e2ac75402c577cb7f7`, annotated tag object `f1c59308012efad0e7b9b60c2a9976906b9dba9b`.
+- [Mobile SDK release](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.7.0): exact commit `82dd22531256e5d089917e55e9588f29e525f542`, annotated tag object `4a0aa16ec5116d1c1a6721b7cbf923a1cb850ae2`. GitHub reports the SDK release immutable. The core source release does not have that GitHub flag; its tag and every uploaded asset were independently verified.
+- Maven Central coordinate: `io.github.aimalygin:xray-rust-mobile:0.7.0`. [Publication workflow](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36359920594) confirmed PUBLISHED. All five anonymously downloaded Maven files match the immutable SDK release bundle.
 
-After review/merge, the versioned evidence workflow must run on the exact final
-core release source; the annotated tag and applicable tag CI must be verified.
-Canonical SDK preparation, checksum locking, stable package publication and
-consumer verification follow the existing two-phase release process. No release
-tag or package has been published by this preparation. The retained measurements
-remain accepted-with-exceptions, and no new physical-device run is claimed.
+Final core candidate CI, versioned evidence and tag CI passed on the exact core release commit: [36344835351](https://github.com/aimalygin/xray-rust/actions/runs/36344835351), [36344840384](https://github.com/aimalygin/xray-rust/actions/runs/36344840384), [36355379619](https://github.com/aimalygin/xray-rust/actions/runs/36355379619). The narrowly scoped scanner correction in merged PR #39 recognizes nine historical file digests; runtime and dependencies remained unchanged.
+
+Canonical Apple producer job 108723554449 in [36355936115](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36355936115) passed on source fba37e6. Its later automatic PR creation failed because Actions cannot open PRs in this repository. The exact generated checksum branch was reviewed and merged through PR #32; permissions were not changed. The full source CI and exact tagged SDK CI passed. [Stable SDK release workflow](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36357889566) passed all eight jobs and verified downloaded release bytes plus the GitHub Packages mirror.
+
+Independent public consumers passed on this Mac:
+
+- SwiftPM resolved remote version 0.7.0 and the exact SDK commit, downloaded its public XCFramework, linked all three Swift products, and executed ABI 1.7 plus Hysteria2/WireGuard capability and profile-import checks.
+- A fresh Android dependency cache resolved 0.7.0 from Maven Central with exact SHA-256 verification. The release app built with R8; all four ABIs contain both native libraries and the merged manifest contains one correctly declared application VPN service. This is a consumer build check, not a new physical-device campaign.
+
+`publication-confirmation.json` identifies the public assets, workflows and 59 retained confirmation files. `v07-publication-confirmation.tar.gz` includes those files and its internal manifest: complete CI logs, release identities, public-consumer source/logs and verification tooling. The previous measured and automated archives remain byte-for-byte unchanged in this branch's history. Original failures and accepted limitations remain applicable, including the Android cellular waiver, rare timeout decision and deferred performance gaps.
+
+SHA-256 of the final confirmation archive:
+`89b16f66f06ae83867bdea256da20af0c95affa1227f771dd7ef29497b455283`.
+
+The complete confirmation archive was scanned through nested CI log archives. Four matches are the two public artifact SHA-256 values, verified by recomputing both original archives; there are no unexplained findings. `publication-secret-scan-review.json` records this review. Scanner rules and repository security configuration were not changed.

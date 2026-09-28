@@ -1,0 +1,397 @@
+{
+  "schemaVersion": 1,
+  "kind": "v0.7.0-stable-publication-confirmation",
+  "createdAt": "2026-09-28T00:02:11.451550+00:00",
+  "core": {
+    "tag": "v0.7.0",
+    "tagObject": "f1c59308012efad0e7b9b60c2a9976906b9dba9b",
+    "commit": "67969094b352f948c6b8b9e2ac75402c577cb7f7",
+    "runs": {
+      "fullCi": {
+        "id": 36344835351,
+        "url": "https://github.com/aimalygin/xray-rust/actions/runs/36344835351",
+        "headSha": "67969094b352f948c6b8b9e2ac75402c577cb7f7",
+        "conclusion": "success"
+      },
+      "evidence": {
+        "id": 36344840384,
+        "url": "https://github.com/aimalygin/xray-rust/actions/runs/36344840384",
+        "headSha": "67969094b352f948c6b8b9e2ac75402c577cb7f7",
+        "conclusion": "success"
+      },
+      "tagCi": {
+        "id": 36355379619,
+        "url": "https://github.com/aimalygin/xray-rust/actions/runs/36355379619",
+        "headSha": "67969094b352f948c6b8b9e2ac75402c577cb7f7",
+        "conclusion": "success"
+      }
+    },
+    "assets": [
+      {
+        "file": "SHA256SUMS",
+        "sha256": "578c61fd221ae37bb0d6d4cd3b3d56e6ffc0a92de0ecc7bd699f1448c5b5d7ef"
+      },
+      {
+        "file": "release-metadata.txt",
+        "sha256": "3257b698e41b9f921f4315379db578df5221e8b51a7b9b69ea94acadf5268057"
+      },
+      {
+        "file": "source-validation.json",
+        "sha256": "e89b14171da67df13b87407c31772477af77650f33de1bf84c1146bf30351471"
+      },
+      {
+        "file": "xray-rust-0.7.0.tar.gz",
+        "sha256": "365cb5cd75ea7268296c9304ab87ae808947c2f4fd558935ef6763546e270241"
+      }
+    ],
+    "published": true,
+    "immutable": false,
+    "url": "https://github.com/aimalygin/xray-rust/releases/tag/v0.7.0"
+  },
+  "mobile": {
+    "verifiedAt": "2026-09-27T23:48:13.840127+00:00",
+    "repository": "aimalygin/xray-rust-mobile",
+    "version": "0.7.0",
+    "tagObject": "4a0aa16ec5116d1c1a6721b7cbf923a1cb850ae2",
+    "commit": "82dd22531256e5d089917e55e9588f29e525f542",
+    "published": true,
+    "immutable": true,
+    "url": "https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.7.0",
+    "releaseId": 397858928,
+    "result": "pass",
+    "sha256": [
+      {
+        "file": "SHA256SUMS",
+        "sha256": "03034dbbb0db8e2fafa2dbffa5c1f350c55235b4aae7fb8e72b15eaf682c1a10"
+      },
+      {
+        "file": "XrayRust.xcframework.zip",
+        "sha256": "3198c0cf4404602eac35f1ae03d7575cc5b8755e679eaae39a7e585e88df5394"
+      },
+      {
+        "file": "release-manifest.json",
+        "sha256": "fd396022a76e0b457263d8889fe416fac3b3915b01679c7d78d202c08b2d8fcc"
+      },
+      {
+        "file": "xray-rust-mobile-0.7.0-maven.zip",
+        "sha256": "b25d41f1e5be654eb650c4512009d50607203e6e8bf040ada9f19dc3099c8cae"
+      },
+      {
+        "file": "xray-rust-mobile-0.7.0.aar",
+        "sha256": "7e37d9bf75b4089b523b8645dd44483ecf089eb31c4ebae3dd7dfeb1ef8be5c9"
+      }
+    ],
+    "exactAssetSet": true,
+    "serverDigestsMatched": true,
+    "archiveIntegrity": "pass",
+    "coreIdentityMatched": true,
+    "canonicalAppleBytesMatched": true
+  },
+  "publicConsumers": {
+    "verifiedAt": "2026-09-28T00:00:37.880051+00:00",
+    "version": "0.7.0",
+    "newPhysicalDeviceRun": false,
+    "swift": {
+      "result": "pass",
+      "pin": {
+        "identity": "xray-rust-mobile",
+        "kind": "remoteSourceControl",
+        "location": "https://github.com/aimalygin/xray-rust-mobile.git",
+        "state": {
+          "revision": "82dd22531256e5d089917e55e9588f29e525f542",
+          "version": "0.7.0"
+        }
+      },
+      "ffi": "1.7",
+      "products": [
+        "XrayMobileAdapter",
+        "XrayAppleShared",
+        "XrayAppleTunnel"
+      ],
+      "profileImports": [
+        "Hysteria2",
+        "WireGuard"
+      ],
+      "logSha256": "66136821ba5c28a9f6aec639fbab468e4573366567ee7cb495f96efa5a43b29f"
+    },
+    "android": {
+      "result": "pass",
+      "repository": "Maven Central",
+      "coordinate": "io.github.aimalygin:xray-rust-mobile:0.7.0",
+      "r8Release": true,
+      "abis": [
+        "arm64-v8a",
+        "armeabi-v7a",
+        "x86",
+        "x86_64"
+      ],
+      "allFivePublicFilesMatchRelease": true,
+      "cachedArtifacts": [
+        {
+          "file": "xray-rust-mobile-0.7.0.aar",
+          "sha256": "7e37d9bf75b4089b523b8645dd44483ecf089eb31c4ebae3dd7dfeb1ef8be5c9"
+        },
+        {
+          "file": "xray-rust-mobile-0.7.0.pom",
+          "sha256": "8c3517bdaf9b0396767572cb95adcafd536d48505d36bb3f8c38e7773f6c225f"
+        },
+        {
+          "file": "xray-rust-mobile-0.7.0.module",
+          "sha256": "4d7559636f8b466d7b45044f5643cebf551271c5921a09738d10da87b799c9fa"
+        }
+      ],
+      "apkSha256": "5427a7c5e67dd973df0aa0c37a64f30a4ddf21926539ab2b92d62d72485f7b71",
+      "singleAppVpnService": true,
+      "logSha256": "670a9f2a5ba394956c2bce124e8240153ee1618f5cdae3188802964315638404"
+    }
+  },
+  "mavenCentral": {
+    "databaseId": 36359920594,
+    "url": "https://github.com/aimalygin/xray-rust-mobile/actions/runs/36359920594",
+    "headSha": "eb913cf0fdc9d7762a6630dc5e5148049d63c274",
+    "conclusion": "success"
+  },
+  "measuredArchiveSha256": "b10aa3e1c6c0451f0d52b0ed13b0272d805fb88cbdbebd94f7c7069cb531330b",
+  "priorAutomatedArchiveSha256": "58cc5896662addd1a5dcb93002e3be2bf8d186bf0963205f50f89b2944a81885",
+  "newPhysicalDeviceRun": false,
+  "knownLimitations": "Original accepted-with-exceptions evidence and owner decisions remain applicable. Android cellular handover was not tested; no root cause/product fix for the investigated rare WireGuard timeout is claimed. Deferred H2/TUN RSS and Hysteria2 comparison gaps remain documented.",
+  "files": [
+    {
+      "path": "apple-canonical-local-verification.log",
+      "sha256": "800ccf069b8df248718829524d7ed6e4ecc3fa4346adc9a401437c171ceaba39"
+    },
+    {
+      "path": "apple-canonical-verification.json",
+      "sha256": "c49b10f908e71e46c702625b7ad9585b288aaff0cbbe475c3a57f6caf19342fb"
+    },
+    {
+      "path": "ci-logs/core-final-candidate-36344835351.zip",
+      "sha256": "b62ad326f376abb78377a64e3fe5f873e9b633b9ae8cc3506a365660380519e9"
+    },
+    {
+      "path": "ci-logs/core-pr-36341113954.zip",
+      "sha256": "bb96f5b00eb5c9638852af3cbec7737d40628b542540bbfac86eff3fe4ac5170"
+    },
+    {
+      "path": "ci-logs/core-push-36341111142.zip",
+      "sha256": "29d9e10d86cbaf2e0986a28bdbc5e6cedecc244f0dc8916c73bdfa597ef96863"
+    },
+    {
+      "path": "ci-logs/core-stable-tag-36355379619.zip",
+      "sha256": "608e988222e4e2c1a4b446a807962c5da0f02b87af7bdeff2708879462f81f36"
+    },
+    {
+      "path": "ci-logs/core-versioned-evidence-36344840384.zip",
+      "sha256": "91dec816f7a07d2416f2c98d4dede8a28692e4c0040b0b44259aec45fa3d31ca"
+    },
+    {
+      "path": "ci-logs/mobile-canonical-producer-36355936115.zip",
+      "sha256": "24b67bbd08dd1e89f5ae712c5649d25e7bba34ec71af8612759d3895f4d18ed6"
+    },
+    {
+      "path": "ci-logs/mobile-canonical-source-36355927743.zip",
+      "sha256": "89b081a7486a548e871b35a13f05203a43c3642daa3a00f8c14890c4f5b93b56"
+    },
+    {
+      "path": "ci-logs/mobile-checksum-ci-36357758998.zip",
+      "sha256": "d612acddd28c9fbec7ce7d9b5fcaf4d1202a48a9b9820f87cc8a7e4e6443b081"
+    },
+    {
+      "path": "ci-logs/mobile-maven-central-36359920594.zip",
+      "sha256": "38628c0c57518ac17bebc946511e0e1b964104755eb6f854a42e5476bf78d6a2"
+    },
+    {
+      "path": "ci-logs/mobile-pr-36341138442.zip",
+      "sha256": "fadf9b6795442d3e3933045a99681af108789efcc722f179872ae064210ba124"
+    },
+    {
+      "path": "ci-logs/mobile-stable-pin-36355467610.zip",
+      "sha256": "f46820d398aa71fa854da64a543a9db5515a97283298d3c4e89f312423fb127b"
+    },
+    {
+      "path": "ci-logs/mobile-stable-release-36357889566.zip",
+      "sha256": "b894a44bfde77d2112d3c79df3fa4020f1cb5667da51ac281129cd03f3fb8004"
+    },
+    {
+      "path": "core-assets-roundtrip.json",
+      "sha256": "0cc38e2835d8503fea2dc943af13cebafff60b3a6f09292d4baabc6ab523d6dc"
+    },
+    {
+      "path": "core-final-candidate-ci.json",
+      "sha256": "35ed8aee464bc1cf428d6a84cdc7b0c068d2c42b4b78c8085263e02e477ffa0a"
+    },
+    {
+      "path": "core-publication.json",
+      "sha256": "eca875402c543336de263d6844e3cfdadb00e37d9a8f881c8ab02db7dc3a3d1c"
+    },
+    {
+      "path": "core-stable-source-bundle/SHA256SUMS",
+      "sha256": "578c61fd221ae37bb0d6d4cd3b3d56e6ffc0a92de0ecc7bd699f1448c5b5d7ef"
+    },
+    {
+      "path": "core-stable-source-bundle/release-metadata.txt",
+      "sha256": "3257b698e41b9f921f4315379db578df5221e8b51a7b9b69ea94acadf5268057"
+    },
+    {
+      "path": "core-tag-ci.json",
+      "sha256": "863555e9105ab878fb9ccfeb7f4968afe441c8539eae68b462614e43bfa2a8de"
+    },
+    {
+      "path": "core-versioned-evidence-run.json",
+      "sha256": "2d87319a1d4c40a95ce4103a299d0bdb6773a8b3aa59f659af5678b3d92feb59"
+    },
+    {
+      "path": "final-core-source-validation.json",
+      "sha256": "e89b14171da67df13b87407c31772477af77650f33de1bf84c1146bf30351471"
+    },
+    {
+      "path": "mobile-canonical-producer-run.json",
+      "sha256": "8e19cf82f030f18c0cbdf3bd0142b56ddfca1dba9d1a6c4dfd788c00caff3265"
+    },
+    {
+      "path": "mobile-canonical-source-run.json",
+      "sha256": "0579c6977b88488aed2b92f8a528c74eb3b18aca7ceefe575425e7e9f407baec"
+    },
+    {
+      "path": "mobile-checksum-ci-run.json",
+      "sha256": "390b7d58469d526a40dd414048b44576a9c809d221d95d237dff0da1a72f3f60"
+    },
+    {
+      "path": "mobile-maven-central-run.json",
+      "sha256": "6f10f889f9d8ddf7b45297327c1e3e1afe61a457f790d27fd0a96cacbb9d4550"
+    },
+    {
+      "path": "mobile-public-assets/SHA256SUMS",
+      "sha256": "03034dbbb0db8e2fafa2dbffa5c1f350c55235b4aae7fb8e72b15eaf682c1a10"
+    },
+    {
+      "path": "mobile-public-assets/release-manifest.json",
+      "sha256": "fd396022a76e0b457263d8889fe416fac3b3915b01679c7d78d202c08b2d8fcc"
+    },
+    {
+      "path": "mobile-publication.json",
+      "sha256": "7735e8458c9d636e8fbd38ac32bfbe590d8c4bc6f4f94dbc9f30c7c4a09cb4bf"
+    },
+    {
+      "path": "mobile-release-api.json",
+      "sha256": "6db1fd24d915aa61590a40b184c678d429fc01a9d6b55de4f916c03fa7283f3b"
+    },
+    {
+      "path": "mobile-release-notes.md",
+      "sha256": "2271910dafc7b030b26ca368bafe573352060cbaa25a69df9305557c71bb5f69"
+    },
+    {
+      "path": "mobile-stable-pin-run.json",
+      "sha256": "9659022f744c7b351439c7e931a2d3adea5159ccfe91d2b3337155e4bf165455"
+    },
+    {
+      "path": "mobile-stable-release-run.json",
+      "sha256": "bb1275bd683051b0bb4d8a90c58b021a85a1da2f1c298a7e9d824746024b745a"
+    },
+    {
+      "path": "public-consumers/README.md",
+      "sha256": "7334733a2968df0df2d6ecd7a4a2fc1907aafbd8438fc3db35bb5fd0b250844e"
+    },
+    {
+      "path": "public-consumers/android-build.log",
+      "sha256": "670a9f2a5ba394956c2bce124e8240153ee1618f5cdae3188802964315638404"
+    },
+    {
+      "path": "public-consumers/android/build.gradle.kts",
+      "sha256": "a30bf9a9fb1abc05948ef0cd60d68e3b0a33e73d41b43dcc287e595138b1fe35"
+    },
+    {
+      "path": "public-consumers/android/consumer/build.gradle.kts",
+      "sha256": "724b5e069dd6f68206efbc52e3a9ac888d3c7c47d4cb46d11f9907d532502b92"
+    },
+    {
+      "path": "public-consumers/android/consumer/src/main/AndroidManifest.xml",
+      "sha256": "f73a4fd8b050b2f9375d20aec8b49c02984231b91584410692575ffc5f420200"
+    },
+    {
+      "path": "public-consumers/android/consumer/src/main/java/org/xrayrust/mobile/smoke/AppVpnService.kt",
+      "sha256": "bbb2b5d3130b619bfe694eb89095192da819b729468ef88f8d33e1de5bef521a"
+    },
+    {
+      "path": "public-consumers/android/consumer/src/main/java/org/xrayrust/mobile/smoke/SdkCompileSmoke.kt",
+      "sha256": "df0924a4828b1151d083c55df03fe140c18ae132942cc09725f0bbb87fb16c4c"
+    },
+    {
+      "path": "public-consumers/android/gradle/verification-metadata.xml",
+      "sha256": "43ef51057a4322630fb3a32d5a8fdfb2b678ba4b39661469541df9e22e1b9f28"
+    },
+    {
+      "path": "public-consumers/android/settings.gradle.kts",
+      "sha256": "cec11bcb0489cb1af31b91cbe3d45eb2b76a0f7324de4e49a5dbd7d52c20cd78"
+    },
+    {
+      "path": "public-consumers/commands.json",
+      "sha256": "4b7ac7c1e3e50898f5a2c826d01a1604bcf8c3f8a7abfe06fc778586989ef85b"
+    },
+    {
+      "path": "public-consumers/maven-expected.json",
+      "sha256": "66d8b5b2250725bbb2df85cf2fbc1428b11cb5a7512f225d9b75f19713f1509e"
+    },
+    {
+      "path": "public-consumers/results.json",
+      "sha256": "a229c8a2e5f0b011a8f4812e49c9a9887d5af7b5d1618e6b2491f2b273f2b5b3"
+    },
+    {
+      "path": "public-consumers/swift-build.log",
+      "sha256": "66136821ba5c28a9f6aec639fbab468e4573366567ee7cb495f96efa5a43b29f"
+    },
+    {
+      "path": "public-consumers/swift/Package.resolved",
+      "sha256": "02bea59d28fc0e3e19c0722797c93dc16826a3e37635b6df0e3ed00e478d2a2f"
+    },
+    {
+      "path": "public-consumers/swift/Package.swift",
+      "sha256": "1f36bdfa3444e6a8046e4afb27ee182857042ab864085f4278520106bfbb29cf"
+    },
+    {
+      "path": "public-consumers/swift/Sources/ReleaseConsumer/main.swift",
+      "sha256": "ec81779da537073f97c3e90978f166227779b12535b3fc698f14ae5795ecf520"
+    },
+    {
+      "path": "tooling/assemble.py",
+      "sha256": "d1121ad02254a7b83721e8c8b683c3e582c3562068a0ce2feb1e42570ee74760"
+    },
+    {
+      "path": "tooling/finalize-publication-evidence.py",
+      "sha256": "e5a2b57da8eae0dc693a8fb174c6bc2669a1c5cd151c63a66ee23876e6eb8153"
+    },
+    {
+      "path": "tooling/finalize_ci.py",
+      "sha256": "ea12ebc09a0a2253767dec5353f3cb3ed29eec7fe4edde1f4befb8319f598596"
+    },
+    {
+      "path": "tooling/prepare-public-maven-consumer.py",
+      "sha256": "a1dbdc9f737162651ec5a088d6114b9e61a49f09ca10bdcd4aca67bf9ec85b63"
+    },
+    {
+      "path": "tooling/publish-core.py",
+      "sha256": "051e61f9e983d7ac397256c1aa3eba4a9835144c19253c8d36c8e03f093d8e25"
+    },
+    {
+      "path": "tooling/run-public-android.py",
+      "sha256": "25e98cd98a3cbf4a1cc58f60bbfb59dc46826ebc41646278735a0499f5a3d213"
+    },
+    {
+      "path": "tooling/verify-apple-archive-xcode27.sh",
+      "sha256": "3e2c4aa027ec1e3b735de9f523b689292eae80d9a8acb0e5893ee2da1f67fecd"
+    },
+    {
+      "path": "tooling/verify-public-consumers.py",
+      "sha256": "4d20abd550e09452d205d18f05dcde4e2530cf17e11a3b74b38c24c4e60841c6"
+    },
+    {
+      "path": "tooling/verify-public-sdk.py",
+      "sha256": "de67458eb46ef2778dc13036950dc84412bc862f716fbf04b1125322a82a52b0"
+    },
+    {
+      "path": "tooling/watch-release-runs.py",
+      "sha256": "628dd1fd780996fdbdb74ef9f5b3cf954d166f3f780348ae39b52040fe981487"
+    }
+  ],
+  "result": "pass"
+}
