@@ -3,6 +3,16 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# The pinned VMess oracle derives this command key from the public sequential
+# UUID 00112233-4455-6677-8899-aabbccddeeff, not a deployed account.
+[[allowlists]]
+description = "Deterministic VMess oracle command key from the sequential test UUID"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"commandKey"\s*:\s*"d34482dca079f1e8ad37ff8d08a382cf",?\s*$''']
+paths = ['''^tests/fixtures/v08/protocol-primitives\.json$''']
+
 [[allowlists]]
 description = "Deterministic uTLS fixture enum, not a credential"
 targetRules = ["generic-api-key"]

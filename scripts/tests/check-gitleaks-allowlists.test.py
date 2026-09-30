@@ -2,6 +2,7 @@
 """Exercise evidence exceptions with Gitleaks, including positive leak controls."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -50,6 +51,19 @@ class EvidenceAllowlists(unittest.TestCase):
             BUILD: "\tdep\tgolang.org/x/oauth2\tv0.30.0\th1:"
                    "dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=\n",
         }), set())
+
+    def test_vmess_oracle_exception_is_derived_and_narrow(self):
+        path = "tests/fixtures/v08/protocol-primitives.json"
+        fixture = json.loads((ROOT / path).read_text())["vmess"]
+        command_key = hashlib.md5(bytes.fromhex("00112233445566778899aabbccddeeff") +
+                                 b"c48619fe-8f02-49e0-b9e9-edf763e17e21").hexdigest()
+        self.assertEqual(fixture["commandKey"], command_key)
+        self.assertEqual(self.scan({path: json.dumps({"commandKey": command_key}, indent=2)}), set())
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            path: json.dumps({"commandKey": synthetic}, indent=2),
+            "unreviewed.json": json.dumps({"commandKey": command_key}, indent=2),
+        }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
 
     def test_other_credentials_in_reviewed_files_are_detected(self):
         synthetic = "ABcdeF01234" + "GHijk56789lMno"
