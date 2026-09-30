@@ -109,6 +109,39 @@ class XrayProfileImporterNativeTest {
         assertFalse(config.getJSONObject("dns").has("fakeIp"))
     }
 
+    @Test fun importsTrojanThroughActualJniAndRust() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supportsProfileImport(XrayProfileFormat.Trojan))
+        val profile = XrayProfileImporter.profile("trojan://synthetic%3Apass+word@trojan.example?type=ws&path=%2Ftrojan#Test%20%E2%9C%93", XrayProfileFormat.Trojan)
+        assertEquals("Test ✓", profile.name)
+        assertEquals("trojan.example", profile.serverAddress)
+        val root = JSONObject(profile.configJson)
+        assertEquals("synthetic:pass+word", root.getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings").getString("password"))
+        assertFalse(profile.toString().contains("synthetic"))
+    }
+
+    @Test fun importsVmessThroughActualJniAndRust() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supportsProfileImport(XrayProfileFormat.Vmess))
+        val profile = XrayProfileImporter.profile("vmess://00112233-4455-6677-8899-aabbccddeeff@vmess.example?type=ws&path=%2Fvmess#Test%20%E2%9C%93", XrayProfileFormat.Vmess)
+        assertEquals("Test ✓", profile.name)
+        assertEquals("vmess.example", profile.serverAddress)
+        val root = JSONObject(profile.configJson)
+        assertEquals("00112233-4455-6677-8899-aabbccddeeff", root.getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings").getString("id"))
+        assertFalse(profile.toString().contains("00112233"))
+    }
+
+    @Test fun importsShadowsocks2022ThroughActualJniAndRust() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supportsProfileImport(XrayProfileFormat.Shadowsocks2022))
+        val profile = XrayProfileImporter.profile("ss://2022-blake3-aes-128-gcm:AQEBAQEBAQEBAQEBAQEBAQ==@ss2022.example:8388#Test%20%E2%9C%93", XrayProfileFormat.Shadowsocks2022)
+        assertEquals("Test ✓", profile.name)
+        assertEquals("ss2022.example", profile.serverAddress)
+        val root = JSONObject(profile.configJson)
+        assertEquals("AQEBAQEBAQEBAQEBAQEBAQ==", root.getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings").getString("password"))
+        assertFalse(profile.toString().contains("AQEB"))
+    }
+
     @Test fun actualJniErrorsAreRedactedAndDoNotPoisonSubsequentImports() {
         enabled()
         for (text in listOf("hy2://secret@server.example?insecure=1", "hy2://secret%00@server.example")) {

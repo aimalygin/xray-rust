@@ -20,6 +20,8 @@ import signal
 import socket
 import struct
 import subprocess
+import uuid
+from urllib.parse import quote
 
 
 REFERENCE = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
@@ -111,6 +113,8 @@ def reserve_udp(bind):
 
 
 def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test"):
+    if protocol in ("v08", "trojan", "shadowsocks2022", "vmess"):
+        return write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host)
     def save(name, value):
         (root / name).write_text(json.dumps(value, indent=2) + "\n")
 
@@ -196,6 +200,68 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", po
     save("v07-probe.json", {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host})
 
 
+def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host):
+    """New client fixtures retain the existing device harness envelope."""
+    openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+            "-nodes", "-days", "1", "-subj", "/CN=v08-probe.test",
+            "-keyout", str(root / "tls.key"), "-out", str(root / "tls.crt"))
+    pin = hashlib.sha256(openssl("x509", "-in", str(root / "tls.crt"), "-outform", "DER")).hexdigest()
+    selected = ("trojan", "shadowsocks2022", "vmess") if protocol == "v08" else (protocol,)
+    inbounds, cases, ports = [], [], set()
+    for fmt in selected:
+        if port is None:
+            while True:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.bind((bind, 0))
+                    carrier_port = sock.getsockname()[1]
+                if carrier_port not in ports:
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+                        udp.bind((bind, carrier_port))
+                    break
+        else:
+            carrier_port = port
+        ports.add(carrier_port)
+        settings = {"address": bind, "port": carrier_port}
+        stream = {"network": "raw"}
+        server_stream = {"network": "raw"}
+        if fmt == "trojan":
+            password = secrets.token_urlsafe(32)
+            name = "trojan"
+            settings["password"] = password
+            server_settings = {"clients": [{"password": password}]}
+            stream.update(security="tls", tlsSettings={"serverName": "v08-probe.test", "pinnedPeerCertSha256": pin})
+            server_stream.update(security="tls", tlsSettings={"certificates": [{"certificateFile": str(root / "tls.crt"), "keyFile": str(root / "tls.key")}]})
+            text = f"trojan://{password}@{bind}:{carrier_port}?sni=v08-probe.test"
+        elif fmt == "shadowsocks2022":
+            password = base64.b64encode(secrets.token_bytes(32)).decode()
+            name = "shadowsocks"
+            settings.update(method="2022-blake3-chacha20-poly1305", password=password)
+            server_settings = {"method": settings["method"], "password": password, "network": "tcp,udp"}
+            text = f"ss://{settings['method']}:{quote(password, safe='')}@{bind}:{carrier_port}"
+        else:
+            user = str(uuid.uuid4())
+            name = "vmess"
+            settings.update(id=user, security="auto", alterId=0)
+            server_settings = {"clients": [{"id": user}]}
+            text = "vmess://" + base64.b64encode(json.dumps({"v": "2", "ps": "device fixture", "add": bind, "port": str(carrier_port), "id": user, "aid": "0", "net": "tcp", "tls": "", "scy": "auto"}).encode()).decode()
+        inbounds.append({"listen": bind, "port": carrier_port, "protocol": name, "settings": server_settings, "streamSettings": server_stream})
+        config = {
+            "inbounds": [{"tag": "tun-in", "protocol": "tun"}],
+            "dns": {"servers": [f"198.51.100.53:{dns_port}"]},
+            "routing": {"domainStrategy": "AsIs", "rules": [
+                {"type": "field", "domain": [f"full:{probe_host}"], "outboundTag": "proxy"},
+                {"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "proxy"}]},
+            "outbounds": [{"tag": "proxy", "protocol": name, "settings": settings, "streamSettings": stream}],
+        }
+        cases.append({"format": fmt, "text": text, "serverAddress": bind, "configJSON": json.dumps(config)})
+    server = {"log": {"loglevel": "warning"}, "inbounds": inbounds,
+              "outbounds": [{"tag": "blocked", "protocol": "blackhole"},
+                            {"tag": "echo", "protocol": "freedom", "settings": {"redirect": "127.0.0.1:0", "finalRules": [{"action": "allow", "ip": ["127.0.0.0/8"]}]}}],
+              "routing": {"rules": [{"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "echo"}]}}
+    (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
+    (root / "v07-probe.json").write_text(json.dumps({"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host}, indent=2) + "\n")
+
+
 async def serve(args):
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
@@ -255,15 +321,15 @@ def main():
     parser.add_argument("--reference-binary", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path, help="new private directory")
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
-    parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2"), default="both")
-    parser.add_argument("--port", type=int, help="explicit carrier UDP port; requires a single protocol")
+    parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", "trojan", "shadowsocks2022", "vmess"), default="both")
+    parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
     parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
     args = parser.parse_args()
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:
         parser.error("use a specific unicast IPv4 address and 1..1800 seconds")
-    if args.port is not None and (args.protocol == "both" or not 1 <= args.port <= 65535):
+    if args.port is not None and (args.protocol in ("both", "v08") or not 1 <= args.port <= 65535):
         parser.error("an explicit port requires one protocol and a port in 1..65535")
     if args.reference_sha256 and (len(args.reference_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.reference_sha256)):
         parser.error("reference SHA-256 must be 64 lowercase hex characters")

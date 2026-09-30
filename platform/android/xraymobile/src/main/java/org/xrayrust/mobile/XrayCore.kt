@@ -35,6 +35,9 @@ enum class XrayFfiCapability(val mask: Long) {
     Hysteria2Outbound(1L shl 16),
     WireguardOutbound(1L shl 17),
     ProfileImport(1L shl 18),
+    TrojanOutbound(1L shl 19),
+    VmessOutbound(1L shl 21),
+    Shadowsocks2022Outbound(1L shl 20),
 }
 
 data class XrayFfiInfo(

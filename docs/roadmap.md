@@ -1,19 +1,19 @@
 # Development roadmap
 
-Status: living document, last reviewed 2026-09-08 (UTC).
+Status: living document, last reviewed 2026-09-30 (America/Chicago).
 
-The stable source version is `v0.6.0`. Matching core and mobile
-`v0.6.0-rc.1` prereleases are published. Phases 1 and 2 below are retained as
-release history; Phase 3 implementation and RC application acceptance are
-complete. The owner authorized stable `v0.6.0` publication on 2026-09-08;
-[promotion record](v06-stable-promotion.md) describes final build gates and
-links to publication results. This roadmap is not a
+The current stable core and Mobile SDK versions are `0.7.0`, published on
+2026-09-27. See the [core release](https://github.com/aimalygin/xray-rust/releases/tag/v0.7.0),
+[SDK release](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.7.0),
+and [accepted evidence and exceptions](v07-stable-promotion.md).
+Phases 1–4 below retain the delivery history. This roadmap is not a
 promise that every conditional item will ship in the named release. Security,
 interoperability findings, and measured mobile behavior may reorder work.
 
-The owner selected Hysteria 2 and WireGuard client support for `v0.7` on
-2026-09-08. Phase 4 records that target and the initial upstream support check;
-the implementation contract and release evidence remain to be developed.
+On 2026-09-30 the owner selected **complete Trojan, Shadowsocks 2022 and
+VMess AEAD client support for `v0.8`**. All three protocols must reach the core
+and both mobile SDKs. Shadowsocks AEAD-2017 is explicitly excluded from 0.8;
+the selected Shadowsocks implementation is SS2022 only.
 
 The current compatibility baseline is Xray-core `v26.7.28` at full commit
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. See the
@@ -53,10 +53,13 @@ after the supported surface is secure, interoperable, and reliable on devices.
 ## Current baseline
 
 The implemented client surface includes SOCKS5, HTTP CONNECT, packet and
-fd-backed TUN operation, Freedom, DNS and VLESS outbounds, raw TCP, WebSocket,
+fd-backed TUN operation, Freedom, DNS, VLESS, Hysteria 2 and WireGuard outbounds,
+raw TCP, WebSocket,
 HTTPUpgrade, gRPC, and XHTTP over HTTP/1.1, HTTP/2, and HTTP/3. TLS, REALITY,
 Vision, XUDP, routing, Xray geodata, IPv4 Fake IP, Apple artifacts, and an
-Android AAR are part of the tested repository surface.
+Android AAR are part of the tested repository surface. C ABI 1.7 and matching
+Swift/Kotlin APIs include protocol discovery, profile import, DNS bootstrap
+and carrier network-change notifications.
 
 The main release risks are:
 
@@ -414,8 +417,9 @@ required before, and does not substitute for, the Apple/Android hardware gate.
 
 ## Phase 3: `v0.6` modern VLESS and richer client policy
 
-Status: feature freeze completed and matching core/mobile `v0.6.0-rc.1`
-prereleases published. The selected scope includes `IPOnDemand`, bounded
+Status: released as stable `v0.6.0` on 2026-09-08, followed by the `v0.6.1`
+XHTTP/H2 and TUN repair on 2026-09-09. The following records the original
+core/mobile `v0.6.0-rc.1` scope and evidence. That scope includes `IPOnDemand`, bounded
 VLESS 1-RTT/0-RTT with relay chains and padding, independent XHTTP downloads,
 mobile projection, and Milestone E configuration tooling. The exact-candidate
 release gates passed; see [published evidence](v06-release-evidence.md#published-v060-rc1).
@@ -617,9 +621,23 @@ are recorded in [stable promotion](v06-stable-promotion.md).
 
 ## Phase 4: `v0.7` Hysteria 2 and WireGuard clients
 
-Status: `0.7.0-rc.1` preparation started on 2026-09-22; final CI/device and
-application acceptance remain pending. See the [RC sequence](v07-release-candidate.md)
-and [versioned evidence contract](v07-release-evidence.md). Implementation started
+Status: released as stable core and Mobile SDK `0.7.0` on 2026-09-27.
+The owner selected direct stable publication without a public RC. The measured
+candidate retains its original `0.7.0-rc.1` source identity; a published RC is
+not implied. See [stable promotion](v07-stable-promotion.md) and the
+[versioned evidence contract](v07-release-evidence.md).
+
+The release includes both clients, shared profile import, ABI 1.7, protected
+carrier rebinding, and the reviewed TUN lifecycle/resource fixes. Device
+acceptance is **accepted-with-exceptions**: Android cellular was not tested,
+and the investigated rare Android WireGuard timeout was explicitly accepted
+for 0.7. Neither decision establishes a product fix or applies automatically
+to 0.8. H2/TUN RSS and separate Hysteria2 comparison gaps remain documented.
+
+The implementation and experiment narrative below is historical; intermediate
+pending-acceptance statements describe those earlier checkpoints. The original
+[RC sequence](v07-release-candidate.md) and public-RC criterion below were
+superseded by the recorded stable-publication decision. Implementation started
 on 2026-09-08. The
 [upstream support check](v07-upstream-protocol-support.md) confirms both protocols
 in pinned Xray-core `v26.7.28`. The
@@ -711,8 +729,8 @@ See the [reproduction method](v07-performance.md).
 Goal: add Hysteria 2 and standard WireGuard client outbounds to the core and
 matching Swift/Kotlin SDKs, preserving bounded mobile resource use, typed
 configuration, routing, diagnostics, and cancellation. This owner decision
-supersedes the earlier recommendation to implement Trojan first. Trojan,
-Shadowsocks 2022, and VMess remain demand-driven backlog items.
+superseded the earlier recommendation to implement Trojan first for 0.7.
+Trojan, Shadowsocks 2022 and VMess AEAD are now selected for 0.8.
 
 ### Initial work
 
@@ -753,6 +771,175 @@ Shadowsocks 2022, and VMess remain demand-driven backlog items.
   must be recorded before feature freeze; this roadmap does not assert full
   upstream feature parity or add server-side scope.
 
+## Phase 5: `v0.8` Trojan, Shadowsocks 2022 and VMess AEAD clients
+
+Status: Trojan, Shadowsocks 2022 and VMess AEAD selected as required release
+features by the owner on 2026-09-30. All three are mandatory; Shadowsocks
+AEAD-2017 is excluded. All three runtimes, imports, ABI 1.8 and canonical
+Swift/Kotlin adapters are implemented. Pinned Xray, independent sing-box,
+Mux/TUN/DNS, REALITY, split-XHTTP and cross-protocol chain matrices pass.
+Full workspace and host Swift/JNI regressions pass. Candidate-bound device,
+performance and distribution artifact acceptance remain open; see the
+[current implementation evidence](v08-implementation-plan.md).
+
+Goal: make all three protocols usable end to end through the core and both
+mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
+destinations, configuration and share-link import, routing/DNS/management
+integration, documented transport combinations, device acceptance and published
+SDK artifacts. Server implementations and external plugin ecosystems remain
+outside this embedded-client product. Deliver the work in this order:
+
+### A. Freeze the protocol and reference contracts
+
+- Required baseline: standard Trojan over raw TCP with verified TLS, carrying
+  TCP and UDP, with IPv4, IPv6 and domain destinations. Support SOCKS/HTTP
+  ingress where applicable, TUN TCP/UDP and routed DNS through the existing
+  outbound graph, resolver, protected sockets and connection management.
+- Define the exact accepted Xray JSON and `trojan://` syntax, credential
+  bounds, TLS/SNI/ALPN/pinning behavior and redacted import errors. Reuse the
+  shared Rust importer for Swift/Kotlin parity. Non-empty Trojan `flow`,
+  insecure TLS and unimplemented combinations must fail before dialing.
+- Cover Trojan over the existing raw, WebSocket, HTTPUpgrade, gRPC and XHTTP
+  carriers wherever the selected Xray reference supports the combination.
+  Publish the exact TLS/REALITY, TCP/UDP and import matrix before implementation;
+  carrier availability alone is not compatibility evidence. Any proposed
+  exclusion from this target must be recorded explicitly rather than silently
+  reducing complete support to raw TLS only.
+- Resolve Mux/XUDP explicitly in that contract. The 0.7 baseline rejected Mux,
+  while newer public guidance must not replace the selected `v26.7.28`
+  contract. Inspect its pinned wire and configuration behavior and specify
+  bounded pooling/lifecycle and the required implementation. The initial
+  source review found no mandatory Mux check in its Trojan config builder.
+  Do not present existing Mux rejection
+  as complete Xray client parity. This is distinct from Trojan's standard wire
+  format and from a server-side implementation.
+- Pin Xray-core and independent Trojan, Shadowsocks 2022 and VMess AEAD
+  reference servers to exact revisions. The
+  [standard Trojan protocol](https://trojan-gfw.github.io/trojan/protocol) is
+  its wire reference; Xray-specific extensions require their own evidence.
+- The owner decided on 2026-09-30 to retain Xray-core `v26.7.28`, exact commit
+  `5ca6f4b7d4dc20a881d4330e498892697627ec0c`, for 0.8 implementation and
+  interoperability. The local reference checkout is clean at that revision.
+  Newer release audits remain migration backlog; neither `v26.9.8`,
+  `v26.9.30` nor moving `main` replaces this contract. The
+  [implementation plan](v08-implementation-plan.md) records source findings,
+  delivery order, implemented bounds and current verification evidence.
+
+### B. Implement and project Trojan end to end
+
+- Implement bounded request/UDP framing and the client lifecycle on the
+  existing transport seam. Preserve cancellation, backpressure, half-close,
+  server-first traffic, UDP destination/source identity and socket protection.
+  Split affected large modules before adding the protocol where needed.
+- Integrate selectors, probes, routing, accounting, connection close and
+  diagnostics. Passwords and derived authentication material must stay out of
+  logs, snapshots and errors, with reviewed secret ownership and cleanup.
+- Add protocol capability discovery and offline profile import through an
+  additive ABI extension, with equivalent Swift/Kotlin models and bootstrap.
+  Update the executable configuration contract, fixtures and examples.
+- Ship matching XCFramework/AAR packages pinned to the reviewed core, with
+  import/connect/disconnect/reconnect acceptance in real host applications.
+  Protocol support is incomplete until both mobile paths are delivered.
+
+### C. Implement and project Shadowsocks 2022 end to end
+
+Shadowsocks 2022 is required for 0.8. Implementation research chooses the
+architecture and resource budgets; it does not decide whether SS2022 ships.
+
+- Compare a narrow implementation using the existing crypto/runtime seams
+  with reuse of a maintained Rust implementation. Assess dependencies,
+  licenses, binary size, allocation behavior and ownership of sockets/tasks.
+  Existing AES-GCM and BLAKE3 dependencies do not establish protocol readiness.
+- Include all three SS2022 methods exposed by the inspected Xray client:
+  `2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm` and
+  `2022-blake3-chacha20-poly1305`, with TCP and UDP. Include client-side SIP023
+  identity-key chains for the methods that support them, with bounded depth
+  and exact key validation. Cover single-user and multi-user/relay destinations
+  without implementing a relay/server. See [SIP022](https://shadowsocks.org/doc/sip022.html)
+  and [SIP023](https://shadowsocks.org/doc/sip023.html).
+- Prove fixed-length key validation, authenticated response binding, replay
+  rejection, bounded UDP session/replay state, time handling, server restart
+  and mobile network changes with an exact reference implementation. Include
+  malformed/truncated records, wrong keys, cancellation and resource limits.
+- Deliver `ss://` import, capability discovery, Swift/Kotlin projection,
+  protected endpoint bootstrap, routing, DNS, selectors, accounting and
+  connection closure under the same acceptance contract as Trojan. Specify
+  native TCP/UDP carriage and any Xray transport extensions independently.
+- Compare CPU, memory and throughput on named workloads, add negative/fuzz
+  coverage, and complete both mobile paths and package consumer checks.
+- Reject Shadowsocks AEAD-2017 methods and their aliases in both JSON and
+  `ss://` import with a precise unsupported-method error. Do not silently
+  convert an older profile into SS2022. RC4, AES-CFB and other obsolete stream
+  ciphers are also excluded. This is a Shadowsocks method boundary; it does
+  not exclude VMess's separately named `aes-128-gcm` body encryption.
+
+### D. Implement and project VMess AEAD end to end
+
+VMess AEAD is required for 0.8 alongside Trojan and SS2022.
+
+- Implement modern VMess AEAD authentication with `auto`, `aes-128-gcm` and
+  `chacha20-poly1305`, TCP/UDP and IPv4/IPv6/domain destinations. Specify
+  deterministic `auto` selection for supported targets. Treat absent/zero
+  legacy `alterId` explicitly and reject nonzero legacy authentication rather
+  than silently changing the profile. The
+  [protocol reference](https://www.v2fly.org/en_US/developer/protocols/vmess.html)
+  deprecates the old MD5-authentication mode; this is separate from any
+  compatibility hash used inside the modern protocol.
+- Implement the AEAD header/KDF, authenticated response parser, body framing,
+  length masking/padding, UDP framing and time/nonce behavior with bounded
+  state. Define supported options and termination behavior against the pinned
+  [client contract](https://xtls.github.io/en/config/outbounds/vmess.html).
+  Verify wrong credentials, malformed/truncated records, authentication
+  failures, time skew, cancellation, half-close and counter limits.
+- Cover the existing raw, WebSocket, HTTPUpgrade, gRPC and XHTTP carriers
+  wherever the selected reference supports the combination. Freeze the exact
+  security, Mux/XUDP and TCP/UDP matrix in step A; record any exclusion
+  explicitly and keep unsupported combinations fail closed.
+- Deliver bounded `vmess://` import with an explicit accepted-format contract,
+  capability discovery and equivalent Swift/Kotlin projection. Integrate the
+  shared resolver/bootstrap, protected sockets, TUN, routed DNS, selectors,
+  accounting, connection closure and redacted diagnostics.
+- Add pinned Xray-core and independent VMess reference interoperability,
+  parser/wire fuzzing, resource/performance checks and candidate-bound device
+  acceptance. Include VMess in both SDK artifacts and consumer tests; it is
+  not deferred to a later minor release.
+
+### E. Stabilize the selected scope and publish
+
+- Keep existing interop, fuzz, sanitizer/Miri/Loom, supply-chain, Apple and
+  four-ABI Android gates blocking; extend them for each selected protocol.
+  Verify against both pinned Xray-core and independent protocol references.
+- Collect fresh candidate-bound Apple/Android evidence for import, TCP/UDP,
+  DNS, cancellation, reconnect, lock/wake and bounded memory recovery. Cover
+  both Android FileDescriptor and PacketPump adapters. Record actual network
+  transitions and device availability; 0.7 exceptions are not inherited.
+  No fixed-duration long soak campaign is introduced.
+- Preserve the 0.7 regression baselines and comparison limits. Re-run affected
+  workloads with exact source/binary provenance; retain failures and unknowns.
+  Improvements to unrelated transports are not prerequisites for these protocols.
+- Freeze selected features before candidate acceptance. Match core/SDK
+  versions and immutable pins; publish documented supported options, migration
+  notes where needed, evidence and verified consumer artifacts.
+- Release acceptance requires Trojan, Shadowsocks 2022 and VMess AEAD to
+  complete the core and both SDK paths. A release containing only one or two
+  of these protocols does not satisfy the selected 0.8 scope.
+
+### Work kept separate from the 0.8 protocol target
+
+The [Android WireGuard diagnostics PR](https://github.com/aimalygin/xray-rust/pull/38)
+remains open/draft as of this review. It separates a reference-fixture defect
+from a missing carrier response whose cause remains unresolved; it is not a
+confirmed product fix. Review it independently and carry relevant regression
+checks into 0.8. Any reproduced product blocker still requires resolution or
+an explicit release decision.
+
+H2/TUN RSS, the remaining Hysteria2 comparison gaps, gRPC/H3 window experiments,
+encrypted-DNS pooling and IPv6 Fake IP remain separate candidates, without an
+automatic 0.8 commitment. Shadowsocks AEAD-2017, legacy VMess authentication,
+MASQUE, XDRIVE and server-side features are outside this selected scope.
+A full upstream migration must be scoped
+explicitly rather than silently added to the protocol implementation.
+
 ## Deferred security work before `1.0`
 
 `v0.5.0` completed the focused credential redaction, zeroization, and secret
@@ -770,18 +957,15 @@ revision and existing dependency/security gates. Reconsider that decision only
 during `1.0` planning or earlier if a concrete security finding, upstream
 incompatibility, or maintenance failure invalidates the current pin.
 
-## Further protocol expansion after the selected `v0.7` scope
+## Further protocol expansion after the selected `v0.8` scope
 
 Protocol work is demand-driven and begins only after the previous release
 gates are sustained in CI.
 
-The remaining candidates have no assigned release or mandatory order:
-
-1. **Trojan client.** It can reuse the existing TLS, stream, DNS, routing, and
-   outbound lifecycle while exercising the new outbound factory seam.
-2. **Shadowsocks 2022.** Add it as an optional client component if profile
-   corpus and integrator demand justify the crypto and compatibility surface.
-3. **VMess.** Implement only if real migration data shows material active use.
+Trojan, Shadowsocks 2022 and VMess AEAD are mandatory in Phase 5. Shadowsocks
+AEAD-2017 is excluded from 0.8 by owner decision and has no assigned future
+release. Other protocols require a separate demand and integration-cost
+decision; no protocol is currently committed to 0.9.
 
 Each protocol requires a pinned reference implementation, fixture corpus,
 blocking interop coverage, fuzz targets, resource budgets, mobile lifecycle

@@ -80,6 +80,7 @@ run_fuzz() (
     dns_wire \
     vless_wire \
     v07_protocols \
+    v08_protocols \
     inbound_wire \
     quic_sniff \
     xhttp_framing \

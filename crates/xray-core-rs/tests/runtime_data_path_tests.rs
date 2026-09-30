@@ -94,6 +94,9 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         TcpOutbound::Vless(outbound) => Ok(*outbound),
         TcpOutbound::Freedom
         | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::Trojan(_)
+        | TcpOutbound::Vmess(_)
+        | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
         | TcpOutbound::Wireguard(_)
         | TcpOutbound::Chained { .. } => Err(CoreError::NoSupportedOutbound),
@@ -102,6 +105,7 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
 
 fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some("proxy".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -126,6 +130,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
 
 fn freedom_outbound() -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some("direct".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -141,6 +146,7 @@ fn freedom_outbound() -> OutboundConfig {
 
 fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some("dns-out".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -12035,3 +12041,6 @@ async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
         upstream.stop().await;
     }).await.unwrap();
 }
+
+#[path = "trojan_runtime/tun_tests.rs"]
+mod trojan_tun_tests;

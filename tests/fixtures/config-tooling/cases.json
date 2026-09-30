@@ -954,7 +954,7 @@
       "errorPath": "$.outbounds[0].protocol",
       "base": "loopback-policy",
       "set": {
-        "/outbounds/0/protocol": "vmess"
+        "/outbounds/0/protocol": "unsupported-test-protocol"
       }
     },
     {
@@ -1580,6 +1580,295 @@
             }
           }
         ]
+      }
+    },
+    {
+      "name": "trojan-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "trojan",
+            "settings": {
+              "address": "trojan.example",
+              "port": 443,
+              "password": "synthetic-example-trojan-password"
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "TROJAN": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "trojan-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "trojan",
+            "settings": {
+              "servers": [
+                {
+                  "address": "trojan.example",
+                  "port": 443,
+                  "password": "synthetic-example-trojan-password"
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "TROJAN_SERVER": "/outbounds/0/settings/servers/0"
+      }
+    },
+    {
+      "name": "shadowsocks-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "shadowsocks",
+            "settings": {
+              "address": "trojan.example",
+              "port": 443,
+              "password": "AQEBAQEBAQEBAQEBAQEBAQ==",
+              "method": "2022-blake3-aes-128-gcm"
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "SHADOWSOCKS": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "shadowsocks-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "shadowsocks",
+            "settings": {
+              "servers": [
+                {
+                  "address": "trojan.example",
+                  "port": 443,
+                  "password": "AQEBAQEBAQEBAQEBAQEBAQ==",
+                  "method": "2022-blake3-aes-128-gcm"
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "SHADOWSOCKS_SERVER": "/outbounds/0/settings/servers/0"
+      }
+    },
+    {
+      "name": "vmess-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vmess",
+            "settings": {
+              "address": "vmess.example",
+              "port": 443,
+              "id": "00112233-4455-6677-8899-aabbccddeeff",
+              "security": "auto"
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "VMESS": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "vmess-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vmess",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "vmess.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "id": "00112233-4455-6677-8899-aabbccddeeff",
+                      "security": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "VMESS_SERVER": "/outbounds/0/settings/vnext/0",
+        "VMESS_USER": "/outbounds/0/settings/vnext/0/users/0"
       }
     }
   ]

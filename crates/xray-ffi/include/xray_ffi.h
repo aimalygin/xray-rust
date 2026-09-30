@@ -201,7 +201,10 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE = 1 << 15,
   XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND = 1 << 16,
   XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND = 1 << 17,
-  XRAY_FFI_CAPABILITY_PROFILE_IMPORT = 1 << 18
+  XRAY_FFI_CAPABILITY_PROFILE_IMPORT = 1 << 18,
+  XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND = 1 << 19,
+  XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND = 1 << 20,
+  XRAY_FFI_CAPABILITY_VMESS_OUTBOUND = 1 << 21
 } XrayFfiCapability;
 
 uint32_t xray_ffi_version_major(void);
@@ -210,7 +213,8 @@ uint64_t xray_ffi_capabilities(void);
 
 /* ABI 1.5, PROFILE_IMPORT plus the selected outbound capability. Offline,
  * thread-safe and handle-free. UTF-8 request (<=256 KiB):
- * {"format":"hysteria2"|"wireguard","text":"...","name":"...",
+ * {"format":"trojan"|"shadowsocks2022"|"vmess"|"hysteria2"|"wireguard",
+ *  "text":"...","name":"...",
  *  "dnsServers":["IP",...]}; name and dnsServers are optional.
  * Source text <=64 KiB. No network, file access, commands or VPN startup.
  * Result (<=256 KiB): {"schemaVersion":1,"name":"...","serverAddress":"...",

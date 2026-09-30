@@ -498,12 +498,23 @@ private fun collectOutboundBootstrapDomains(
     for (outboundIndex in 0 until outbounds.length()) {
         val outbound = outbounds.optJSONObject(outboundIndex) ?: continue
         val protocol = outbound.optString("protocol").lowercase(Locale.ROOT)
-        if (protocol !in listOf("vless", "hysteria", "wireguard")) continue
+        if (protocol !in listOf("vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard")) continue
         val settings = outbound.getJSONObject("settings")
         val addresses = when (protocol) {
-            "vless" -> {
-                val servers = settings.getJSONArray("vnext")
-                (0 until servers.length()).map { servers.getJSONObject(it).getString("address") }
+            "vless", "vmess" -> {
+                if (protocol == "vmess" && settings.has("address")) listOf(settings.getString("address"))
+                else {
+                    val servers = settings.getJSONArray("vnext")
+                    (0 until servers.length()).map { servers.getJSONObject(it).getString("address") }
+                }
+            }
+            "trojan", "shadowsocks" -> {
+                if (settings.has("address")) listOf(settings.getString("address"))
+                else {
+                    val servers = settings.getJSONArray("servers")
+                    require(servers.length() == 1) { "invalid proxy bootstrap server count" }
+                    listOf(servers.getJSONObject(0).getString("address"))
+                }
             }
             "hysteria" -> listOf(settings.getString("address"))
             else -> {

@@ -223,6 +223,8 @@ struct RuntimeState {
 #[derive(Debug, Error)]
 pub enum CoreError {
     #[error(transparent)]
+    Trojan(#[from] xray_proxy::trojan::WireError),
+    #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),
@@ -1042,6 +1044,7 @@ impl Core {
                 let _ = task.await;
             }
         }
+        self.outbound_factory().join_sessions().await;
         self.tun.close();
         self.state = CoreState::Stopped;
         Ok(())

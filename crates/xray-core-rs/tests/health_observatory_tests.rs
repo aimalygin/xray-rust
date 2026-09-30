@@ -10,6 +10,7 @@ use xray_core_rs::{Core, CoreState, OutboundHealthState};
 
 fn freedom_outbound(tag: &str) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {

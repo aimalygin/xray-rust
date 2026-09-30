@@ -151,7 +151,10 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE
         | XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND
         | XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND
-        | XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
+        | XRAY_FFI_CAPABILITY_PROFILE_IMPORT
+        | xray_ffi::XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND
+        | xray_ffi::XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
+        | xray_ffi::XRAY_FFI_CAPABILITY_VMESS_OUTBOUND;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);

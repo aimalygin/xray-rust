@@ -29,6 +29,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
     let short_id = RealityShortId::try_from_slice(&[2, 3, 4, 5]).unwrap();
 
     let outbound = OutboundConfig {
+        mux: None,
         tag: Some("proxy".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -88,6 +89,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             user_level: None,
         }],
         outbounds: vec![OutboundConfig {
+            mux: None,
             tag: Some("proxy".to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -146,6 +148,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
 #[test]
 fn normalized_model_can_represent_freedom_outbound() {
     let outbound = OutboundConfig {
+        mux: None,
         tag: Some("direct".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {

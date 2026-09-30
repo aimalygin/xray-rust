@@ -129,6 +129,9 @@ pub fn configuration_examples() -> Value {
         "wireguard": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/wireguard.json")).expect("canonical WireGuard example"),
         "wireguard-psk": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/wireguard-psk.json")).expect("canonical WireGuard PSK example"),
         "wireguard-multi-peer": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/wireguard-multi-peer.json")).expect("canonical multi-peer WireGuard example"),
+        "shadowsocks2022": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/shadowsocks2022.json")).expect("canonical SS2022 example"),
+        "vmess": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/vmess.json")).expect("canonical VMess example"),
+        "trojan": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/trojan.json")).expect("canonical Trojan example"),
         "hysteria2": serde_json::from_str::<Value>(include_str!("../../../tests/fixtures/configs/hysteria2.json")).expect("canonical Hysteria example"),
         "xhttp-download": {"inbounds": [socks], "outbounds": [download]},
         "dns-routing": {

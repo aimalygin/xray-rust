@@ -2667,7 +2667,12 @@ async fn open_tcp_bridge_stream(
                 )
                 .await?);
             }
-            TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_)
+            TcpOutbound::Trojan(_)
+            | TcpOutbound::Vmess(_)
+            | TcpOutbound::Shadowsocks2022(_)
+            | TcpOutbound::Vless(_)
+            | TcpOutbound::Hysteria(_)
+            | TcpOutbound::Wireguard(_)
                 if upstream
                     .socket_addr()
                     .is_some_and(socket_addr_has_nonzero_scope) =>
@@ -2678,12 +2683,22 @@ async fn open_tcp_bridge_stream(
                 )
                 .into());
             }
-            TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {}
+            TcpOutbound::Trojan(_)
+            | TcpOutbound::Vmess(_)
+            | TcpOutbound::Shadowsocks2022(_)
+            | TcpOutbound::Vless(_)
+            | TcpOutbound::Hysteria(_)
+            | TcpOutbound::Wireguard(_) => {}
             TcpOutbound::Chained { .. } => {
-                if matches!(outbound.primary(), TcpOutbound::Vless(_))
-                    && upstream
-                        .socket_addr()
-                        .is_some_and(socket_addr_has_nonzero_scope)
+                if matches!(
+                    outbound.primary(),
+                    TcpOutbound::Vless(_)
+                        | TcpOutbound::Trojan(_)
+                        | TcpOutbound::Vmess(_)
+                        | TcpOutbound::Shadowsocks2022(_)
+                ) && upstream
+                    .socket_addr()
+                    .is_some_and(socket_addr_has_nonzero_scope)
                 {
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::InvalidInput,
@@ -2698,7 +2713,11 @@ async fn open_tcp_bridge_stream(
         TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
             context.dns_resolver.as_ref()
         }
-        TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) => context.bootstrap_dns_resolver(),
+        TcpOutbound::Trojan(_)
+        | TcpOutbound::Vmess(_)
+        | TcpOutbound::Shadowsocks2022(_)
+        | TcpOutbound::Vless(_)
+        | TcpOutbound::Hysteria(_) => context.bootstrap_dns_resolver(),
         TcpOutbound::Wireguard(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
     };
@@ -3059,6 +3078,15 @@ async fn bridge_tcp_flow_inner(
             }
             TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
                 context.inbound_policy.handshake
+            }
+            TcpOutbound::Trojan(outbound) => {
+                effective_policy_for_level(&context.config, Some(outbound.level())).handshake
+            }
+            TcpOutbound::Vmess(outbound) => {
+                effective_policy_for_level(&context.config, Some(outbound.level())).handshake
+            }
+            TcpOutbound::Shadowsocks2022(outbound) => {
+                effective_policy_for_level(&context.config, Some(outbound.level())).handshake
             }
             TcpOutbound::Vless(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
@@ -4259,7 +4287,11 @@ async fn bridge_udp_flow(
     }
 
     match outbound {
-        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+        outbound @ (UdpOutbound::Trojan(_)
+        | UdpOutbound::Vmess(_)
+        | UdpOutbound::Shadowsocks2022(_)
+        | UdpOutbound::Hysteria(_)
+        | UdpOutbound::Wireguard(_)) => {
             datagram::bridge(
                 key,
                 generation,

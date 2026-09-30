@@ -465,6 +465,30 @@ async fn handle_socks_connect(
                 outbound_policy.relay_buffer_size(),
             )
         }
+        TcpOutbound::Trojan(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Vmess(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Shadowsocks2022(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
         TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
             let outbound_policy = effective_policy_for_level(&config, Some(0));
             (
@@ -993,7 +1017,11 @@ async fn bridge_socks_udp_flow(
     };
 
     match outbound {
-        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+        outbound @ (UdpOutbound::Trojan(_)
+        | UdpOutbound::Vmess(_)
+        | UdpOutbound::Shadowsocks2022(_)
+        | UdpOutbound::Hysteria(_)
+        | UdpOutbound::Wireguard(_)) => {
             datagram::bridge(
                 dial_target,
                 client_visible_target,

@@ -1,9 +1,10 @@
 #![allow(dead_code)]
 #[path = "../../../xray-transport/tests/hysteria/support.rs"]
-mod server;
+pub(crate) mod server;
 use async_trait::async_trait;
 use serde_json::{json, Value};
-pub use server::{ReferenceServer, Task, AUTH, DEADLINE};
+pub use server::{ReferenceServer, Task, AUTH};
+pub const DEADLINE: std::time::Duration = server::DEADLINE;
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{

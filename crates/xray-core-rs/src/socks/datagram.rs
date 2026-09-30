@@ -24,6 +24,7 @@ pub(super) async fn bridge(
             context.dns_resolvers.destination.as_ref(),
             context.dns_resolvers.bootstrap.as_ref(),
             context.transport_dialer.as_ref(),
+            socks_udp_flow_global_id(context.client_addr, &target),
         )
         .await?;
         drop(pending_open_permit);
