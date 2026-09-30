@@ -31,9 +31,10 @@ the selected source. In particular, this pin still uses `sing-shadowsocks`
 v0.2.7; the later upstream SS2022 rewrite is not our oracle.
 
 Preserve the published `0.7.0` baseline and device exceptions with their
-original provenance. The distribution repository stays on its reviewed
-`v0.7.0` core pin until a new candidate supplies the complete source/header/
-adapter/artifact identity. Develop native adapter changes in the core's
+original provenance. The published distribution retains its reviewed `v0.7.0`
+identity. The 0.8 development SDK uses an exact commit/tree/header pin with
+unprepared artifact locks; publication remains blocked until a tagged candidate
+supplies the complete source/header/adapter/artifact identity. Develop native adapter changes in the core's
 `platform/apple` and `platform/android` trees; synchronize the distribution
 repository through its existing release process. Do not publish capability
 bits for implementations absent from the linked binary.
@@ -399,8 +400,11 @@ by the separate live matrices above. AddressSanitizer passed **852 tests**
 routing publication Loom model passed. Rebuilt host SDK tests passed **324
 Swift tests** and the JNI import/DNS-bootstrap tests. The four Android native
 ABIs and the AAR build pass, including its ELF dependency and 16 KiB alignment
-checks. The signed iOS device app builds; physical execution still needs an
-unlocked device. Universal Apple packaging is in progress. These are local
+checks. The signed iOS device app builds, but installation on the available
+iPad fails because its device ID is absent from the signing profile. The owner
+deferred physical Apple testing rather than registering the device; no device
+registration or successful physical test is claimed. Android hardware is not
+currently connected. Universal Apple packaging is in progress. These are local
 development-tree checks; their logs do not identify a frozen release candidate.
 
 Additional SS2022 live recovery tests cover all three ciphers and both AES
@@ -430,3 +434,15 @@ for each new protocol. Archives remain bound to a clean candidate commit/tree
 and hashed raw artifacts. The 66 tests covering the old and new evidence gates
 pass; schema 1–3 and the 0.7 owner-acceptance metadata cannot satisfy schema 4.
 No actual 0.8 release evidence archive has been accepted yet.
+
+The extended local ASan fuzz campaign completed all 13 targets, with 60 seconds
+per target and **9,927,655 executions** without a crash. Its raw logs and corpus
+are retained under `target/v08-fuzz-campaign`; the campaign began on the dirty
+development tree and is not exact-candidate release evidence. The staged
+Android SDK AAR and a separate minified Maven consumer both build, including
+calls to the new import/capability APIs and all four native ABIs. The 60-case
+performance smoke run passes; measured five-repeat acceptance remains open.
+
+The physical Apple deferral leaves that release gate open. It is not a waiver
+of device acceptance, does not authorize Apple Developer account changes,
+and does not carry the old 0.7 device exceptions into this release.

@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- Add Trojan, Shadowsocks 2022 and VMess AEAD client outbounds for SOCKS,
+  HTTP, TUN and routed DNS, with shared protected carriers and bounded Mux/XUDP.
+  SS2022 supports all three methods and AES identity chains; VMess supports
+  AES/ChaCha/auto and authenticated-length/termination options. Legacy
+  Shadowsocks AEAD-2017 and nonzero VMess alterId remain excluded.
+- Add shared profile imports, capability bits and Swift/Kotlin integration
+  through additive C ABI 1.8. Retain Xray-core v26.7.28 as the compatibility
+  reference and document transport, nonce, session and recovery limits.
+- Add independent-server and carrier matrices, wire oracles, fuzz coverage
+  and a separate v0.8 release-evidence gate. Physical Apple acceptance is
+  deferred by the owner; this development work is not a published release.
+
 ## 0.7.0 - 2026-09-27
 
 Stable source release. Canonical SDK packages and their publication status are

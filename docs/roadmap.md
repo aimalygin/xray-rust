@@ -780,7 +780,8 @@ Swift/Kotlin adapters are implemented. Pinned Xray, independent sing-box,
 Mux/TUN/DNS, REALITY, split-XHTTP and cross-protocol chain matrices pass.
 Full workspace and host Swift/JNI regressions pass. Candidate-bound device,
 performance and distribution artifact acceptance remain open; see the
-[current implementation evidence](v08-implementation-plan.md).
+[current implementation evidence](v08-implementation-plan.md). Physical Apple
+testing is deferred by the owner; the release gate remains open.
 
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
