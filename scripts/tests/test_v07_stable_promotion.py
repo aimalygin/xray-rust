@@ -144,10 +144,16 @@ class StablePromotionTests(unittest.TestCase):
                     self.write(name, "reviewed correction\n")
                     self.commit()
 
-    def test_scanner_correction_hashes_match_checked_in_files(self):
+    def test_scanner_correction_hashes_match_published_v07_policy(self):
+        # This is the immutable 0.7 promotion contract. Later development may
+        # add scanner rules, but must not rewrite the accepted historical hashes.
+        # Keep the source bytes locally so shallow/offline test runs work too.
+        fixture = json.loads((ROOT / "scripts/tests/fixtures/v07-scanner-policy.json").read_text())
+        self.assertEqual(fixture["commit"], "67969094b352f948c6b8b9e2ac75402c577cb7f7")
+        self.assertEqual(set(fixture["files"]), set(PROMOTION.SCANNER_POLICY_FILES))
         for name, (_, expected) in PROMOTION.SCANNER_POLICY_FILES.items():
             with self.subTest(name=name):
-                self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), expected)
+                self.assertEqual(hashlib.sha256(fixture["files"][name].encode()).hexdigest(), expected)
 
     def test_mode_change_is_rejected(self):
         (self.root / "README.md").chmod(0o755)
