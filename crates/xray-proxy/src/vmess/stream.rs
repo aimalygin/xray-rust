@@ -17,8 +17,8 @@ pub struct ClientStream<S> {
     packet: bool,
     pending: Zeroizing<Vec<u8>>,
     pending_pos: usize,
-    body: Zeroizing<Vec<u8>>,
-    body_pos: usize,
+    body: crate::record_buffer::RecordBuffer,
+    plain_len: usize,
     plain_pos: usize,
     phase: Phase,
     padding: usize,
@@ -87,8 +87,15 @@ impl<S> ClientStream<S> {
             packet: target.is_some_and(|t| t.network == Network::Udp),
             pending,
             pending_pos: 0,
-            body: Zeroizing::new(vec![0; 18]),
-            body_pos: 0,
+            body: crate::record_buffer::RecordBuffer::new(
+                18,
+                if account.options.authenticated_length {
+                    18
+                } else {
+                    2
+                },
+            ),
+            plain_len: 0,
             plain_pos: 0,
             phase: Phase::HeaderLength,
             padding: 0,
@@ -101,11 +108,10 @@ impl<S> ClientStream<S> {
         // Plaintext is erased as it is delivered, including partial reads.
         // Other phases can still contain a decrypted header/length.
         if !matches!(self.phase, Phase::Plain) {
-            self.body.as_mut_slice().zeroize();
+            self.body.frame().zeroize();
         }
-        self.body.clear();
-        self.body.resize(n, 0);
-        self.body_pos = 0;
+        self.body.advance(n);
+        self.plain_len = 0;
         self.plain_pos = 0;
         self.phase = phase;
     }
@@ -119,8 +125,8 @@ impl<S> ClientStream<S> {
                     &[b"AEAD Resp Header Len Key"],
                     &[b"AEAD Resp Header Len IV"],
                 );
-                cipher.open(&nonce, &[], &mut self.body)?;
-                let size = u16::from_be_bytes(self.body[..2].try_into().unwrap()) as usize;
+                cipher.open(&nonce, &[], self.body.frame())?;
+                let size = u16::from_be_bytes(self.body.frame()[..2].try_into().unwrap()) as usize;
                 if !(4..=259).contains(&size) {
                     return Err(invalid("invalid VMess response header length"));
                 }
@@ -134,28 +140,29 @@ impl<S> ClientStream<S> {
                     &[b"AEAD Resp Header Key"],
                     &[b"AEAD Resp Header IV"],
                 );
-                cipher.open(&nonce, &[], &mut self.body)?;
-                if self.body.len() != 4
-                    || self.body[0] != keys.response_marker
+                let body = self.body.frame();
+                let length = cipher.open(&nonce, &[], body)?;
+                if length != 4
+                    || body[0] != keys.response_marker
                     // Xray replies with zero; sing-vmess echoes the negotiated
                     // request options. Neither changes the response codec.
-                    || ![0, self.options.wire()].contains(&self.body[1])
-                    || self.body[2..] != [0, 0]
+                    || ![0, self.options.wire()].contains(&body[1])
+                    || body[2..length] != [0, 0]
                 {
                     return Err(invalid("VMess response binding or options rejected"));
                 }
                 self.expect(self.reader.size_bytes(), Phase::Length);
             }
             Phase::Length => {
-                let (size, padding) = self.reader.decode_length(&mut self.body)?;
+                let (size, padding) = self.reader.decode_length(self.body.frame())?;
                 self.padding = padding;
                 self.expect(size, Phase::Payload);
             }
             Phase::Payload => {
                 // Authenticate even an empty termination record; unauthenticated
                 // length/padding alone must not cause successful EOF.
-                self.reader.open(&mut self.body, self.padding)?;
-                if self.body.is_empty() {
+                self.plain_len = self.reader.open_slice(self.body.frame(), self.padding)?;
+                if self.plain_len == 0 {
                     self.eof = true;
                 } else {
                     self.phase = Phase::Plain;
@@ -204,10 +211,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
         if out.remaining() == 0 || this.eof {
             return Poll::Ready(Ok(()));
         }
-        ready!(this.drain(cx))?;
+        // Try to advance buffered writes, but backpressure in that direction
+        // must not prevent receiving an already available response. In
+        // particular both peers may be writing with full socket buffers.
+        if let Poll::Ready(result) = this.drain(cx) {
+            result?;
+        }
         loop {
             if matches!(this.phase, Phase::Plain) {
-                let remaining = this.body.len() - this.plain_pos;
+                let remaining = this.plain_len - this.plain_pos;
                 if remaining != 0 {
                     if this.packet && out.remaining() < remaining {
                         return Poll::Ready(Err(io::Error::new(
@@ -216,29 +228,25 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
                         )));
                     }
                     let n = out.remaining().min(remaining);
-                    out.put_slice(&this.body[this.plain_pos..this.plain_pos + n]);
-                    this.body[this.plain_pos..this.plain_pos + n].zeroize();
+                    out.put_slice(&this.body.frame()[this.plain_pos..this.plain_pos + n]);
+                    crate::erase::erase(&mut this.body.frame()[this.plain_pos..this.plain_pos + n]);
                     this.plain_pos += n;
                     return Poll::Ready(Ok(()));
                 }
                 this.expect(this.reader.size_bytes(), Phase::Length);
             }
-            while this.body_pos < this.body.len() {
-                let mut read = ReadBuf::new(&mut this.body[this.body_pos..]);
-                if let Err(e) = ready!(Pin::new(&mut this.inner).poll_read(cx, &mut read)) {
-                    this.failed = true;
-                    return Poll::Ready(Err(e));
+            match ready!(this.body.poll_frame(&mut this.inner, cx)) {
+                Ok(true) => {}
+                Ok(false) if matches!(this.phase, Phase::Length) => {
+                    this.eof = true;
+                    return Poll::Ready(Ok(()));
                 }
-                let n = read.filled().len();
-                if n == 0 {
-                    if matches!(this.phase, Phase::Length) && this.body_pos == 0 {
-                        this.eof = true;
-                        return Poll::Ready(Ok(()));
-                    }
+                result => {
                     this.failed = true;
-                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                    return Poll::Ready(Err(result
+                        .err()
+                        .unwrap_or_else(|| io::ErrorKind::UnexpectedEof.into())));
                 }
-                this.body_pos += n;
             }
             if let Err(e) = this.process() {
                 this.failed = true;
@@ -424,6 +432,77 @@ mod tests {
         Pin::new(client)
             .poll_read(&mut Context::from_waker(Waker::noop()), &mut buffer)
             .map(|r| r.map(|()| buffer.filled().len()))
+    }
+
+    #[test]
+    fn vmess_read_ahead_authenticates_each_record_before_exposing_plaintext() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let mut client = client(cipher, auth, Network::Tcp);
+                let mut records = response_records(&client, cipher);
+                let mut wire =
+                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                wire.extend_from_slice(&records.seal(b"first").unwrap());
+                let mut bad = records.seal(b"second").unwrap();
+                bad[records.size_bytes()] ^= 1;
+                wire.extend_from_slice(&bad);
+                client.inner.incoming.extend(wire);
+                let mut out = [0xaa; 32];
+                assert!(matches!(
+                    poll_read(&mut client, &mut out[..2]),
+                    Poll::Ready(Ok(2))
+                ));
+                assert_eq!(&out[..2], b"fi");
+                assert!(client.body.frame()[..2].iter().all(|&b| b == 0));
+                assert!(matches!(
+                    poll_read(&mut client, &mut out),
+                    Poll::Ready(Ok(3))
+                ));
+                assert_eq!(&out[..3], b"rst");
+                out.fill(0xaa);
+                assert!(matches!(
+                    poll_read(&mut client, &mut out),
+                    Poll::Ready(Err(_))
+                ));
+                assert_eq!(out, [0xaa; 32]);
+                assert!(client.failed);
+            }
+        }
+    }
+
+    #[test]
+    fn vmess_response_progresses_while_outgoing_record_is_blocked() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let mut client = client(cipher, auth, Network::Tcp);
+                let mut records = response_records(&client, cipher);
+                let mut wire =
+                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                wire.extend_from_slice(&records.seal(b"response").unwrap());
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(matches!(
+                    Pin::new(&mut client).poll_write(&mut cx, b"request"),
+                    Poll::Ready(Ok(7))
+                ));
+                let request = client.pending.clone();
+                let sent = client.inner.outgoing.len();
+                client.inner.write_quota = 1;
+                client.inner.incoming.extend(wire);
+                let mut output = [0; 32];
+                assert!(matches!(
+                    poll_read(&mut client, &mut output),
+                    Poll::Ready(Ok(8))
+                ));
+                assert_eq!(&output[..8], b"response");
+                assert_eq!(client.pending_pos, 1);
+                client.inner.write_quota = usize::MAX;
+                assert!(matches!(
+                    Pin::new(&mut client).poll_flush(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+                assert_eq!(&client.inner.outgoing[sent..], request.as_slice());
+            }
+        }
     }
 
     #[test]

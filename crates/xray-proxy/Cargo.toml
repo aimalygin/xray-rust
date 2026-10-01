@@ -37,3 +37,7 @@ serde_json.workspace = true
 [[bench]]
 name = "aead_backends"
 harness = false
+
+[[bench]]
+name = "record_erasure"
+harness = false

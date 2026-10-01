@@ -103,8 +103,8 @@ impl Records {
         let nonce = self.next()?;
         self.aead.seal_from(&nonce, bytes, start)
     }
-    pub(super) fn open(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
+    pub(super) fn open(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         let nonce = self.next()?;
-        self.aead.open(&nonce, bytes)
+        self.aead.0.open_slice(&nonce, &[], bytes)
     }
 }

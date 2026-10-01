@@ -1,4 +1,6 @@
 mod aead;
+mod erase;
+mod record_buffer;
 
 pub mod hysteria;
 pub mod inbound;

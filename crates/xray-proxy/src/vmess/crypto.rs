@@ -62,8 +62,8 @@ impl Aead {
     pub(super) fn seal(&self, nonce: &[u8; 12], aad: &[u8], bytes: &mut Vec<u8>) -> io::Result<()> {
         self.0.seal(nonce, aad, bytes)
     }
-    pub(super) fn open(&self, nonce: &[u8; 12], aad: &[u8], bytes: &mut Vec<u8>) -> io::Result<()> {
-        self.0.open(nonce, aad, bytes)
+    pub(super) fn open(&self, nonce: &[u8; 12], aad: &[u8], bytes: &mut [u8]) -> io::Result<usize> {
+        self.0.open_slice(nonce, aad, bytes)
     }
 }
 pub(super) fn auth_id(command_key: &[u8], timestamp: u64, random: &[u8; 4]) -> Zeroizing<[u8; 16]> {
@@ -120,7 +120,7 @@ impl Counter {
         let nonce = self.nonce()?;
         self.aead.0.seal_from(&nonce, &[], bytes, start)
     }
-    pub(super) fn open(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
+    pub(super) fn open(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         let nonce = self.nonce()?;
         self.aead.open(&nonce, &[], bytes)
     }

@@ -49,19 +49,26 @@ impl Key {
     }
 
     pub(crate) fn open(&self, nonce: &[u8; 12], aad: &[u8], bytes: &mut Vec<u8>) -> io::Result<()> {
+        let len = self.open_slice(nonce, aad, bytes)?;
+        bytes.truncate(len);
+        Ok(())
+    }
+
+    pub(crate) fn open_slice(
+        &self,
+        nonce: &[u8; 12],
+        aad: &[u8],
+        bytes: &mut [u8],
+    ) -> io::Result<usize> {
         match self
             .0
             .open_in_place(Nonce::assume_unique_for_key(*nonce), Aad::from(aad), bytes)
         {
-            Ok(plain) => {
-                let len = plain.len();
-                bytes.truncate(len);
-                Ok(())
-            }
+            Ok(plain) => Ok(plain.len()),
             Err(_) => {
                 // A provider may modify the input before rejecting its tag.
                 // Never leave unauthenticated plaintext available to a caller.
-                bytes.as_mut_slice().zeroize();
+                bytes.zeroize();
                 Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "AEAD authentication failed",

@@ -75,7 +75,7 @@ impl Records {
         random(&mut output[start..])?;
         Ok(())
     }
-    pub(super) fn decode_length(&mut self, bytes: &mut Vec<u8>) -> io::Result<(usize, usize)> {
+    pub(super) fn decode_length(&mut self, bytes: &mut [u8]) -> io::Result<(usize, usize)> {
         let padding = (self.next_mask() % 64) as usize;
         let size = if let Some(cipher) = &mut self.length {
             cipher.open(bytes)?;
@@ -88,11 +88,17 @@ impl Records {
         }
         Ok((size, padding))
     }
+    #[cfg(any(test, feature = "fuzzing"))]
     pub(super) fn open(&mut self, bytes: &mut Vec<u8>, padding: usize) -> io::Result<()> {
+        let len = self.open_slice(bytes, padding)?;
+        bytes.truncate(len);
+        Ok(())
+    }
+    pub(super) fn open_slice(&mut self, bytes: &mut [u8], padding: usize) -> io::Result<usize> {
         if padding > bytes.len() {
             return Err(invalid("invalid VMess record padding"));
         }
-        bytes.truncate(bytes.len() - padding);
-        self.body.open(bytes)
+        let end = bytes.len() - padding;
+        self.body.open(&mut bytes[..end])
     }
 }

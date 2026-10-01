@@ -20,8 +20,8 @@ pub struct ClientStream<S> {
     reader: Option<Records>,
     pending: Zeroizing<Vec<u8>>,
     pending_pos: usize,
-    body: Zeroizing<Vec<u8>>,
-    body_pos: usize,
+    body: crate::record_buffer::RecordBuffer,
+    plain_len: usize,
     plain_pos: usize,
     phase: Phase,
     failed: bool,
@@ -92,8 +92,8 @@ impl<S> ClientStream<S> {
             reader: None,
             pending,
             pending_pos: 0,
-            body: Zeroizing::new(vec![0; header_len]),
-            body_pos: 0,
+            body: crate::record_buffer::RecordBuffer::new(header_len, 2 + TAG_LENGTH),
+            plain_len: 0,
             plain_pos: 0,
             phase: Phase::Header,
             failed: false,
@@ -105,11 +105,10 @@ impl<S> ClientStream<S> {
         // Plaintext is erased as it is delivered, including partial reads.
         // Other phases can still contain a decrypted header/length.
         if !matches!(self.phase, Phase::Plain) {
-            self.body.as_mut_slice().zeroize();
+            self.body.frame().zeroize();
         }
-        self.body.clear();
-        self.body.resize(length, 0);
-        self.body_pos = 0;
+        self.body.advance(length);
+        self.plain_len = 0;
         self.plain_pos = 0;
         self.phase = phase;
     }
@@ -117,10 +116,10 @@ impl<S> ClientStream<S> {
         match self.phase {
             Phase::Header => {
                 let key_len = self.method.cipher.key_len();
-                let mut reader = Records::new(&self.method, &self.body[..key_len]);
-                self.body.drain(..key_len);
-                reader.open(&mut self.body)?;
-                let mut header = Cursor(&self.body);
+                let body = self.body.frame();
+                let mut reader = Records::new(&self.method, &body[..key_len]);
+                let length = reader.open(&mut body[key_len..])?;
+                let mut header = Cursor(&body[key_len..key_len + length]);
                 if header.u8()? != 1 {
                     return Err(invalid("invalid Shadowsocks 2022 response type"));
                 }
@@ -135,12 +134,13 @@ impl<S> ClientStream<S> {
                 self.require_body(length + TAG_LENGTH, Phase::Payload);
             }
             Phase::Length => {
-                self.reader.as_mut().unwrap().open(&mut self.body)?;
-                let length = u16::from_be_bytes(self.body[..2].try_into().unwrap()) as usize;
+                self.reader.as_mut().unwrap().open(self.body.frame())?;
+                let length =
+                    u16::from_be_bytes(self.body.frame()[..2].try_into().unwrap()) as usize;
                 self.require_body(length + TAG_LENGTH, Phase::Payload);
             }
             Phase::Payload => {
-                self.reader.as_mut().unwrap().open(&mut self.body)?;
+                self.plain_len = self.reader.as_mut().unwrap().open(self.body.frame())?;
                 self.plain_pos = 0;
                 self.phase = Phase::Plain;
             }
@@ -186,34 +186,35 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
         if out.remaining() == 0 || this.eof {
             return Poll::Ready(Ok(()));
         }
-        ready!(this.drain(cx))?;
+        // Try to advance buffered writes, but backpressure in that direction
+        // must not prevent receiving an already available response. In
+        // particular both peers may be writing with full socket buffers.
+        if let Poll::Ready(result) = this.drain(cx) {
+            result?;
+        }
         for _ in 0..16 {
             if matches!(this.phase, Phase::Plain) {
-                if this.plain_pos < this.body.len() {
-                    let n = out.remaining().min(this.body.len() - this.plain_pos);
-                    out.put_slice(&this.body[this.plain_pos..this.plain_pos + n]);
-                    this.body[this.plain_pos..this.plain_pos + n].zeroize();
+                if this.plain_pos < this.plain_len {
+                    let n = out.remaining().min(this.plain_len - this.plain_pos);
+                    out.put_slice(&this.body.frame()[this.plain_pos..this.plain_pos + n]);
+                    crate::erase::erase(&mut this.body.frame()[this.plain_pos..this.plain_pos + n]);
                     this.plain_pos += n;
                     return Poll::Ready(Ok(()));
                 }
                 this.require_body(2 + TAG_LENGTH, Phase::Length);
             }
-            while this.body_pos < this.body.len() {
-                let mut buf = ReadBuf::new(&mut this.body[this.body_pos..]);
-                if let Err(e) = ready!(Pin::new(&mut this.inner).poll_read(cx, &mut buf)) {
-                    this.failed = true;
-                    return Poll::Ready(Err(e));
+            match ready!(this.body.poll_frame(&mut this.inner, cx)) {
+                Ok(true) => {}
+                Ok(false) if matches!(this.phase, Phase::Length) => {
+                    this.eof = true;
+                    return Poll::Ready(Ok(()));
                 }
-                let n = buf.filled().len();
-                if n == 0 {
-                    if matches!(this.phase, Phase::Length) && this.body_pos == 0 {
-                        this.eof = true;
-                        return Poll::Ready(Ok(()));
-                    }
+                result => {
                     this.failed = true;
-                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                    return Poll::Ready(Err(result
+                        .err()
+                        .unwrap_or_else(|| io::ErrorKind::UnexpectedEof.into())));
                 }
-                this.body_pos += n;
             }
             if let Err(e) = this.process_body() {
                 this.failed = true;
@@ -352,6 +353,46 @@ mod tests {
         wire.extend(header);
         wire.extend(body);
         wire
+    }
+    #[tokio::test]
+    async fn ss2022_response_progresses_while_outgoing_record_is_blocked() {
+        for case in fixtures() {
+            let method = Arc::new(
+                Method::new(
+                    case["method"].as_str().unwrap(),
+                    case["password"].as_str().unwrap(),
+                )
+                .unwrap(),
+            );
+            let target = Target::new(TargetAddr::Domain("example.test".into()), 443, Network::Tcp);
+            let salt = vec![0x55; method.cipher.key_len()];
+            let time = now().unwrap();
+            let (inner, mut peer) = tokio::io::duplex(4096);
+            let mut client =
+                ClientStream::with_entropy(inner, method.clone(), &target, &salt, time, 1, &[])
+                    .unwrap();
+            let mut expected = client.pending.to_vec();
+            client.write_all(&[7; 8192]).await.unwrap();
+            expected.extend_from_slice(&client.pending);
+            peer.write_all(&response(&method, &salt, b"response", time))
+                .await
+                .unwrap();
+            let mut output = [0; 8];
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                client.read_exact(&mut output),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(&output, b"response");
+            assert!(client.pending_pos < client.pending.len());
+            let mut actual = vec![0; expected.len()];
+            let (flushed, read) = tokio::join!(client.flush(), peer.read_exact(&mut actual));
+            flushed.unwrap();
+            read.unwrap();
+            assert_eq!(actual, expected);
+        }
     }
     #[tokio::test]
     async fn ss2022_response_fragments_cancellation_binding_and_authentication() {
