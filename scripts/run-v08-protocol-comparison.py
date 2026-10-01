@@ -47,7 +47,7 @@ def cases(profiles, smoke=False):
     return [{"id": f"{name}-socks-{traffic}-{count}", "profile": name, "path": "socks",
              "traffic": traffic, "connections": count,
              "payload_size": 1200 if traffic == "udp" else 1024 if traffic == "tcp-latency" else 65536,
-             "iterations": (10 if smoke else 1000) if traffic in ("tcp-latency", "udp") else (4 if smoke else 512)}
+             "iterations": (10 if smoke else 1000) if traffic in ("tcp-latency", "udp") else (4 if smoke else 4096)}
             for name in profiles for count in (1, 8)
             for traffic in ("upload", "download", "full-duplex", "tcp-latency", "udp")]
 
@@ -129,9 +129,10 @@ def measured_execute(args, log):
 
     def observe():
         try:
-            while not stopped.is_set():
+            while True:
                 samples.append({"unix": time.time(), **ambient()})
-                stopped.wait(1)
+                if stopped.wait(1):
+                    break
         except Exception as error:
             errors.append(str(error))
 
@@ -199,6 +200,7 @@ def main():
         "process_accounting": "real full client launched directly; verified TCP warmup; startup/lifetime CPU retained separately",
         "fixture_policy": "fresh common Xray server and keys per case/repeat; fresh clients in rotating order",
         "worker_policy": "stock defaults; inherited Go/Tokio worker and GC overrides cleared",
+        "bulk_setup": "one verified client preface byte before server READY; excluded from payload count and transfer window for all clients",
         "scope": "SOCKS TCP/UDP; no TUN comparison, transport extensions, Mux, AEAD-2017 or physical-device claims",
         "started_unix": time.time(), "runs": []}
     bench.save(out / "manifest.json", manifest)
@@ -220,7 +222,8 @@ def main():
                     name = f"{case['id']}-{version}-{repeat}"
                     request = {k: case[k] for k in ("path", "traffic", "connections", "iterations", "payload_size")}
                     request.update(binary=str(launchers.get(version, paths[version])), config=copy.deepcopy(config),
-                                   output=str(out / name), warmup=True, prepare_client=version != "candidate")
+                                   output=str(out / name), warmup=True, prepare_client=version != "candidate",
+                                   client_preface=case["traffic"] not in ("tcp-latency", "udp"))
                     request_path = out / (name + ".json")
                     bench.save(request_path, request)
                     result = measured_execute([str(paths["harness"]), "protocol-run", str(request_path)], out / (name + ".log"))

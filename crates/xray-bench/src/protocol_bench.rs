@@ -22,6 +22,8 @@ struct Request {
     #[serde(default)]
     warmup: bool,
     #[serde(default)]
+    client_preface: bool,
+    #[serde(default)]
     client_env: std::collections::BTreeMap<String, String>,
 }
 
@@ -70,6 +72,8 @@ fn validate(r: &Request) -> Result<(), BenchError> {
         || (r.traffic == "udp" && r.payload_size > 1372)
         || r.config.as_object().is_none()
         || (r.path == "tun" && (r.prepare_client || r.warmup))
+        || (r.client_preface
+            && (r.path != "socks" || matches!(r.traffic.as_str(), "tcp-latency" | "udp")))
     {
         return Err(invalid("invalid bounded protocol benchmark request"));
     }
@@ -241,7 +245,7 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 run_tun_bulk(fd.raw(), &options, StreamBenchTraffic::parse(traffic)?).await?
             }
             (None, traffic) => {
-                stream_transport::run_workload_on(
+                stream_transport::run_workload_with_preface_on(
                     socks,
                     &options,
                     StreamBenchScenario {
@@ -252,6 +256,7 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                     },
                     phase.clone(),
                     local_non_loopback_ipv4()?,
+                    r.client_preface,
                 )
                 .await?
             }
@@ -293,6 +298,7 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 "throughput_mib_s":(outcome.bytes_sent+outcome.bytes_received) as f64/1048576.0/seconds,
                 "peak_rss_kib":summary.peak_rss_kib,"cpu_millis":cpu_ms,
                 "warmup":r.warmup,"prepare_client":r.prepare_client,
+                "client_preface":r.client_preface,
                 "client_startup_seconds":client_startup_seconds,
                 "client_startup_cpu_millis":startup_sample.cpu_millis,
                 "client_cpu_total_millis":samples.last().unwrap().cpu_millis,
@@ -735,6 +741,7 @@ mod tests {
             output: PathBuf::new(),
             prepare_client: false,
             warmup: false,
+            client_preface: false,
             client_env: Default::default(),
         };
         assert!(validate(&r).is_ok());
@@ -775,6 +782,7 @@ mod tests {
         .unwrap();
         assert!(!r.warmup);
         assert!(!r.prepare_client);
+        assert!(!r.client_preface);
         assert_eq!(r.idle_connections, 0);
         assert!(r.client_env.is_empty());
         assert!(validate(&r).is_ok());

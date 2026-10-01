@@ -80,10 +80,15 @@ are outside this baseline. No Shadowsocks AEAD-2017 or legacy VMess is included.
 Each profile has one and eight concurrent flows, with TCP upload, download,
 full-duplex, TCP echo and UDP echo: **70 cases**. Five repeats for each of three
 clients give **1050 measured trials**, preceded by 210 short smoke trials.
-Bulk transfers validate 32 MiB per flow/direction in 64 KiB chunks. Echo uses
+Bulk transfers validate 256 MiB per flow/direction in 64 KiB chunks. Echo uses
 1000 sequential requests per flow, 1024-byte TCP or 1200-byte UDP payloads;
 UDP is request/response latency, not maximum packet-rate saturation. Smoke uses
 four bulk chunks or ten echo requests and cannot establish performance.
+For bulk setup, all clients send the same one-byte preface before receiving
+the server's readiness marker. Both markers are validated outside the timed
+payload window and excluded from byte totals. This exercises client-initiated
+traffic and avoids a separately retained pinned-Xray VMess server-first failure.
+The old server-first smoke failure is not relabeled as a successful trial.
 
 Every case/repeat gets a fresh common server and credentials. Client processes
 are fresh and their order rotates. A verified TCP echo and graceful close
