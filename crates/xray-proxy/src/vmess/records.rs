@@ -9,6 +9,7 @@ pub(super) struct Records {
     body: crypto::Counter,
     length: Option<crypto::Counter>,
     mask: Shake128Reader,
+    batch_padding: bool,
 }
 impl Records {
     pub(super) fn new(
@@ -27,6 +28,9 @@ impl Records {
             body: crypto::Counter::new(cipher, key, iv),
             length,
             mask: shake.finalize_xof(),
+            // Keep AES on its measured per-record path: batching improved
+            // one flow but regressed eight-flow uploads in repeated controls.
+            batch_padding: cipher == Cipher::ChaCha20Poly1305,
         }
     }
     pub(super) fn size_bytes(&self) -> usize {
@@ -72,7 +76,11 @@ impl Records {
         self.body.seal_from(output, start)?;
         let start = output.len();
         output.resize(start + padding, 0);
-        random(&mut output[start..])?;
+        if self.batch_padding {
+            padding::fill(&mut output[start..])?;
+        } else {
+            random(&mut output[start..])?;
+        }
         Ok(())
     }
     pub(super) fn decode_length(&mut self, bytes: &mut [u8]) -> io::Result<(usize, usize)> {
@@ -100,5 +108,124 @@ impl Records {
         }
         let end = bytes.len() - padding;
         self.body.open(&mut bytes[..end])
+    }
+}
+
+// Only public, unauthenticated record padding uses this cache. Never use it for
+// session keys, IVs, nonces or authentication material. Those retain fresh OS
+// randomness. Sharing 256 bytes per thread avoids a buffer per connection and
+// amortizes small OS random requests without introducing a different RNG.
+mod padding {
+    use super::*;
+    use std::cell::RefCell;
+
+    struct Entropy {
+        bytes: Zeroizing<[u8; 256]>,
+        used: usize,
+    }
+
+    impl Entropy {
+        fn new() -> Self {
+            Self {
+                bytes: Zeroizing::new([0; 256]),
+                used: 256,
+            }
+        }
+
+        fn fill_with(
+            &mut self,
+            output: &mut [u8],
+            refill: impl FnOnce(&mut [u8]) -> io::Result<()>,
+        ) -> io::Result<()> {
+            if output.len() > 63 {
+                return Err(invalid("VMess padding exceeds record limit"));
+            }
+            if output.len() > self.bytes.len() - self.used {
+                // A failed/partial refill must not expose any of its bytes or
+                // permit reuse of bytes returned before the failure.
+                self.used = self.bytes.len();
+                if let Err(error) = refill(self.bytes.as_mut()) {
+                    self.bytes.zeroize();
+                    return Err(error);
+                }
+                self.used = 0;
+            }
+            output.copy_from_slice(&self.bytes[self.used..self.used + output.len()]);
+            self.used += output.len();
+            Ok(())
+        }
+    }
+
+    pub(super) fn fill(output: &mut [u8]) -> io::Result<()> {
+        thread_local! {
+            static ENTROPY: RefCell<Entropy> = RefCell::new(Entropy::new());
+        }
+        ENTROPY.with(|entropy| entropy.borrow_mut().fill_with(output, random))
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn padding_consumes_each_byte_once_and_refills_at_the_boundary() {
+            let mut entropy = Entropy::new();
+            let mut refills = 0;
+            for expected in 0..12 {
+                let mut output = [0; 32];
+                entropy
+                    .fill_with(&mut output, |bytes| {
+                        for (index, byte) in bytes.iter_mut().enumerate() {
+                            *byte = (refills * 8 + index / 32) as u8;
+                        }
+                        refills += 1;
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(output, [expected; 32]);
+            }
+            assert_eq!(refills, 2);
+        }
+
+        #[test]
+        fn padding_refill_error_leaves_output_untouched_and_forces_a_fresh_refill() {
+            let mut entropy = Entropy::new();
+            let mut output = [9; 63];
+            for _ in 0..4 {
+                entropy
+                    .fill_with(&mut output, |bytes| {
+                        bytes.fill(1);
+                        Ok(())
+                    })
+                    .unwrap();
+            }
+            output.fill(9);
+            assert!(entropy
+                .fill_with(&mut output, |bytes| {
+                    bytes[..7].fill(2);
+                    Err(invalid("injected entropy failure"))
+                })
+                .is_err());
+            assert_eq!(output, [9; 63]);
+            assert!(entropy.bytes.iter().all(|byte| *byte == 0));
+            entropy
+                .fill_with(&mut output, |bytes| {
+                    bytes.fill(3);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(output, [3; 63]);
+        }
+
+        #[test]
+        fn empty_padding_does_not_request_entropy_and_oversize_is_rejected() {
+            let mut entropy = Entropy::new();
+            entropy
+                .fill_with(&mut [], |_| panic!("empty padding refill"))
+                .unwrap();
+            assert!(entropy
+                .fill_with(&mut [0; 64], |_| panic!("oversize refill"))
+                .is_err());
+        }
     }
 }

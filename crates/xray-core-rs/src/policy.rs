@@ -1,8 +1,10 @@
+use std::future::{poll_fn, Future};
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::Poll;
 use std::time::Duration;
 
 use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::sync::mpsc;
 use xray_config::CoreConfig;
 
 use crate::connection::ConnectionTraffic;
@@ -157,56 +159,78 @@ where
 {
     let (mut a_read, mut a_write) = split(a);
     let (mut b_read, mut b_write) = split(b);
-    let (activity_tx, mut activity_rx) = mpsc::channel(1);
-    let mut a_to_b = Box::pin(copy_direction_with_counter(
+    let activity = AtomicBool::new(false);
+    let a_to_b = copy_direction_with_counter(
         &mut a_read,
         &mut b_write,
-        activity_tx.clone(),
+        &activity,
         buffer_size,
         traffic.map(|traffic| &traffic.uplink_bytes),
-    ));
-    let mut b_to_a = Box::pin(copy_direction_with_counter(
+    );
+    let b_to_a = copy_direction_with_counter(
         &mut b_read,
         &mut a_write,
-        activity_tx,
+        &activity,
         buffer_size,
         traffic.map(|traffic| &traffic.downlink_bytes),
-    ));
+    );
+    tokio::pin!(a_to_b, b_to_a);
     let mut a_to_b_result = None;
     let mut b_to_a_result = None;
-    let mut idle_sleep = Box::pin(tokio::time::sleep(idle));
+    let idle_sleep = tokio::time::sleep(idle);
+    tokio::pin!(idle_sleep);
+    let mut last_activity = tokio::time::Instant::now();
+    let mut reverse = false;
 
-    loop {
-        tokio::select! {
-            result = &mut a_to_b, if a_to_b_result.is_none() => {
-                a_to_b_result = Some(result?);
-            }
-            result = &mut b_to_a, if b_to_a_result.is_none() => {
-                b_to_a_result = Some(result?);
-            }
-            activity = activity_rx.recv() => {
-                if activity.is_some() {
-                    idle_sleep
-                        .as_mut()
-                        .reset(tokio::time::Instant::now() + idle);
+    // Both directions are polled by this task. A flag records completed writes
+    // without a channel allocation or a notification back to our own task.
+    // AtomicBool keeps the enclosing future Send; no inter-task synchronization
+    // is needed, so relaxed access suffices.
+    poll_fn(|cx| {
+        reverse = !reverse;
+        for direction in [reverse, !reverse] {
+            if direction && a_to_b_result.is_none() {
+                if let Poll::Ready(result) = a_to_b.as_mut().poll(cx) {
+                    a_to_b_result = Some(result?);
+                }
+            } else if !direction && b_to_a_result.is_none() {
+                if let Poll::Ready(result) = b_to_a.as_mut().poll(cx) {
+                    b_to_a_result = Some(result?);
                 }
             }
-            () = &mut idle_sleep => {
-                return Err(io::Error::new(io::ErrorKind::TimedOut, "connection idle timeout"));
+        }
+        if let (Some(a_to_b), Some(b_to_a)) = (a_to_b_result, b_to_a_result) {
+            return Poll::Ready(Ok((a_to_b, b_to_a)));
+        }
+        if activity.swap(false, Ordering::Relaxed) {
+            last_activity = tokio::time::Instant::now();
+        }
+        // Re-arm only when the old deadline expires, rather than updating the
+        // timer wheel on every completed write. Register the new deadline now.
+        if idle_sleep.as_mut().poll(cx).is_ready() {
+            let deadline = last_activity + idle;
+            if deadline <= tokio::time::Instant::now() {
+                return Poll::Ready(Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "connection idle timeout",
+                )));
+            }
+            idle_sleep.as_mut().reset(deadline);
+            if idle_sleep.as_mut().poll(cx).is_ready() {
+                // The deadline can pass between the check and registration.
+                cx.waker().wake_by_ref();
             }
         }
-
-        if let (Some(a_to_b), Some(b_to_a)) = (a_to_b_result, b_to_a_result) {
-            return Ok((a_to_b, b_to_a));
-        }
-    }
+        Poll::Pending
+    })
+    .await
 }
 
 #[cfg(test)]
 async fn copy_direction<R, W>(
     reader: &mut ReadHalf<R>,
     writer: &mut WriteHalf<W>,
-    activity: mpsc::Sender<()>,
+    activity: &AtomicBool,
     buffer_size: usize,
 ) -> io::Result<u64>
 where
@@ -219,7 +243,7 @@ where
 async fn copy_direction_with_counter<R, W>(
     reader: &mut ReadHalf<R>,
     writer: &mut WriteHalf<W>,
-    activity: mpsc::Sender<()>,
+    activity: &AtomicBool,
     buffer_size: usize,
     counter: Option<&std::sync::atomic::AtomicU64>,
 ) -> io::Result<u64>
@@ -258,7 +282,7 @@ where
                 }
                 let was_clean = unflushed == 0;
                 unflushed = unflushed.saturating_add(len);
-                let _ = activity.try_send(());
+                activity.store(true, Ordering::Relaxed);
 
                 if unflushed >= COPY_FLUSH_THRESHOLD {
                     writer.flush().await?;
@@ -281,12 +305,14 @@ where
 mod tests {
     use std::collections::BTreeMap;
     use std::pin::Pin;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    };
     use std::task::{Context, Poll};
     use std::time::Duration;
 
-    use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
-    use tokio::sync::mpsc;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
     use xray_config::{
         CoreConfig, OutboundConfig, OutboundSettings, PolicyConfig, PolicyLevelConfig,
         StreamSecurity, StreamSettings, StreamTransport,
@@ -457,6 +483,108 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn relay_activity_in_either_direction_extends_idle_deadline() {
+        let (mut left, mut client) = tokio::io::duplex(64);
+        let (mut right, mut server) = tokio::io::duplex(64);
+        let relay = tokio::spawn(async move {
+            copy_bidirectional_with_idle_timeout(
+                &mut left,
+                &mut right,
+                Duration::from_secs(10),
+                4096,
+            )
+            .await
+        });
+        tokio::task::yield_now().await;
+        for reverse in [false, true, false, true] {
+            tokio::time::advance(Duration::from_secs(4)).await;
+            let (sender, receiver) = if reverse {
+                (&mut server, &mut client)
+            } else {
+                (&mut client, &mut server)
+            };
+            sender.write_all(b"active").await.unwrap();
+            let mut received = [0; 6];
+            receiver.read_exact(&mut received).await.unwrap();
+            assert_eq!(&received, b"active");
+            assert!(!relay.is_finished());
+        }
+        tokio::time::advance(Duration::from_secs(9)).await;
+        tokio::task::yield_now().await;
+        assert!(!relay.is_finished());
+        tokio::time::advance(Duration::from_millis(1001)).await;
+        assert_eq!(
+            relay.await.unwrap().unwrap_err().kind(),
+            std::io::ErrorKind::TimedOut
+        );
+    }
+
+    #[tokio::test]
+    async fn relay_preserves_half_close_backpressure_and_traffic_counts() {
+        let (mut left, mut client) = tokio::io::duplex(16);
+        let (mut right, mut server) = tokio::io::duplex(16);
+        let traffic = Arc::new(crate::connection::ConnectionTraffic::default());
+        let relay_traffic = traffic.clone();
+        let relay = tokio::spawn(async move {
+            super::copy_bidirectional_with_idle_timeout_and_traffic(
+                &mut left,
+                &mut right,
+                Duration::from_secs(10),
+                4096,
+                &relay_traffic,
+            )
+            .await
+        });
+        let client = async move {
+            client.write_all(&[7; 1024]).await.unwrap();
+            client.shutdown().await.unwrap();
+            let mut reply = Vec::new();
+            client.read_to_end(&mut reply).await.unwrap();
+            assert_eq!(reply, vec![9; 2048]);
+        };
+        let server = async move {
+            let mut request = Vec::new();
+            server.read_to_end(&mut request).await.unwrap();
+            assert_eq!(request, vec![7; 1024]);
+            server.write_all(&[9; 2048]).await.unwrap();
+            server.shutdown().await.unwrap();
+        };
+        let ((), (), copied) = tokio::join!(client, server, relay);
+        assert_eq!(copied.unwrap().unwrap(), (1024, 2048));
+        assert_eq!(traffic.uplink_bytes.load(Ordering::Relaxed), 1024);
+        assert_eq!(traffic.downlink_bytes.load(Ordering::Relaxed), 2048);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn relay_blocked_write_allows_reverse_traffic_then_times_out() {
+        let (mut left, mut client) = tokio::io::duplex(64);
+        let (mut right, mut server) = tokio::io::duplex(1);
+        let relay = tokio::spawn(async move {
+            copy_bidirectional_with_idle_timeout(
+                &mut left,
+                &mut right,
+                Duration::from_secs(10),
+                4096,
+            )
+            .await
+        });
+        client.write_all(&[1; 64]).await.unwrap();
+        // No server read: forwarding the request must block on the tiny buffer.
+        server.write_all(b"reply").await.unwrap();
+        let mut reply = [0; 5];
+        client.read_exact(&mut reply).await.unwrap();
+        assert_eq!(&reply, b"reply");
+        tokio::time::advance(Duration::from_secs(9)).await;
+        tokio::task::yield_now().await;
+        assert!(!relay.is_finished());
+        tokio::time::advance(Duration::from_millis(1001)).await;
+        assert_eq!(
+            relay.await.unwrap().unwrap_err().kind(),
+            std::io::ErrorKind::TimedOut
+        );
+    }
+
     #[tokio::test]
     async fn copy_direction_flushes_after_forwarding_chunk() {
         let (reader_io, mut reader_peer) = tokio::io::duplex(64);
@@ -466,11 +594,11 @@ mod tests {
             state: state.clone(),
         };
         let (_unused_reader, mut writer) = tokio::io::split(writer_io);
-        let (activity_tx, _activity_rx) = mpsc::channel(1);
+        let activity = AtomicBool::new(false);
 
         reader_peer.write_all(b"hello").await.unwrap();
         reader_peer.shutdown().await.unwrap();
-        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 8 * 1024)
+        let copied = copy_direction(&mut reader, &mut writer, &activity, 8 * 1024)
             .await
             .unwrap();
 
@@ -493,16 +621,16 @@ mod tests {
             state: state.clone(),
         };
         let (_unused_reader, mut writer) = tokio::io::split(writer_io);
-        let (activity_tx, mut activity_rx) = mpsc::channel(1);
+        let activity = AtomicBool::new(false);
 
-        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 8 * 1024)
+        let copied = copy_direction(&mut reader, &mut writer, &activity, 8 * 1024)
             .await
             .unwrap();
 
         assert_eq!(copied, 128 * 1024);
         assert_eq!(state.lock().unwrap().flushes, 2);
-        assert!(activity_rx.try_recv().is_ok());
-        assert!(activity_rx.try_recv().is_err());
+        assert!(activity.swap(false, Ordering::Relaxed));
+        assert!(!activity.load(Ordering::Relaxed));
     }
 
     #[tokio::test]
@@ -517,9 +645,9 @@ mod tests {
             state: state.clone(),
         };
         let (_unused_reader, mut writer) = tokio::io::split(writer_io);
-        let (activity_tx, _activity_rx) = mpsc::channel(1);
+        let activity = AtomicBool::new(false);
 
-        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 128 * 1024)
+        let copied = copy_direction(&mut reader, &mut writer, &activity, 128 * 1024)
             .await
             .unwrap();
 
@@ -553,9 +681,9 @@ mod tests {
             state: state.clone(),
         };
         let (_unused_reader, mut writer) = tokio::io::split(writer_io);
-        let (activity_tx, _activity_rx) = mpsc::channel(1);
+        let activity = AtomicBool::new(false);
 
-        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 4 * 1024)
+        let copied = copy_direction(&mut reader, &mut writer, &activity, 4 * 1024)
             .await
             .unwrap();
 
@@ -578,10 +706,10 @@ mod tests {
             state: state.clone(),
         };
         let (_unused_reader, mut writer) = tokio::io::split(writer_io);
-        let (activity_tx, _activity_rx) = mpsc::channel(1);
+        let activity = AtomicBool::new(false);
         let started = std::time::Instant::now();
 
-        let copied = copy_direction(&mut reader, &mut writer, activity_tx, 32 * 1024)
+        let copied = copy_direction(&mut reader, &mut writer, &activity, 32 * 1024)
             .await
             .expect("relay benchmark should complete");
         let elapsed = started.elapsed();
