@@ -1287,10 +1287,13 @@ fn ffi_same_tun_fd_owned_to_borrowed_transfer_does_not_close_reused_fd() {
     );
     assert!(fd_is_open(transferred_fd));
 
-    assert_eq!(unsafe { libc::close(transferred_fd) }, 0);
+    // dup2 closes and replaces the descriptor atomically. Closing it first
+    // lets another parallel test allocate the same number before replacement.
     assert_eq!(
         unsafe { libc::dup2(pipe[1].raw(), transferred_fd) },
-        transferred_fd
+        transferred_fd,
+        "dup2 failed: {}",
+        std::io::Error::last_os_error()
     );
     assert!(fd_is_open(transferred_fd));
 
