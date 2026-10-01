@@ -11,7 +11,16 @@ been independently security audited. “Supported” below means implemented in
 this repository and covered by tests; it does not imply complete behavioral
 parity with every Xray-core release.
 
-The `v0.6.0` stable source preserves the runtime and dependencies of the
+The stable source baseline is `v0.7.0`, which adds Hysteria 2 and WireGuard;
+see the [changelog](../CHANGELOG.md) and [0.7 performance record](v07-performance.md).
+Development `0.8` adds Trojan, Shadowsocks 2022 and VMess AEAD, bounded shared
+Mux/XUDP, shared imports and ABI 1.8 with both mobile SDKs. Pinned/independent
+interoperability and automated core/SDK checks pass. Physical Apple testing is
+deferred by the owner, Android hardware is unavailable, and final release
+acceptance remains open. The [0.8 evidence](v08-implementation-plan.md) records
+the exact source, bounds and remaining gates; no 0.8 package is published.
+
+The earlier `v0.6.0` stable source preserves the runtime and dependencies of the
 published candidate
 [`v0.6.0-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.0-rc.1),
 with the matching [mobile SDK](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.0-rc.1).
@@ -40,6 +49,9 @@ recorded with its original RC identity.
 | Platform-neutral TUN packet boundary | Supported | TCP, UDP, routing, backpressure, malformed-packet, and ICMP tests |
 | Direct fd-backed TUN | Supported | Raw-IP Android and Darwin-utun framing paths; host integration is platform-owned |
 | Freedom/direct outbound | Supported | TCP and UDP integration tests |
+| Hysteria 2 / WireGuard | Supported subset since 0.7 | Bounded TCP/UDP client paths, shared imports, native adapters and independent-server tests; [configuration limits](config-compatibility.md) and [0.7 performance evidence](v07-performance.md) retain their original acceptance boundaries. |
+| Trojan / Shadowsocks 2022 / VMess AEAD | Implemented in development 0.8 | TCP/UDP, IPv4/IPv6/domains, SOCKS/HTTP/TUN/DNS, shared imports and Swift/Kotlin ABI 1.8 integration; pinned Xray and independent sing-box matrices pass. SS2022 supports all three 2022 methods and AES identity chains; VMess requires absent/zero alterId. Physical-device and release acceptance remain open; see [bounds and evidence](v08-implementation-plan.md). |
+| Shared Mux/XUDP | Implemented in development 0.8 | Bounded pooling for Trojan, SS2022 and VMess with cancellation/backpressure tests. XHTTP permits UDP Mux only; general VLESS Mux remains unsupported. VMess also supports standalone XUDP. Exact pool, queue and transport limits are in [configuration compatibility](config-compatibility.md). |
 | VLESS over TCP | Supported | Local fake-server and optional Xray-core interoperability tests; plaintext public servers fail closed while Xray's private/reserved/test IP and private/test/dotless domain set remains available for local fixtures. The guard intentionally covers legacy `vnext`, which the pinned Xray release leaves unguarded. |
 | VLESS encryption | Supported subset in v0.6 RC | Bounded 1-RTT/0-RTT `native`/`xorpub`/`random`, one-to-eight mixed X25519/ML-KEM-768 relay keys, bounded configurable padding, raw/WS/HTTPUpgrade/gRPC/XHTTP, optional Vision, TCP/UDP/XUDP. Tickets are memory-only and fail closed on rejected/cancelled resumption. Pinned Go vectors, real resumed-session checks, encrypted-record and full-Xray none/TLS/REALITY interop run in CI. Swift/Kotlin share-link import uses shared validation fixtures; dedicated handshake/record fuzz targets are implemented. 540 full-Xray application flows cover 204 profiles; focused independent review and its remediation are complete; exact-candidate release gates passed within the [published coverage](v06-release-evidence.md#published-v060-rc1); see [design](vless-encryption-design.md). |
 | VLESS over WebSocket / HTTPUpgrade | Supported subset | Browser-masqueraded HTTP/1.1 upgrade with early data and keepalive; REALITY is refused; Vision requires VLESS encryption, matching Xray; live Xray-core interoperability tests |
@@ -51,7 +63,7 @@ recorded with its original RC identity.
 | `xtls-rprx-vision` | Supported subset | TCP and XUDP paths; UDP/443 behavior follows the selected Vision flow |
 | Domain/IP/network/port routing | Supported subset | Ordered `field` rules with inbound tags, domain/CIDR/private/geodata matchers, network selectors, and numeric/range port selectors; populated selectors inside one rule are ANDed |
 | Routing-policy hot replacement | Supported | ABI 1.4 plus Swift/Kotlin atomically replace scoped ordered rules, `domainStrategy`, and compiled geodata matchers for new flows. Outbound/balancer topology and existing flows remain immutable; invalid updates retain the prior revision. |
-| Outbound selector groups and chaining | Supported subset | Xray `routing.balancers` prefix selectors, random/round-robin/`leastPing`, bounded rolling-window `leastLoad`, fallback tags, `balancerTag` rules, atomic validated host overrides, bounded `observatory` URL probes, typed health snapshots, and health-aware failover over shared handler pools; ABI 1.2 plus Swift/Kotlin expose capability-gated override and versioned selection/health snapshots. Explicit `proxySettings.transportLayer: true` adds validated cycle-free TCP Freedom/VLESS edges; UDP/protocol-layer, REALITY, and XHTTP HTTP/3 chains remain pending. |
+| Outbound selector groups and chaining | Supported subset | Xray `routing.balancers` prefix selectors, random/round-robin/`leastPing`, bounded rolling-window `leastLoad`, fallback tags, `balancerTag` rules, atomic validated host overrides, bounded `observatory` URL probes, typed health snapshots, and health-aware failover over shared handler pools; ABI 1.2 plus Swift/Kotlin expose capability-gated override and versioned selection/health snapshots. Explicit `proxySettings.transportLayer: true` adds validated cycle-free TCP Freedom/VLESS edges; development 0.8 adds Trojan/SS2022/VMess carrier edges. UDP/protocol-layer, REALITY, QUIC and independent XHTTP-download chaining remain unsupported. |
 | Configured DNS | Supported subset | Static single/ordered-array hosts, global `UseIP`/`UseIPv4`/`UseIPv6`, routed multi-address A/AAAA/CNAME resolution with one per-Core family-aware positive/negative TTL cache and single-flight shared by TUN/SOCKS/HTTP/probes, optional bounded positive stale-while-revalidate, injectable platform fallback with explicit non-recursive `System`/`StaticOnly` bootstrap roles, ordered upstream failover, classic UDP/TCP, routed certificate-verified `tls://` DoT, routed/local HTTP/2 DoH with bounded RFC 8484 POST bodies, and provider-local `quic+local://` DoQ with exact ALPN `doq`, all-IP `IPIfNonMatch`, and a hybrid TUN anchor with managed ordinary A/AAAA Hijack, raw DNSSEC/non-IP forwarding, bounded persistent RFC 7766/DoT connections, query-aware failover, and transparent zone-transfer fallback for IP/domain servers. Xray DNS-outbound Direct/Drop/Return/Hijack with `qType`/`rCode`, component rewrite, own-link recursion escape, TLS/REALITY stream security, and bounded UDP-to-TCP session reuse execute through one core-wide TUN/SOCKS/HTTP runtime. DoH and DoQ currently open one connection per exchange. |
 | Fake IP | Supported subset | Bounded per-Core IPv4 pool with TTL-leased mappings and UDP/TCP synthesis shared by DNS outbound plus TUN/SOCKS/HTTP reverse routing |
 | `geosite.dat` / `geoip.dat` | Supported | Xray-style protobuf data is loaded on demand with size and matcher budgets |
@@ -66,17 +78,17 @@ unsupported fields with JSON paths. The first outbound is the default unless a
 routing rule selects another tagged outbound.
 
 See [configuration compatibility](config-compatibility.md) for accepted values.
-Development `0.6` also includes a generated [configuration contract and tooling](config-tooling.md):
+Since `0.6`, the core includes a generated [configuration contract and tooling](config-tooling.md):
 `xray-rust config check --config client.json --json` reports exact parser
 diagnostics without starting the core, and `config example` exports canonical
 starting profiles. Parser acceptance is separate from core compilation and host
 runtime validation.
 Notable unsupported areas include:
 
-- VMess, Trojan, Shadowsocks, WireGuard, and server-side VLESS;
+- Shadowsocks AEAD-2017, legacy VMess authentication, and server-side proxy protocols;
 - generic HTTP/2, QUIC and KCP transports, and stream transports beyond raw,
   WebSocket, HTTPUpgrade, gRPC and XHTTP;
-- mux, reverse proxy, observatory command/API services, regex `leastLoad`
+- general VLESS Mux, reverse proxy, observatory command/API services, regex `leastLoad`
   costs, and outbound chaining outside the documented transport-layer TCP
   subset;
 - SOCKS/HTTP authentication and HTTP transparent proxy mode;
