@@ -375,9 +375,8 @@ async fn warmup_client(socks: SocketAddr) -> Result<(), BenchError> {
     // JoinSet aborts the one-shot server even when warmup is cancelled.
     let mut server = tokio::task::JoinSet::new();
     server.spawn(async move {
-        let (mut stream, _) = listener.accept().await?;
-        let (mut read, mut write) = stream.split();
-        tokio::io::copy(&mut read, &mut write).await
+        let (stream, _) = listener.accept().await?;
+        warmup_echo(stream).await
     });
     let mut client = TcpStream::connect(socks).await.map_err(io_error)?;
     socks5_connect(&mut client, target).await?;
@@ -401,6 +400,16 @@ async fn warmup_client(socks: SocketAddr) -> Result<(), BenchError> {
         .map_err(|_| invalid("warmup server task failed"))?
         .map_err(io_error)?;
     Ok(())
+}
+
+async fn warmup_echo(mut stream: TcpStream) -> io::Result<()> {
+    // End this fixed-size exchange ourselves. Some reference proxies do not
+    // propagate the client's half-close to the target; waiting for target EOF
+    // would turn a successful warmup into a timeout after the echo was checked.
+    let mut payload = [0; 1024];
+    stream.read_exact(&mut payload).await?;
+    stream.write_all(&payload).await?;
+    stream.shutdown().await
 }
 
 struct Flow {
@@ -674,6 +683,28 @@ async fn run_tun_bulk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn warmup_echo_finishes_without_client_half_close() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            warmup_echo(stream).await.unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut client = TcpStream::connect(address).await.unwrap();
+            client.write_all(&[0x5a; 512]).await.unwrap();
+            client.write_all(&[0x5a; 512]).await.unwrap();
+            let mut response = Vec::new();
+            // Deliberately never send FIN: the server must still reply and close.
+            client.read_to_end(&mut response).await.unwrap();
+            assert_eq!(response, vec![0x5a; 1024]);
+            server.await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
+
     #[test]
     fn measured_process_is_terminated_and_reaped_on_error() {
         let pid = std::cell::Cell::new(0);
