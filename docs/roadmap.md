@@ -784,14 +784,17 @@ performance and distribution artifact acceptance remain open; see the
 testing is deferred by the owner; the release gate remains open.
 The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 contains 1050/1050 verified trials against pinned Xray-core and sing-box.
-The [CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM
+The [first CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM
 software AEAD and repeated record-buffer work, with 68–89% lower CPU in paired
-eight-flow download controls. Its 630/630 trials retain lower RSS than both
-references in all 70 cases. SS2022/VMess now meet 45/72 bulk CPU and 18/72
-throughput point targets under the 3% Mac policy; overall parity remains unmet.
-RSS scaling through 512 held connections and worker tradeoffs are documented.
-The SDK pins the optimized runtime, complete core/SDK CI passes, and device
-and artifact acceptance remain open.
+eight-flow download controls. The subsequent [record I/O and erasure report](benchmarks/results/2026-10-01-v08-io/README.md)
+measures another 11–32% download CPU reduction and 52–61% faster one-flow AES
+downloads, with 0.016–0.094 MiB additional RSS at 512 held connections.
+Its primary matrix completes 629/630 trials (all 210 Rust trials pass); the one
+sing-box UDP timeout is retained alongside a separate passing 15-run confirmation.
+RSS is lower in all 139 complete comparisons. SS2022/VMess meet 56/72 bulk CPU
+and 26/72 throughput point targets under the 3% Mac policy; parity remains unmet.
+The SDK pins runtime `5e32972`; complete core/SDK CI and archive reconstruction
+verify the changes. Candidate-bound device and artifact acceptance remain open.
 
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain

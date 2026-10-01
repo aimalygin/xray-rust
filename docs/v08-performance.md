@@ -1,13 +1,23 @@
 # v0.8 protocol comparison
 
-Latest results: [CPU investigation and optimized runtime](benchmarks/results/2026-09-30-v08-cpu/README.md).
-Runtime `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5` replaces the ARM software
-AEAD backend and removes repeated record allocations/erasure. All 630 trials
-pass; RSS remains lower than both references in all 70 cases. SS2022/VMess meet
-45/72 bulk CPU point targets and 18/72 throughput targets under the 3% Mac
-policy, versus 0/72 for both in the initial comparison. Overall parity remains
-unmet. Paired controls measure CPU reductions of 68–89% and RSS scaling through
-512 held connections; the two-worker CLI default is unchanged.
+Latest results: [record I/O and plaintext-erasure follow-up](benchmarks/results/2026-10-01-v08-io/README.md).
+Runtime `5e32972976074551aea4ce42e98f5e0dde7159c9` adds bounded record read-ahead,
+word-sized volatile plaintext erasure and a read/write backpressure fix.
+Paired downloads use 11–32% less CPU than the previous optimized runtime;
+one-flow AES downloads are 52–61% faster. At 512 held connections the additional
+RSS is 0.016–0.094 MiB; active-transfer memory is reported separately. Workers,
+record limits and plaintext cleanup remain enforced.
+
+The full matrix completes 629/630 trials; xray-rust passes all 210 of its trials.
+One sing-box Trojan UDP run times out; a separate 15-run confirmation passes
+without replacing that failure. RSS is lower in all 139 complete comparisons.
+SS2022/VMess meet 56/72 bulk CPU and 26/72 throughput point targets under the
+3% Mac policy (strict: 55 and 22). Overall parity remains unmet, including
+one-flow VMess CPU/duplex and aggregate ChaCha throughput differences.
+
+The [first CPU report](benchmarks/results/2026-09-30-v08-cpu/README.md) retains
+the ARM AEAD/buffer investigation, its 68–89% paired CPU reductions from the
+initial runtime, worker controls and the earlier 45/72 CPU / 18/72 speed counts.
 
 The [initial five-repeat comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 retains all 1050 primary trials and failed preparation attempts. The methodology
@@ -25,8 +35,11 @@ from the candidate-only SOCKS/TUN matrix and the v0.7 regression campaign.
   `0250497b7f8aaca66b0086b95892558e7042cc98`, tree
   `89b36701a9f1c6f26212cc8f00484a47b2d4db1b`, Rust 1.96.0, locked release
   builds with incremental compilation disabled.
-- Optimized xray-rust: `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5`, tree
+- First optimized xray-rust: `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5`, tree
   `07005cb7084a48e6ef793f53b1cd442d69c1b35d`; same compiler and release policy.
+- Current optimized xray-rust: `5e32972976074551aea4ce42e98f5e0dde7159c9`, tree
+  `3c1993a1b1ce6ba68ea102caa6547346c8ac1c83`; same compiler/release policy,
+  frozen harness, reference binaries and workload sizes.
 - The workload driver is built separately when a benchmark-only fix is needed.
   Its own commit/tree, compiler, command and binary digest are recorded in
   `--harness-build` metadata; it does not change the measured engine or SDK pin.

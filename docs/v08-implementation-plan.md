@@ -544,3 +544,41 @@ and source-sync verification. Prior pre-device, physical-device or artifact
 evidence for `0250497` does not become evidence for this new source. Physical
 Apple testing remains explicitly deferred, Android hardware is unavailable,
 and artifact locks and release acceptance remain open.
+
+### Record I/O and plaintext-erasure optimization
+
+Runtime `5e32972976074551aea4ce42e98f5e0dde7159c9`, tree
+`3c1993a1b1ce6ba68ea102caa6547346c8ac1c83`, removes read/write coupling under
+backpressure, coalesces record reads within one bounded allocation and erases
+delivered plaintext with aligned word-sized Zeroize stores. Volatile stores,
+compiler fences, nonce/replay limits and authentication remain enforced. The
+small aligned-slice conversion is covered by strict-provenance Miri; worker
+counts and wire record limits are unchanged.
+
+The [I/O and erasure report](benchmarks/results/2026-10-01-v08-io/README.md)
+retains isolated backpressure/read/erasure controls, 144 paired final trials,
+a five-repeat duplex confirmation and 24 memory clients measured through
+512 held connections. Relative to the preceding `ce6deef` runtime, downloads
+use 11–32% less CPU; one-flow AES downloads improve 52–61% in throughput.
+Held-connection RSS rises by 0.016–0.094 MiB at 512 connections. Active peaks,
+upload controls and the mixed initial ChaCha duplex result are also reported.
+
+The full three-client matrix completes 629/630 trials, with all 210 Rust trials
+passing. One sing-box Trojan UDP run times out; its two following primary runs
+and a separate 15-run confirmation pass. The original failure remains in the
+primary summary, making that reference group incomplete. All 139 complete RSS
+comparisons remain below the references. SS2022/VMess meet 56/72 bulk CPU and
+26/72 throughput Mac point targets (strict: 55 and 22); overall parity remains
+not met. One-flow VMess and multi-flow ChaCha differences are quantified.
+
+All 128 local proxy tests, clippy, formatting and the fuzzing feature check
+pass. [Complete core CI](https://github.com/aimalygin/xray-rust/actions/runs/36899854548)
+passes at this exact runtime, including pinned/independent interop,
+Miri/Loom/ASan, fuzz smoke, controlled-network and Android/Apple builds.
+Mobile commit `a735aae5e7916f18c0125afa28e509a9ddd48c2c` pins it and passes
+[SDK CI](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36899932350)
+and core/source-sync checks. The committed release rebuild matches the measured
+binary. All 1036 archived members rehash correctly and both parity summaries
+recompute exactly from the archive. Physical Apple testing remains deferred,
+Android hardware is unavailable, and publication artifacts remain unprepared;
+previous source/device evidence is not inherited by this runtime.

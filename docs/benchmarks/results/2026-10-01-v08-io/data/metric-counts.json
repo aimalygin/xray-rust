@@ -1,0 +1,52 @@
+{
+  "client_cpu_total_millis": {
+    "meets_mac_point": 125,
+    "meets_strict_point": 124,
+    "total": 139
+  },
+  "client_startup_cpu_millis": {
+    "meets_mac_point": 123,
+    "meets_strict_point": 123,
+    "total": 139
+  },
+  "client_startup_seconds": {
+    "meets_mac_point": 128,
+    "meets_strict_point": 83,
+    "total": 139
+  },
+  "cpu_ms": {
+    "meets_mac_point": 123,
+    "meets_strict_point": 122,
+    "total": 139
+  },
+  "cpu_ms_per_mib": {
+    "meets_mac_point": 123,
+    "meets_strict_point": 122,
+    "total": 139
+  },
+  "latency_p95_us": {
+    "meets_mac_point": 45,
+    "meets_strict_point": 39,
+    "total": 55
+  },
+  "latency_p99_us": {
+    "meets_mac_point": 26,
+    "meets_strict_point": 20,
+    "total": 55
+  },
+  "latency_us": {
+    "meets_mac_point": 51,
+    "meets_strict_point": 45,
+    "total": 55
+  },
+  "rss_mib": {
+    "meets_mac_point": 139,
+    "meets_strict_point": 139,
+    "total": 139
+  },
+  "throughput_mib_s": {
+    "meets_mac_point": 92,
+    "meets_strict_point": 78,
+    "total": 139
+  }
+}

@@ -3,6 +3,23 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the frozen Xray and final I/O-optimized Rust executables.
+# Only these two public digests in the reviewed report metadata are exempt.
+[[allowlists]]
+description = "Two verified v0.8 I/O comparison executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''',
+  '''^e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-io/measurements\.tar\.gz!(full|decouple-controls|read-controls|erasure-controls|final-controls|duplex-confirmation|failure-confirmation|held-memory)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-01-v08-io/measurements\.tar\.gz!investigation/builds\.json$''',
+  '''^docs/benchmarks/results/2026-10-01-v08-io/data/verification\.json$''',
+]
+
 # Recomputed from the measured Xray and optimized Rust executables. Limit the
 # exception to these exact binary digests inside this report's metadata.
 [[allowlists]]

@@ -1,0 +1,5 @@
+   Compiling serde_core v1.0.228
+    Checking xray-routing v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-routing)
+    Checking uuid v1.23.1
+    Checking xray-proxy v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-proxy)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.32s
