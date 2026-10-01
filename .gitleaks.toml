@@ -3,6 +3,23 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Recomputed from the measured Xray and optimized Rust executables. Limit the
+# exception to these exact binary digests inside this report's metadata.
+[[allowlists]]
+description = "Two verified v0.8 CPU comparison executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''',
+  '''^2180631c4187dd3cd85fda27d06c3b98a22f92c0954b841d3a1c13d9bd1beb04$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-09-30-v08-cpu/measurements\.tar\.gz!(full|backend-controls|buffer-controls|workers|workers-vmess-clean|idle-controls|final-controls|held-memory|held-memory-preparation)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-09-30-v08-cpu/measurements\.tar\.gz!investigation/builds\.json$''',
+  '''^docs/benchmarks/results/2026-09-30-v08-cpu/data/verification\.json$''',
+]
+
 # Recomputed from the frozen Xray executable and the two retained failed-smoke
 # logs. These exact SHA-256 values are provenance, not JFrog credentials.
 [[allowlists]]

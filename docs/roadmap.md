@@ -782,11 +782,16 @@ Full workspace and host Swift/JNI regressions pass. Candidate-bound device,
 performance and distribution artifact acceptance remain open; see the
 [current implementation evidence](v08-implementation-plan.md). Physical Apple
 testing is deferred by the owner; the release gate remains open.
-The [three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
-completes 1050/1050 payload/cleanup-verified trials against pinned Xray-core and
-sing-box. Candidate RSS is lower in all 70 cases, but SS2022 and VMess miss both
-references' bulk throughput and CPU targets. Overall performance parity remains
-unmet; the report preserves every deficit and earlier failed smoke attempt.
+The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
+contains 1050/1050 verified trials against pinned Xray-core and sing-box.
+The [CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM
+software AEAD and repeated record-buffer work, with 68–89% lower CPU in paired
+eight-flow download controls. Its 630/630 trials retain lower RSS than both
+references in all 70 cases. SS2022/VMess now meet 45/72 bulk CPU and 18/72
+throughput point targets under the 3% Mac policy; overall parity remains unmet.
+RSS scaling through 512 held connections and worker tradeoffs are documented.
+The SDK pins the optimized runtime, complete core/SDK CI passes, and device
+and artifact acceptance remain open.
 
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain

@@ -2,6 +2,7 @@
 //! Run the built executable as: aead_backends [rustcrypto|aws-lc] [iterations].
 //! Each iteration seals and opens one 8 KiB record with a unique nonce. Contexts
 //! and the buffer are reused; both providers must recover the original bytes.
+//! Unoptimized `cargo test --all-targets` builds only run one smoke iteration.
 use aes_gcm::{aead::AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
 use aws_lc_rs::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
 use chacha20poly1305::ChaCha20Poly1305;
@@ -51,7 +52,11 @@ fn aws_lc(iterations: u64, algorithm: &'static aead::Algorithm, key: &[u8]) -> f
 fn main() {
     let args: Vec<_> = std::env::args().filter(|arg| arg != "--bench").collect();
     let backend = args.get(1).map(String::as_str).unwrap_or("all");
-    let iterations: u64 = args.get(2).map(|s| s.parse().unwrap()).unwrap_or(32768);
+    let smoke = cfg!(debug_assertions) && args.get(2).is_none();
+    let iterations: u64 =
+        args.get(2)
+            .map(|s| s.parse().unwrap())
+            .unwrap_or(if smoke { 1 } else { 32768 });
     assert!(["all", "rustcrypto", "aws-lc"].contains(&backend));
     assert!((1..=10_000_000).contains(&iterations));
     for provider in ["rustcrypto", "aws-lc"] {
@@ -70,7 +75,7 @@ fn main() {
             };
             println!(
                 "{}",
-                serde_json::json!({"backend":provider,"algorithm":algorithm,"iterations":iterations,"record_bytes":8192,"seconds":seconds,"mib_per_second":iterations as f64 * 8192.0 * 2.0 / 1048576.0 / seconds})
+                serde_json::json!({"backend":provider,"algorithm":algorithm,"iterations":iterations,"record_bytes":8192,"seconds":seconds,"mib_per_second":iterations as f64 * 8192.0 * 2.0 / 1048576.0 / seconds,"smoke":smoke})
             );
         }
     }

@@ -451,7 +451,7 @@ The physical Apple deferral leaves that release gate open. It is not a waiver
 of device acceptance, does not authorize Apple Developer account changes,
 and does not carry the old 0.7 device exceptions into this release.
 
-### Clean-candidate automated and host measurements
+### Initial clean-candidate automated and host measurements
 
 Core commit `0250497b7f8aaca66b0086b95892558e7042cc98`, tree
 `89b36701a9f1c6f26212cc8f00484a47b2d4db1b`, passes the complete
@@ -483,8 +483,9 @@ comparisons are collected separately against the published v0.7.0 binaries.
 
 The distribution changes are reviewed in
 [mobile SDK PR 33](https://github.com/aimalygin/xray-rust-mobile/pull/33).
-Its core pin identifies the measured source above; artifact locks remain
-unprepared and no 0.8 package is published by these checks.
+Its initial core pin identified the measured source above; the current optimized
+pin is recorded below. Artifact locks remain unprepared and no 0.8 package is
+published by these checks.
 
 ### Full-client comparison with Xray-core and sing-box
 
@@ -509,5 +510,37 @@ A separate Xray VMess AES-128 server-first upload failure remains documented.
 The workload driver is frozen at `2d8afb6e6d9f601f0446aa74382f6e24dac9a7dd`;
 benchmark/CI commit `04075f42bb500661246ae8dc590ef17d6285609b` passes
 [complete CI](https://github.com/aimalygin/xray-rust/actions/runs/36803952030).
-Product crates and the SDK core pin are unchanged. This comparison adds no
+Product crates and the SDK core pin were unchanged by that comparison. It adds no
 physical-device, TUN-competitor or publication acceptance.
+
+### CPU optimization with bounded memory
+
+Runtime `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5`, tree
+`07005cb7084a48e6ef793f53b1cd442d69c1b35d`, addresses the measured ARM software
+AEAD and repeated record-buffer allocation/erasure costs. SS2022/VMess reuse
+the existing AWS-LC provider and bounded pending buffers, preserving plaintext
+erasure, nonce/replay limits and cancellation behavior. No worker-count increase,
+eager maximum buffers or global pool is introduced.
+
+The [new CPU report](benchmarks/results/2026-09-30-v08-cpu/README.md) contains
+630/630 passing full-client trials against the same pinned Xray-core/sing-box,
+plus paired backend/buffer/worker controls and RSS scaling to 512 connections.
+Paired eight-flow downloads use 68–89% less CPU than the initial runtime, with
+0.06–0.20 MiB higher sampled RSS. At 512 held connections measured RSS is lower
+than baseline. All 70 full-matrix cases still have lower RSS than both references.
+SS2022/VMess meet 45/72 bulk CPU and 18/72 throughput point targets (3% policy);
+one-flow and throughput deficits remain, so overall parity is still not met.
+
+The [complete core CI](https://github.com/aimalygin/xray-rust/actions/runs/36811418960)
+passes on this runtime, including pinned/independent oracles, host hardening,
+fuzz smoke, controlled-network, release interoperability and Android/Apple builds.
+All 120 local proxy tests and all-target clippy pass. Rebuilding gives the exact
+measured executable hash. A separate PR run's VLESS fixture port collision
+passed on rerun; the failure is documented in the report.
+
+Mobile commit `f13776dca033514adb12864b2ddd301a77e4d551` pins this runtime and
+passes [SDK CI](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36811502022)
+and source-sync verification. Prior pre-device, physical-device or artifact
+evidence for `0250497` does not become evidence for this new source. Physical
+Apple testing remains explicitly deferred, Android hardware is unavailable,
+and artifact locks and release acceptance remain open.

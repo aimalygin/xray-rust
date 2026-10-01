@@ -1,0 +1,191 @@
+   Compiling aws-lc-rs v1.17.0
+   Compiling blake3 v1.8.5 (/Users/antonmalygin/xray-rust/vendor/blake3)
+   Compiling xray-proxy v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-proxy)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.70s
+     Running unittests src/lib.rs (target/debug/deps/xray_proxy-bc200cc15d1cbcc8)
+
+running 26 tests
+test mux::tests::mux_matches_existing_xudp_and_decodes_every_prefix_without_state ... ok
+test shadowsocks2022::tests::keys_and_method_bounds_are_redacted ... ok
+test mux::tests::mux_bounds_and_unknown_metadata_fail_closed ... ok
+test vless::udp::tests::decode_addr_port_rejects_domain_without_length_byte ... ok
+test mux::tests::xudp_ids_are_stable_within_handler_and_separate_across_handlers ... ok
+test shadowsocks2022::udp::tests::ss2022_replay_window_and_sender_limits ... ok
+test vmess::crypto::tests::vmess_counter_rejects_wrap_and_modified_authentication_tags ... ok
+test vless::vision_stream::tests::reads_raw_bytes_after_direct_block ... ok
+test mux::tests::mux_frames_match_pinned_go_oracle ... ok
+test vmess::stream::tests::vmess_partial_write_flush_and_shutdown_resume_without_duplicate_bytes ... ok
+test shadowsocks2022::stream::tests::ss2022_request_and_records_match_pinned_go_including_identity_chains ... ok
+test vmess::tests::vmess_invalid_ciphers_and_destinations_fail_closed ... ok
+test shadowsocks2022::stream::tests::ss2022_reuses_pending_frame_after_partial_and_full_records ... ok
+test shadowsocks2022::udp::tests::ss2022_udp_matches_pinned_go_all_ciphers_and_identity_chains ... ok
+test vmess::tests::vmess_kdf_auth_id_and_command_key_match_pinned_go ... ok
+test vmess::stream::tests::vmess_udp_reads_preserve_whole_datagrams_and_reject_oversize_writes ... ok
+test vmess::tests::vmess_records_match_pinned_go_masking_padding_and_authenticated_length ... ok
+test shadowsocks2022::stream::tests::ss2022_partial_flush_resumes_without_record_reencryption ... ok
+test shadowsocks2022::udp::tests::ss2022_udp_checks_authentication_binding_time_padding_before_replay_commit ... ok
+test vmess::stream::tests::vmess_response_accepts_echoed_options_but_rejects_unknown_negotiation ... ok
+test vmess::stream::tests::vmess_truncated_response_is_never_successful_eof ... ok
+test vmess::stream::tests::vmess_forged_headers_records_and_termination_poison_both_directions ... ok
+test vmess::tests::vmess_reuses_bounded_frames_with_both_length_encodings ... ok
+test shadowsocks2022::stream::tests::ss2022_response_fragments_cancellation_binding_and_authentication ... ok
+test aead::tests::providers_agree_on_wire_bytes_and_reject_modified_inputs ... ok
+test vmess::stream::tests::vmess_response_reads_resume_at_every_header_and_record_boundary ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+
+     Running tests/hysteria_wire_tests.rs (target/debug/deps/hysteria_wire_tests-0deee0440b878f43)
+
+running 10 tests
+test new_packet_id_discards_incomplete_packet_and_limits_are_validated ... ok
+test reassembly_out_of_order_duplicates_and_completion_release_state ... ok
+test encoder_and_decoder_enforce_boundary_lengths ... ok
+test fragmentation_checks_mtu_and_u8_count_without_overflow ... ok
+test quic_varints_accept_all_legal_widths_and_bound_lengths_before_payload ... ok
+test udp_metadata_and_empty_payload_follow_the_selected_contract ... ok
+test reassembly_has_a_hard_byte_budget_and_non_refreshing_deadline ... ok
+test reassembly_rejects_cross_session_and_conflicting_fragments ... ok
+test debug_omits_traffic_and_server_messages ... ok
+test tcp_decoders_reject_every_truncation_and_leave_following_data ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/inbound_parser_tests.rs (target/debug/deps/inbound_parser_tests-952661861d288011)
+
+running 29 tests
+test rejects_http_invalid_port ... ok
+test parses_http_connect_bracketed_ipv6_literal_target ... ok
+test rejects_http_non_connect_method ... ok
+test parses_http_connect_domain_target ... ok
+test parses_http_connect_consumes_headers_before_payload ... ok
+test parses_http_connect_ipv4_literal_target ... ok
+test parses_socks5_request_ipv4_target ... ok
+test rejects_http_empty_host ... ok
+test parses_socks5_request_ipv6_target ... ok
+test rejects_http_missing_port ... ok
+test rejects_http_port_zero ... ok
+test rejects_socks5_empty_domain ... ok
+test parses_socks5_connect_domain_target ... ok
+test rejects_socks5_invalid_utf8_domain ... ok
+test rejects_socks5_nonzero_reserved_byte ... ok
+test rejects_socks5_truncated_input_as_io ... ok
+test rejects_socks5_unsupported_address_type ... ok
+test rejects_socks5_unsupported_command ... ok
+test rejects_socks5_unsupported_version ... ok
+test socks5_negotiate_no_auth_reads_greeting_with_two_io_reads ... ok
+test socks5_reply_writers_emit_ipv4_success_and_failure ... ok
+test socks5_negotiate_no_auth_writes_method_selection ... ok
+test socks5_negotiate_rejects_when_no_auth_is_absent ... ok
+test socks5_request_parser_reads_ipv4_request_with_two_io_reads ... ok
+test socks5_request_parser_reads_connect_after_greeting ... ok
+test socks5_success_writer_can_emit_bound_udp_address ... ok
+test socks5_udp_datagram_round_trips_ipv4_target ... ok
+test socks5_request_parser_reads_udp_associate_command ... ok
+test rejects_http_overlong_request_line ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/trojan_wire_tests.rs (target/debug/deps/trojan_wire_tests-0677cc4ce6304498)
+
+running 6 tests
+test malformed_addresses_ports_and_delimiters_fail_closed ... ok
+test encoding_validates_before_emitting_credentials_or_wrapping_lengths ... ok
+test every_truncation_can_be_retried_and_concatenated_frames_remain_separate ... ok
+test udp_limits_are_checked_before_waiting_for_payload ... ok
+test credential_bounds_and_debug_output_do_not_disclose_secrets ... ok
+test request_and_udp_bytes_match_pinned_xray ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/v07_protocol_oracle_tests.rs (target/debug/deps/v07_protocol_oracle_tests-db7775eb1c6f3572)
+
+running 4 tests
+test tcp_bytes_match_pinned_xray_functions ... ok
+test udp_fragment_bytes_and_reassembly_match_pinned_xray ... ok
+test allowed_ip_lookup_and_source_checks_match_xrays_wireguard_engine ... ok
+test key_spellings_match_xray_with_fixed_decoded_length ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vision_stream_tests.rs (target/debug/deps/vision_stream_tests-930b00b165fe40c5)
+
+running 8 tests
+test vision_stream_writes_direct_bytes_after_direct_block_via_direct_io ... ok
+test vision_stream_write_emits_padded_blocks ... ok
+test vision_stream_reads_normal_bytes_after_end_block_via_normal_io ... ok
+test vision_stream_write_ends_padding_without_tls13_confirmation ... ok
+test vision_stream_write_uses_direct_after_tls13_server_hello ... ok
+test vision_stream_reads_direct_bytes_after_direct_block_via_direct_io ... ok
+test vision_stream_write_keeps_mixed_tls_prefix_padded ... ok
+test vision_stream_read_returns_unpadded_payload ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vision_tests.rs (target/debug/deps/vision_tests-7df4209ac9b5fdca)
+
+running 15 tests
+test pad_into_appends_identical_frames_to_pad ... ok
+test vision_unpadding_accepts_block_without_user_uuid ... ok
+test vision_unpadding_accepts_long_block_without_user_uuid ... ok
+test vision_unpadding_preserves_unknown_command_for_long_malformed_block ... ok
+test vision_padding_accepts_max_u16_payload ... ok
+test vision_unpadding_prefers_matching_user_uuid_over_ambiguous_header ... ok
+test vision_padding_rejects_payload_larger_than_u16 ... ok
+test vision_unpadding_rejects_length_mismatch ... ok
+test vision_padding_round_trips_user_uuid_once ... ok
+test vision_padding_uses_seed_padding_when_no_override ... ok
+test vision_padding_matches_xray_core_empty_header_camouflage_range ... ok
+test vision_padding_matches_xray_core_short_padding_range_when_long_padding_disabled ... ok
+test vision_unpadding_rejects_mismatched_user_uuid ... ok
+test vision_unpadding_rejects_short_block ... ok
+test vision_unpadding_rejects_unknown_command ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vless_response_stream_tests.rs (target/debug/deps/vless_response_stream_tests-697daed40c70e647)
+
+running 2 tests
+test allows_writes_before_response_header_arrives ... ok
+test strips_vless_response_header_before_payload ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/vless_wire_tests.rs (target/debug/deps/vless_wire_tests-d6bf03c4fc4ee1f7)
+
+running 16 tests
+test domain_length_256_returns_error ... ok
+test encodes_ipv4_address ... ok
+test encodes_udp_command_with_target_bytes ... ok
+test encodes_ipv6_address ... ok
+test domain_length_255_succeeds ... ok
+test encodes_xudp_new_packet_with_target_and_global_id ... ok
+test encodes_no_flow_as_zero_length_addons ... ok
+test mux_header_stops_after_command_byte ... ok
+test encodes_vless_udp_length_prefixed_packet ... ok
+test encodes_vless_tcp_header_with_udp443_vision_flow_as_vision_addons ... ok
+test encodes_vless_tcp_header_with_vision_flow ... ok
+test omits_non_vision_flow_from_addons ... ok
+test request_debug_redacts_the_vless_user_id ... ok
+test reverse_header_stops_after_command_byte ... ok
+test reads_vless_udp_length_prefixed_packet ... ok
+test reads_xudp_keep_packet_with_source_target ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/wireguard_primitives_tests.rs (target/debug/deps/wireguard_primitives_tests-03bd6dcca29df3eb)
+
+running 4 tests
+test no_route_is_a_denial_and_identical_prefixes_follow_last_inserted_peer ... ok
+test configuration_budgets_precede_route_allocation ... ok
+test prefix_validation_masks_host_bits_and_preserves_address_family ... ok
+test keys_enforce_decoded_length_alphabet_padding_and_redacted_errors ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running benches/aead_backends.rs (target/debug/deps/aead_backends-cb41cfff5cca1f88)
+{"algorithm":"aes128","backend":"rustcrypto","iterations":1,"mib_per_second":6.548844741874927,"record_bytes":8192,"seconds":0.002385917,"smoke":true}
+{"algorithm":"aes256","backend":"rustcrypto","iterations":1,"mib_per_second":6.208196488127545,"record_bytes":8192,"seconds":0.002516834,"smoke":true}
+{"algorithm":"chacha20","backend":"rustcrypto","iterations":1,"mib_per_second":11.578722716824087,"record_bytes":8192,"seconds":0.001349458,"smoke":true}
+{"algorithm":"aes128","backend":"aws-lc","iterations":1,"mib_per_second":3713.1653992395436,"record_bytes":8192,"seconds":4.208e-6,"smoke":true}
+{"algorithm":"aes256","backend":"aws-lc","iterations":1,"mib_per_second":1065.3166973477876,"record_bytes":8192,"seconds":0.000014667,"smoke":true}
+{"algorithm":"chacha20","backend":"aws-lc","iterations":1,"mib_per_second":748.502994011976,"record_bytes":8192,"seconds":0.000020875,"smoke":true}

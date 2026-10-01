@@ -1,10 +1,19 @@
 # v0.8 protocol comparison
 
-Measured results: [2026-09-30 comparison](benchmarks/results/2026-09-30-v08-protocols/README.md).
-All 1050 primary trials pass data/cleanup checks. RSS is lower in all 70 cases,
-but SS2022 and VMess miss both references' bulk throughput and CPU targets;
-overall parity is not met. The report retains the complete matrix and earlier
-failed preparation attempts.
+Latest results: [CPU investigation and optimized runtime](benchmarks/results/2026-09-30-v08-cpu/README.md).
+Runtime `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5` replaces the ARM software
+AEAD backend and removes repeated record allocations/erasure. All 630 trials
+pass; RSS remains lower than both references in all 70 cases. SS2022/VMess meet
+45/72 bulk CPU point targets and 18/72 throughput targets under the 3% Mac
+policy, versus 0/72 for both in the initial comparison. Overall parity remains
+unmet. Paired controls measure CPU reductions of 68–89% and RSS scaling through
+512 held connections; the two-worker CLI default is unchanged.
+
+The [initial five-repeat comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
+retains all 1050 primary trials and failed preparation attempts. The methodology
+below describes that baseline; the optimized follow-up uses the same frozen
+references and workload driver, with three repeats per point and separate
+causal/memory controls. Exact identities and every deficit remain in each report.
 
 Compare the full xray-rust, Xray-core and sing-box clients on the same host,
 through the same SOCKS workload and a common Xray-core server. This is separate
@@ -12,10 +21,12 @@ from the candidate-only SOCKS/TUN matrix and the v0.7 regression campaign.
 
 ## Frozen implementations
 
-- xray-rust: clean source
+- Initial xray-rust baseline: clean source
   `0250497b7f8aaca66b0086b95892558e7042cc98`, tree
   `89b36701a9f1c6f26212cc8f00484a47b2d4db1b`, Rust 1.96.0, locked release
   builds with incremental compilation disabled.
+- Optimized xray-rust: `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5`, tree
+  `07005cb7084a48e6ef793f53b1cd442d69c1b35d`; same compiler and release policy.
 - The workload driver is built separately when a benchmark-only fix is needed.
   Its own commit/tree, compiler, command and binary digest are recorded in
   `--harness-build` metadata; it does not change the measured engine or SDK pin.
@@ -85,7 +96,8 @@ are outside this baseline. No Shadowsocks AEAD-2017 or legacy VMess is included.
 
 Each profile has one and eight concurrent flows, with TCP upload, download,
 full-duplex, TCP echo and UDP echo: **70 cases**. Five repeats for each of three
-clients give **1050 measured trials**, preceded by 210 short smoke trials.
+clients give **1050 measured trials**, preceded by 210 short smoke trials in
+the initial campaign. The optimized follow-up uses three repeats, **630 trials**.
 Bulk transfers validate 256 MiB per flow/direction in 64 KiB chunks. Echo uses
 1000 sequential requests per flow, 1024-byte TCP or 1200-byte UDP payloads;
 UDP is request/response latency, not maximum packet-rate saturation. Smoke uses
