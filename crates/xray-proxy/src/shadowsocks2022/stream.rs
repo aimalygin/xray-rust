@@ -102,7 +102,12 @@ impl<S> ClientStream<S> {
         })
     }
     fn require_body(&mut self, length: usize, phase: Phase) {
-        self.body.zeroize();
+        // Plaintext is erased as it is delivered, including partial reads.
+        // Other phases can still contain a decrypted header/length.
+        if !matches!(self.phase, Phase::Plain) {
+            self.body.as_mut_slice().zeroize();
+        }
+        self.body.clear();
         self.body.resize(length, 0);
         self.body_pos = 0;
         self.plain_pos = 0;
@@ -160,7 +165,10 @@ impl<S: AsyncWrite + Unpin> ClientStream<S> {
                 }
             }
         }
-        self.pending.zeroize();
+        // A successfully encoded pending frame contains only wire ciphertext
+        // and public headers. Keep its allocation for the next write; the
+        // Zeroizing owner still wipes the full capacity when dropped.
+        self.pending.clear();
         self.pending_pos = 0;
         Poll::Ready(Ok(()))
     }
@@ -231,18 +239,21 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
             return Poll::Ready(Ok(0));
         }
         let n = input.len().min(8192);
-        let mut length = Zeroizing::new((n as u16).to_be_bytes().to_vec());
-        let mut body = Zeroizing::new(input[..n].to_vec());
-        if let Err(e) = this
-            .writer
-            .seal(&mut length)
-            .and_then(|_| this.writer.seal(&mut body))
-        {
+        // Reuse the owned pending frame. No plaintext temporary, growth during
+        // encryption, larger records, or eager per-connection buffer allocation.
+        this.pending.reserve_exact(2 + TAG_LENGTH + n + TAG_LENGTH);
+        this.pending.extend_from_slice(&(n as u16).to_be_bytes());
+        let result = this.writer.seal(&mut this.pending).and_then(|_| {
+            let start = this.pending.len();
+            this.pending.extend_from_slice(&input[..n]);
+            this.writer.seal_from(&mut this.pending, start)
+        });
+        if let Err(e) = result {
+            this.pending.as_mut_slice().zeroize();
+            this.pending.clear();
             this.failed = true;
             return Poll::Ready(Err(e));
         }
-        this.pending.extend_from_slice(&length);
-        this.pending.extend_from_slice(&body);
         Poll::Ready(Ok(n))
     }
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -270,6 +281,31 @@ mod tests {
     use super::super::tests::{fixtures, unhex};
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[tokio::test]
+    async fn ss2022_reuses_pending_frame_after_partial_and_full_records() {
+        for case in fixtures() {
+            let method = Arc::new(
+                Method::new(
+                    case["method"].as_str().unwrap(),
+                    case["password"].as_str().unwrap(),
+                )
+                .unwrap(),
+            );
+            let target = Target::new(TargetAddr::Domain("example.test".into()), 443, Network::Tcp);
+            let mut stream = ClientStream::new(tokio::io::sink(), method, &target).unwrap();
+            stream.flush().await.unwrap();
+            stream.write_all(&[7; 8192]).await.unwrap();
+            let pointer = stream.pending.as_ptr();
+            let capacity = stream.pending.capacity();
+            assert!(capacity <= 8192 + 2 + 2 * TAG_LENGTH);
+            for size in [1, 1200, 8192, 0, 32, 8192] {
+                stream.flush().await.unwrap();
+                stream.write_all(&vec![8; size]).await.unwrap();
+                assert_eq!(stream.pending.as_ptr(), pointer);
+                assert_eq!(stream.pending.capacity(), capacity);
+            }
+        }
+    }
     #[tokio::test]
     async fn ss2022_request_and_records_match_pinned_go_including_identity_chains() {
         for case in fixtures() {

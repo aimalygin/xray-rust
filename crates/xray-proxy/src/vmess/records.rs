@@ -44,26 +44,36 @@ impl Records {
         self.mask.read(&mut bytes);
         u16::from_be_bytes(bytes)
     }
+    #[cfg(test)]
     pub(super) fn seal(&mut self, payload: &[u8]) -> io::Result<Zeroizing<Vec<u8>>> {
-        if payload.len() > self.max_payload() {
-            return Err(invalid("VMess payload exceeds record limit"));
+        let mut output = Zeroizing::new(Vec::new());
+        self.seal_into(payload, &mut output)?;
+        Ok(output)
+    }
+    pub(super) fn seal_into(&mut self, payload: &[u8], output: &mut Vec<u8>) -> io::Result<()> {
+        if payload.len() > self.max_payload() || !output.is_empty() {
+            return Err(invalid(
+                "VMess payload exceeds record limit or pending frame",
+            ));
         }
         let padding = (self.next_mask() % 64) as usize;
         let size = payload.len() + 16 + padding;
-        let mut length = Zeroizing::new(if let Some(cipher) = &mut self.length {
-            let mut data = ((size - 16) as u16).to_be_bytes().to_vec();
-            cipher.seal(&mut data)?;
-            data
+        // Grow lazily and at most to the existing 8 KiB record limit. Rounding
+        // avoids reallocating when the next record's random padding is longer.
+        output.reserve_exact((self.size_bytes() + size).next_power_of_two().min(8192));
+        if let Some(cipher) = &mut self.length {
+            output.extend_from_slice(&((size - 16) as u16).to_be_bytes());
+            cipher.seal(output)?;
         } else {
-            ((size as u16) ^ self.next_mask()).to_be_bytes().to_vec()
-        });
-        let mut body = Zeroizing::new(payload.to_vec());
-        self.body.seal(&mut body)?;
-        length.extend_from_slice(&body);
-        let start = length.len();
-        length.resize(start + padding, 0);
-        random(&mut length[start..])?;
-        Ok(length)
+            output.extend_from_slice(&((size as u16) ^ self.next_mask()).to_be_bytes());
+        }
+        let start = output.len();
+        output.extend_from_slice(payload);
+        self.body.seal_from(output, start)?;
+        let start = output.len();
+        output.resize(start + padding, 0);
+        random(&mut output[start..])?;
+        Ok(())
     }
     pub(super) fn decode_length(&mut self, bytes: &mut Vec<u8>) -> io::Result<(usize, usize)> {
         let padding = (self.next_mask() % 64) as usize;

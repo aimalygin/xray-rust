@@ -98,7 +98,12 @@ impl<S> ClientStream<S> {
         })
     }
     fn expect(&mut self, n: usize, phase: Phase) {
-        self.body.zeroize();
+        // Plaintext is erased as it is delivered, including partial reads.
+        // Other phases can still contain a decrypted header/length.
+        if !matches!(self.phase, Phase::Plain) {
+            self.body.as_mut_slice().zeroize();
+        }
+        self.body.clear();
         self.body.resize(n, 0);
         self.body_pos = 0;
         self.plain_pos = 0;
@@ -178,7 +183,10 @@ impl<S: AsyncWrite + Unpin> ClientStream<S> {
                 }
             }
         }
-        self.pending.zeroize();
+        // A successfully encoded pending frame contains only wire ciphertext
+        // and public headers. Keep its allocation for the next write; the
+        // Zeroizing owner still wipes the full capacity when dropped.
+        self.pending.clear();
         self.pending_pos = 0;
         Poll::Ready(Ok(()))
     }
@@ -263,12 +271,11 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
             return Poll::Ready(Ok(0));
         }
         let n = data.len().min(this.writer.max_payload());
-        match this.writer.seal(&data[..n]) {
-            Ok(wire) => this.pending = wire,
-            Err(e) => {
-                this.failed = true;
-                return Poll::Ready(Err(e));
-            }
+        if let Err(e) = this.writer.seal_into(&data[..n], &mut this.pending) {
+            this.pending.as_mut_slice().zeroize();
+            this.pending.clear();
+            this.failed = true;
+            return Poll::Ready(Err(e));
         }
         Poll::Ready(Ok(n))
     }
@@ -290,12 +297,9 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
         if !this.closing {
             this.closing = true;
             if !this.options.no_termination_signal {
-                match this.writer.seal(&[]) {
-                    Ok(wire) => this.pending = wire,
-                    Err(e) => {
-                        this.failed = true;
-                        return Poll::Ready(Err(e));
-                    }
+                if let Err(e) = this.writer.seal_into(&[], &mut this.pending) {
+                    this.failed = true;
+                    return Poll::Ready(Err(e));
                 }
             }
         }

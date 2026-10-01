@@ -13,7 +13,7 @@ fuzzing = []
 
 [dependencies]
 aes.workspace = true
-aes-gcm.workspace = true
+aws-lc-rs.workspace = true
 blake3.workspace = true
 chacha20poly1305.workspace = true
 crc32fast.workspace = true
@@ -31,4 +31,9 @@ xray-routing = { path = "../xray-routing" }
 zeroize.workspace = true
 
 [dev-dependencies]
+aes-gcm.workspace = true
 serde_json.workspace = true
+
+[[bench]]
+name = "aead_backends"
+harness = false

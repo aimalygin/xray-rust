@@ -1,8 +1,7 @@
-//! VMess's protocol-defined KDF and AEAD composition; hashes/ciphers are RustCrypto.
+//! VMess KDF composition and record counters; AEAD uses the shared provider.
 use super::*;
 use aes::cipher::{BlockEncrypt, KeyInit};
-use aes_gcm::{aead::AeadInPlace, Aes128Gcm};
-use chacha20poly1305::ChaCha20Poly1305;
+use aws_lc_rs::aead::{AES_128_GCM, CHACHA20_POLY1305};
 use sha2::{Digest, Sha256};
 
 pub(super) fn md5(data: &[u8]) -> Zeroizing<[u8; 16]> {
@@ -45,38 +44,26 @@ pub(super) fn kdf(key: &[u8], path: &[&[u8]]) -> Zeroizing<[u8; 32]> {
     full.extend_from_slice(path);
     nested_hmac(&full, key)
 }
-#[allow(clippy::large_enum_variant)]
-pub(super) enum Aead {
-    Aes(Aes128Gcm),
-    ChaCha(ChaCha20Poly1305),
-}
+pub(super) struct Aead(crate::aead::Key);
 impl Aead {
     pub(super) fn new(cipher: Cipher, key: &[u8; 16]) -> Self {
         match cipher {
-            Cipher::Aes128Gcm => Self::Aes(Aes128Gcm::new_from_slice(key).unwrap()),
+            Cipher::Aes128Gcm => Self(crate::aead::Key::new(&AES_128_GCM, key)),
             Cipher::ChaCha20Poly1305 => {
                 let first = md5(key);
                 let second = md5(&*first);
                 let mut derived = Zeroizing::new([0; 32]);
                 derived[..16].copy_from_slice(&*first);
                 derived[16..].copy_from_slice(&*second);
-                Self::ChaCha(ChaCha20Poly1305::new_from_slice(&*derived).unwrap())
+                Self(crate::aead::Key::new(&CHACHA20_POLY1305, &*derived))
             }
         }
     }
     pub(super) fn seal(&self, nonce: &[u8; 12], aad: &[u8], bytes: &mut Vec<u8>) -> io::Result<()> {
-        match self {
-            Self::Aes(c) => c.encrypt_in_place(nonce.into(), aad, bytes),
-            Self::ChaCha(c) => c.encrypt_in_place(nonce.into(), aad, bytes),
-        }
-        .map_err(|_| invalid("VMess encryption failed"))
+        self.0.seal(nonce, aad, bytes)
     }
     pub(super) fn open(&self, nonce: &[u8; 12], aad: &[u8], bytes: &mut Vec<u8>) -> io::Result<()> {
-        match self {
-            Self::Aes(c) => c.decrypt_in_place(nonce.into(), aad, bytes),
-            Self::ChaCha(c) => c.decrypt_in_place(nonce.into(), aad, bytes),
-        }
-        .map_err(|_| invalid("VMess authentication failed"))
+        self.0.open(nonce, aad, bytes)
     }
 }
 pub(super) fn auth_id(command_key: &[u8], timestamp: u64, random: &[u8; 4]) -> Zeroizing<[u8; 16]> {
@@ -128,6 +115,10 @@ impl Counter {
     pub(super) fn seal(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
         let nonce = self.nonce()?;
         self.aead.seal(&nonce, &[], bytes)
+    }
+    pub(super) fn seal_from(&mut self, bytes: &mut Vec<u8>, start: usize) -> io::Result<()> {
+        let nonce = self.nonce()?;
+        self.aead.0.seal_from(&nonce, &[], bytes, start)
     }
     pub(super) fn open(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
         let nonce = self.nonce()?;

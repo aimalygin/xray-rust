@@ -69,6 +69,40 @@ fn vmess_records_match_pinned_go_masking_padding_and_authenticated_length() {
         }
     }
 }
+
+#[test]
+fn vmess_reuses_bounded_frames_with_both_length_encodings() {
+    for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+        for authenticated in [false, true] {
+            let (key, iv) = ([9; 16], [6; 16]);
+            let auth = authenticated.then_some((&key, &iv));
+            let mut writer = records::Records::new(cipher, &key, &iv, auth);
+            let mut reader = records::Records::new(cipher, &key, &iv, auth);
+            let mut wire = Zeroizing::new(Vec::new());
+            let mut pointer = std::ptr::null();
+            for i in 0..128 {
+                let len = if i % 2 == 0 { writer.max_payload() } else { i };
+                let payload = vec![i as u8; len];
+                writer.seal_into(&payload, &mut wire).unwrap();
+                assert!(wire.len() <= 8192);
+                assert!(wire.capacity() <= 8192);
+                if i == 0 {
+                    pointer = wire.as_ptr();
+                }
+                assert_eq!(wire.as_ptr(), pointer);
+                let n = reader.size_bytes();
+                let mut length = wire[..n].to_vec();
+                let (size, padding) = reader.decode_length(&mut length).unwrap();
+                assert_eq!(size, wire.len() - n);
+                let mut body = wire[n..].to_vec();
+                reader.open(&mut body, padding).unwrap();
+                assert_eq!(body, payload);
+                wire.as_mut_slice().zeroize();
+                wire.clear();
+            }
+        }
+    }
+}
 #[test]
 fn vmess_invalid_ciphers_and_destinations_fail_closed() {
     for cipher in ["none", "zero", "aes-128-cfb", "synthetic-secret"] {

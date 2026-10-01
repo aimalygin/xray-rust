@@ -1,3 +1,5 @@
+mod aead;
+
 pub mod hysteria;
 pub mod inbound;
 pub mod mux;

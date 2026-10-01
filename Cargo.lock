@@ -2963,6 +2963,7 @@ version = "0.7.0"
 dependencies = [
  "aes",
  "aes-gcm",
+ "aws-lc-rs",
  "base64",
  "blake3",
  "bytes",
