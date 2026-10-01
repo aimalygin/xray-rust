@@ -92,6 +92,10 @@ Python and OpenSSL CPU are excluded. Startup wall time includes the verified
 warmup, and startup/lifetime CPU are retained separately from workload CPU.
 Go/Tokio worker and GC overrides are cleared, leaving each client's defaults.
 Do not run compilation, another benchmark or other heavy local work in parallel.
+The collector checks compiler activity before each block and observes it once
+per second during each client run. It also flags `ANECompilerService` at 5% CPU
+or above. These samples cannot prove an otherwise idle host; any detected
+interference remains visible and prevents a passing parity assessment.
 
 ## Interpretation and boundaries
 

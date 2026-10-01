@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 def module(name, file):
@@ -18,6 +19,18 @@ launcher = module("client", "v08-reference-client.py")
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_environment_guard_covers_builds_and_active_neural_compilers(self):
+        processes = "1 0.0 /bin/rustc\n2 0.0 /bin/ANECompilerService\n3 5.0 /bin/ANECompilerService\n4 20.0 /bin/ordinary-app\n"
+        with patch.object(collector.bench, "command", return_value=processes):
+            self.assertEqual([p["pid"] for p in collector.ambient()["compiler_load_detected"]], [1, 3])
+
+    def test_failed_environment_observation_cannot_be_a_successful_trial(self):
+        with patch.object(collector, "ambient", side_effect=OSError("ps failed")), \
+                patch.object(collector.bench, "execute", return_value={"returncode": 0}):
+            result = collector.measured_execute([], Path("unused"))
+        self.assertEqual(result["returncode"], 126)
+        self.assertEqual(result["ambient_cpu"]["observer_errors"], ["ps failed"])
+
     def profile(self, name, directory):
         client, server = collector.configs(name, directory, 12345)
         client["inbounds"] = [{"protocol": "socks", "listen": "127.0.0.1", "port": 23456}]

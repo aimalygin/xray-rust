@@ -17,6 +17,7 @@ import platform
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 
@@ -116,9 +117,37 @@ def ambient():
         if len(fields) != 3:
             continue
         name = Path(fields[2]).name
-        if name in {"rustc", "cargo", "clang", "clang++", "go", "compile", "link", "xcodebuild", "swift-frontend"}:
+        if (name in {"rustc", "cargo", "clang", "clang++", "go", "compile", "link", "xcodebuild", "swift-frontend"}
+                or name == "ANECompilerService" and float(fields[1]) >= 5):
             busy.append({"pid": int(fields[0]), "cpu": float(fields[1]), "name": name})
     return {"compiler_load_detected": busy}
+
+
+def measured_execute(args, log):
+    stopped = threading.Event()
+    samples, errors = [], []
+
+    def observe():
+        try:
+            while not stopped.is_set():
+                samples.append({"unix": time.time(), **ambient()})
+                stopped.wait(1)
+        except Exception as error:
+            errors.append(str(error))
+
+    observer = threading.Thread(target=observe)
+    observer.start()
+    try:
+        result = bench.execute(args, log, ROOT)
+    finally:
+        stopped.set()
+        observer.join()
+    result["ambient_cpu"] = {
+        "samples": samples, "observer_errors": errors,
+        "compiler_load_detected": [p for s in samples for p in s["compiler_load_detected"]]}
+    if errors:
+        result.update(returncode=126, error="environment observer failed: " + "; ".join(errors))
+    return result
 
 
 def main():
@@ -194,10 +223,11 @@ def main():
                                    output=str(out / name), warmup=True, prepare_client=version != "candidate")
                     request_path = out / (name + ".json")
                     bench.save(request_path, request)
-                    result = bench.execute([str(paths["harness"]), "protocol-run", str(request_path)], out / (name + ".log"), ROOT)
+                    result = measured_execute([str(paths["harness"]), "protocol-run", str(request_path)], out / (name + ".log"))
+                    result["ambient_cpu"]["compiler_load_detected"].extend(load["compiler_load_detected"])
                     remaining = [s for s in followup.inventory(paths.values()) if int(s.split(None, 1)[0]) != server_pid]
                     result.update(case=case["id"], version=version, repeat=repeat, output_relative=name,
-                                  remaining_engine_processes=remaining, ambient_cpu=load, client_order=order)
+                                  remaining_engine_processes=remaining, client_order=order)
                     manifest["runs"].append(result)
                     bench.save(out / "manifest.json", manifest)
                     print(name, result["returncode"], round(result["seconds"], 2), flush=True)
