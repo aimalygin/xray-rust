@@ -73,6 +73,23 @@ class EvidenceAllowlists(unittest.TestCase):
             BUILD: json.dumps({"api_key": synthetic}),
         }), {(name, "generic-api-key") for name in (INDEX, FIXTURE, BUILD)})
 
+    def test_relay_manifest_digest_exception_is_narrow(self):
+        base = "docs/benchmarks/results/2026-10-01-v08-relay/measurements.tar.gz!"
+        path = base + "full/attempts/vmess-aes128-socks-upload-1-1/manifest.json"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        self.assertEqual(self.scan({path: json.dumps({"xray": digest})}), set())
+        other_digest = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({
+            path: json.dumps({"xray": other_digest}),
+            "unreviewed.json": json.dumps({"xray": digest}),
+            base + "full/unreviewed.json": json.dumps({"xray": digest}),
+        }), {(name, "jfrog-identity-token") for name in (
+            path, "unreviewed.json", base + "full/unreviewed.json")})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertIn((path, "generic-api-key"), self.scan({
+            path: json.dumps({"api_key": synthetic}),
+        }))
+
     def test_same_values_outside_reviewed_paths_are_detected(self):
         self.assertEqual(self.scan({
             "unreviewed.json": json.dumps({"api_key": DIGEST}),

@@ -3,6 +3,18 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the unchanged pinned Xray executable. This exception applies
+# only to its exact public digest in the relay report's archived manifests.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 relay comparison manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-relay/measurements\.tar\.gz!(full|isolated-controls|batched-controls|batched-clean-controls|aes-upload-confirmation|aes-download-confirmation|final-controls|final-clean-controls|held-memory|final-held-memory|stack-controls|stack-held-memory|ss-aes-duplex-confirmation|profile-baseline)(/attempts/[a-z0-9-]+)?/manifest\.json$''',
+]
+
 # Rehashed from the frozen Xray and final I/O-optimized Rust executables.
 # Only these two public digests in the reviewed report metadata are exempt.
 [[allowlists]]

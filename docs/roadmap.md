@@ -793,8 +793,18 @@ Its primary matrix completes 629/630 trials (all 210 Rust trials pass); the one
 sing-box UDP timeout is retained alongside a separate passing 15-run confirmation.
 RSS is lower in all 139 complete comparisons. SS2022/VMess meet 56/72 bulk CPU
 and 26/72 throughput point targets under the 3% Mac policy; parity remains unmet.
-The SDK pins runtime `5e32972`; complete core/SDK CI and archive reconstruction
-verify the changes. Candidate-bound device and artifact acceptance remain open.
+
+The [relay and padding follow-up](benchmarks/results/2026-10-01-v08-relay/README.md)
+removes three relay future allocations and batches only VMess ChaCha record
+padding entropy. Paired eight-flow VMess ChaCha upload uses 7.9% less CPU and
+is 9.1% faster; settled RSS is 0.34–0.41 MiB lower at 512 held connections.
+The larger relay rewrite and AES padding batching were rejected after throughput
+regressions. All 630 three-client trials pass, including all 210 Rust trials.
+RSS is lower in 140/140 complete reference comparisons; SS2022/VMess meet
+57/72 bulk CPU and 26/72 speed point targets under the 3% Mac policy.
+Overall parity remains **not met**. SDK commit `874cc8e` now pins
+runtime `fdc0dad`; core/SDK CI and archived evidence reconstruction verify this
+runtime. Candidate-bound device and artifact acceptance remain open.
 
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain

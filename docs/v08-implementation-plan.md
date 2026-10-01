@@ -582,3 +582,39 @@ binary. All 1036 archived members rehash correctly and both parity summaries
 recompute exactly from the archive. Physical Apple testing remains deferred,
 Android hardware is unavailable, and publication artifacts remain unprepared;
 previous source/device evidence is not inherited by this runtime.
+
+### Relay allocation and VMess padding follow-up
+
+Runtime `fdc0dad1aa1ffe39d3621008ab66512b30ccf452`, tree
+`fec66ef23ea8512f97c123d090ca889a1501b77e`, keeps relay scheduling, activity notifications,
+timeouts and buffer limits unchanged while pinning three futures in their
+parent task. Only public VMess ChaCha record padding uses a 256-byte zeroizing
+OS-entropy cache per thread; keys, IVs, authentication and nonces retain their
+existing paths. No per-connection cache or dependency is introduced.
+
+The [relay and padding follow-up](benchmarks/results/2026-10-01-v08-relay/README.md)
+removes three relay future allocations and batches only VMess ChaCha record
+padding entropy. Paired eight-flow VMess ChaCha upload uses 7.9% less CPU and
+is 9.1% faster; settled RSS is 0.34–0.41 MiB lower at 512 held connections.
+The larger relay rewrite and AES padding batching were rejected after throughput
+regressions. All 630 three-client trials pass, including all 210 Rust trials.
+RSS is lower in 140/140 complete reference comparisons; SS2022/VMess meet
+57/72 bulk CPU and 26/72 speed point targets under the 3% Mac policy.
+Overall parity remains **not met**. SDK commit `874cc8e` now pins
+runtime `fdc0dad`; core/SDK CI and archived evidence reconstruction verify this
+runtime. Candidate-bound device and artifact acceptance remain open.
+
+144 fresh paired controls, a separate 20-trial SS2022 AES duplex confirmation,
+24 held-memory clients and the 630-trial comparison
+retain exact results, rejected alternatives and complete-block environment
+retry provenance. Both parity summaries and control medians recompute from the
+archive. The committed release rebuild has the measured executable's digest.
+The first Linux FFI CI attempt hit a pre-existing descriptor-reuse test race;
+the original failure is retained, the exact runtime is rechecked, and a separate
+test-only fix removes the non-atomic close-before-dup2 setup. Local FFI validation
+and the follow-up PR Rust/secrets jobs cover that fixture correction. See the report for all
+identities and validation links.
+
+Physical Apple acceptance remains explicitly deferred, Android hardware remains
+unavailable and artifact locks remain unprepared. This host benchmark does not
+establish physical-device energy, WAN or TUN competitor parity.

@@ -9,6 +9,17 @@ checkout and reject source changes; caller-supplied binaries must report Xray
 `v26.5.9` sections below are retained as historical result groups, not as the
 current harness target.
 
+## v0.8 candidate protocol comparisons
+
+The [relay and VMess padding report](benchmarks/results/2026-10-01-v08-relay/README.md)
+records the current v0.8 runtime `fdc0dad`, with all 630 Trojan/SS2022/VMess
+trials against the pinned Xray-core and sing-box clients, paired optimization
+controls and memory scaling through 512 held connections. It retains all
+numeric results, rejected experiments and measurement-quality selection maps;
+its verification script reconstructs the published summaries. Overall CPU and
+throughput parity is not yet met. These host SOCKS measurements do not replace
+candidate-bound device, WAN or TUN acceptance.
+
 ## Current RC4 publication
 
 The current immutable evidence is the

@@ -1,0 +1,29 @@
+    Checking tokio v1.52.3
+    Checking tracing-core v0.1.36
+    Checking log v0.4.29
+    Checking regex-automata v0.4.14
+    Checking xray-utls v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-utls)
+    Checking rustls v0.23.40 (https://github.com/aimalygin/shaped-rustls?rev=3a131beaef0183b0cb61e5a9070a703b6be39ed3#3a131bea)
+    Checking tracing v0.1.44
+    Checking quinn-udp v0.5.15
+    Checking regex v1.12.4
+    Checking xray-routing v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-routing)
+    Checking tokio-util v0.7.19
+    Checking xray-proxy v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-proxy)
+    Checking h3 v0.0.8
+    Checking async-compression v0.4.42
+    Checking xray-vless-encryption v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-vless-encryption)
+    Checking xray-tun v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-tun)
+    Checking xray-runtime v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-runtime)
+    Checking quinn-proto v0.11.16 (/Users/antonmalygin/xray-rust/vendor/quinn-proto)
+    Checking tokio-rustls v0.26.4
+    Checking h2 v0.4.16
+    Checking gotatun v0.9.1 (/Users/antonmalygin/xray-rust/vendor/gotatun)
+    Checking xray-config v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-config)
+    Checking quinn v0.11.9 (/Users/antonmalygin/xray-rust/vendor/quinn)
+    Checking h3-quinn v0.0.10 (/Users/antonmalygin/xray-rust/vendor/h3-quinn)
+    Checking xray-transport v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-transport)
+    Checking xray-wireguard v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-wireguard)
+    Checking xray-core-rs v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-core-rs)
+    Checking xray-ffi v0.7.0 (/Users/antonmalygin/xray-rust/crates/xray-ffi)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.39s
