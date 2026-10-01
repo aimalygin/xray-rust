@@ -404,7 +404,11 @@ checks. The signed iOS device app builds, but installation on the available
 iPad fails because its device ID is absent from the signing profile. The owner
 deferred physical Apple testing rather than registering the device; no device
 registration or successful physical test is claimed. Android hardware is not
-currently connected. Universal Apple packaging is in progress. These are local
+currently connected. Local universal Apple packaging and all eight Swift
+platform builds now pass, together with 282 distribution-SDK tests and archive
+structure verification. The local Xcode 27 check uses SwiftPM's native build
+system for the unchanged macOS 11 minimum; canonical CI keeps Xcode 16.4.
+These are local
 development-tree checks; their logs do not identify a frozen release candidate.
 
 Additional SS2022 live recovery tests cover all three ciphers and both AES
@@ -446,3 +450,38 @@ performance smoke run passes; measured five-repeat acceptance remains open.
 The physical Apple deferral leaves that release gate open. It is not a waiver
 of device acceptance, does not authorize Apple Developer account changes,
 and does not carry the old 0.7 device exceptions into this release.
+
+### Clean-candidate automated and host measurements
+
+Core commit `0250497b7f8aaca66b0086b95892558e7042cc98`, tree
+`89b36701a9f1c6f26212cc8f00484a47b2d4db1b`, passes the complete
+[workflow-dispatch CI run](https://github.com/aimalygin/xray-rust/actions/runs/36791055607):
+Rust tests/lints/docs, pinned and independent Go oracles, release interoperability,
+controlled-network checks, dependency/secret checks, Miri/Loom/ASan, Android
+and Apple builds, Swift tests, adapter links and unsigned sample apps.
+The exact-candidate ASan fuzz campaign completes all 13 targets at 60 seconds
+each, with **28,661,647 executions** and no crash. Its corpus and the
+controlled-network evidence were also retained locally under
+`target/v08-ci-evidence` before the CI artifacts expire.
+
+The same clean source and frozen release binaries pass the historical five-run
+macOS pre-device budgets: 1000 idle flows use a median 23,360 KiB against a
+25,000 KiB limit; direct TCP median latency is 42 microseconds against 55.
+The v0.6 feature budgets also pass: VLESS encryption 297.34 MiB/s against a
+253.36 MiB/s lower bound, IPOnDemand latency 0.218 ms against 1.217 ms, and
+XHTTP peak-memory median 19.08 MiB against 64 MiB. Raw measurements and binary
+identities are under `target/v08-performance/{pre-device,v06-features,builds.json}`.
+
+The full new-protocol matrix completes **300/300 byte- and cleanup-verified
+runs**: 60 Trojan/SS2022/VMess SOCKS/TUN cases with five fresh-process repeats.
+`target/v08-performance/full` preserves every result and the verified summary;
+`protocol-table.md` records each median and full range. Eight-flow TUN TCP
+latency uses sequential flows, one concurrent flow, and includes the synthetic
+packet driver. These host measurements do not establish competitor parity or
+physical-device acceptance. Paired historical transport and Hysteria2/WireGuard
+comparisons are collected separately against the published v0.7.0 binaries.
+
+The distribution changes are reviewed in
+[mobile SDK PR 33](https://github.com/aimalygin/xray-rust-mobile/pull/33).
+Its core pin identifies the measured source above; artifact locks remain
+unprepared and no 0.8 package is published by these checks.
