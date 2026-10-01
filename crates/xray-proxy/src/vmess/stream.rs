@@ -5,6 +5,8 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+const MAX_READ_RECORDS: usize = 2;
+
 /// Bounded client records with owned pending writes and resumable reads.
 /// For a UDP target, each nonempty write and read is exactly one datagram;
 /// reads require room for the complete datagram and never truncate it.
@@ -23,6 +25,7 @@ pub struct ClientStream<S> {
     phase: Phase,
     padding: usize,
     failed: bool,
+    read_error: Option<io::Error>,
     eof: bool,
     closing: bool,
 }
@@ -100,6 +103,7 @@ impl<S> ClientStream<S> {
             phase: Phase::HeaderLength,
             padding: 0,
             failed: false,
+            read_error: None,
             eof: false,
             closing: false,
         })
@@ -198,8 +202,8 @@ impl<S: AsyncWrite + Unpin> ClientStream<S> {
         Poll::Ready(Ok(()))
     }
 }
-impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
-    fn poll_read(
+impl<S: AsyncRead + AsyncWrite + Unpin> ClientStream<S> {
+    fn poll_read_one(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         out: &mut ReadBuf<'_>,
@@ -256,6 +260,41 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
                 return Poll::Ready(Ok(()));
             }
         }
+    }
+}
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        out: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if let Some(error) = self.read_error.take() {
+            return Poll::Ready(Err(error));
+        }
+        let started = out.filled().len();
+        // Bound work per poll so a continuously readable socket cannot starve
+        // the reverse direction. UDP must keep exactly one datagram per read.
+        for _ in 0..MAX_READ_RECORDS {
+            let before = out.filled().len();
+            match self.as_mut().poll_read_one(cx, out) {
+                Poll::Pending if out.filled().len() == started => return Poll::Pending,
+                Poll::Pending => return Poll::Ready(Ok(())),
+                Poll::Ready(Err(error)) if out.filled().len() != started => {
+                    // Already authenticated bytes belong to this successful
+                    // read. Preserve the next record's failure for the next
+                    // call instead of reporting an error with a filled buffer.
+                    self.read_error = Some(error);
+                    return Poll::Ready(Ok(()));
+                }
+                Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
+                Poll::Ready(Ok(())) => {
+                    if self.packet || out.remaining() == 0 || out.filled().len() == before {
+                        return Poll::Ready(Ok(()));
+                    }
+                }
+            }
+        }
+        Poll::Ready(Ok(()))
     }
 }
 impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
@@ -432,6 +471,77 @@ mod tests {
         Pin::new(client)
             .poll_read(&mut Context::from_waker(Waker::noop()), &mut buffer)
             .map(|r| r.map(|()| buffer.filled().len()))
+    }
+
+    #[test]
+    fn vmess_tcp_batches_available_records_with_a_fairness_bound() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let mut client = client(cipher, auth, Network::Tcp);
+                let mut records = response_records(&client, cipher);
+                let mut wire =
+                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                for index in 0..=MAX_READ_RECORDS {
+                    wire.extend_from_slice(&records.seal(&[index as u8; 64]).unwrap());
+                }
+                client.inner.incoming.extend(wire);
+                let mut out = [0xaa; (MAX_READ_RECORDS + 1) * 64];
+                assert!(matches!(
+                    poll_read(&mut client, &mut out),
+                    Poll::Ready(Ok(n)) if n == MAX_READ_RECORDS * 64
+                ));
+                for index in 0..MAX_READ_RECORDS {
+                    assert_eq!(&out[index * 64..(index + 1) * 64], &[index as u8; 64]);
+                }
+                assert!(out[MAX_READ_RECORDS * 64..]
+                    .iter()
+                    .all(|&byte| byte == 0xaa));
+                assert!(client.body.frame()[..64].iter().all(|&byte| byte == 0));
+                assert!(matches!(
+                    poll_read(&mut client, &mut out),
+                    Poll::Ready(Ok(64))
+                ));
+                assert_eq!(&out[..64], &[MAX_READ_RECORDS as u8; 64]);
+                assert!(poll_read(&mut client, &mut out).is_pending());
+            }
+        }
+    }
+
+    #[test]
+    fn vmess_batch_returns_progress_before_a_partial_record_and_preserves_eof_error() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let mut client = client(cipher, auth, Network::Tcp);
+                let mut records = response_records(&client, cipher);
+                let mut wire =
+                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                wire.extend_from_slice(&records.seal(b"first").unwrap());
+                let second = records.seal(b"second").unwrap();
+                wire.extend_from_slice(&second[..1]);
+                client.inner.incoming.extend(wire);
+                let mut out = [0xaa; 32];
+                assert!(matches!(
+                    poll_read(&mut client, &mut out),
+                    Poll::Ready(Ok(5))
+                ));
+                assert_eq!(&out[..5], b"first");
+                assert!(poll_read(&mut client, &mut out).is_pending());
+                client.inner.incoming.extend(&second[1..]);
+                client.inner.incoming.push_back(0); // Truncated following length.
+                client.inner.closed = true;
+                assert!(matches!(
+                    poll_read(&mut client, &mut out),
+                    Poll::Ready(Ok(6))
+                ));
+                assert_eq!(&out[..6], b"second");
+                out.fill(0xaa);
+                assert!(
+                    matches!(poll_read(&mut client, &mut out), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::UnexpectedEof)
+                );
+                assert_eq!(out, [0xaa; 32]);
+                assert!(client.failed);
+            }
+        }
     }
 
     #[test]
