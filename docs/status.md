@@ -19,6 +19,10 @@ interoperability and automated core/SDK checks pass. Physical Apple testing is
 deferred by the owner, Android hardware is unavailable, and final release
 acceptance remains open. The [0.8 evidence](v08-implementation-plan.md) records
 the exact source, bounds and remaining gates; no 0.8 package is published.
+The [three-client protocol comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
+completes 1050 payload/cleanup-verified trials. Sampled RSS is lower in every
+case, while SS2022/VMess bulk throughput and CPU targets are unmet against both
+references. Host functional success does not establish performance parity.
 
 The earlier `v0.6.0` stable source preserves the runtime and dependencies of the
 published candidate

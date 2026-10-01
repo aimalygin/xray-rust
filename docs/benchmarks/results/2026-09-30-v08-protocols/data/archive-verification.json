@@ -1,0 +1,9 @@
+{
+  "archive_sha256": "33296c2b892e725e7a39154abddfe94101dca5deadecc4be23d85e058a8aa8fc",
+  "files_verified": 1440,
+  "primary_runs": 1050,
+  "smoke_runs": 210,
+  "summaries_recomputed_equal": true,
+  "all_archive_paths_regular_relative": true,
+  "primary_failures": []
+}

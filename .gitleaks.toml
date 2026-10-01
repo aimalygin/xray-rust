@@ -3,6 +3,23 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Recomputed from the frozen Xray executable and the two retained failed-smoke
+# logs. These exact SHA-256 values are provenance, not JFrog credentials.
+[[allowlists]]
+description = "Three verified v0.8 comparison binary/log digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''',
+  '''^67a26f8ea82d99fb4ee6997e2cd3a1adba923e20e4b3ac20171d43cad6f9302e$''',
+  '''^289adb9b79e3b84d555b5414d57d3b3ec8391b4d690aaa99b77484cf11c0f4ff$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-09-30-v08-protocols/evidence-index\.json$''',
+  '''^docs/benchmarks/results/2026-09-30-v08-protocols/measurements\.tar\.gz!(full|smoke|pre-preface-smoke|initial-smoke)/manifest\.json$''',
+]
+
 # The pinned VMess oracle derives this command key from the public sequential
 # UUID 00112233-4455-6677-8899-aabbccddeeff, not a deployed account.
 [[allowlists]]

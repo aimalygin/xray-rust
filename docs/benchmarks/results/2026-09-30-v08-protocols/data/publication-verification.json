@@ -1,0 +1,14 @@
+{
+  "headline_claims_verified_against_summary": true,
+  "local_benchmark_library_tests": 211,
+  "local_python_tests": 25,
+  "ci_run": 36803952030,
+  "ci_conclusion": "success",
+  "archive_secret_scan": "pass, including archive members",
+  "reviewed_digest_false_positives": {
+    "count": 3,
+    "kind": "verified SHA-256 of frozen Xray and failed-smoke logs",
+    "scope": "exact digest, file path and JFrog scanner rule only"
+  },
+  "plot_visually_inspected": true
+}

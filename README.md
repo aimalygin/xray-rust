@@ -57,6 +57,9 @@ The development branch adds Trojan, Shadowsocks 2022 and VMess AEAD for the
 planned 0.8 release, including Swift/Kotlin integration and ABI 1.8. Their
 [implementation and acceptance record](docs/v08-implementation-plan.md)
 distinguishes passing host/CI checks from remaining physical-device gates.
+The [0.8 protocol comparison](docs/benchmarks/results/2026-09-30-v08-protocols/README.md)
+contains 1050 successful full-client trials against Xray-core and sing-box:
+RSS is lower throughout, but SS2022/VMess bulk throughput and CPU targets remain unmet.
 These changes are not a published 0.8 package; the stable source baseline is
 0.7.0, which already includes Hysteria 2 and WireGuard.
 

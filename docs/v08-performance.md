@@ -1,5 +1,11 @@
 # v0.8 protocol comparison
 
+Measured results: [2026-09-30 comparison](benchmarks/results/2026-09-30-v08-protocols/README.md).
+All 1050 primary trials pass data/cleanup checks. RSS is lower in all 70 cases,
+but SS2022 and VMess miss both references' bulk throughput and CPU targets;
+overall parity is not met. The report retains the complete matrix and earlier
+failed preparation attempts.
+
 Compare the full xray-rust, Xray-core and sing-box clients on the same host,
 through the same SOCKS workload and a common Xray-core server. This is separate
 from the candidate-only SOCKS/TUN matrix and the v0.7 regression campaign.

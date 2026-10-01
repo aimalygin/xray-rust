@@ -485,3 +485,29 @@ The distribution changes are reviewed in
 [mobile SDK PR 33](https://github.com/aimalygin/xray-rust-mobile/pull/33).
 Its core pin identifies the measured source above; artifact locks remain
 unprepared and no 0.8 package is published by these checks.
+
+### Full-client comparison with Xray-core and sing-box
+
+The [dated comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
+now contains **1050/1050 successful primary trials**, plus a final 210/210 smoke
+matrix, using the unchanged frozen runtime above. Seven protocol/cipher
+profiles cover one/eight SOCKS flows and upload/download/full-duplex/TCP echo/UDP
+echo, with five repeats per client. Both references are full CLI clients:
+Xray-core v26.7.28 and sing-box v1.13.20, built with Go 1.26.0. Bulk payloads are
+256 MiB per flow/direction; matched client-first readiness is documented.
+
+All 140 case/reference pairs have lower candidate RSS medians. Trojan meets
+11/12 bulk throughput and 12/12 bulk CPU point targets under the existing 3%
+Mac policy. All 72 SS2022/VMess bulk comparisons miss both speed and CPU targets.
+Overall parity is **not met**; lower memory and passing traffic do not close
+that performance gap. Every sample, deficit, paired interval and failed earlier
+smoke attempt is retained in the report's verified numeric archive.
+
+Driver-only fixes close a fixed-size warmup without relying on a reference's
+half-close propagation and add the same client preface for every bulk client.
+A separate Xray VMess AES-128 server-first upload failure remains documented.
+The workload driver is frozen at `2d8afb6e6d9f601f0446aa74382f6e24dac9a7dd`;
+benchmark/CI commit `04075f42bb500661246ae8dc590ef17d6285609b` passes
+[complete CI](https://github.com/aimalygin/xray-rust/actions/runs/36803952030).
+Product crates and the SDK core pin are unchanged. This comparison adds no
+physical-device, TUN-competitor or publication acceptance.
