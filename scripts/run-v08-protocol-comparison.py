@@ -52,6 +52,15 @@ def cases(profiles, smoke=False):
             for traffic in ("upload", "download", "full-duplex", "tcp-latency", "udp")]
 
 
+def select_cases(available, requested):
+    """Keep original indexes so a filtered block retains its client order."""
+    if requested is not None:
+        if len(set(requested)) != len(requested) or not set(requested) <= {c["id"] for c in available}:
+            raise ValueError("duplicate or unknown case id")
+    return [(index, case) for index, case in enumerate(available)
+            if requested is None or case["id"] in requested]
+
+
 def configs(profile, directory, port):
     protocol, method = PROFILES[profile]
     settings = {"address": "127.0.0.1", "port": port}
@@ -156,6 +165,7 @@ def main():
     p.add_argument("--inputs", type=Path, required=True, help="verified source/build identities and frozen paths")
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--profile", choices=list(PROFILES), action="append")
+    p.add_argument("--case-id", action="append", help="select whole cases, preserving their original order indexes")
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--smoke", action="store_true")
     a = p.parse_args()
@@ -190,7 +200,8 @@ def main():
     hashes = {str(f): bench.sha(f) for f in files}
     patch = bench.command(["git", "diff", "--binary", "HEAD"], ROOT)
     (out / "source.patch").write_text(patch + "\n")
-    selected = cases(a.profile or PROFILES, a.smoke)
+    indexed_cases = select_cases(cases(a.profile or PROFILES, a.smoke), a.case_id)
+    selected = [case for _, case in indexed_cases]
     manifest = {"schema_version": 1, "suite": "v08", "smoke": a.smoke, "diagnostic": False,
         "repeats": 1 if a.smoke else a.repeats, "cases": selected, "warmup": True,
         "versions": {k: {"binary": str(paths[k]), "engine_sha256": inputs[k]["sha256"]} for k in ("candidate", "xray", "singbox")},
@@ -204,7 +215,7 @@ def main():
         "scope": "SOCKS TCP/UDP; no TUN comparison, transport extensions, Mux, AEAD-2017 or physical-device claims",
         "started_unix": time.time(), "runs": []}
     bench.save(out / "manifest.json", manifest)
-    for index, case in enumerate(selected):
+    for index, case in indexed_cases:
         for repeat in range(1, manifest["repeats"] + 1):
             order = ["candidate", "xray", "singbox"]
             offset = (index + repeat - 1) % len(order)

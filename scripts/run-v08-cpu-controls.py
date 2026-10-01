@@ -26,6 +26,7 @@ def main():
     p.add_argument("--harness", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--profile", choices=list(c.PROFILES), action="append")
+    p.add_argument("--case-id", action="append", help="select whole cases, preserving their original order indexes")
     p.add_argument("--traffic", choices=["upload", "download", "full-duplex", "tcp-latency", "udp"], action="append")
     p.add_argument("--flows", type=int, choices=[1, 8], action="append")
     p.add_argument("--repeats", type=int, default=3)
@@ -49,6 +50,8 @@ def main():
     selected = [case for case in c.cases(a.profile or ["ss2022-aes128", "ss2022-chacha20", "vmess-aes128", "vmess-chacha20"])
                 if case["connections"] in (a.flows or [1, 8])
                 and case["traffic"] in (a.traffic or ["upload", "download", "full-duplex"])]
+    indexed_cases = c.select_cases(selected, a.case_id)
+    selected = [case for _, case in indexed_cases]
     if (not selected or not 0 <= a.idle <= 15
             or any(case["connections"] + a.idle > 16 or case["traffic"] == "udp" and a.idle for case in selected)):
         raise ValueError("invalid case or idle connection selection")
@@ -66,7 +69,7 @@ def main():
         if source.exists():
             shutil.copyfile(source, out / source.name)
     try:
-        for index, case in enumerate(selected):
+        for index, case in indexed_cases:
             for repeat in range(1, a.repeats + 1):
                 order = list(binaries)
                 offset = (index + repeat - 1) % len(order)

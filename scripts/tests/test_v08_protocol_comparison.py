@@ -1,5 +1,6 @@
 """Guard matched wire settings and the completeness of the v0.8 comparison."""
 import base64
+import copy
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -16,9 +17,35 @@ def module(name, file):
 
 collector = module("comparison", "run-v08-protocol-comparison.py")
 launcher = module("client", "v08-reference-client.py")
+blocks = module("blocks", "run-v08-comparison-blocks.py")
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_blocks_never_classify_protocol_or_observer_errors_as_retryable(self):
+        clean = dict(returncode=0, process_group_empty_after_run=True,
+                     remaining_engine_processes=[], surviving_process_group=False,
+                     ambient_cpu=dict(observer_errors=[], compiler_load_detected=[]))
+        contaminated = copy.deepcopy(clean)
+        contaminated['ambient_cpu']['compiler_load_detected'] = [{'name': 'rustc'}]
+        self.assertEqual(blocks.quality([clean]), 'clean')
+        self.assertEqual(blocks.quality([clean, contaminated]), 'contaminated')
+        for field, value in [('returncode', 1), ('process_group_empty_after_run', False),
+                             ('remaining_engine_processes', ['leftover']), ('surviving_process_group', True)]:
+            failed = copy.deepcopy(contaminated)
+            failed[field] = value
+            self.assertEqual(blocks.quality([failed]), 'error')
+        contaminated['ambient_cpu']['observer_errors'] = ['ps failed']
+        self.assertEqual(blocks.quality([contaminated]), 'error')
+
+    def test_case_filter_preserves_full_campaign_rotation_and_rejects_typos(self):
+        cases = collector.cases(collector.PROFILES)
+        selected = collector.select_cases(cases, [cases[17]["id"], cases[3]["id"]])
+        self.assertEqual(selected, [(3, cases[3]), (17, cases[17])])
+        self.assertEqual(collector.select_cases(cases, None), list(enumerate(cases)))
+        for invalid in [["missing-case"], [cases[3]["id"], cases[3]["id"]]]:
+            with self.assertRaises(ValueError):
+                collector.select_cases(cases, invalid)
+
     def test_environment_guard_covers_builds_and_active_neural_compilers(self):
         processes = "1 0.0 /bin/rustc\n2 0.0 /bin/ANECompilerService\n3 5.0 /bin/ANECompilerService\n4 20.0 /bin/ordinary-app\n"
         with patch.object(collector.bench, "command", return_value=processes):
