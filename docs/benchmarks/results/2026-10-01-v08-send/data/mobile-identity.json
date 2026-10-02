@@ -1,0 +1,10 @@
+{
+  "commit": "5d14eb785f9fa2e6893f3daf134623bc6772a175",
+  "tree": "2f50b125520ecd175c1e279d7ed196c294341ad7",
+  "core_commit": "f930d10dba9831315cc16a709576f521a322dea5",
+  "core_tree": "1b28a8b420c0adf7363e43137502932bf1945876",
+  "verification": "check-release.sh --prepare; canonical sources and metadata verified",
+  "artifact_locks": "unprepared; unchanged",
+  "physical_apple": "deferred by owner",
+  "android_hardware": "unavailable"
+}

@@ -829,6 +829,20 @@ over an idle-timer rewrite; no further speed/memory gain or protocol ceiling is
 claimed. New variants still require normal-release controls and retained-memory
 checks; the rejected AES padding-cache evidence remains applicable.
 
+The [bounded VMess write follow-up](benchmarks/results/2026-10-01-v08-send/README.md)
+retains two full TCP records per send and the Apple system CSPRNG for public AES
+body padding. Runtime `f930d10`, pinned by SDK commit `5d14eb7`, reduces upload
+CPU by 36%/16% for AES and 11%/12% for ChaCha at one/eight flows in five-repeat
+paired confirmation. At 512 connections after large exchanges, the additional
+retained RSS is 3.94–4.03 MiB (about 4.3%); short exchanges differ by less than
+0.1 MiB. Independent counts confirm about 47% fewer socket writes. The standalone
+padding variant has conflicting eight-flow results and is not selected alone.
+All 270 fresh VMess reference trials pass, with lower RSS in 60/60 comparisons
+and 30/36 bulk CPU / 25/36 speed point targets met under the 3% desktop allowance.
+Overall parity remains **not met**, including one-flow AES download/full-duplex
+deficits against Xray. The report preserves all samples and both excluded
+memory campaigns; device and publication-artifact acceptance remain open.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management

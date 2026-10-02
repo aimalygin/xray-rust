@@ -3,6 +3,30 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the frozen Xray binary and the archived integration logs.
+# Allow only these exact public checksums at reviewed send-report paths.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 send manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-send/measurements\.tar\.gz!(arc-controls|pair-controls|chacha-controls|confirmation|latency-controls|small-memory|bulk-memory|comparison|libc|small-memory-rejected-[12])/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-01-v08-send/measurements\.tar\.gz!comparison/attempts/vmess-(aes128|chacha20|auto)-socks-(upload|download|full-duplex|tcp-latency|udp)-(1|8)-1/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Two verified integration-log digests in the v0.8 send index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^f89e513e332aafcb5578cfe21ad6584179835ba83f1917d517e189570a5c4564$''',
+  '''^6639b5957c868bed389fe4984818820fa8a26a0a99fa6d43e3f3f386b8baf2a5$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-send/evidence-index\.json$''']
+
 # Rehashed from the pinned reference executable and its public auth.go source.
 # Only these exact digests in the reviewed census metadata are exempt.
 [[allowlists]]

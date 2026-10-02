@@ -663,12 +663,55 @@ per 256 MiB, while Xray batches records into about 4.1k writes and uses
 Internal counts show about 2,059 relay transfers and 156 received activity
 notifications, so idle-timer changes are a lower-priority hypothesis.
 
-Next candidates are an isolated Darwin padding-source experiment and bounded
-write batching under an explicit memory budget. Neither is implemented or
-claimed faster by the census. Earlier rejected AES entropy-cache results are
+The census nominated an isolated Darwin padding-source experiment and bounded
+write batching under an explicit memory budget, evaluated in the follow-up
+below. Neither was implemented or claimed faster by the census itself.
+Earlier rejected AES entropy-cache results are
 retained; fewer calls alone do not prove an improvement, especially at eight
 flows where Rust already uses less CPU in this diagnostic set. Any retained
 runtime change still needs paired normal-release controls, 512-connection
 retained-RSS checks and candidate-bound validation. The census verifies all
 payload totals, preserves diagnostic patches, and confirms the restored normal
 release remains byte-identical to the measured binary.
+
+### Bounded VMess writes and Apple padding CSPRNG
+
+Runtime `f930d10dba9831315cc16a709576f521a322dea5`, tree
+`1b28a8b420c0adf7363e43137502932bf1945876`, groups at most two full TCP
+records into one pending ciphertext allocation. Each record retains its own
+nonce, length encoding and authentication tag. Short writes progress immediately
+with a single-record allocation; UDP keeps datagram boundaries. Pending storage
+grows lazily to at most 16 KiB, and encoding failures clear it and fail closed.
+On Apple targets, only public AES body padding uses `arc4random_buf`; session
+keys, IVs, authentication, non-Apple padding and the ChaCha cache remain unchanged.
+
+The [write and padding report](benchmarks/results/2026-10-01-v08-send/README.md)
+contains 214 paired trials, 24 accepted held-memory clients, 12 separate libc
+diagnostic trials and 270 fresh three-client VMess trials. Five-repeat upload
+confirmation reduces AES CPU 36% at one flow and 16% at eight, with speed gains
+of 44% and 12%; ChaCha CPU improves 11–12%. The standalone padding variant has
+conflicting eight-flow results, retained in full; only the combined change is
+selected. Instrumented timings/CPU/RSS are not used as performance evidence.
+
+After 1 MiB exchanges on each of 512 held connections, RSS increases by
+3.94–4.03 MiB (about 4.3%) relative to `1804e17`; short 8 KiB exchanges differ
+by less than 0.1 MiB. This cost is additional to the earlier receive batching.
+Two initial memory campaigns encountered unrelated Apple compiler activity;
+both are excluded in full, with partial results and errors archived. A clean
+replacement campaign passed after a quiet interval.
+
+All 270 fresh VMess comparisons pass, with lower RSS in 60/60 reference
+comparisons. The candidate meets 30/36 bulk CPU and 25/36 speed point targets
+under the 3% desktop allowance; overall parity remains **not met**. One-flow
+AES download and full-duplex still trail Xray. The normal committed release
+rebuild is byte-identical to the measured binary. Independent archive verification
+reconstructs every matrix, selection and summary; exact core/SDK CI identities
+are linked in the report.
+
+SDK commit `5d14eb785f9fa2e6893f3daf134623bc6772a175` pins this runtime.
+Canonical adapter/source and release metadata checks pass; ABI 1.8 and
+0.8.0-rc.1 metadata are unchanged. Local validation includes 136 protocol tests,
+493 core library tests, formatting/Clippy and ten Xray/sing-box integration
+tests. Physical Apple acceptance remains deferred, Android hardware unavailable,
+and artifact locks unprepared. Desktop measurements do not establish device
+energy, WAN or TUN parity.
