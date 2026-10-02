@@ -1,6 +1,17 @@
 # v0.8 protocol comparison
 
-Latest results: [record I/O and plaintext-erasure follow-up](benchmarks/results/2026-10-01-v08-io/README.md).
+Latest VMess results: [bounded download batching](benchmarks/results/2026-10-02-v08-download/README.md).
+Runtime `9198a8f` (SDK `7b84921`) combines lazy 16 KiB read-ahead with up to four
+output records and a byte budget below 32 KiB. Five-repeat one-flow AES download
+improves CPU 14.3% and throughput 12.3% relative to `f930d10`. At 512 connections
+after large exchanges, retained RSS increases 11.86–11.97 MiB (about 12.3–12.4%);
+8 KiB exchanges show no increase. All 270 fresh VMess reference trials pass,
+with lower RSS in 60/60 comparisons and 32/36 CPU / 26/36 speed point targets met
+under the 3% desktop allowance. Overall parity remains unmet. Full identities,
+standalone/rejected results, short-request tails and all samples are in the report.
+Earlier Trojan/SS2022 measurements retain their original runtime identities.
+
+Earlier full-protocol matrix: [record I/O and plaintext-erasure follow-up](benchmarks/results/2026-10-01-v08-io/README.md).
 Runtime `5e32972976074551aea4ce42e98f5e0dde7159c9` adds bounded record read-ahead,
 word-sized volatile plaintext erasure and a read/write backpressure fix.
 Paired downloads use 11–32% less CPU than the previous optimized runtime;
@@ -37,7 +48,7 @@ from the candidate-only SOCKS/TUN matrix and the v0.7 regression campaign.
   builds with incremental compilation disabled.
 - First optimized xray-rust: `ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5`, tree
   `07005cb7084a48e6ef793f53b1cd442d69c1b35d`; same compiler and release policy.
-- Current optimized xray-rust: `5e32972976074551aea4ce42e98f5e0dde7159c9`, tree
+- Earlier full-matrix optimized xray-rust: `5e32972976074551aea4ce42e98f5e0dde7159c9`, tree
   `3c1993a1b1ce6ba68ea102caa6547346c8ac1c83`; same compiler/release policy,
   frozen harness, reference binaries and workload sizes.
 - The workload driver is built separately when a benchmark-only fix is needed.

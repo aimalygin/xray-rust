@@ -3,6 +3,29 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed public executable/log digests in the bounded-download evidence.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 download manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-02-v08-download/measurements\.tar\.gz!(read16-controls|four-controls|combined-controls|confirmation|latency-controls|latency-confirmation|small-memory|bulk-memory|comparison|libc|latency-controls-rejected-1)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-download/measurements\.tar\.gz!comparison/attempts/vmess-(aes128|chacha20|auto)-socks-(upload|download|full-duplex|tcp-latency|udp)-(1|8)-1/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Two verified integration-log digests in the v0.8 download index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^8b56acb8d4eaf72d60fbf0e3d2cb98909ac7c1560e09e895f687f5883c69097f$''',
+  '''^6c338816cc7a304b83466645106b06e413e26887ed345df2b5738bfe408475d2$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-02-v08-download/evidence-index\.json$''']
+
 # Rehashed from the frozen Xray binary and the archived integration logs.
 # Allow only these exact public checksums at reviewed send-report paths.
 [[allowlists]]

@@ -1,0 +1,6002 @@
+{
+  "bulk-memory": [
+    {
+      "connections": 0,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 4.234375,
+        "median": 4.234375,
+        "min": 4.203125,
+        "samples": [
+          4.234375,
+          4.203125,
+          4.234375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 11.5625,
+        "median": 11.34375,
+        "min": 11.265625,
+        "samples": [
+          11.34375,
+          11.5625,
+          11.265625
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 28.671875,
+        "median": 28.546875,
+        "min": 28.171875,
+        "samples": [
+          28.546875,
+          28.671875,
+          28.171875
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 96.671875,
+        "median": 96.5,
+        "min": 96.4375,
+        "samples": [
+          96.671875,
+          96.5,
+          96.4375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.21875,
+        "min": 4.21875,
+        "samples": [
+          4.21875,
+          4.21875,
+          4.21875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 12.046875,
+        "median": 12.03125,
+        "min": 11.96875,
+        "samples": [
+          11.96875,
+          12.046875,
+          12.03125
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 31.484375,
+        "median": 31.359375,
+        "min": 31.296875,
+        "samples": [
+          31.359375,
+          31.484375,
+          31.296875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 108.515625,
+        "median": 108.46875,
+        "min": 108.3125,
+        "samples": [
+          108.3125,
+          108.515625,
+          108.46875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.21875,
+        "min": 4.21875,
+        "samples": [
+          4.21875,
+          4.21875,
+          4.21875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 11.96875,
+        "median": 11.859375,
+        "min": 11.828125,
+        "samples": [
+          11.96875,
+          11.859375,
+          11.828125
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 30.5,
+        "median": 30.5,
+        "min": 30.46875,
+        "samples": [
+          30.5,
+          30.46875,
+          30.5
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 104.5625,
+        "median": 104.546875,
+        "min": 104.53125,
+        "samples": [
+          104.5625,
+          104.53125,
+          104.546875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 4.25,
+        "median": 4.234375,
+        "min": 4.21875,
+        "samples": [
+          4.234375,
+          4.25,
+          4.21875
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 11.46875,
+        "median": 11.4375,
+        "min": 11.203125,
+        "samples": [
+          11.46875,
+          11.203125,
+          11.4375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 28.65625,
+        "median": 28.5,
+        "min": 28.34375,
+        "samples": [
+          28.65625,
+          28.34375,
+          28.5
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 96.5,
+        "median": 96.453125,
+        "min": 96.421875,
+        "samples": [
+          96.5,
+          96.453125,
+          96.421875
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.21875,
+        "min": 4.21875,
+        "samples": [
+          4.21875,
+          4.21875,
+          4.21875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 12.15625,
+        "median": 12.03125,
+        "min": 11.890625,
+        "samples": [
+          12.03125,
+          12.15625,
+          11.890625
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 31.421875,
+        "median": 31.328125,
+        "min": 31.265625,
+        "samples": [
+          31.328125,
+          31.421875,
+          31.265625
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 108.3125,
+        "median": 108.3125,
+        "min": 108.296875,
+        "samples": [
+          108.3125,
+          108.296875,
+          108.3125
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.21875,
+        "min": 4.203125,
+        "samples": [
+          4.203125,
+          4.21875,
+          4.21875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 11.984375,
+        "median": 11.828125,
+        "min": 11.8125,
+        "samples": [
+          11.828125,
+          11.984375,
+          11.8125
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 30.546875,
+        "median": 30.4375,
+        "min": 30.296875,
+        "samples": [
+          30.546875,
+          30.4375,
+          30.296875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 104.453125,
+        "median": 104.390625,
+        "min": 104.359375,
+        "samples": [
+          104.453125,
+          104.390625,
+          104.359375
+        ]
+      },
+      "version": "four"
+    }
+  ],
+  "combined-controls": [
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 230,
+          "median": 220,
+          "min": 210,
+          "samples": [
+            230,
+            220,
+            210
+          ]
+        },
+        "rss_mib": {
+          "max": 5.25,
+          "median": 5.234375,
+          "min": 5.21875,
+          "samples": [
+            5.21875,
+            5.25,
+            5.234375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1468.1792927935194,
+          "median": 1401.5180400308918,
+          "min": 1343.2141777305844,
+          "samples": [
+            1343.2141777305844,
+            1401.5180400308918,
+            1468.1792927935194
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 180,
+          "median": 170,
+          "min": 160,
+          "samples": [
+            180,
+            170,
+            160
+          ]
+        },
+        "rss_mib": {
+          "max": 5.296875,
+          "median": 5.28125,
+          "min": 5.25,
+          "samples": [
+            5.25,
+            5.296875,
+            5.28125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1826.1110699958715,
+          "median": 1742.5031846457862,
+          "min": 1715.5747887572888,
+          "samples": [
+            1715.5747887572888,
+            1742.5031846457862,
+            1826.1110699958715
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 200,
+          "median": 200,
+          "min": 200,
+          "samples": [
+            200,
+            200,
+            200
+          ]
+        },
+        "rss_mib": {
+          "max": 5.296875,
+          "median": 5.296875,
+          "min": 5.296875,
+          "samples": [
+            5.296875,
+            5.296875,
+            5.296875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1535.1913410314944,
+          "median": 1533.3124834779592,
+          "min": 1523.2209349200464,
+          "samples": [
+            1535.1913410314944,
+            1523.2209349200464,
+            1533.3124834779592
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1600,
+          "median": 1580,
+          "min": 1290,
+          "samples": [
+            1290,
+            1580,
+            1600
+          ]
+        },
+        "rss_mib": {
+          "max": 5.75,
+          "median": 5.71875,
+          "min": 5.609375,
+          "samples": [
+            5.71875,
+            5.75,
+            5.609375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2961.610417080558,
+          "median": 2324.143716740445,
+          "min": 2304.680637011252,
+          "samples": [
+            2961.610417080558,
+            2324.143716740445,
+            2304.680637011252
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1500,
+          "median": 1500,
+          "min": 1450,
+          "samples": [
+            1450,
+            1500,
+            1500
+          ]
+        },
+        "rss_mib": {
+          "max": 5.90625,
+          "median": 5.78125,
+          "min": 5.765625,
+          "samples": [
+            5.90625,
+            5.765625,
+            5.78125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2397.1074348040443,
+          "median": 2312.6770205058783,
+          "min": 2286.3805104566877,
+          "samples": [
+            2397.1074348040443,
+            2286.3805104566877,
+            2312.6770205058783
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1560,
+          "median": 1540,
+          "min": 1530,
+          "samples": [
+            1540,
+            1560,
+            1530
+          ]
+        },
+        "rss_mib": {
+          "max": 5.890625,
+          "median": 5.875,
+          "min": 5.875,
+          "samples": [
+            5.875,
+            5.890625,
+            5.875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2333.885625106473,
+          "median": 2311.819767352185,
+          "min": 2308.8306147782914,
+          "samples": [
+            2311.819767352185,
+            2308.8306147782914,
+            2333.885625106473
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 370,
+          "median": 370,
+          "min": 370,
+          "samples": [
+            370,
+            370,
+            370
+          ]
+        },
+        "rss_mib": {
+          "max": 5.46875,
+          "median": 5.4375,
+          "min": 5.421875,
+          "samples": [
+            5.4375,
+            5.46875,
+            5.421875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1697.3161013448746,
+          "median": 1650.6376053604483,
+          "min": 1620.849652616938,
+          "samples": [
+            1620.849652616938,
+            1697.3161013448746,
+            1650.6376053604483
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 370,
+          "median": 360,
+          "min": 360,
+          "samples": [
+            370,
+            360,
+            360
+          ]
+        },
+        "rss_mib": {
+          "max": 5.53125,
+          "median": 5.484375,
+          "min": 5.4375,
+          "samples": [
+            5.484375,
+            5.53125,
+            5.4375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1692.9320500225049,
+          "median": 1676.5275904622936,
+          "min": 1640.394719979495,
+          "samples": [
+            1640.394719979495,
+            1692.9320500225049,
+            1676.5275904622936
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 370,
+          "median": 370,
+          "min": 370,
+          "samples": [
+            370,
+            370,
+            370
+          ]
+        },
+        "rss_mib": {
+          "max": 5.515625,
+          "median": 5.5,
+          "min": 5.46875,
+          "samples": [
+            5.515625,
+            5.46875,
+            5.5
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1660.285888583305,
+          "median": 1639.158602601284,
+          "min": 1604.8718744426735,
+          "samples": [
+            1604.8718744426735,
+            1639.158602601284,
+            1660.285888583305
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3300,
+          "median": 3020,
+          "min": 3000,
+          "samples": [
+            3300,
+            3020,
+            3000
+          ]
+        },
+        "rss_mib": {
+          "max": 7.015625,
+          "median": 6.84375,
+          "min": 6.84375,
+          "samples": [
+            7.015625,
+            6.84375,
+            6.84375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1639.181397772318,
+          "median": 1549.4985536877982,
+          "min": 1355.647607595218,
+          "samples": [
+            1355.647607595218,
+            1549.4985536877982,
+            1639.181397772318
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3040,
+          "median": 3030,
+          "min": 2830,
+          "samples": [
+            2830,
+            3030,
+            3040
+          ]
+        },
+        "rss_mib": {
+          "max": 7.078125,
+          "median": 7.0625,
+          "min": 7.03125,
+          "samples": [
+            7.0625,
+            7.078125,
+            7.03125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1624.1286728597856,
+          "median": 1594.8368713747125,
+          "min": 1560.7731523773855,
+          "samples": [
+            1624.1286728597856,
+            1594.8368713747125,
+            1560.7731523773855
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3060,
+          "median": 3020,
+          "min": 2960,
+          "samples": [
+            2960,
+            3060,
+            3020
+          ]
+        },
+        "rss_mib": {
+          "max": 7.109375,
+          "median": 7.0625,
+          "min": 7.03125,
+          "samples": [
+            7.0625,
+            7.03125,
+            7.109375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1578.9437921409562,
+          "median": 1544.7940294685309,
+          "min": 1504.1367662794644,
+          "samples": [
+            1544.7940294685309,
+            1504.1367662794644,
+            1578.9437921409562
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 180,
+          "median": 180,
+          "min": 180,
+          "samples": [
+            180,
+            180,
+            180
+          ]
+        },
+        "rss_mib": {
+          "max": 5.421875,
+          "median": 5.40625,
+          "min": 5.40625,
+          "samples": [
+            5.421875,
+            5.40625,
+            5.40625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1629.042778281551,
+          "median": 1608.5192912011992,
+          "min": 1574.032971477705,
+          "samples": [
+            1574.032971477705,
+            1608.5192912011992,
+            1629.042778281551
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 180,
+          "median": 180,
+          "min": 180,
+          "samples": [
+            180,
+            180,
+            180
+          ]
+        },
+        "rss_mib": {
+          "max": 5.4375,
+          "median": 5.421875,
+          "min": 5.390625,
+          "samples": [
+            5.4375,
+            5.390625,
+            5.421875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1649.7826131073077,
+          "median": 1643.0852062012243,
+          "min": 1640.1980980006574,
+          "samples": [
+            1643.0852062012243,
+            1640.1980980006574,
+            1649.7826131073077
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 180,
+          "median": 180,
+          "min": 170,
+          "samples": [
+            170,
+            180,
+            180
+          ]
+        },
+        "rss_mib": {
+          "max": 5.46875,
+          "median": 5.453125,
+          "min": 5.4375,
+          "samples": [
+            5.453125,
+            5.46875,
+            5.4375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1679.0023053488683,
+          "median": 1617.509111536238,
+          "min": 1598.629504916869,
+          "samples": [
+            1679.0023053488683,
+            1598.629504916869,
+            1617.509111536238
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1310,
+          "median": 1310,
+          "min": 1290,
+          "samples": [
+            1290,
+            1310,
+            1310
+          ]
+        },
+        "rss_mib": {
+          "max": 6.921875,
+          "median": 6.75,
+          "min": 6.734375,
+          "samples": [
+            6.921875,
+            6.734375,
+            6.75
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2965.5676297647287,
+          "median": 2923.334031974006,
+          "min": 2880.001628550921,
+          "samples": [
+            2965.5676297647287,
+            2923.334031974006,
+            2880.001628550921
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1330,
+          "median": 1310,
+          "min": 1280,
+          "samples": [
+            1280,
+            1330,
+            1310
+          ]
+        },
+        "rss_mib": {
+          "max": 6.8125,
+          "median": 6.6875,
+          "min": 6.640625,
+          "samples": [
+            6.8125,
+            6.640625,
+            6.6875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2965.3212685530866,
+          "median": 2945.581708340307,
+          "min": 2846.157079937337,
+          "samples": [
+            2965.3212685530866,
+            2846.157079937337,
+            2945.581708340307
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1320,
+          "median": 1310,
+          "min": 1300,
+          "samples": [
+            1320,
+            1310,
+            1300
+          ]
+        },
+        "rss_mib": {
+          "max": 6.9375,
+          "median": 6.78125,
+          "min": 6.734375,
+          "samples": [
+            6.78125,
+            6.9375,
+            6.734375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2957.6402503078098,
+          "median": 2932.612733488973,
+          "min": 2850.496968000978,
+          "samples": [
+            2850.496968000978,
+            2932.612733488973,
+            2957.6402503078098
+          ]
+        }
+      },
+      "version": "four"
+    }
+  ],
+  "confirmation": [
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 210,
+          "min": 210,
+          "samples": [
+            210,
+            210,
+            210,
+            210,
+            210
+          ]
+        },
+        "rss_mib": {
+          "max": 5.25,
+          "median": 5.203125,
+          "min": 5.1875,
+          "samples": [
+            5.25,
+            5.203125,
+            5.1875,
+            5.234375,
+            5.203125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1506.510798351623,
+          "median": 1484.054383474331,
+          "min": 1456.9723565789136,
+          "samples": [
+            1456.9723565789136,
+            1501.3653803839975,
+            1506.510798351623,
+            1484.054383474331,
+            1480.7994910492148
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 190,
+          "median": 180,
+          "min": 160,
+          "samples": [
+            190,
+            160,
+            170,
+            190,
+            180
+          ]
+        },
+        "rss_mib": {
+          "max": 5.328125,
+          "median": 5.3125,
+          "min": 5.25,
+          "samples": [
+            5.25,
+            5.328125,
+            5.3125,
+            5.265625,
+            5.328125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1737.6376482220187,
+          "median": 1666.0398300272325,
+          "min": 1589.519108379125,
+          "samples": [
+            1666.0398300272325,
+            1737.6376482220187,
+            1724.2555097456639,
+            1589.519108379125,
+            1658.5149146942208
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 210,
+          "min": 200,
+          "samples": [
+            200,
+            200,
+            210,
+            210,
+            210
+          ]
+        },
+        "rss_mib": {
+          "max": 5.3125,
+          "median": 5.3125,
+          "min": 5.28125,
+          "samples": [
+            5.28125,
+            5.3125,
+            5.296875,
+            5.3125,
+            5.3125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1524.6035881783669,
+          "median": 1476.0551848600558,
+          "min": 1443.26685708205,
+          "samples": [
+            1506.5754485451755,
+            1524.6035881783669,
+            1443.26685708205,
+            1476.0551848600558,
+            1467.3395129075923
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1620,
+          "median": 1580,
+          "min": 1460,
+          "samples": [
+            1580,
+            1620,
+            1570,
+            1460,
+            1610
+          ]
+        },
+        "rss_mib": {
+          "max": 5.734375,
+          "median": 5.640625,
+          "min": 5.625,
+          "samples": [
+            5.734375,
+            5.71875,
+            5.640625,
+            5.625,
+            5.640625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2574.69156662782,
+          "median": 2285.44773516928,
+          "min": 2260.7016979416258,
+          "samples": [
+            2285.44773516928,
+            2260.7016979416258,
+            2282.333556208926,
+            2574.69156662782,
+            2288.8514503970514
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1510,
+          "median": 1500,
+          "min": 1490,
+          "samples": [
+            1510,
+            1510,
+            1500,
+            1490,
+            1500
+          ]
+        },
+        "rss_mib": {
+          "max": 5.9375,
+          "median": 5.90625,
+          "min": 5.78125,
+          "samples": [
+            5.78125,
+            5.90625,
+            5.9375,
+            5.796875,
+            5.921875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2311.8075882995786,
+          "median": 2300.4850377250677,
+          "min": 2269.054713800517,
+          "samples": [
+            2278.9951492422842,
+            2300.4850377250677,
+            2269.054713800517,
+            2301.6117182155203,
+            2311.8075882995786
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1560,
+          "median": 1490,
+          "min": 1410,
+          "samples": [
+            1480,
+            1560,
+            1410,
+            1490,
+            1560
+          ]
+        },
+        "rss_mib": {
+          "max": 5.890625,
+          "median": 5.84375,
+          "min": 5.8125,
+          "samples": [
+            5.8125,
+            5.890625,
+            5.8125,
+            5.859375,
+            5.84375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2677.6973502498086,
+          "median": 2378.44107887625,
+          "min": 2267.420973705785,
+          "samples": [
+            2378.44107887625,
+            2321.4647785306447,
+            2677.6973502498086,
+            2455.3147138658173,
+            2267.420973705785
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 360,
+          "median": 350,
+          "min": 340,
+          "samples": [
+            350,
+            350,
+            340,
+            350,
+            360
+          ]
+        },
+        "rss_mib": {
+          "max": 5.265625,
+          "median": 5.21875,
+          "min": 5.203125,
+          "samples": [
+            5.265625,
+            5.21875,
+            5.21875,
+            5.203125,
+            5.203125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 672.388168176615,
+          "median": 655.4074695376081,
+          "min": 643.8971877287281,
+          "samples": [
+            655.4182372136844,
+            655.4074695376081,
+            672.388168176615,
+            652.8002575949816,
+            643.8971877287281
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 330,
+          "median": 330,
+          "min": 320,
+          "samples": [
+            330,
+            330,
+            330,
+            330,
+            320
+          ]
+        },
+        "rss_mib": {
+          "max": 5.28125,
+          "median": 5.28125,
+          "min": 5.25,
+          "samples": [
+            5.28125,
+            5.28125,
+            5.265625,
+            5.28125,
+            5.25
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 678.8534724903752,
+          "median": 673.4593548535604,
+          "min": 659.6107792418612,
+          "samples": [
+            664.2671313941793,
+            673.4593548535604,
+            678.8534724903752,
+            659.6107792418612,
+            676.6277638740903
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 340,
+          "median": 330,
+          "min": 330,
+          "samples": [
+            330,
+            330,
+            330,
+            340,
+            330
+          ]
+        },
+        "rss_mib": {
+          "max": 5.296875,
+          "median": 5.28125,
+          "min": 5.25,
+          "samples": [
+            5.28125,
+            5.296875,
+            5.25,
+            5.25,
+            5.296875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 676.8838977115475,
+          "median": 669.3459381841194,
+          "min": 664.8398719533989,
+          "samples": [
+            675.0992540944374,
+            666.3637800341284,
+            676.8838977115475,
+            664.8398719533989,
+            669.3459381841194
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2660,
+          "median": 2520,
+          "min": 2430,
+          "samples": [
+            2430,
+            2540,
+            2520,
+            2660,
+            2500
+          ]
+        },
+        "rss_mib": {
+          "max": 5.734375,
+          "median": 5.609375,
+          "min": 5.5625,
+          "samples": [
+            5.609375,
+            5.5625,
+            5.734375,
+            5.609375,
+            5.703125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1620.3648530758103,
+          "median": 1548.3923163547438,
+          "min": 1380.8729874981436,
+          "samples": [
+            1620.3648530758103,
+            1548.3923163547438,
+            1537.883811936355,
+            1380.8729874981436,
+            1558.387600693925
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2390,
+          "median": 2390,
+          "min": 2370,
+          "samples": [
+            2390,
+            2390,
+            2370,
+            2390,
+            2390
+          ]
+        },
+        "rss_mib": {
+          "max": 5.921875,
+          "median": 5.90625,
+          "min": 5.796875,
+          "samples": [
+            5.921875,
+            5.796875,
+            5.90625,
+            5.890625,
+            5.90625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1656.480204468281,
+          "median": 1626.9716629479547,
+          "min": 1602.6567478803975,
+          "samples": [
+            1626.9716629479547,
+            1621.6858251941155,
+            1656.480204468281,
+            1641.66543672018,
+            1602.6567478803975
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2490,
+          "median": 2430,
+          "min": 2420,
+          "samples": [
+            2430,
+            2420,
+            2420,
+            2430,
+            2490
+          ]
+        },
+        "rss_mib": {
+          "max": 5.875,
+          "median": 5.84375,
+          "min": 5.828125,
+          "samples": [
+            5.828125,
+            5.828125,
+            5.859375,
+            5.84375,
+            5.875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1625.9165909282353,
+          "median": 1612.518858183648,
+          "min": 1562.3775721163354,
+          "samples": [
+            1611.6359384483435,
+            1625.9165909282353,
+            1612.518858183648,
+            1617.7606625299923,
+            1562.3775721163354
+          ]
+        }
+      },
+      "version": "four"
+    }
+  ],
+  "four-controls": [
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 220,
+          "median": 210,
+          "min": 200,
+          "samples": [
+            220,
+            200,
+            210
+          ]
+        },
+        "rss_mib": {
+          "max": 5.234375,
+          "median": 5.21875,
+          "min": 5.1875,
+          "samples": [
+            5.21875,
+            5.1875,
+            5.234375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1573.5947554496368,
+          "median": 1446.0832710331285,
+          "min": 1403.2302184224309,
+          "samples": [
+            1403.2302184224309,
+            1573.5947554496368,
+            1446.0832710331285
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 200,
+          "min": 200,
+          "samples": [
+            200,
+            200,
+            210
+          ]
+        },
+        "rss_mib": {
+          "max": 5.3125,
+          "median": 5.3125,
+          "min": 5.28125,
+          "samples": [
+            5.3125,
+            5.28125,
+            5.3125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1542.8231291172285,
+          "median": 1503.3377327494197,
+          "min": 1455.464423204708,
+          "samples": [
+            1542.8231291172285,
+            1503.3377327494197,
+            1455.464423204708
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1600,
+          "median": 1590,
+          "min": 1570,
+          "samples": [
+            1590,
+            1570,
+            1600
+          ]
+        },
+        "rss_mib": {
+          "max": 5.75,
+          "median": 5.71875,
+          "min": 5.609375,
+          "samples": [
+            5.75,
+            5.71875,
+            5.609375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2334.2190182432096,
+          "median": 2307.80445343178,
+          "min": 2300.7878485148026,
+          "samples": [
+            2307.80445343178,
+            2334.2190182432096,
+            2300.7878485148026
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1560,
+          "median": 1560,
+          "min": 1550,
+          "samples": [
+            1550,
+            1560,
+            1560
+          ]
+        },
+        "rss_mib": {
+          "max": 5.875,
+          "median": 5.875,
+          "min": 5.84375,
+          "samples": [
+            5.875,
+            5.84375,
+            5.875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2333.271068718857,
+          "median": 2320.7896804183088,
+          "min": 2298.695651171552,
+          "samples": [
+            2320.7896804183088,
+            2298.695651171552,
+            2333.271068718857
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 390,
+          "median": 380,
+          "min": 370,
+          "samples": [
+            390,
+            370,
+            380
+          ]
+        },
+        "rss_mib": {
+          "max": 5.46875,
+          "median": 5.453125,
+          "min": 5.4375,
+          "samples": [
+            5.453125,
+            5.4375,
+            5.46875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1616.6787339209104,
+          "median": 1593.8586633378266,
+          "min": 1558.0068467097756,
+          "samples": [
+            1558.0068467097756,
+            1616.6787339209104,
+            1593.8586633378266
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 390,
+          "median": 370,
+          "min": 350,
+          "samples": [
+            390,
+            370,
+            350
+          ]
+        },
+        "rss_mib": {
+          "max": 5.5,
+          "median": 5.5,
+          "min": 5.46875,
+          "samples": [
+            5.46875,
+            5.5,
+            5.5
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1735.842810998353,
+          "median": 1636.6040980240573,
+          "min": 1530.2569472073876,
+          "samples": [
+            1530.2569472073876,
+            1636.6040980240573,
+            1735.842810998353
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3090,
+          "median": 3070,
+          "min": 3010,
+          "samples": [
+            3070,
+            3090,
+            3010
+          ]
+        },
+        "rss_mib": {
+          "max": 7.078125,
+          "median": 6.953125,
+          "min": 6.890625,
+          "samples": [
+            7.078125,
+            6.890625,
+            6.953125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1539.1599195566187,
+          "median": 1520.7241126269248,
+          "min": 1506.2375697225134,
+          "samples": [
+            1539.1599195566187,
+            1506.2375697225134,
+            1520.7241126269248
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3030,
+          "median": 3000,
+          "min": 2960,
+          "samples": [
+            3030,
+            2960,
+            3000
+          ]
+        },
+        "rss_mib": {
+          "max": 7.09375,
+          "median": 7.078125,
+          "min": 7.078125,
+          "samples": [
+            7.078125,
+            7.09375,
+            7.078125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1617.9352495898254,
+          "median": 1571.2549850174241,
+          "min": 1557.889565891471,
+          "samples": [
+            1617.9352495898254,
+            1571.2549850174241,
+            1557.889565891471
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 190,
+          "median": 180,
+          "min": 170,
+          "samples": [
+            170,
+            180,
+            190
+          ]
+        },
+        "rss_mib": {
+          "max": 5.4375,
+          "median": 5.4375,
+          "min": 5.390625,
+          "samples": [
+            5.390625,
+            5.4375,
+            5.4375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1593.8545352221804,
+          "median": 1591.5766700002116,
+          "min": 1583.7684324661839,
+          "samples": [
+            1591.5766700002116,
+            1583.7684324661839,
+            1593.8545352221804
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 190,
+          "median": 180,
+          "min": 140,
+          "samples": [
+            140,
+            190,
+            180
+          ]
+        },
+        "rss_mib": {
+          "max": 5.46875,
+          "median": 5.46875,
+          "min": 5.453125,
+          "samples": [
+            5.46875,
+            5.453125,
+            5.46875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1892.4442330689371,
+          "median": 1593.2936477909127,
+          "min": 1552.2685474065574,
+          "samples": [
+            1892.4442330689371,
+            1552.2685474065574,
+            1593.2936477909127
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1360,
+          "median": 1340,
+          "min": 1270,
+          "samples": [
+            1340,
+            1360,
+            1270
+          ]
+        },
+        "rss_mib": {
+          "max": 6.9375,
+          "median": 6.84375,
+          "min": 6.828125,
+          "samples": [
+            6.9375,
+            6.84375,
+            6.828125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2966.0413250804104,
+          "median": 2839.5268689931886,
+          "min": 2814.5130442083946,
+          "samples": [
+            2839.5268689931886,
+            2814.5130442083946,
+            2966.0413250804104
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1310,
+          "median": 1310,
+          "min": 1260,
+          "samples": [
+            1310,
+            1260,
+            1310
+          ]
+        },
+        "rss_mib": {
+          "max": 6.828125,
+          "median": 6.8125,
+          "min": 6.734375,
+          "samples": [
+            6.8125,
+            6.734375,
+            6.828125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 3030.0019041372316,
+          "median": 2907.8328459492645,
+          "min": 2904.5810395504905,
+          "samples": [
+            2907.8328459492645,
+            3030.0019041372316,
+            2904.5810395504905
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 350,
+          "median": 340,
+          "min": 340,
+          "samples": [
+            340,
+            340,
+            350
+          ]
+        },
+        "rss_mib": {
+          "max": 5.21875,
+          "median": 5.203125,
+          "min": 5.1875,
+          "samples": [
+            5.1875,
+            5.21875,
+            5.203125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 664.4194219649135,
+          "median": 660.6281128228949,
+          "min": 659.4894940258007,
+          "samples": [
+            664.4194219649135,
+            659.4894940258007,
+            660.6281128228949
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 350,
+          "median": 340,
+          "min": 340,
+          "samples": [
+            340,
+            340,
+            350
+          ]
+        },
+        "rss_mib": {
+          "max": 5.296875,
+          "median": 5.28125,
+          "min": 5.234375,
+          "samples": [
+            5.28125,
+            5.296875,
+            5.234375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 657.0959242131435,
+          "median": 649.8644005888249,
+          "min": 608.3390576216807,
+          "samples": [
+            649.8644005888249,
+            657.0959242131435,
+            608.3390576216807
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2510,
+          "median": 2450,
+          "min": 2450,
+          "samples": [
+            2510,
+            2450,
+            2450
+          ]
+        },
+        "rss_mib": {
+          "max": 5.625,
+          "median": 5.609375,
+          "min": 5.578125,
+          "samples": [
+            5.609375,
+            5.625,
+            5.578125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1612.1541307513676,
+          "median": 1600.0143751291516,
+          "min": 1562.6164856960938,
+          "samples": [
+            1562.6164856960938,
+            1600.0143751291516,
+            1612.1541307513676
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2460,
+          "median": 2450,
+          "min": 2430,
+          "samples": [
+            2430,
+            2450,
+            2460
+          ]
+        },
+        "rss_mib": {
+          "max": 5.84375,
+          "median": 5.84375,
+          "min": 5.828125,
+          "samples": [
+            5.84375,
+            5.828125,
+            5.84375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1609.0105116609586,
+          "median": 1596.640039432643,
+          "min": 1594.3168210350175,
+          "samples": [
+            1609.0105116609586,
+            1594.3168210350175,
+            1596.640039432643
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 660,
+          "median": 660,
+          "min": 660,
+          "samples": [
+            660,
+            660,
+            660
+          ]
+        },
+        "rss_mib": {
+          "max": 5.453125,
+          "median": 5.421875,
+          "min": 5.40625,
+          "samples": [
+            5.453125,
+            5.421875,
+            5.40625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 776.1762405176125,
+          "median": 765.8775614249623,
+          "min": 761.7844577744326,
+          "samples": [
+            765.8775614249623,
+            776.1762405176125,
+            761.7844577744326
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 650,
+          "median": 650,
+          "min": 640,
+          "samples": [
+            650,
+            650,
+            640
+          ]
+        },
+        "rss_mib": {
+          "max": 5.484375,
+          "median": 5.484375,
+          "min": 5.484375,
+          "samples": [
+            5.484375,
+            5.484375,
+            5.484375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 792.4293074549983,
+          "median": 784.7561125144076,
+          "min": 773.821848678533,
+          "samples": [
+            784.7561125144076,
+            773.821848678533,
+            792.4293074549983
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 4910,
+          "median": 4890,
+          "min": 4860,
+          "samples": [
+            4910,
+            4860,
+            4890
+          ]
+        },
+        "rss_mib": {
+          "max": 6.859375,
+          "median": 6.84375,
+          "min": 6.8125,
+          "samples": [
+            6.84375,
+            6.859375,
+            6.8125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1618.1980913875,
+          "median": 1615.4136064888787,
+          "min": 1599.9894531945224,
+          "samples": [
+            1599.9894531945224,
+            1618.1980913875,
+            1615.4136064888787
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 4810,
+          "median": 4700,
+          "min": 4650,
+          "samples": [
+            4700,
+            4650,
+            4810
+          ]
+        },
+        "rss_mib": {
+          "max": 7.15625,
+          "median": 7.09375,
+          "min": 7.078125,
+          "samples": [
+            7.15625,
+            7.078125,
+            7.09375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1692.4412571603234,
+          "median": 1675.0526648867187,
+          "min": 1637.359022148981,
+          "samples": [
+            1675.0526648867187,
+            1692.4412571603234,
+            1637.359022148981
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 280,
+          "median": 270,
+          "min": 270,
+          "samples": [
+            270,
+            270,
+            280
+          ]
+        },
+        "rss_mib": {
+          "max": 5.4375,
+          "median": 5.40625,
+          "min": 5.375,
+          "samples": [
+            5.40625,
+            5.4375,
+            5.375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 734.0914883023884,
+          "median": 715.5235060651797,
+          "min": 712.4304273770227,
+          "samples": [
+            734.0914883023884,
+            712.4304273770227,
+            715.5235060651797
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 280,
+          "median": 270,
+          "min": 260,
+          "samples": [
+            280,
+            260,
+            270
+          ]
+        },
+        "rss_mib": {
+          "max": 5.4375,
+          "median": 5.4375,
+          "min": 5.40625,
+          "samples": [
+            5.4375,
+            5.4375,
+            5.40625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 737.1071925897693,
+          "median": 725.8495528172749,
+          "min": 711.3392514406447,
+          "samples": [
+            711.3392514406447,
+            737.1071925897693,
+            725.8495528172749
+          ]
+        }
+      },
+      "version": "four"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2340,
+          "median": 2320,
+          "min": 2310,
+          "samples": [
+            2340,
+            2320,
+            2310
+          ]
+        },
+        "rss_mib": {
+          "max": 6.9375,
+          "median": 6.765625,
+          "min": 6.75,
+          "samples": [
+            6.9375,
+            6.75,
+            6.765625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1686.514515958904,
+          "median": 1678.4493689433184,
+          "min": 1659.59507505729,
+          "samples": [
+            1659.59507505729,
+            1686.514515958904,
+            1678.4493689433184
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2320,
+          "median": 2300,
+          "min": 2270,
+          "samples": [
+            2300,
+            2270,
+            2320
+          ]
+        },
+        "rss_mib": {
+          "max": 6.90625,
+          "median": 6.8125,
+          "min": 6.796875,
+          "samples": [
+            6.8125,
+            6.796875,
+            6.90625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1711.69989596166,
+          "median": 1706.80564189372,
+          "min": 1682.4879132795782,
+          "samples": [
+            1706.80564189372,
+            1711.69989596166,
+            1682.4879132795782
+          ]
+        }
+      },
+      "version": "four"
+    }
+  ],
+  "latency-confirmation": [
+    {
+      "case": "vmess-chacha20-socks-tcp-latency-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 200,
+          "min": 200,
+          "samples": [
+            210,
+            210,
+            200,
+            200,
+            200
+          ]
+        },
+        "latency_median_us": {
+          "max": 154,
+          "median": 142,
+          "min": 137,
+          "samples": [
+            154,
+            142,
+            143,
+            137,
+            138
+          ]
+        },
+        "latency_min_us": {
+          "max": 61,
+          "median": 57,
+          "min": 57,
+          "samples": [
+            59,
+            57,
+            57,
+            61,
+            57
+          ]
+        },
+        "latency_p95_us": {
+          "max": 316,
+          "median": 310,
+          "min": 291,
+          "samples": [
+            310,
+            291,
+            313,
+            291,
+            316
+          ]
+        },
+        "latency_p99_us": {
+          "max": 521,
+          "median": 470,
+          "min": 387,
+          "samples": [
+            399,
+            521,
+            387,
+            488,
+            470
+          ]
+        },
+        "rss_mib": {
+          "max": 5.5625,
+          "median": 5.546875,
+          "min": 5.53125,
+          "samples": [
+            5.546875,
+            5.546875,
+            5.53125,
+            5.5625,
+            5.5625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 95.95939285911777,
+          "median": 94.61341802105194,
+          "min": 90.45877070148967,
+          "samples": [
+            90.45877070148967,
+            92.40035440813823,
+            95.20554966523474,
+            95.95939285911777,
+            94.61341802105194
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-tcp-latency-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 200,
+          "min": 180,
+          "samples": [
+            200,
+            210,
+            200,
+            180,
+            210
+          ]
+        },
+        "latency_median_us": {
+          "max": 142,
+          "median": 140,
+          "min": 134,
+          "samples": [
+            138,
+            142,
+            140,
+            134,
+            142
+          ]
+        },
+        "latency_min_us": {
+          "max": 64,
+          "median": 61,
+          "min": 58,
+          "samples": [
+            60,
+            63,
+            64,
+            61,
+            58
+          ]
+        },
+        "latency_p95_us": {
+          "max": 335,
+          "median": 309,
+          "min": 268,
+          "samples": [
+            318,
+            268,
+            335,
+            296,
+            309
+          ]
+        },
+        "latency_p99_us": {
+          "max": 686,
+          "median": 480,
+          "min": 447,
+          "samples": [
+            447,
+            480,
+            563,
+            686,
+            468
+          ]
+        },
+        "rss_mib": {
+          "max": 5.65625,
+          "median": 5.640625,
+          "min": 5.46875,
+          "samples": [
+            5.640625,
+            5.5,
+            5.65625,
+            5.46875,
+            5.65625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 99.43407470255164,
+          "median": 95.03559361245006,
+          "min": 93.07123187819724,
+          "samples": [
+            96.84997396672699,
+            95.03559361245006,
+            93.42585879605537,
+            99.43407470255164,
+            93.07123187819724
+          ]
+        }
+      },
+      "version": "combined"
+    }
+  ],
+  "latency-controls": [
+    {
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 40,
+          "samples": [
+            40,
+            40,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 77,
+          "median": 76,
+          "min": 73,
+          "samples": [
+            73,
+            76,
+            77
+          ]
+        },
+        "latency_min_us": {
+          "max": 57,
+          "median": 56,
+          "min": 55,
+          "samples": [
+            57,
+            55,
+            56
+          ]
+        },
+        "latency_p95_us": {
+          "max": 254,
+          "median": 240,
+          "min": 228,
+          "samples": [
+            228,
+            254,
+            240
+          ]
+        },
+        "latency_p99_us": {
+          "max": 375,
+          "median": 344,
+          "min": 340,
+          "samples": [
+            375,
+            340,
+            344
+          ]
+        },
+        "rss_mib": {
+          "max": 5.203125,
+          "median": 5.203125,
+          "min": 5.171875,
+          "samples": [
+            5.203125,
+            5.171875,
+            5.203125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 20.027489533460933,
+          "median": 18.661105955669573,
+          "min": 18.60632936715855,
+          "samples": [
+            20.027489533460933,
+            18.60632936715855,
+            18.661105955669573
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 40,
+          "samples": [
+            40,
+            40,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 78,
+          "median": 77,
+          "min": 76,
+          "samples": [
+            77,
+            78,
+            76
+          ]
+        },
+        "latency_min_us": {
+          "max": 58,
+          "median": 58,
+          "min": 57,
+          "samples": [
+            57,
+            58,
+            58
+          ]
+        },
+        "latency_p95_us": {
+          "max": 238,
+          "median": 232,
+          "min": 182,
+          "samples": [
+            232,
+            238,
+            182
+          ]
+        },
+        "latency_p99_us": {
+          "max": 449,
+          "median": 368,
+          "min": 332,
+          "samples": [
+            332,
+            368,
+            449
+          ]
+        },
+        "rss_mib": {
+          "max": 5.265625,
+          "median": 5.234375,
+          "min": 5.234375,
+          "samples": [
+            5.234375,
+            5.265625,
+            5.234375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 19.127258393653054,
+          "median": 18.896653145733406,
+          "min": 18.700391601160444,
+          "samples": [
+            19.127258393653054,
+            18.896653145733406,
+            18.700391601160444
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-tcp-latency-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 190,
+          "median": 190,
+          "min": 170,
+          "samples": [
+            190,
+            190,
+            170
+          ]
+        },
+        "latency_median_us": {
+          "max": 135,
+          "median": 134,
+          "min": 131,
+          "samples": [
+            135,
+            134,
+            131
+          ]
+        },
+        "latency_min_us": {
+          "max": 61,
+          "median": 54,
+          "min": 52,
+          "samples": [
+            54,
+            61,
+            52
+          ]
+        },
+        "latency_p95_us": {
+          "max": 335,
+          "median": 317,
+          "min": 299,
+          "samples": [
+            335,
+            317,
+            299
+          ]
+        },
+        "latency_p99_us": {
+          "max": 673,
+          "median": 523,
+          "min": 502,
+          "samples": [
+            502,
+            523,
+            673
+          ]
+        },
+        "rss_mib": {
+          "max": 5.609375,
+          "median": 5.5625,
+          "min": 5.546875,
+          "samples": [
+            5.609375,
+            5.5625,
+            5.546875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 102.36878619584206,
+          "median": 97.02686402189548,
+          "min": 95.59028056625247,
+          "samples": [
+            95.59028056625247,
+            97.02686402189548,
+            102.36878619584206
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-tcp-latency-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 200,
+          "median": 200,
+          "min": 190,
+          "samples": [
+            200,
+            190,
+            200
+          ]
+        },
+        "latency_median_us": {
+          "max": 137,
+          "median": 137,
+          "min": 135,
+          "samples": [
+            137,
+            135,
+            137
+          ]
+        },
+        "latency_min_us": {
+          "max": 60,
+          "median": 56,
+          "min": 55,
+          "samples": [
+            56,
+            55,
+            60
+          ]
+        },
+        "latency_p95_us": {
+          "max": 334,
+          "median": 328,
+          "min": 294,
+          "samples": [
+            328,
+            334,
+            294
+          ]
+        },
+        "latency_p99_us": {
+          "max": 512,
+          "median": 510,
+          "min": 498,
+          "samples": [
+            510,
+            512,
+            498
+          ]
+        },
+        "rss_mib": {
+          "max": 5.671875,
+          "median": 5.65625,
+          "min": 5.65625,
+          "samples": [
+            5.671875,
+            5.65625,
+            5.65625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 95.96793942388196,
+          "median": 95.53930792853966,
+          "min": 94.35635754265851,
+          "samples": [
+            94.35635754265851,
+            95.96793942388196,
+            95.53930792853966
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-udp-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 30,
+          "min": 30,
+          "samples": [
+            30,
+            40,
+            30
+          ]
+        },
+        "latency_median_us": {
+          "max": 106,
+          "median": 102,
+          "min": 101,
+          "samples": [
+            102,
+            106,
+            101
+          ]
+        },
+        "latency_min_us": {
+          "max": 90,
+          "median": 83,
+          "min": 83,
+          "samples": [
+            83,
+            90,
+            83
+          ]
+        },
+        "latency_p95_us": {
+          "max": 324,
+          "median": 322,
+          "min": 291,
+          "samples": [
+            291,
+            322,
+            324
+          ]
+        },
+        "latency_p99_us": {
+          "max": 579,
+          "median": 537,
+          "min": 488,
+          "samples": [
+            488,
+            537,
+            579
+          ]
+        },
+        "rss_mib": {
+          "max": 5.75,
+          "median": 5.71875,
+          "min": 5.71875,
+          "samples": [
+            5.71875,
+            5.75,
+            5.71875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 17.563686244811862,
+          "median": 16.89985924582089,
+          "min": 16.380806021622735,
+          "samples": [
+            17.563686244811862,
+            16.380806021622735,
+            16.89985924582089
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-udp-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 30,
+          "samples": [
+            30,
+            40,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 102,
+          "median": 102,
+          "min": 101,
+          "samples": [
+            101,
+            102,
+            102
+          ]
+        },
+        "latency_min_us": {
+          "max": 89,
+          "median": 83,
+          "min": 82,
+          "samples": [
+            89,
+            82,
+            83
+          ]
+        },
+        "latency_p95_us": {
+          "max": 307,
+          "median": 295,
+          "min": 213,
+          "samples": [
+            213,
+            307,
+            295
+          ]
+        },
+        "latency_p99_us": {
+          "max": 616,
+          "median": 564,
+          "min": 259,
+          "samples": [
+            259,
+            616,
+            564
+          ]
+        },
+        "rss_mib": {
+          "max": 5.75,
+          "median": 5.734375,
+          "min": 5.6875,
+          "samples": [
+            5.734375,
+            5.6875,
+            5.75
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 19.626321534422694,
+          "median": 17.129539406597942,
+          "min": 16.790379496175284,
+          "samples": [
+            19.626321534422694,
+            16.790379496175284,
+            17.129539406597942
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-aes128-socks-udp-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 200,
+          "median": 190,
+          "min": 170,
+          "samples": [
+            170,
+            200,
+            190
+          ]
+        },
+        "latency_median_us": {
+          "max": 202,
+          "median": 199,
+          "min": 191,
+          "samples": [
+            191,
+            202,
+            199
+          ]
+        },
+        "latency_min_us": {
+          "max": 113,
+          "median": 95,
+          "min": 77,
+          "samples": [
+            77,
+            95,
+            113
+          ]
+        },
+        "latency_p95_us": {
+          "max": 403,
+          "median": 360,
+          "min": 348,
+          "samples": [
+            403,
+            348,
+            360
+          ]
+        },
+        "latency_p99_us": {
+          "max": 828,
+          "median": 785,
+          "min": 510,
+          "samples": [
+            510,
+            828,
+            785
+          ]
+        },
+        "rss_mib": {
+          "max": 6.28125,
+          "median": 6.25,
+          "min": 6.21875,
+          "samples": [
+            6.21875,
+            6.25,
+            6.28125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 85.0282181931474,
+          "median": 78.69851278866362,
+          "min": 77.5936525719697,
+          "samples": [
+            85.0282181931474,
+            77.5936525719697,
+            78.69851278866362
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-udp-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 200,
+          "median": 200,
+          "min": 200,
+          "samples": [
+            200,
+            200,
+            200
+          ]
+        },
+        "latency_median_us": {
+          "max": 203,
+          "median": 202,
+          "min": 202,
+          "samples": [
+            203,
+            202,
+            202
+          ]
+        },
+        "latency_min_us": {
+          "max": 125,
+          "median": 116,
+          "min": 103,
+          "samples": [
+            116,
+            103,
+            125
+          ]
+        },
+        "latency_p95_us": {
+          "max": 370,
+          "median": 369,
+          "min": 349,
+          "samples": [
+            349,
+            370,
+            369
+          ]
+        },
+        "latency_p99_us": {
+          "max": 790,
+          "median": 771,
+          "min": 743,
+          "samples": [
+            743,
+            771,
+            790
+          ]
+        },
+        "rss_mib": {
+          "max": 6.328125,
+          "median": 6.296875,
+          "min": 6.296875,
+          "samples": [
+            6.296875,
+            6.328125,
+            6.296875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 77.74004522705175,
+          "median": 77.55094367764315,
+          "min": 77.51908339211583,
+          "samples": [
+            77.74004522705175,
+            77.55094367764315,
+            77.51908339211583
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 40,
+          "samples": [
+            40,
+            40,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 82,
+          "median": 80,
+          "min": 80,
+          "samples": [
+            82,
+            80,
+            80
+          ]
+        },
+        "latency_min_us": {
+          "max": 62,
+          "median": 62,
+          "min": 61,
+          "samples": [
+            62,
+            61,
+            62
+          ]
+        },
+        "latency_p95_us": {
+          "max": 258,
+          "median": 238,
+          "min": 225,
+          "samples": [
+            238,
+            258,
+            225
+          ]
+        },
+        "latency_p99_us": {
+          "max": 396,
+          "median": 351,
+          "min": 302,
+          "samples": [
+            302,
+            396,
+            351
+          ]
+        },
+        "rss_mib": {
+          "max": 5.21875,
+          "median": 5.1875,
+          "min": 5.15625,
+          "samples": [
+            5.1875,
+            5.15625,
+            5.21875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 18.377178446610944,
+          "median": 18.23732697077796,
+          "min": 17.597861001112747,
+          "samples": [
+            18.23732697077796,
+            17.597861001112747,
+            18.377178446610944
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 30,
+          "samples": [
+            40,
+            30,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 81,
+          "median": 79,
+          "min": 75,
+          "samples": [
+            79,
+            75,
+            81
+          ]
+        },
+        "latency_min_us": {
+          "max": 63,
+          "median": 62,
+          "min": 59,
+          "samples": [
+            62,
+            59,
+            63
+          ]
+        },
+        "latency_p95_us": {
+          "max": 239,
+          "median": 233,
+          "min": 169,
+          "samples": [
+            233,
+            169,
+            239
+          ]
+        },
+        "latency_p99_us": {
+          "max": 349,
+          "median": 319,
+          "min": 260,
+          "samples": [
+            319,
+            260,
+            349
+          ]
+        },
+        "rss_mib": {
+          "max": 5.21875,
+          "median": 5.21875,
+          "min": 5.21875,
+          "samples": [
+            5.21875,
+            5.21875,
+            5.21875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 20.859495925001017,
+          "median": 18.464261796757185,
+          "min": 18.022496689627808,
+          "samples": [
+            18.464261796757185,
+            20.859495925001017,
+            18.022496689627808
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-chacha20-socks-tcp-latency-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 200,
+          "median": 200,
+          "min": 180,
+          "samples": [
+            180,
+            200,
+            200
+          ]
+        },
+        "latency_median_us": {
+          "max": 140,
+          "median": 138,
+          "min": 134,
+          "samples": [
+            134,
+            140,
+            138
+          ]
+        },
+        "latency_min_us": {
+          "max": 59,
+          "median": 58,
+          "min": 55,
+          "samples": [
+            55,
+            58,
+            59
+          ]
+        },
+        "latency_p95_us": {
+          "max": 319,
+          "median": 317,
+          "min": 306,
+          "samples": [
+            319,
+            306,
+            317
+          ]
+        },
+        "latency_p99_us": {
+          "max": 550,
+          "median": 480,
+          "min": 451,
+          "samples": [
+            451,
+            480,
+            550
+          ]
+        },
+        "rss_mib": {
+          "max": 5.59375,
+          "median": 5.53125,
+          "min": 5.53125,
+          "samples": [
+            5.53125,
+            5.53125,
+            5.59375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 102.0328202851042,
+          "median": 94.30960926674813,
+          "min": 94.12400153183877,
+          "samples": [
+            102.0328202851042,
+            94.12400153183877,
+            94.30960926674813
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-tcp-latency-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 200,
+          "min": 180,
+          "samples": [
+            200,
+            210,
+            180
+          ]
+        },
+        "latency_median_us": {
+          "max": 141,
+          "median": 138,
+          "min": 134,
+          "samples": [
+            138,
+            141,
+            134
+          ]
+        },
+        "latency_min_us": {
+          "max": 61,
+          "median": 60,
+          "min": 54,
+          "samples": [
+            60,
+            61,
+            54
+          ]
+        },
+        "latency_p95_us": {
+          "max": 350,
+          "median": 350,
+          "min": 318,
+          "samples": [
+            350,
+            350,
+            318
+          ]
+        },
+        "latency_p99_us": {
+          "max": 569,
+          "median": 547,
+          "min": 518,
+          "samples": [
+            547,
+            518,
+            569
+          ]
+        },
+        "rss_mib": {
+          "max": 5.640625,
+          "median": 5.625,
+          "min": 5.515625,
+          "samples": [
+            5.515625,
+            5.640625,
+            5.625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 99.52966262629317,
+          "median": 94.05313324845977,
+          "min": 91.93697977459995,
+          "samples": [
+            94.05313324845977,
+            91.93697977459995,
+            99.52966262629317
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-chacha20-socks-udp-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 30,
+          "samples": [
+            40,
+            30,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 105,
+          "median": 105,
+          "min": 105,
+          "samples": [
+            105,
+            105,
+            105
+          ]
+        },
+        "latency_min_us": {
+          "max": 88,
+          "median": 88,
+          "min": 82,
+          "samples": [
+            88,
+            88,
+            82
+          ]
+        },
+        "latency_p95_us": {
+          "max": 312,
+          "median": 307,
+          "min": 289,
+          "samples": [
+            307,
+            289,
+            312
+          ]
+        },
+        "latency_p99_us": {
+          "max": 621,
+          "median": 570,
+          "min": 463,
+          "samples": [
+            621,
+            463,
+            570
+          ]
+        },
+        "rss_mib": {
+          "max": 5.71875,
+          "median": 5.6875,
+          "min": 5.671875,
+          "samples": [
+            5.6875,
+            5.71875,
+            5.671875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 17.19946708061332,
+          "median": 16.763755184157763,
+          "min": 16.573045371316546,
+          "samples": [
+            16.573045371316546,
+            17.19946708061332,
+            16.763755184157763
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-udp-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 40,
+          "median": 40,
+          "min": 40,
+          "samples": [
+            40,
+            40,
+            40
+          ]
+        },
+        "latency_median_us": {
+          "max": 105,
+          "median": 105,
+          "min": 104,
+          "samples": [
+            104,
+            105,
+            105
+          ]
+        },
+        "latency_min_us": {
+          "max": 88,
+          "median": 87,
+          "min": 85,
+          "samples": [
+            85,
+            87,
+            88
+          ]
+        },
+        "latency_p95_us": {
+          "max": 337,
+          "median": 323,
+          "min": 294,
+          "samples": [
+            323,
+            294,
+            337
+          ]
+        },
+        "latency_p99_us": {
+          "max": 677,
+          "median": 582,
+          "min": 491,
+          "samples": [
+            491,
+            677,
+            582
+          ]
+        },
+        "rss_mib": {
+          "max": 5.78125,
+          "median": 5.75,
+          "min": 5.703125,
+          "samples": [
+            5.75,
+            5.703125,
+            5.78125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 16.916888406173598,
+          "median": 16.85375854743533,
+          "min": 16.77890666268486,
+          "samples": [
+            16.916888406173598,
+            16.85375854743533,
+            16.77890666268486
+          ]
+        }
+      },
+      "version": "combined"
+    },
+    {
+      "case": "vmess-chacha20-socks-udp-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 200,
+          "min": 200,
+          "samples": [
+            200,
+            200,
+            210
+          ]
+        },
+        "latency_median_us": {
+          "max": 208,
+          "median": 206,
+          "min": 205,
+          "samples": [
+            206,
+            208,
+            205
+          ]
+        },
+        "latency_min_us": {
+          "max": 111,
+          "median": 111,
+          "min": 103,
+          "samples": [
+            103,
+            111,
+            111
+          ]
+        },
+        "latency_p95_us": {
+          "max": 399,
+          "median": 399,
+          "min": 369,
+          "samples": [
+            399,
+            369,
+            399
+          ]
+        },
+        "latency_p99_us": {
+          "max": 726,
+          "median": 691,
+          "min": 690,
+          "samples": [
+            691,
+            690,
+            726
+          ]
+        },
+        "rss_mib": {
+          "max": 6.265625,
+          "median": 6.21875,
+          "min": 6.21875,
+          "samples": [
+            6.265625,
+            6.21875,
+            6.21875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 77.1929892217059,
+          "median": 76.81758518484335,
+          "min": 76.55704348104071,
+          "samples": [
+            76.81758518484335,
+            77.1929892217059,
+            76.55704348104071
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-udp-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 210,
+          "min": 200,
+          "samples": [
+            210,
+            210,
+            200
+          ]
+        },
+        "latency_median_us": {
+          "max": 207,
+          "median": 205,
+          "min": 205,
+          "samples": [
+            205,
+            207,
+            205
+          ]
+        },
+        "latency_min_us": {
+          "max": 121,
+          "median": 117,
+          "min": 98,
+          "samples": [
+            98,
+            117,
+            121
+          ]
+        },
+        "latency_p95_us": {
+          "max": 376,
+          "median": 376,
+          "min": 364,
+          "samples": [
+            376,
+            364,
+            376
+          ]
+        },
+        "latency_p99_us": {
+          "max": 931,
+          "median": 776,
+          "min": 766,
+          "samples": [
+            776,
+            931,
+            766
+          ]
+        },
+        "rss_mib": {
+          "max": 6.328125,
+          "median": 6.328125,
+          "min": 6.296875,
+          "samples": [
+            6.296875,
+            6.328125,
+            6.328125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 76.95304267214641,
+          "median": 76.2444658310284,
+          "min": 75.90231026466962,
+          "samples": [
+            76.2444658310284,
+            75.90231026466962,
+            76.95304267214641
+          ]
+        }
+      },
+      "version": "combined"
+    }
+  ],
+  "read16-controls": [
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 210,
+          "min": 170,
+          "samples": [
+            210,
+            210,
+            170
+          ]
+        },
+        "rss_mib": {
+          "max": 5.234375,
+          "median": 5.203125,
+          "min": 5.203125,
+          "samples": [
+            5.203125,
+            5.234375,
+            5.203125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1791.238499732801,
+          "median": 1470.4456929511227,
+          "min": 1456.744708653676,
+          "samples": [
+            1470.4456929511227,
+            1456.744708653676,
+            1791.238499732801
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 200,
+          "median": 200,
+          "min": 180,
+          "samples": [
+            200,
+            180,
+            200
+          ]
+        },
+        "rss_mib": {
+          "max": 5.296875,
+          "median": 5.28125,
+          "min": 5.25,
+          "samples": [
+            5.296875,
+            5.28125,
+            5.25
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1638.2405480815667,
+          "median": 1433.1346107455524,
+          "min": 970.4157463480013,
+          "samples": [
+            1433.1346107455524,
+            1638.2405480815667,
+            970.4157463480013
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1560,
+          "median": 1530,
+          "min": 1440,
+          "samples": [
+            1530,
+            1560,
+            1440
+          ]
+        },
+        "rss_mib": {
+          "max": 5.765625,
+          "median": 5.75,
+          "min": 5.625,
+          "samples": [
+            5.625,
+            5.75,
+            5.765625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2600.284227317822,
+          "median": 2473.749005560147,
+          "min": 2414.515860915195,
+          "samples": [
+            2473.749005560147,
+            2414.515860915195,
+            2600.284227317822
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1590,
+          "median": 1500,
+          "min": 1460,
+          "samples": [
+            1500,
+            1460,
+            1590
+          ]
+        },
+        "rss_mib": {
+          "max": 5.84375,
+          "median": 5.828125,
+          "min": 5.796875,
+          "samples": [
+            5.828125,
+            5.84375,
+            5.796875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2612.862980028763,
+          "median": 2524.7554646430453,
+          "min": 2282.1322168566053,
+          "samples": [
+            2524.7554646430453,
+            2612.862980028763,
+            2282.1322168566053
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 390,
+          "median": 380,
+          "min": 380,
+          "samples": [
+            380,
+            390,
+            380
+          ]
+        },
+        "rss_mib": {
+          "max": 5.421875,
+          "median": 5.421875,
+          "min": 5.40625,
+          "samples": [
+            5.421875,
+            5.421875,
+            5.40625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1553.2517764308488,
+          "median": 1541.8706710381068,
+          "min": 1519.2038718928368,
+          "samples": [
+            1553.2517764308488,
+            1519.2038718928368,
+            1541.8706710381068
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 380,
+          "median": 370,
+          "min": 370,
+          "samples": [
+            370,
+            380,
+            370
+          ]
+        },
+        "rss_mib": {
+          "max": 5.515625,
+          "median": 5.484375,
+          "min": 5.453125,
+          "samples": [
+            5.484375,
+            5.453125,
+            5.515625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1595.9326559060532,
+          "median": 1578.5461567697844,
+          "min": 1575.671470011896,
+          "samples": [
+            1578.5461567697844,
+            1575.671470011896,
+            1595.9326559060532
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3290,
+          "median": 3260,
+          "min": 3120,
+          "samples": [
+            3260,
+            3120,
+            3290
+          ]
+        },
+        "rss_mib": {
+          "max": 6.984375,
+          "median": 6.96875,
+          "min": 6.84375,
+          "samples": [
+            6.96875,
+            6.84375,
+            6.984375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1736.7310183244522,
+          "median": 1580.013751828675,
+          "min": 1550.4892491604091,
+          "samples": [
+            1550.4892491604091,
+            1736.7310183244522,
+            1580.013751828675
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 3260,
+          "median": 3110,
+          "min": 3010,
+          "samples": [
+            3110,
+            3010,
+            3260
+          ]
+        },
+        "rss_mib": {
+          "max": 7.0625,
+          "median": 7.015625,
+          "min": 6.96875,
+          "samples": [
+            7.015625,
+            6.96875,
+            7.0625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1593.5718926511663,
+          "median": 1419.1754093190325,
+          "min": 1418.4233225709252,
+          "samples": [
+            1419.1754093190325,
+            1593.5718926511663,
+            1418.4233225709252
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 190,
+          "median": 180,
+          "min": 170,
+          "samples": [
+            180,
+            170,
+            190
+          ]
+        },
+        "rss_mib": {
+          "max": 5.421875,
+          "median": 5.421875,
+          "min": 5.40625,
+          "samples": [
+            5.421875,
+            5.40625,
+            5.421875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1602.3183543689775,
+          "median": 1530.416276216225,
+          "min": 1522.6063928651615,
+          "samples": [
+            1530.416276216225,
+            1602.3183543689775,
+            1522.6063928651615
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 210,
+          "median": 180,
+          "min": 180,
+          "samples": [
+            180,
+            210,
+            180
+          ]
+        },
+        "rss_mib": {
+          "max": 5.453125,
+          "median": 5.421875,
+          "min": 5.421875,
+          "samples": [
+            5.453125,
+            5.421875,
+            5.421875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 10,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            10,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1606.4110056021198,
+          "median": 1604.6937291577865,
+          "min": 1339.7135446478508,
+          "samples": [
+            1604.6937291577865,
+            1339.7135446478508,
+            1606.4110056021198
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1470,
+          "median": 1400,
+          "min": 1390,
+          "samples": [
+            1400,
+            1390,
+            1470
+          ]
+        },
+        "rss_mib": {
+          "max": 6.921875,
+          "median": 6.828125,
+          "min": 6.828125,
+          "samples": [
+            6.828125,
+            6.921875,
+            6.828125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2664.411918488505,
+          "median": 2623.269153115084,
+          "min": 2490.8177941887534,
+          "samples": [
+            2664.411918488505,
+            2623.269153115084,
+            2490.8177941887534
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-aes128-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 1400,
+          "median": 1390,
+          "min": 1370,
+          "samples": [
+            1370,
+            1400,
+            1390
+          ]
+        },
+        "rss_mib": {
+          "max": 6.828125,
+          "median": 6.78125,
+          "min": 6.75,
+          "samples": [
+            6.828125,
+            6.75,
+            6.78125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2696.273895612203,
+          "median": 2695.293927442111,
+          "min": 2651.5617413821005,
+          "samples": [
+            2695.293927442111,
+            2651.5617413821005,
+            2696.273895612203
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 360,
+          "median": 360,
+          "min": 350,
+          "samples": [
+            350,
+            360,
+            360
+          ]
+        },
+        "rss_mib": {
+          "max": 5.265625,
+          "median": 5.25,
+          "min": 5.1875,
+          "samples": [
+            5.1875,
+            5.25,
+            5.265625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 629.8229151020016,
+          "median": 629.2784713941007,
+          "min": 622.1648663986011,
+          "samples": [
+            629.8229151020016,
+            629.2784713941007,
+            622.1648663986011
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 350,
+          "median": 350,
+          "min": 350,
+          "samples": [
+            350,
+            350,
+            350
+          ]
+        },
+        "rss_mib": {
+          "max": 5.25,
+          "median": 5.234375,
+          "min": 5.21875,
+          "samples": [
+            5.21875,
+            5.25,
+            5.234375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 645.328192554841,
+          "median": 636.5736423699439,
+          "min": 633.224432088092,
+          "samples": [
+            633.224432088092,
+            645.328192554841,
+            636.5736423699439
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2880,
+          "median": 2720,
+          "min": 2650,
+          "samples": [
+            2650,
+            2720,
+            2880
+          ]
+        },
+        "rss_mib": {
+          "max": 5.734375,
+          "median": 5.71875,
+          "min": 5.6875,
+          "samples": [
+            5.71875,
+            5.734375,
+            5.6875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1451.5607178712241,
+          "median": 1418.3454939422672,
+          "min": 1324.0808229149384,
+          "samples": [
+            1451.5607178712241,
+            1418.3454939422672,
+            1324.0808229149384
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-download-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2670,
+          "median": 2640,
+          "min": 2580,
+          "samples": [
+            2670,
+            2640,
+            2580
+          ]
+        },
+        "rss_mib": {
+          "max": 5.828125,
+          "median": 5.8125,
+          "min": 5.78125,
+          "samples": [
+            5.828125,
+            5.8125,
+            5.78125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1477.1967229997729,
+          "median": 1449.8239586654283,
+          "min": 1419.0450149244837,
+          "samples": [
+            1419.0450149244837,
+            1449.8239586654283,
+            1477.1967229997729
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 770,
+          "median": 670,
+          "min": 660,
+          "samples": [
+            670,
+            770,
+            660
+          ]
+        },
+        "rss_mib": {
+          "max": 5.4375,
+          "median": 5.4375,
+          "min": 5.421875,
+          "samples": [
+            5.4375,
+            5.4375,
+            5.421875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 762.2500623172923,
+          "median": 751.5754467265372,
+          "min": 590.0336739132159,
+          "samples": [
+            751.5754467265372,
+            590.0336739132159,
+            762.2500623172923
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 670,
+          "median": 670,
+          "min": 650,
+          "samples": [
+            670,
+            650,
+            670
+          ]
+        },
+        "rss_mib": {
+          "max": 5.453125,
+          "median": 5.453125,
+          "min": 5.4375,
+          "samples": [
+            5.4375,
+            5.453125,
+            5.453125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 751.2809472211223,
+          "median": 750.6310542078038,
+          "min": 750.4995233946913,
+          "samples": [
+            750.6310542078038,
+            751.2809472211223,
+            750.4995233946913
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 5430,
+          "median": 5270,
+          "min": 5230,
+          "samples": [
+            5270,
+            5230,
+            5430
+          ]
+        },
+        "rss_mib": {
+          "max": 6.96875,
+          "median": 6.953125,
+          "min": 6.84375,
+          "samples": [
+            6.96875,
+            6.84375,
+            6.953125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1470.8439346851756,
+          "median": 1461.059778426147,
+          "min": 1429.8964965790356,
+          "samples": [
+            1470.8439346851756,
+            1461.059778426147,
+            1429.8964965790356
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-full-duplex-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 5400,
+          "median": 5220,
+          "min": 5200,
+          "samples": [
+            5220,
+            5400,
+            5200
+          ]
+        },
+        "rss_mib": {
+          "max": 7.09375,
+          "median": 7.015625,
+          "min": 6.9375,
+          "samples": [
+            7.09375,
+            6.9375,
+            7.015625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1486.8766166191704,
+          "median": 1475.8922580693,
+          "min": 1421.5200791609548,
+          "samples": [
+            1486.8766166191704,
+            1421.5200791609548,
+            1475.8922580693
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 290,
+          "median": 280,
+          "min": 280,
+          "samples": [
+            280,
+            280,
+            290
+          ]
+        },
+        "rss_mib": {
+          "max": 5.421875,
+          "median": 5.375,
+          "min": 5.375,
+          "samples": [
+            5.375,
+            5.375,
+            5.421875
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 693.5712246510385,
+          "median": 693.5243300783211,
+          "min": 693.3276572909123,
+          "samples": [
+            693.5243300783211,
+            693.3276572909123,
+            693.5712246510385
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-1",
+      "metrics": {
+        "cpu_ms": {
+          "max": 300,
+          "median": 300,
+          "min": 280,
+          "samples": [
+            300,
+            300,
+            280
+          ]
+        },
+        "rss_mib": {
+          "max": 5.421875,
+          "median": 5.359375,
+          "min": 5.359375,
+          "samples": [
+            5.359375,
+            5.421875,
+            5.359375
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 702.4137807525465,
+          "median": 688.7199789987756,
+          "min": 683.5368090245549,
+          "samples": [
+            683.5368090245549,
+            688.7199789987756,
+            702.4137807525465
+          ]
+        }
+      },
+      "version": "read16"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2490,
+          "median": 2480,
+          "min": 2440,
+          "samples": [
+            2440,
+            2490,
+            2480
+          ]
+        },
+        "rss_mib": {
+          "max": 6.796875,
+          "median": 6.78125,
+          "min": 6.71875,
+          "samples": [
+            6.796875,
+            6.71875,
+            6.78125
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1576.0935034463178,
+          "median": 1542.864347353476,
+          "min": 1534.8661168887154,
+          "samples": [
+            1576.0935034463178,
+            1534.8661168887154,
+            1542.864347353476
+          ]
+        }
+      },
+      "version": "baseline"
+    },
+    {
+      "case": "vmess-chacha20-socks-upload-8",
+      "metrics": {
+        "cpu_ms": {
+          "max": 2490,
+          "median": 2490,
+          "min": 2480,
+          "samples": [
+            2480,
+            2490,
+            2490
+          ]
+        },
+        "rss_mib": {
+          "max": 6.640625,
+          "median": 6.640625,
+          "min": 6.640625,
+          "samples": [
+            6.640625,
+            6.640625,
+            6.640625
+          ]
+        },
+        "startup_cpu_ms": {
+          "max": 0,
+          "median": 0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1551.2229257944784,
+          "median": 1545.8505461426575,
+          "min": 1540.9368732013074,
+          "samples": [
+            1545.8505461426575,
+            1551.2229257944784,
+            1540.9368732013074
+          ]
+        }
+      },
+      "version": "read16"
+    }
+  ],
+  "small-memory": [
+    {
+      "connections": 0,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 4.234375,
+        "median": 4.234375,
+        "min": 4.21875,
+        "samples": [
+          4.21875,
+          4.234375,
+          4.234375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 7.0,
+        "median": 6.984375,
+        "min": 6.96875,
+        "samples": [
+          6.984375,
+          7.0,
+          6.96875
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 11.25,
+        "median": 11.21875,
+        "min": 11.1875,
+        "samples": [
+          11.21875,
+          11.25,
+          11.1875
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 27.953125,
+        "median": 27.890625,
+        "min": 27.859375,
+        "samples": [
+          27.890625,
+          27.953125,
+          27.859375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.203125,
+        "min": 4.203125,
+        "samples": [
+          4.203125,
+          4.21875,
+          4.203125
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 6.984375,
+        "median": 6.984375,
+        "min": 6.96875,
+        "samples": [
+          6.96875,
+          6.984375,
+          6.984375
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 11.1875,
+        "median": 11.171875,
+        "min": 11.15625,
+        "samples": [
+          11.15625,
+          11.1875,
+          11.171875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 27.90625,
+        "median": 27.828125,
+        "min": 27.8125,
+        "samples": [
+          27.8125,
+          27.90625,
+          27.828125
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.21875,
+        "min": 4.203125,
+        "samples": [
+          4.21875,
+          4.21875,
+          4.203125
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 6.96875,
+        "median": 6.953125,
+        "min": 6.953125,
+        "samples": [
+          6.953125,
+          6.96875,
+          6.953125
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 11.1875,
+        "median": 11.171875,
+        "min": 11.140625,
+        "samples": [
+          11.171875,
+          11.140625,
+          11.1875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-aes128",
+      "rss_mib": {
+        "max": 27.875,
+        "median": 27.828125,
+        "min": 27.796875,
+        "samples": [
+          27.828125,
+          27.796875,
+          27.875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 4.234375,
+        "median": 4.234375,
+        "min": 4.21875,
+        "samples": [
+          4.234375,
+          4.21875,
+          4.234375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 6.953125,
+        "median": 6.953125,
+        "min": 6.90625,
+        "samples": [
+          6.90625,
+          6.953125,
+          6.953125
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 11.203125,
+        "median": 11.203125,
+        "min": 11.171875,
+        "samples": [
+          11.203125,
+          11.171875,
+          11.203125
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 27.859375,
+        "median": 27.84375,
+        "min": 27.8125,
+        "samples": [
+          27.859375,
+          27.8125,
+          27.84375
+        ]
+      },
+      "version": "baseline"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 4.21875,
+        "median": 4.21875,
+        "min": 4.203125,
+        "samples": [
+          4.203125,
+          4.21875,
+          4.21875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 7.03125,
+        "median": 6.984375,
+        "min": 6.96875,
+        "samples": [
+          6.984375,
+          6.96875,
+          7.03125
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 11.1875,
+        "median": 11.140625,
+        "min": 11.109375,
+        "samples": [
+          11.109375,
+          11.140625,
+          11.1875
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 27.859375,
+        "median": 27.796875,
+        "min": 27.78125,
+        "samples": [
+          27.796875,
+          27.78125,
+          27.859375
+        ]
+      },
+      "version": "combined"
+    },
+    {
+      "connections": 0,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 4.234375,
+        "median": 4.21875,
+        "min": 4.21875,
+        "samples": [
+          4.234375,
+          4.21875,
+          4.21875
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 32,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 6.953125,
+        "median": 6.9375,
+        "min": 6.921875,
+        "samples": [
+          6.9375,
+          6.921875,
+          6.953125
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 128,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 11.15625,
+        "median": 11.15625,
+        "min": 11.109375,
+        "samples": [
+          11.109375,
+          11.15625,
+          11.15625
+        ]
+      },
+      "version": "four"
+    },
+    {
+      "connections": 512,
+      "profile": "vmess-chacha20",
+      "rss_mib": {
+        "max": 27.84375,
+        "median": 27.796875,
+        "min": 27.78125,
+        "samples": [
+          27.796875,
+          27.78125,
+          27.84375
+        ]
+      },
+      "version": "four"
+    }
+  ]
+}

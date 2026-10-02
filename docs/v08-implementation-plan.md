@@ -715,3 +715,44 @@ Canonical adapter/source and release metadata checks pass; ABI 1.8 and
 tests. Physical Apple acceptance remains deferred, Android hardware unavailable,
 and artifact locks unprepared. Desktop measurements do not establish device
 energy, WAN or TUN parity.
+
+### Bounded VMess download read-ahead and output batching
+
+Runtime `9198a8f2770496199022b531b01b3a2b35ec1bcc`, tree
+`62ed0279dda3b0b94312bf0a806fc9eb4bf0a01b`, returns up to four TCP records
+per poll with a byte budget below 32 KiB, including legal large peer records.
+After decoding 64 KiB of authenticated TCP payload in total, the existing
+ciphertext allocation gains a lazy 16 KiB read-ahead floor. This is a cumulative
+threshold, not a sustained-throughput detector. Growth waits until consumed
+plaintext is erased. Reads never wait to fill a batch; UDP keeps whole datagrams
+and never enables this floor. Authentication and accepted record sizes are unchanged.
+
+The [download report](benchmarks/results/2026-10-02-v08-download/README.md)
+archives 316 accepted paired trials, 36 held-memory clients, 12 separate call
+censuses and 270 fresh three-client VMess trials. Five-repeat confirmation reduces
+one-flow AES CPU 210 → 180 ms and increases throughput 1484 → 1666 MiB/s.
+Eight-flow AES speed is essentially unchanged with about 5% less CPU; ChaCha
+speed improves about 3–5%. Standalone read-ahead/output-batch gains are small or
+inconsistent and are not selected individually. Separate counters observe roughly
+half as many receives and writes; their timings are excluded from performance claims.
+
+Retained RSS increases 11.86–11.97 MiB at 512 connections after 1 MiB exchanges
+(about 12.3–12.4%), relative to `f930d10` including its prior buffering costs.
+Short 8 KiB exchanges show no increase. Main latency medians differ by 0–3 µs;
+an initial ChaCha eight-flow p95 increase does not reproduce in five extra
+paired repeats (310 → 309 µs). Both tail series remain in the report. Three
+initial latency trials overlapped unrelated Xcode compilation and are excluded;
+the complete replacement campaign passed after a compiler-free interval.
+
+All 270 reference trials pass. RSS is lower in 60/60 comparisons; under the
+3% desktop allowance, 32/36 bulk CPU and 26/36 speed point targets are met.
+Overall parity remains **not met**, including single-flow AES download and duplex.
+The normal committed release rebuild is byte-identical to the measured binary.
+139 protocol tests, 493 core tests, formatting/Clippy and ten Xray/sing-box
+integration tests pass. Exact platform CI statuses are linked in the report.
+
+SDK `7b84921501348dc462d7b3527d09becb3bf86492` pins this runtime; canonical
+source and release metadata checks pass. ABI 1.8 and 0.8.0-rc.1 metadata remain
+unchanged. Physical Apple acceptance remains deferred, Android hardware
+unavailable and publication artifact locks unprepared. These desktop results
+do not establish device energy, WAN or TUN performance parity.

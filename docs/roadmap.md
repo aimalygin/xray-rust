@@ -843,6 +843,21 @@ Overall parity remains **not met**, including one-flow AES download/full-duplex
 deficits against Xray. The report preserves all samples and both excluded
 memory campaigns; device and publication-artifact acceptance remain open.
 
+The [bounded VMess download follow-up](benchmarks/results/2026-10-02-v08-download/README.md)
+retains a lazy 16 KiB ciphertext read-ahead floor after 64 KiB of authenticated
+TCP payload and up to four output records, with a byte budget below 32 KiB.
+Runtime `9198a8f`, pinned by SDK `7b84921`, improves one-flow AES download CPU
+14.3% and speed 12.3% in five-repeat confirmation. Eight-flow AES speed is
+essentially unchanged; CPU improves about 5%. ChaCha download gains are smaller.
+The combined change adds 11.86–11.97 MiB retained RSS at 512 connections after
+large exchanges; 8 KiB exchanges show no increase. Both standalone experiments,
+all repeated results and the excluded Xcode-contaminated latency attempt remain
+in the archive. All 270 fresh VMess reference trials pass, with lower RSS in
+60/60 comparisons, 32/36 bulk CPU and 26/36 speed point targets met under the
+3% desktop allowance. Overall parity remains **not met**: one-flow AES download
+is about 6% slower and uses 21% more CPU than Xray in this fresh comparison.
+Device and publication-artifact acceptance remain open.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management
