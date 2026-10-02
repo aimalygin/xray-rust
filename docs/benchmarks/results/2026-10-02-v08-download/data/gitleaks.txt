@@ -1,2 +1,2 @@
-8:23AM INF scanned ~6837780 bytes (6.84 MB) in 273ms
-8:23AM INF no leaks found
+8:47AM INF scanned ~6863219 bytes (6.86 MB) in 275ms
+8:47AM INF no leaks found
