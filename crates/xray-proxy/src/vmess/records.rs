@@ -60,14 +60,45 @@ impl Records {
                 "VMess payload exceeds record limit or pending frame",
             ));
         }
+        self.append(payload, output)
+    }
+    pub(super) fn seal_pair_into(
+        &mut self,
+        payload: &[u8],
+        output: &mut Vec<u8>,
+    ) -> io::Result<usize> {
+        if !output.is_empty() {
+            return Err(invalid("VMess pending frames must be drained"));
+        }
+        let max = self.max_payload();
+        let n = if payload.len() >= 2 * max {
+            2 * max
+        } else {
+            payload.len().min(max)
+        };
+        // Reserve before copying plaintext. At most two 8 KiB wire records;
+        // batch only full pairs, so small transfers retain a single-record
+        // allocation. Never wait for more input to fill a pair.
+        let records = n.div_ceil(max);
+        if records != 0 {
+            let bound = n + records * (self.size_bytes() + 16 + 63);
+            output.reserve_exact(bound.next_power_of_two().min(16384));
+        }
+        for chunk in payload[..n].chunks(max) {
+            self.append(chunk, output)?;
+        }
+        Ok(n)
+    }
+    fn append(&mut self, payload: &[u8], output: &mut Vec<u8>) -> io::Result<()> {
         let padding = (self.next_mask() % 64) as usize;
         let size = payload.len() + 16 + padding;
         // Grow lazily and at most to the existing 8 KiB record limit. Rounding
         // avoids reallocating when the next record's random padding is longer.
         output.reserve_exact((self.size_bytes() + size).next_power_of_two().min(8192));
+        let record_start = output.len();
         if let Some(cipher) = &mut self.length {
             output.extend_from_slice(&((size - 16) as u16).to_be_bytes());
-            cipher.seal(output)?;
+            cipher.seal_from(output, record_start)?;
         } else {
             output.extend_from_slice(&((size as u16) ^ self.next_mask()).to_be_bytes());
         }
@@ -79,7 +110,7 @@ impl Records {
         if self.batch_padding {
             padding::fill(&mut output[start..])?;
         } else {
-            random(&mut output[start..])?;
+            aes_padding(&mut output[start..])?;
         }
         Ok(())
     }
@@ -109,6 +140,28 @@ impl Records {
         let end = bytes.len() - padding;
         self.body.open(&mut bytes[..end])
     }
+}
+
+// Public body padding only; keys, IVs and authentication retain OS randomness.
+// Apple's system CSPRNG amortizes kernel entropy requests without a buffer per
+// connection. Keep the measured ChaCha padding cache and non-Apple path intact.
+#[cfg(target_vendor = "apple")]
+fn aes_padding(output: &mut [u8]) -> io::Result<()> {
+    unsafe extern "C" {
+        fn arc4random_buf(buffer: *mut std::ffi::c_void, length: usize);
+    }
+    if !output.is_empty() {
+        // SAFETY: the slice supplies a valid, exclusively borrowed writable
+        // buffer for exactly length bytes. The system function cannot fail;
+        // skip empty slices for compatibility with older Apple OS versions.
+        unsafe { arc4random_buf(output.as_mut_ptr().cast(), output.len()) };
+    }
+    Ok(())
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn aes_padding(output: &mut [u8]) -> io::Result<()> {
+    random(output)
 }
 
 // Only public, unauthenticated record padding uses this cache. Never use it for

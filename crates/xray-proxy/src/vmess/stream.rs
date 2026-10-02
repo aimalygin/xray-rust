@@ -317,14 +317,22 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
         if data.is_empty() {
             return Poll::Ready(Ok(0));
         }
-        let n = data.len().min(this.writer.max_payload());
-        if let Err(e) = this.writer.seal_into(&data[..n], &mut this.pending) {
-            this.pending.as_mut_slice().zeroize();
-            this.pending.clear();
-            this.failed = true;
-            return Poll::Ready(Err(e));
+        let result = if this.packet {
+            this.writer
+                .seal_into(data, &mut this.pending)
+                .map(|()| data.len())
+        } else {
+            this.writer.seal_pair_into(data, &mut this.pending)
+        };
+        match result {
+            Ok(n) => Poll::Ready(Ok(n)),
+            Err(e) => {
+                this.pending.as_mut_slice().zeroize();
+                this.pending.clear();
+                this.failed = true;
+                Poll::Ready(Err(e))
+            }
         }
-        Poll::Ready(Ok(n))
     }
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
@@ -718,6 +726,115 @@ mod tests {
             matches!(Pin::new(&mut client).poll_write(&mut Context::from_waker(Waker::noop()), &oversize), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::InvalidInput)
         );
         assert!(!client.failed);
+    }
+
+    #[test]
+    fn vmess_write_pairs_keep_record_boundaries_and_resume_under_backpressure() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let mut client = client(cipher, auth, Network::Tcp);
+                let keys = client.keys.as_ref().unwrap();
+                let mut reader = Records::new(
+                    cipher,
+                    &keys.request_key,
+                    &keys.request_iv,
+                    auth.then_some((&*keys.request_key, &*keys.request_iv)),
+                );
+                let max = client.writer.max_payload();
+                let data = [vec![0x31; max], vec![0x72; max], vec![0x93; 17]].concat();
+                let mut cx = Context::from_waker(Waker::noop());
+                let header_len = client.pending.len();
+                assert!(matches!(
+                    Pin::new(&mut client).poll_write(&mut cx, &data),
+                    Poll::Ready(Ok(n)) if n == 2 * max
+                ));
+                assert!(client.pending.len() <= 16384);
+                assert!(client.pending.capacity() <= 16384);
+                let pair = client.pending.clone();
+                let allocation = client.pending.as_ptr();
+                client.inner.write_quota = 1;
+                assert!(Pin::new(&mut client).poll_flush(&mut cx).is_pending());
+                assert!(Pin::new(&mut client)
+                    .poll_write(&mut cx, &data[2 * max..])
+                    .is_pending());
+                client.inner.write_quota = usize::MAX;
+                assert!(matches!(
+                    Pin::new(&mut client).poll_flush(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+                assert_eq!(&client.inner.outgoing[header_len..], pair.as_slice());
+                assert!(matches!(
+                    Pin::new(&mut client).poll_write(&mut cx, &data[2 * max..]),
+                    Poll::Ready(Ok(17))
+                ));
+                assert_eq!(allocation, client.pending.as_ptr());
+                assert!(matches!(
+                    Pin::new(&mut client).poll_shutdown(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+                let mut wire = &client.inner.outgoing[header_len..];
+                // Decode independently: two distinct authenticated records,
+                // the short tail, and exactly one authenticated termination.
+                for expected in [&data[..max], &data[max..2 * max], &data[2 * max..], &[]] {
+                    let prefix = reader.size_bytes();
+                    let mut length = wire[..prefix].to_vec();
+                    let (size, padding) = reader.decode_length(&mut length).unwrap();
+                    let mut body = wire[prefix..prefix + size].to_vec();
+                    reader.open(&mut body, padding).unwrap();
+                    assert_eq!(body, expected);
+                    wire = &wire[prefix + size..];
+                }
+                assert!(wire.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn vmess_short_writes_and_datagrams_do_not_grow_a_pair_buffer() {
+        for network in [Network::Tcp, Network::Udp] {
+            let mut client = client(Cipher::Aes128Gcm, false, network);
+            let max = client.writer.max_payload();
+            let mut cx = Context::from_waker(Waker::noop());
+            for n in [1, max] {
+                assert!(matches!(
+                    Pin::new(&mut client).poll_write(&mut cx, &vec![42; n]),
+                    Poll::Ready(Ok(written)) if written == n
+                ));
+                assert!(client.pending.capacity() <= 8192);
+                assert!(matches!(
+                    Pin::new(&mut client).poll_flush(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn vmess_second_record_nonce_exhaustion_discards_the_pair_and_fails_closed() {
+        let mut client = client(Cipher::Aes128Gcm, true, Network::Tcp);
+        let mut scratch = Vec::new();
+        for _ in 0..u16::MAX {
+            client.writer.seal_into(&[], &mut scratch).unwrap();
+            scratch.clear();
+        }
+        let mut cx = Context::from_waker(Waker::noop());
+        let header = client.pending.clone();
+        let payload = vec![42; 2 * client.writer.max_payload()];
+        assert!(matches!(
+            Pin::new(&mut client).poll_write(&mut cx, &payload),
+            Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::InvalidData
+        ));
+        assert!(client.failed);
+        assert!(client.pending.is_empty());
+        assert_eq!(client.inner.outgoing, *header);
+        assert!(matches!(
+            Pin::new(&mut client).poll_flush(&mut cx),
+            Poll::Ready(Err(_))
+        ));
+        assert!(matches!(
+            Pin::new(&mut client).poll_write(&mut cx, b"retry"),
+            Poll::Ready(Err(_))
+        ));
     }
 
     #[test]

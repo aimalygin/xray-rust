@@ -112,6 +112,7 @@ impl Counter {
         self.iv[..2].copy_from_slice(&next.to_be_bytes());
         Ok(*self.iv)
     }
+    #[cfg(test)]
     pub(super) fn seal(&mut self, bytes: &mut Vec<u8>) -> io::Result<()> {
         let nonce = self.nonce()?;
         self.aead.seal(&nonce, &[], bytes)
