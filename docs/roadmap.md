@@ -866,6 +866,17 @@ and 30 ms idle CPU at 512 connections. Production runtime and SDK pins remain
 unchanged. The reusable collector records footprint as well as RSS and checks
 payloads after two resume cycles.
 
+The [AES full-duplex CPU profile](benchmarks/results/2026-10-02-v08-duplex-profile/README.md)
+finds a reproducible 22–25% one-flow throughput deficit against Xray across two
+ordinary six-repeat series, but no stable total-CPU deficit: the relative CPU
+result changes from +11% to -10%. Three on-CPU profiles per engine and separate
+OS/libc counters identify more Rust socket/event work (2.52× Unix calls,
+3.01× socket writes, 3.80× `kevent` calls), while source inspection identifies
+serial read/write processing inside one relay task. A bounded split-codec
+prototype is a next experiment, not a proven fix. All 72 ordinary and 48 counter
+trials pass; all eight captures and the preflight rejection are retained.
+Production runtime, SDK pins and memory bounds remain unchanged.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management

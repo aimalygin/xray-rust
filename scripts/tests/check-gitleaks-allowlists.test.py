@@ -23,6 +23,26 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_duplex_profile_reference_digest_exception_is_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-duplex-profile/"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        self.assertEqual(inputs["xray"]["sha256"], digest)
+        paths = [base + "measurements.tar.gz!" + campaign + "/manifest.json"
+                 for campaign in ("normal-controls", "normal-confirmation", "kernel", "libc")]
+        paths += [base + f"measurements.tar.gz!{engine}-duplex-{i}/capture.json"
+                  for engine in ("rust", "xray") for i in range(1, 5)]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        unrelated = base + "measurements.tar.gz!rust-duplex-5/capture.json"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in (paths[0], unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in paths}),
+                         {(p, "generic-api-key") for p in paths})
+
     def test_idle_buffer_reference_digest_exception_is_narrow(self):
         base = "docs/benchmarks/results/2026-10-02-v08-idle-buffers/"
         digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"

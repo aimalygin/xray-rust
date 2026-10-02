@@ -3,6 +3,18 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the unchanged pinned reference; only exact report metadata.
+[[allowlists]]
+description = "Verified Xray executable digest in AES duplex profiling evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-02-v08-duplex-profile/measurements\.tar\.gz!(normal-controls|normal-confirmation|kernel|libc)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-duplex-profile/measurements\.tar\.gz!(rust|xray)-duplex-[1-4]/capture\.json$''',
+]
+
 # Rehashed from the unchanged pinned Xray executable; not a credential.
 [[allowlists]]
 description = "Verified Xray executable digest in idle-buffer evidence"
