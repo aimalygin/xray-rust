@@ -23,6 +23,33 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_split_codec_exceptions_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-split/"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        digest = inputs["xray"]["sha256"]
+        campaigns = list(inputs["campaign_variants"]) + ["duplex-pilot-rejected-permission"]
+        paths = [base + "measurements.tar.gz!" + name + "/manifest.json" for name in campaigns]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        index_path = base + "evidence-index.json"
+        index = json.loads((ROOT / index_path).read_text())
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name in ("investigation/interop-xray.log", "investigation/restored-trojan-xray.log"):
+                log_hash = hashlib.sha256(archive.extractfile(name).read()).hexdigest()
+                self.assertEqual(log_hash, index["file_sha256"][name])
+                self.assertEqual(self.scan({index_path: json.dumps({"xray": log_hash})}), set())
+        fixture_path = base + "measurements.tar.gz!investigation/scripts/run-v07-performance.py"
+        self.assertEqual(self.scan({fixture_path: json.dumps({"privateKey": PUBLIC_FIXTURE})}), set())
+        unrelated = base + "measurements.tar.gz!unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            index_path: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in (paths[0], index_path, unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in paths + [index_path, fixture_path]}),
+                         {(p, "generic-api-key") for p in paths + [index_path, fixture_path]})
+
     def test_duplex_profile_reference_digest_exception_is_narrow(self):
         base = "docs/benchmarks/results/2026-10-02-v08-duplex-profile/"
         digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"

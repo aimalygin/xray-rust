@@ -19,6 +19,13 @@ c = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(c)
 
 
+def client_order(names, case_index, repeat):
+    order = list(names)
+    offset = (case_index + repeat - 1) % len(order)
+    # Reversing even repeats would cancel AB/BA rotation for a pair.
+    return order[offset:] + order[:offset]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--binary", action="append", required=True, help="NAME=PATH; repeat for paired clients")
@@ -71,11 +78,7 @@ def main():
     try:
         for index, case in indexed_cases:
             for repeat in range(1, a.repeats + 1):
-                order = list(binaries)
-                offset = (index + repeat - 1) % len(order)
-                order = order[offset:] + order[:offset]
-                if repeat % 2 == 0:
-                    order.reverse()
+                order = client_order(binaries, index, repeat)
                 if c.ambient()["compiler_load_detected"]:
                     raise RuntimeError("compiler started during measurement")
                 server_dir = out / f"{case['id']}-server-{repeat}"

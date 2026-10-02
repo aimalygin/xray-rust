@@ -877,6 +877,18 @@ prototype is a next experiment, not a proven fix. All 72 ordinary and 48 counter
 trials pass; all eight captures and the preflight rejection are retained.
 Production runtime, SDK pins and memory bounds remain unchanged.
 
+The [independent VMess codec experiment](benchmarks/results/2026-10-02-v08-split/README.md)
+separates read/write state and native TCP halves into two relay tasks without
+larger buffers. Two final paired series improve single-flow AES duplex speed
+15–20% and ChaCha speed 58–59% (14% less CPU), but reduce eight-flow AES speed
+4.7–10.8% with essentially unchanged CPU. The unconditional split is therefore
+not retained. Physical footprint increases 0.55–0.91 MiB at 512 held connections,
+including two idle/resume cycles. All 460 ordinary trials and 32 memory clients
+pass; four prototypes, exact source patches and frozen identities are archived.
+Fresh six-repeat reference controls still put split Rust 7.6% below Xray speed
+and 13.0% above its CPU on one AES duplex flow. A concurrency-limited split is
+an untested next experiment. Production runtime and SDK pins remain unchanged.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management

@@ -3,6 +3,26 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Exact public executable/log digests, rehashed from the split-codec evidence.
+[[allowlists]]
+description = "Verified Xray executable digest in VMess split-codec evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = ['''^docs/benchmarks/results/2026-10-02-v08-split/measurements\.tar\.gz!(duplex-pilot|duplex-pilot-rejected-permission|broad-controls|activity-controls|held-large|held-small|shared-controls|shared-reference|shared-confirmation|shared-held-large|shared-held-small)/manifest\.json$''']
+
+[[allowlists]]
+description = "Verified Xray interop log digests in VMess split-codec index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^14ece4496cfc1ed1034ba13f6d423976cdc7c2a643ffcd82eeeb67e57c501341$''',
+  '''^3f6fbc8366d81cb5786b710c004615423d350eff0c268af0055e030a6b75ff59$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-02-v08-split/evidence-index\.json$''']
+
 # Rehashed from the unchanged pinned reference; only exact report metadata.
 [[allowlists]]
 description = "Verified Xray executable digest in AES duplex profiling evidence"
@@ -333,6 +353,7 @@ paths = [
   '''^scripts/run-v07-performance\.py$''',
   '''^docs/benchmarks/results/2026-09-19-v07/benchmark-source\.patch$''',
   '''^docs/benchmarks/results/2026-09-20-v07-parity/selected-source\.patch$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-split/measurements\.tar\.gz!investigation/scripts/run-v07-performance\.py$''',
 ]
 
 [[allowlists]]

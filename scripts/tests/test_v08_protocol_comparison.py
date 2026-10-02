@@ -18,9 +18,21 @@ def module(name, file):
 collector = module("comparison", "run-v08-protocol-comparison.py")
 launcher = module("client", "v08-reference-client.py")
 blocks = module("blocks", "run-v08-comparison-blocks.py")
+controls = module("controls", "run-v08-cpu-controls.py")
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_paired_and_three_client_controls_balance_every_order_position(self):
+        for names in (("baseline", "candidate"), ("baseline", "channel", "candidate")):
+            for case_index in range(8):
+                orders = [controls.client_order(names, case_index, repeat)
+                          for repeat in range(1, 2 * len(names) + 1)]
+                for order in orders:
+                    self.assertCountEqual(order, names)
+                for name in names:
+                    for position in range(len(names)):
+                        self.assertEqual(sum(order[position] == name for order in orders), 2)
+
     def test_blocks_never_classify_protocol_or_observer_errors_as_retryable(self):
         clean = dict(returncode=0, process_group_empty_after_run=True,
                      remaining_engine_processes=[], surviving_process_group=False,

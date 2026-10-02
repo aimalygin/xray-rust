@@ -135,8 +135,13 @@ async fn trojan_runtime_rejects_wrong_password_and_untrusted_peer() {
         )
         .await
         .unwrap();
-        denied.write_all(b"must not be echoed").await.unwrap();
-        let result = denied.read_u8().await;
+        // The reference can reject authentication before the payload write
+        // completes (notably sing-box on Linux), or while we await its reply.
+        let result = async {
+            denied.write_all(b"must not be echoed").await?;
+            denied.read_u8().await
+        }
+        .await;
         assert!(result.is_err(), "invalid password reached the destination");
         let untrusted = TransportDialer::system()
             .unwrap()
