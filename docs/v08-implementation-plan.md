@@ -600,9 +600,9 @@ The larger relay rewrite and AES padding batching were rejected after throughput
 regressions. All 630 three-client trials pass, including all 210 Rust trials.
 RSS is lower in 140/140 complete reference comparisons; SS2022/VMess meet
 57/72 bulk CPU and 26/72 speed point targets under the 3% Mac policy.
-Overall parity remains **not met**. SDK commit `874cc8e` now pins
-runtime `fdc0dad`; core/SDK CI and archived evidence reconstruction verify this
-runtime. Candidate-bound device and artifact acceptance remain open.
+Overall parity remains **not met**. SDK commit `874cc8e` pinned
+runtime `fdc0dad`; core/SDK CI and archived evidence reconstruction verified that
+runtime. Candidate-bound device and artifact acceptance remained open.
 
 144 fresh paired controls, a separate 20-trial SS2022 AES duplex confirmation,
 24 held-memory clients and the 630-trial comparison
@@ -618,3 +618,36 @@ identities and validation links.
 Physical Apple acceptance remains explicitly deferred, Android hardware remains
 unavailable and artifact locks remain unprepared. This host benchmark does not
 establish physical-device energy, WAN or TUN competitor parity.
+
+### Bounded VMess receive batching
+
+Runtime `1804e17890baf4c3a587fbd86d6a17a0787ce9dd`, tree
+`8501825d7a40170ca192269b9ec7657fbb721663`, batches at most two available
+VMess TCP records into the caller's buffer. It returns immediately when a
+following record would block, preserves UDP boundaries and plaintext erasure,
+and defers a later record's error until the already authenticated prefix has
+been delivered. The fairness bound and partial/error semantics have dedicated
+tests. No crypto, nonce, dependency, ABI or worker-policy change is involved.
+
+The [bounded VMess read follow-up](benchmarks/results/2026-10-01-v08-batch/README.md)
+keeps at most two available TCP records per read. Independent controls show
+10–12% faster one-flow AES download and 14–26% faster eight-flow download,
+with lower CPU. After 1 MiB exchanges, settled RSS grows by 3.7–3.8 MiB at
+512 connections (about 4%); short exchanges show no higher median RSS. The
+16-record variant was rejected for 33–41 MiB extra RSS. Upload results vary
+between campaigns, so no reliable upload improvement is claimed.
+All 270 fresh three-client VMess trials pass, including 90 Rust trials; RSS is
+lower in 60/60 reference comparisons. VMess meets 27/36 bulk CPU and 15/36
+throughput point targets under the 3% Mac policy; parity remains **not met**.
+SDK commit `a67a60c` pins runtime `1804e17`. The report retains every sample,
+rejected variant, diagnostic trace and exact-runtime validation reference.
+Physical-device and artifact acceptance remain open.
+
+Local validation passes 133 proxy tests, 493 core library tests, all-target
+proxy clippy, and ten pinned-Xray/independent-sing-box carrier, TUN/DNS/lifecycle
+and Xray Mux integration tests. The committed release rebuild matches the
+measured binary. The evidence contains 280 paired trials, 42 held-memory clients
+with three warmup sizes, and the 270-trial VMess comparison. Native profiles
+with symbols are diagnostic only; failed and rejected experiments remain
+visible. The initial supply-chain CI job failed on a partial crates.io download;
+its original log and exact-commit retry status are retained in the report.

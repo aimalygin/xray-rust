@@ -802,9 +802,23 @@ The larger relay rewrite and AES padding batching were rejected after throughput
 regressions. All 630 three-client trials pass, including all 210 Rust trials.
 RSS is lower in 140/140 complete reference comparisons; SS2022/VMess meet
 57/72 bulk CPU and 26/72 speed point targets under the 3% Mac policy.
-Overall parity remains **not met**. SDK commit `874cc8e` now pins
-runtime `fdc0dad`; core/SDK CI and archived evidence reconstruction verify this
-runtime. Candidate-bound device and artifact acceptance remain open.
+Overall parity remains **not met**. SDK commit `874cc8e` pinned
+runtime `fdc0dad`; core/SDK CI and archived evidence reconstruction verified that
+runtime. Candidate-bound device and artifact acceptance remained open.
+
+The [bounded VMess read follow-up](benchmarks/results/2026-10-01-v08-batch/README.md)
+keeps at most two available TCP records per read. Independent controls show
+10–12% faster one-flow AES download and 14–26% faster eight-flow download,
+with lower CPU. After 1 MiB exchanges, settled RSS grows by 3.7–3.8 MiB at
+512 connections (about 4%); short exchanges show no higher median RSS. The
+16-record variant was rejected for 33–41 MiB extra RSS. Upload results vary
+between campaigns, so no reliable upload improvement is claimed.
+All 270 fresh three-client VMess trials pass, including 90 Rust trials; RSS is
+lower in 60/60 reference comparisons. VMess meets 27/36 bulk CPU and 15/36
+throughput point targets under the 3% Mac policy; parity remains **not met**.
+SDK commit `a67a60c` pins runtime `1804e17`. The report retains every sample,
+rejected variant, diagnostic trace and exact-runtime validation reference.
+Physical-device and artifact acceptance remain open.
 
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain

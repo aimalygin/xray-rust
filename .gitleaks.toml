@@ -3,6 +3,30 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the unchanged pinned Xray executable. Keep this exception
+# confined to its exact public digest in the batching report's manifests.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 batching manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-batch/measurements\.tar\.gz!(batch16-controls|batch2-controls|latency-controls|confirmation-controls|upload-confirmation|active-held-memory|small-held-memory|bulk-held-memory|comparison|profile-bounded|profile-runs)(/attempts/[a-z0-9-]+)?/manifest\.json$''',
+]
+
+# These two checksums are derived from the archived local integration logs.
+[[allowlists]]
+description = "Two verified integration-log digests in the v0.8 batching index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^4154ec967d62d67f79f176ee644781021dd0220dab8cf185271f16eb25d67f7f$''',
+  '''^ba836870ff2eeb0ce2ac8bdd29f4e5f393fafd4d85e93fecbbfe217d61c0cf60$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-batch/evidence-index\.json$''']
+
 # Rehashed from the unchanged pinned Xray executable. This exception applies
 # only to its exact public digest in the relay report's archived manifests.
 [[allowlists]]

@@ -21,6 +21,10 @@ long-term supported release series.
 - Add independent-server and carrier matrices, wire oracles, fuzz coverage
   and a separate v0.8 release-evidence gate. Physical Apple acceptance is
   deferred by the owner; this development work is not a published release.
+- Reduce VMess TCP receive overhead with bounded reads of two available
+  records, preserving authenticated delivery, plaintext erasure and UDP
+  boundaries. Record the CPU, throughput and memory tradeoffs against the
+  pinned Xray-core and sing-box references.
 
 ## 0.7.0 - 2026-09-27
 
