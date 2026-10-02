@@ -5,7 +5,9 @@ use std::{
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-const MAX_READ_RECORDS: usize = 2;
+const MAX_READ_RECORDS: usize = 4;
+const BULK_READ_THRESHOLD: usize = 64 * 1024;
+const BULK_READ_AHEAD: usize = 16 * 1024;
 
 /// Bounded client records with owned pending writes and resumable reads.
 /// For a UDP target, each nonempty write and read is exactly one datagram;
@@ -22,6 +24,7 @@ pub struct ClientStream<S> {
     body: crate::record_buffer::RecordBuffer,
     plain_len: usize,
     plain_pos: usize,
+    bulk_read_remaining: usize,
     phase: Phase,
     padding: usize,
     failed: bool,
@@ -100,6 +103,7 @@ impl<S> ClientStream<S> {
             ),
             plain_len: 0,
             plain_pos: 0,
+            bulk_read_remaining: BULK_READ_THRESHOLD,
             phase: Phase::HeaderLength,
             padding: 0,
             failed: false,
@@ -169,6 +173,13 @@ impl<S> ClientStream<S> {
                 if self.plain_len == 0 {
                     self.eof = true;
                 } else {
+                    if !self.packet && self.bulk_read_remaining != 0 {
+                        self.bulk_read_remaining =
+                            self.bulk_read_remaining.saturating_sub(self.plain_len);
+                        if self.bulk_read_remaining == 0 {
+                            self.body.set_read_ahead(BULK_READ_AHEAD);
+                        }
+                    }
                     self.phase = Phase::Plain;
                     self.plain_pos = 0;
                 }
@@ -207,6 +218,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ClientStream<S> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         out: &mut ReadBuf<'_>,
+        byte_budget: usize,
     ) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         if this.failed {
@@ -231,7 +243,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ClientStream<S> {
                             "VMess datagram receive buffer too small",
                         )));
                     }
-                    let n = out.remaining().min(remaining);
+                    let n = out.remaining().min(remaining).min(byte_budget);
                     out.put_slice(&this.body.frame()[this.plain_pos..this.plain_pos + n]);
                     crate::erase::erase(&mut this.body.frame()[this.plain_pos..this.plain_pos + n]);
                     this.plain_pos += n;
@@ -272,11 +284,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
             return Poll::Ready(Err(error));
         }
         let started = out.filled().len();
+        // Bound bytes as well as record count: peers may send records larger
+        // than our 8 KiB writer. Four ordinary payloads stay below 32 KiB,
+        // so the adaptive relay does not grow past that allocation for TCP.
+        let byte_budget = if self.packet {
+            usize::MAX
+        } else {
+            MAX_READ_RECORDS * self.reader.max_payload()
+        };
         // Bound work per poll so a continuously readable socket cannot starve
         // the reverse direction. UDP must keep exactly one datagram per read.
         for _ in 0..MAX_READ_RECORDS {
             let before = out.filled().len();
-            match self.as_mut().poll_read_one(cx, out) {
+            match self
+                .as_mut()
+                .poll_read_one(cx, out, byte_budget - (before - started))
+            {
                 Poll::Pending if out.filled().len() == started => return Poll::Pending,
                 Poll::Pending => return Poll::Ready(Ok(())),
                 Poll::Ready(Err(error)) if out.filled().len() != started => {
@@ -288,7 +311,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
                 }
                 Poll::Ready(Err(error)) => return Poll::Ready(Err(error)),
                 Poll::Ready(Ok(())) => {
-                    if self.packet || out.remaining() == 0 || out.filled().len() == before {
+                    if self.packet
+                        || out.remaining() == 0
+                        || out.filled().len() == before
+                        || out.filled().len() - started == byte_budget
+                    {
                         return Poll::Ready(Ok(()));
                     }
                 }
@@ -479,6 +506,89 @@ mod tests {
         Pin::new(client)
             .poll_read(&mut Context::from_waker(Waker::noop()), &mut buffer)
             .map(|r| r.map(|()| buffer.filled().len()))
+    }
+
+    #[test]
+    fn vmess_large_peer_records_obey_tcp_byte_budget_and_keep_udp_whole() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                for network in [Network::Tcp, Network::Udp] {
+                    let mut client = client(cipher, auth, network);
+                    let mut records = response_records(&client, cipher);
+                    let mut wire =
+                        response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                    let payload = vec![0x73; 48 * 1024];
+                    wire.extend_from_slice(&records.seal_peer_record(&payload));
+                    wire.extend_from_slice(&records.seal(&[]).unwrap());
+                    client.inner.incoming.extend(wire);
+                    let mut out = vec![0xaa; 64 * 1024];
+                    let first = if network == Network::Tcp {
+                        MAX_READ_RECORDS * client.reader.max_payload()
+                    } else {
+                        payload.len()
+                    };
+                    assert!(
+                        matches!(poll_read(&mut client, &mut out), Poll::Ready(Ok(n)) if n == first)
+                    );
+                    assert_eq!(&out[..first], &payload[..first]);
+                    assert!(out[first..].iter().all(|&b| b == 0xaa));
+                    assert!(client.body.frame()[..first].iter().all(|&b| b == 0));
+                    if first < payload.len() {
+                        assert!(
+                            matches!(poll_read(&mut client, &mut out), Poll::Ready(Ok(n)) if n == payload.len() - first)
+                        );
+                        assert_eq!(&out[..payload.len() - first], &payload[first..]);
+                    }
+                    assert!(matches!(
+                        poll_read(&mut client, &mut out),
+                        Poll::Ready(Ok(0))
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn vmess_read_ahead_activates_only_after_authenticated_tcp_bulk() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                for network in [Network::Tcp, Network::Udp] {
+                    let mut client = client(cipher, auth, network);
+                    let mut records = response_records(&client, cipher);
+                    let mut wire =
+                        response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                    wire.extend_from_slice(&records.seal(&[7; 4096]).unwrap());
+                    client.inner.incoming.extend(wire);
+                    let mut out = [0; 4096];
+                    assert!(matches!(
+                        poll_read(&mut client, &mut out),
+                        Poll::Ready(Ok(4096))
+                    ));
+                    assert_eq!(out, [7; 4096]);
+                    assert!(client.bulk_read_remaining > 0);
+                    for _ in 1..17 {
+                        client
+                            .inner
+                            .incoming
+                            .extend(records.seal(&[8; 4096]).unwrap().iter());
+                        assert!(matches!(
+                            poll_read(&mut client, &mut out),
+                            Poll::Ready(Ok(4096))
+                        ));
+                        assert_eq!(out, [8; 4096]);
+                    }
+                    assert_eq!(
+                        client.bulk_read_remaining,
+                        if network == Network::Udp {
+                            BULK_READ_THRESHOLD
+                        } else {
+                            0
+                        }
+                    );
+                    assert!(poll_read(&mut client, &mut out).is_pending());
+                }
+            }
+        }
     }
 
     #[test]

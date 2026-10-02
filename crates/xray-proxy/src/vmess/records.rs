@@ -49,6 +49,14 @@ impl Records {
         u16::from_be_bytes(bytes)
     }
     #[cfg(test)]
+    pub(super) fn seal_peer_record(&mut self, payload: &[u8]) -> Zeroizing<Vec<u8>> {
+        // The decoder accepts larger peer records than our bounded writer emits.
+        assert!(payload.len() + 16 + 63 <= 65535);
+        let mut output = Zeroizing::new(Vec::new());
+        self.append(payload, &mut output).unwrap();
+        output
+    }
+    #[cfg(test)]
     pub(super) fn seal(&mut self, payload: &[u8]) -> io::Result<Zeroizing<Vec<u8>>> {
         let mut output = Zeroizing::new(Vec::new());
         self.seal_into(payload, &mut output)?;

@@ -18,6 +18,7 @@ pub(crate) struct RecordBuffer {
     filled: usize,
     needed: usize,
     prefix: usize,
+    read_ahead: usize,
 }
 
 impl RecordBuffer {
@@ -29,7 +30,15 @@ impl RecordBuffer {
             filled: 0,
             needed,
             prefix,
+            read_ahead: 0,
         }
+    }
+
+    /// Grow on the next read, after the caller has erased the current plaintext.
+    /// This is a capacity floor, never a requirement to fill the buffer.
+    pub(crate) fn set_read_ahead(&mut self, bytes: usize) {
+        assert!(bytes <= MAX_BUFFER);
+        self.read_ahead = bytes;
     }
 
     /// Only expose the current frame, never unauthenticated following records.
@@ -65,6 +74,7 @@ impl RecordBuffer {
         // No eager full-record buffer, second plaintext buffer or global pool.
         let size = (self.needed + self.prefix)
             .next_multiple_of(64)
+            .max(self.read_ahead)
             .min(MAX_BUFFER);
         if self.bytes.len() < size {
             let extra = size - self.bytes.len();
@@ -123,6 +133,44 @@ mod tests {
             }
             Poll::Ready(Ok(()))
         }
+    }
+
+    #[test]
+    fn read_ahead_coalesces_records_but_never_waits_to_fill_capacity() {
+        let mut source = Source::default();
+        let mut buffer = RecordBuffer::new(2, 2);
+        let mut cx = Context::from_waker(Waker::noop());
+        buffer.set_read_ahead(16 * 1024);
+        assert!(buffer.bytes.is_empty());
+        for _ in 0..2 {
+            source.bytes.extend([1; 2]);
+            source.bytes.extend([2; 8190]);
+        }
+        for _ in 0..2 {
+            assert!(matches!(
+                buffer.poll_frame(&mut source, &mut cx),
+                Poll::Ready(Ok(true))
+            ));
+            assert_eq!(buffer.frame(), &[1; 2]);
+            buffer.frame().zeroize();
+            buffer.advance(8190);
+            assert!(matches!(
+                buffer.poll_frame(&mut source, &mut cx),
+                Poll::Ready(Ok(true))
+            ));
+            assert!(buffer.frame().iter().all(|&b| b == 2));
+            buffer.frame().zeroize();
+            buffer.advance(2);
+        }
+        assert_eq!(source.reads, 1);
+        assert_eq!(buffer.bytes.capacity(), 16 * 1024);
+        // A short prefix succeeds immediately even though the capacity is large.
+        source.bytes.extend([3; 2]);
+        assert!(matches!(
+            buffer.poll_frame(&mut source, &mut cx),
+            Poll::Ready(Ok(true))
+        ));
+        assert_eq!(buffer.frame(), &[3; 2]);
     }
 
     #[test]
