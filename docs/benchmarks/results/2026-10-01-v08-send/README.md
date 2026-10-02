@@ -99,8 +99,8 @@ The remaining deficits are workload-specific: consult all cases and intervals in
 
 Candidate-bound CI and the SDK pin are recorded with exact identities in this report’s data. Physical Apple acceptance remains deferred by the owner and Android hardware is unavailable. Host results do not establish phone energy, WAN or TUN performance, or publication-artifact acceptance. Both PRs remain drafts.
 
-[Full core CI](https://github.com/aimalygin/xray-rust/actions/runs/36953755247) at `f930d10dba9831315cc16a709576f521a322dea5`: **in_progress**. [SDK CI](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36954326794) at `5d14eb785f9fa2e6893f3daf134623bc6772a175`: **in_progress**. SDK core metadata pins the measured runtime; canonical adapters match it. ABI/version and unprepared artifact locks are unchanged.
+[Full core CI](https://github.com/aimalygin/xray-rust/actions/runs/36953755247) at `f930d10dba9831315cc16a709576f521a322dea5`: **success**. [SDK CI](https://github.com/aimalygin/xray-rust-mobile/actions/runs/36954326794) at `5d14eb785f9fa2e6893f3daf134623bc6772a175`: **success**. SDK core metadata pins the measured runtime; canonical adapters match it. ABI/version and unprepared artifact locks are unchanged.
 
 ## Evidence
 
-[Archive](measurements.tar.gz), [member checksums](evidence-index.json), [independent verification](data/verification-evidence.json). The verifier reconstructs complete matrices, byte counts, case selection, all numeric summaries and libc counts from archived results, and checks the release hash and exact core/SDK CI identities. Generated connection credentials/configurations and executables remain local.
+[Archive](measurements.tar.gz), [member checksums](evidence-index.json), [independent verification](data/verification.json). The verifier reconstructs complete matrices, byte counts, case selection, all numeric summaries and libc counts from archived results, and checks the release hash and exact core/SDK CI identities. Generated connection credentials/configurations and executables remain local.
