@@ -91,6 +91,36 @@ class EvidenceAllowlists(unittest.TestCase):
             path: json.dumps({"api_key": synthetic}),
         }))
 
+    def test_census_reference_digest_exceptions_are_narrow(self):
+        base = "docs/benchmarks/results/2026-10-01-v08-census/"
+        manifest = base + "measurements.tar.gz!kernel/manifest.json"
+        inspection = base + "data/reference-inspection.json"
+        executable = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        source = "5450877ed206eb66a3dbeaec1f032c015e6e2dc458971293bcd2e9a01551f043"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        data = json.loads((ROOT / inspection).read_text())
+        self.assertEqual(data["files"]["common/crypto/auth.go"], source)
+        self.assertEqual(self.scan({
+            manifest: json.dumps({"xray": executable}),
+            inspection: json.dumps({"common/crypto/auth.go": source}),
+        }), set())
+        self.assertIn((manifest, "jfrog-identity-token"), self.scan({
+            manifest: json.dumps({"xray": other}),
+        }))
+        self.assertIn((inspection, "generic-api-key"), self.scan({
+            inspection: json.dumps({"common/crypto/auth.go": other}),
+        }))
+        for filename, content, rule in [
+            ("unreviewed.json", {"xray": executable}, "jfrog-identity-token"),
+            ("unreviewed.json", {"common/crypto/auth.go": source}, "generic-api-key"),
+            (base + "measurements.tar.gz!unreviewed/manifest.json", {"xray": executable}, "jfrog-identity-token"),
+        ]:
+            self.assertIn((filename, rule), self.scan({filename: json.dumps(content)}))
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            name: json.dumps({"api_key": synthetic}) for name in [manifest, inspection]
+        }), {(name, "generic-api-key") for name in (manifest, inspection)})
+
     def test_batch_manifest_and_log_digests_are_derived_and_narrow(self):
         base = "docs/benchmarks/results/2026-10-01-v08-batch/"
         manifest = base + "measurements.tar.gz!comparison/attempts/vmess-aes128-socks-upload-1-1/manifest.json"

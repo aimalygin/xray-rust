@@ -651,3 +651,24 @@ with three warmup sizes, and the 270-trial VMess comparison. Native profiles
 with symbols are diagnostic only; failed and rejected experiments remain
 visible. The initial supply-chain CI job failed on a partial crates.io download;
 its original log and exact-commit retry status are retained in the report.
+
+### VMess AES syscall and relay census
+
+The [84-trial diagnostic follow-up](benchmarks/results/2026-10-01-v08-census/README.md)
+keeps runtime `1804e17` and SDK pin `a67a60c` unchanged. On one-flow AES upload,
+the uninstrumented client spends about 76% of CPU inside the OS. Separate libc
+observations show approximately 34.8k scalar writes and 34.3k `getentropy` calls
+per 256 MiB, while Xray batches records into about 4.1k writes and uses
+`arc4random_buf`. Both writers retain an approximately 8 KiB record limit.
+Internal counts show about 2,059 relay transfers and 156 received activity
+notifications, so idle-timer changes are a lower-priority hypothesis.
+
+Next candidates are an isolated Darwin padding-source experiment and bounded
+write batching under an explicit memory budget. Neither is implemented or
+claimed faster by the census. Earlier rejected AES entropy-cache results are
+retained; fewer calls alone do not prove an improvement, especially at eight
+flows where Rust already uses less CPU in this diagnostic set. Any retained
+runtime change still needs paired normal-release controls, 512-connection
+retained-RSS checks and candidate-bound validation. The census verifies all
+payload totals, preserves diagnostic patches, and confirms the restored normal
+release remains byte-identical to the measured binary.

@@ -1,0 +1,11 @@
+{
+  "captured_unix": 1790905042.062419,
+  "scope": "post-campaign host snapshot; not continuous power telemetry",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "macos": "26.6.2",
+  "architecture": "arm64",
+  "cpu": "Apple M3 Pro",
+  "physical_cpus": "12",
+  "memory_bytes": "19327352832",
+  "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=26607715)\t100%; charged; 0:00 remaining present: true"
+}

@@ -820,6 +820,15 @@ SDK commit `a67a60c` pins runtime `1804e17`. The report retains every sample,
 rejected variant, diagnostic trace and exact-runtime validation reference.
 Physical-device and artifact acceptance remain open.
 
+The subsequent [VMess AES syscall census](benchmarks/results/2026-10-01-v08-census/README.md)
+passes 84 diagnostic trials without changing that runtime. On one-flow upload,
+about 76% of Rust CPU is system time; the separate call census observes roughly
+34.8k scalar writes and 34.3k `getentropy` calls per 256 MiB, versus Xray's 4.1k
+batched writes. Prioritize isolated padding-source and bounded-write experiments
+over an idle-timer rewrite; no further speed/memory gain or protocol ceiling is
+claimed. New variants still require normal-release controls and retained-memory
+checks; the rejected AES padding-cache evidence remains applicable.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management

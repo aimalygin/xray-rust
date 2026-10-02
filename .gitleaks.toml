@@ -3,6 +3,24 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the pinned reference executable and its public auth.go source.
+# Only these exact digests in the reviewed census metadata are exempt.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 census manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-census/measurements\.tar\.gz!(kernel|libc|internal|smoke-kernel|smoke-libc|smoke-internal|smoke-libc-v2)/manifest\.json$''']
+
+[[allowlists]]
+description = "Verified public Xray auth.go digest in v0.8 census inspection"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^5450877ed206eb66a3dbeaec1f032c015e6e2dc458971293bcd2e9a01551f043$''']
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-census/(data/|measurements\.tar\.gz!)reference-inspection\.json$''']
+
 # Rehashed from the unchanged pinned Xray executable. Keep this exception
 # confined to its exact public digest in the batching report's manifests.
 [[allowlists]]
