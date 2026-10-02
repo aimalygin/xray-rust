@@ -858,6 +858,14 @@ in the archive. All 270 fresh VMess reference trials pass, with lower RSS in
 is about 6% slower and uses 21% more CPU than Xray in this fresh comparison.
 Device and publication-artifact acceptance remain open.
 
+The [idle-buffer follow-up](benchmarks/results/2026-10-02-v08-idle-buffers/README.md)
+rejects three reclamation prototypes after 26 completed held-memory/resume trials.
+Shrinking relay vectors after 5–10 idle seconds does not reliably lower process
+footprint; the balanced no-wipe control adds about 4 MiB after the first pause
+and 30 ms idle CPU at 512 connections. Production runtime and SDK pins remain
+unchanged. The reusable collector records footprint as well as RSS and checks
+payloads after two resume cycles.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management

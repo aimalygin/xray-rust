@@ -3,6 +3,18 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the unchanged pinned Xray executable; not a credential.
+[[allowlists]]
+description = "Verified Xray executable digest in idle-buffer evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-02-v08-idle-buffers/data/inputs\.json$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-idle-buffers/measurements\.tar\.gz!(held|footprint|untouched-controls)/manifest\.json$''',
+]
+
 # Rehashed public executable/log digests in the bounded-download evidence.
 [[allowlists]]
 description = "Verified Xray executable digest in v0.8 download manifests"

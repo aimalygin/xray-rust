@@ -23,6 +23,26 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_idle_buffer_reference_digest_exception_is_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-idle-buffers/"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        self.assertEqual(inputs["frozen_files"]["target/v08-io-final/bin/xray"], digest)
+        paths = [base + "data/inputs.json"] + [
+            base + "measurements.tar.gz!" + campaign + "/manifest.json"
+            for campaign in ("held", "footprint", "untouched-controls")
+        ]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        unrelated = base + "data/unreviewed.json"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in (paths[0], unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in paths}),
+                         {(p, "generic-api-key") for p in paths})
+
     def scan(self, files):
         binary = os.environ["GITLEAKS_BINARY"]
         with tempfile.TemporaryDirectory(prefix="xray-gitleaks-guards-") as name:

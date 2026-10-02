@@ -1,5 +1,13 @@
 # v0.8 protocol comparison
 
+The [idle-buffer investigation](benchmarks/results/2026-10-02-v08-idle-buffers/README.md)
+rejects three relay-shrink prototypes: 26 completed memory/resume trials do not
+show reliable footprint savings, and all variants add idle CPU. The four-repeat
+control without pre-erasure increases first-idle footprint from 105.3 to 109.4 MiB
+at 512 connections. Runtime and SDK pins remain unchanged. Future idle-memory
+checks should retain footprint alongside RSS; compressed pages can make RSS fall
+without freeing the application's memory charge.
+
 Latest VMess results: [bounded download batching](benchmarks/results/2026-10-02-v08-download/README.md).
 Runtime `9198a8f` (SDK `7b84921`) combines lazy 16 KiB read-ahead with up to four
 output records and a byte budget below 32 KiB. Five-repeat one-flow AES download
