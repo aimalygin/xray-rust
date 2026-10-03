@@ -20,7 +20,7 @@ source review, not an independent security audit or a physical-device result.
 The review found a candidate metadata gap: SDK version `0.8.0-rc.1` was paired
 with workspace version `0.7.0`, preventing the v0.8 evidence workflow's version
 check from passing. Candidate preparation aligns the workspace/lockfile version
-and dated changelog. Runtime sources, dependencies and ABI remain those reviewed
+dated changelog and generated configuration contract. Runtime sources, dependencies and ABI remain those reviewed
 above; the SDK must pin the resulting exact commit/tree and lockfile hash.
 The version change produces a new binary identity. Earlier measured binary
 hashes remain historical evidence and must not be relabeled as the new candidate.
@@ -28,7 +28,10 @@ hashes remain historical evidence and must not be relabeled as the new candidate
 Local review validation: 504 core unit tests pass (two manual tests remain
 ignored), including the eight adaptive relay tests and Mux/lifecycle tests;
 53 evidence-policy tests and 28 SDK policy tests pass. Release-version fixture
-checks pass, and the aligned workspace selects evidence profile `v08`.
+checks and all four configuration-contract tests pass, and the aligned
+workspace selects evidence profile `v08`. The first new-candidate CI attempt
+identified a stale generated `coreVersion`; regenerating the contract changed
+only that version field and restored the snapshot test.
 The initial sandboxed core attempt could not bind local sockets; rerunning
 with local networking passed all 504 tests. No product failure was suppressed.
 All 13 lockfile changes are local workspace versions; dependency entries are
