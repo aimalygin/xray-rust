@@ -47,15 +47,29 @@ Completed evidence at the reviewed revisions:
 | Runtime controls | Shared codec tests cover malformed records, nonce exhaustion and partial writes; relay tests cover quota, quiet migration, half-close and cancellation. Core and pinned live interop checks are recorded in the [adaptive relay report](benchmarks/results/2026-10-02-v08-adaptive-relay/README.md). |
 | Performance | [Performance history](v08-performance.md) retains each tested runtime, failures and controls. Final ChaCha single-flow duplex improves speed 58–60% and CPU 10–11%, costing 0.92–1.11 MiB across 512 held connections and 13–27 microseconds of eight-flow p95 latency. AES single-flow duplex remains 22.6% slower than Xray; the owner accepted retaining this implementation for 0.8. No universal or device parity is claimed. |
 
+The frozen runtime candidate is core `de33998158e84c03f280f979ba2d4212072e5bc4`
+and SDK `0148543fef8736e01625bc678ca321cc483e1e12`. Its
+[ordinary core CI](https://github.com/aimalygin/xray-rust/actions/runs/37136652768),
+[full core CI](https://github.com/aimalygin/xray-rust/actions/runs/37136753222) and
+[SDK CI](https://github.com/aimalygin/xray-rust-mobile/actions/runs/37136753055)
+passed. The [2026-10-03 physical iPhone report](device-results/2026-10-03-iphone17-v08/README.md)
+records fresh binaries built from that exact candidate: LAN cipher/lifecycle
+checks and WAN Trojan/VMess transitions passed. Original SS2022 WAN IPv6 UDP
+failed; Go controls reproduced the network size/DF dependence. SS2022 transition
+success requires the report's explicit diagnostic fragmentation relay. All
+failures and limits remain visible; this is not full device/release acceptance.
+
 ## Remaining acceptance, in order
 
-- [ ] Freeze the exact candidate commit/tree and SDK pin after candidate
-  metadata/source review. Check its ordinary and full CI; the full dispatch
-  covers hardening/fuzz/network jobs skipped by ordinary PR CI. A source change
-  after evidence collection requires reassessing that evidence's applicability.
-- [ ] Collect Apple device scenarios for each of Trojan, SS2022 and VMess.
-  This is **deferred by the owner**: the available iPad is not included in the
-  signing profile. No device registration or account change is authorized.
+- [x] Freeze the runtime candidate commit/tree and SDK pin after metadata/source
+  review, and pass its ordinary/full CI. The identities and runs are above.
+  Later documentation does not relabel these binaries; any runtime/build-input
+  change requires reassessing applicability and collecting fresh evidence.
+- [ ] Complete Apple device acceptance for Trojan, SS2022 and VMess. The owner
+  supplied an iPhone already covered by signing; the bounded checks above are
+  complete. Resolve the SS2022 production-path/MTU condition and collect the
+  remaining lifecycle/resource/performance and shared legacy evidence. The
+  separate unregistered iPad remains deferred; no account change was made.
 - [ ] Collect Android scenarios for each protocol through both FileDescriptor
   and PacketPump. Android hardware was unavailable at the last acceptance
   attempt; host tests and emulator results do not close this device gate.
