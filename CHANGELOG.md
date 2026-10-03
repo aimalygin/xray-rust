@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.8.0-rc.1 - 2026-10-03
+
+Candidate preparation only; no tag or package has been published. Device and
+distribution acceptance remain open in the [release checklist](docs/v08-release-readiness.md).
+
 - Add Trojan, Shadowsocks 2022 and VMess AEAD client outbounds for SOCKS,
   HTTP, TUN and routed DNS, with shared protected carriers and bounded Mux/XUDP.
   SS2022 supports all three methods and AES identity chains; VMess supports
@@ -21,10 +26,12 @@ long-term supported release series.
 - Add independent-server and carrier matrices, wire oracles, fuzz coverage
   and a separate v0.8 release-evidence gate. Physical Apple acceptance is
   deferred by the owner; this development work is not a published release.
-- Reduce VMess TCP receive overhead with bounded reads of two available
-  records, preserving authenticated delivery, plaintext erasure and UDP
-  boundaries. Record the CPU, throughput and memory tradeoffs against the
-  pinned Xray-core and sing-box references.
+- Reduce VMess record I/O and crypto overhead with bounded batching and
+  read-ahead, preserving authenticated delivery, plaintext erasure and UDP
+  boundaries. Admit at most two sustained raw-TCP ChaCha duplex relays to an
+  additional task per core; AES retains the combined relay. Record the CPU,
+  throughput, memory and latency tradeoffs against pinned Xray and sing-box.
+- Wait for inbound owners and admitted VMess relay children during Core.stop.
 
 ## 0.7.0 - 2026-09-27
 

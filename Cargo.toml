@@ -19,7 +19,7 @@ resolver = "2"
 exclude = ["vendor/gotatun", "vendor/smoltcp", "vendor/quinn"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0-rc.1"
 edition = "2021"
 rust-version = "1.96"
 license = "MPL-2.0"

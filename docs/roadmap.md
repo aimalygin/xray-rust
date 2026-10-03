@@ -773,6 +773,9 @@ Trojan, Shadowsocks 2022 and VMess AEAD are now selected for 0.8.
 
 ## Phase 5: `v0.8` Trojan, Shadowsocks 2022 and VMess AEAD clients
 
+The [release readiness checklist](v08-release-readiness.md) consolidates the
+final source review, candidate identities and remaining device/artifact gates.
+
 Status: Trojan, Shadowsocks 2022 and VMess AEAD selected as required release
 features by the owner on 2026-09-30. All three are mandatory; Shadowsocks
 AEAD-2017 is excluded. All three runtimes, imports, ABI 1.8 and canonical

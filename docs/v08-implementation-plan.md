@@ -1,5 +1,9 @@
 # v0.8 implementation plan and evidence
 
+Current acceptance status and next steps are consolidated in the
+[release readiness checklist](v08-release-readiness.md). The dated sections
+below retain their original runtime identities and historical limits.
+
 Started 2026-09-30 (America/Chicago).
 
 The owner selected complete **Trojan, Shadowsocks 2022 and VMess AEAD** clients
