@@ -120,7 +120,7 @@ jobs:
           retention-days: 14
 
   release-evidence:
-    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.')
+    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.') || startsWith(github.ref, 'refs/tags/v0.8.')
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -244,7 +244,8 @@ jobs:
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
-          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence scripts.tests.test_v07_stable_promotion
+          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence scripts.tests.test_v07_stable_promotion scripts.tests.test_v08_release_evidence
+          python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
@@ -343,6 +344,23 @@ jobs:
       - name: Verify Hysteria wire and WireGuard routing primitives against pinned Xray-core
         run: bash scripts/check-v07-protocol-oracle.sh
 
+      - name: Verify v0.8 protocol primitives against pinned Xray-core
+        run: bash scripts/check-v08-protocol-oracle.sh
+
+      - name: Verify Trojan TCP, UDP and TUN against pinned Xray-core
+        run: bash scripts/check-trojan-interop.sh
+
+      - name: Verify Shadowsocks 2022 TCP, UDP and TUN against pinned Xray-core
+        run: bash scripts/check-shadowsocks2022-interop.sh
+
+      - name: Check VMess AEAD pinned Xray interoperability
+        run: bash scripts/check-vmess-interop.sh
+      - name: Check shared Mux and XUDP interoperability
+        run: bash scripts/check-mux-interop.sh
+      - name: Check v0.8 clients against pinned independent sing-box
+        run: bash scripts/check-v08-independent-interop.sh
+      - name: Check v0.8 REALITY, split-XHTTP and cross-protocol chains
+        run: bash scripts/check-v08-carrier-interop.sh
       - name: Verify live Hysteria TCP and UDP against pinned Xray-core
         run: bash scripts/check-hysteria-interop.sh
 

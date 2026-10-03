@@ -1,0 +1,17 @@
+{
+  "commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "files": {
+    "common/crypto/auth.go": "5450877ed206eb66a3dbeaec1f032c015e6e2dc458971293bcd2e9a01551f043",
+    "common/buf/buffer.go": "183969ecf87582f4288791f096ea4f2dad854d3352079df07e66aaa999325013",
+    "common/buf/writer.go": "9316522a507d23bd9ab58db14e87a8a86c25137136b0c0b76d36245756c3abda",
+    "common/buf/readv_posix.go": "6a26731858d0c68074c85da413bef70e3f4ce43d9db95d7d5cf88e167c69e5f0"
+  },
+  "notes": [
+    "AuthenticationWriter collects one encrypted record per buffer then WriteMultiBuffer.",
+    "BufferToBytesWriter uses net.Buffers.WriteTo, observed writev on this host.",
+    "Regular buffer size is 8192, matching the Rust outgoing bound.",
+    "posixReader calls SYS_READV directly; libc readv counter cannot observe it.",
+    "Frozen Go executables import arc4random_buf; payload-phase calls observed."
+  ],
+  "darwin_task_counter_source": "https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/bsd_kern.c"
+}

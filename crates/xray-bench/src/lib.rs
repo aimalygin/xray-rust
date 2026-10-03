@@ -8629,6 +8629,7 @@ fn measure_dns_outbound_policy(
 
 fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
     let direct = OutboundConfig {
+        mux: None,
         tag: Some("direct".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -8641,6 +8642,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
         settings: OutboundSettings::Freedom,
     };
     let dns = OutboundConfig {
+        mux: None,
         tag: Some("dns-out".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -9133,6 +9135,7 @@ fn phase2_probe_metric(operations: usize, elapsed: Duration) -> Phase2ProbeMetri
 
 fn phase2_probe_outbound(tag: String, proxy_tag: Option<String>) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag),
         proxy_settings: proxy_tag.map(|tag| OutboundProxySettings {
             tag,
@@ -10564,6 +10567,7 @@ fn route_probe_config(
     let selected_tag = format!("out-{}", outbound_count - 1);
     let outbounds = (0..outbound_count)
         .map(|index| OutboundConfig {
+            mux: None,
             tag: Some(format!("out-{index}")),
             proxy_settings: None,
             stream: StreamSettings {

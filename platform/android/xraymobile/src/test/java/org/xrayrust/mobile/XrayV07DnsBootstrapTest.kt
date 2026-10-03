@@ -9,6 +9,63 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XrayV07DnsBootstrapTest {
+    @Test
+    fun pinsBothTrojanConfigFormsWithoutChangingCredentials() {
+        for (settings in listOf(
+            """{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}""",
+            """{"servers":[{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}]}""",
+        )) {
+            val json = """{"outbounds":[{"protocol":"trojan","settings":$settings}]}"""
+            val prepared = prepare(json) { domain ->
+                assertEquals("trojan.example", domain)
+                listOf("192.0.2.8")
+            }
+            val root = JSONObject(prepared.json)
+            assertEquals(JSONObject(json).getJSONArray("outbounds").toString(),
+                root.getJSONArray("outbounds").toString())
+            assertEquals("192.0.2.8", root.getJSONObject("dns").getJSONObject("hosts")
+                .getJSONArray("full:trojan.example").getString(0))
+        }
+    }
+
+    @Test
+    fun pinsBothVmessConfigFormsWithoutChangingCredentials() {
+        for (settings in listOf(
+            """{"address":"Vmess.Example.","port":443,"id":"00112233-4455-6677-8899-aabbccddeeff"}""",
+            """{"vnext":[{"address":"Vmess.Example.","port":443,"users":[{"id":"00112233-4455-6677-8899-aabbccddeeff"}]}]}""",
+        )) {
+            val json = """{"outbounds":[{"protocol":"vmess","settings":$settings}]}"""
+            val prepared = prepare(json) { domain ->
+                assertEquals("vmess.example", domain)
+                listOf("192.0.2.8")
+            }
+            val root = JSONObject(prepared.json)
+            assertEquals(JSONObject(json).getJSONArray("outbounds").toString(),
+                root.getJSONArray("outbounds").toString())
+            assertEquals("192.0.2.8", root.getJSONObject("dns").getJSONObject("hosts")
+                .getJSONArray("full:vmess.example").getString(0))
+        }
+    }
+
+    @Test
+    fun pinsBothShadowsocks2022ConfigFormsWithoutChangingCredentials() {
+        for (settings in listOf(
+            """{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}""",
+            """{"servers":[{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}]}""",
+        )) {
+            val json = """{"outbounds":[{"protocol":"shadowsocks","settings":$settings}]}"""
+            val prepared = prepare(json) { domain ->
+                assertEquals("trojan.example", domain)
+                listOf("192.0.2.8")
+            }
+            val root = JSONObject(prepared.json)
+            assertEquals(JSONObject(json).getJSONArray("outbounds").toString(),
+                root.getJSONArray("outbounds").toString())
+            assertEquals("192.0.2.8", root.getJSONObject("dns").getJSONObject("hosts")
+                .getJSONArray("full:trojan.example").getString(0))
+        }
+    }
+
     private fun prepare(
         json: String,
         lookup: (String) -> List<String> = { error("unexpected system DNS lookup") },

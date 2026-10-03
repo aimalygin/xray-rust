@@ -3750,7 +3750,7 @@ fn rejects_unsupported_outbound_protocol_with_path() {
     let raw = r#"{
         "inbounds": [],
         "outbounds": [
-            { "protocol": "trojan", "settings": {} }
+            { "protocol": "unsupported-test-protocol", "settings": {} }
         ]
     }"#;
 

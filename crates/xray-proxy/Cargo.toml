@@ -6,13 +6,24 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "VLESS, Vision, and XUDP protocol primitives for xray-rust"
+description = "Bounded client protocol primitives for xray-rust"
+
+[features]
+fuzzing = []
 
 [dependencies]
+aes.workspace = true
+aws-lc-rs.workspace = true
+blake3.workspace = true
+chacha20poly1305.workspace = true
+crc32fast.workspace = true
+md-5.workspace = true
+sha3.workspace = true
 base64.workspace = true
 bytes.workspace = true
 prost.workspace = true
 rand.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
@@ -20,4 +31,13 @@ xray-routing = { path = "../xray-routing" }
 zeroize.workspace = true
 
 [dev-dependencies]
+aes-gcm.workspace = true
 serde_json.workspace = true
+
+[[bench]]
+name = "aead_backends"
+harness = false
+
+[[bench]]
+name = "record_erasure"
+harness = false

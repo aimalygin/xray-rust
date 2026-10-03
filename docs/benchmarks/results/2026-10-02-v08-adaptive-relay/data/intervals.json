@@ -1,0 +1,1502 @@
+{
+  "comparisons": {
+    "chacha-broad-attempt-1": {
+      "vmess-aes128-socks-download-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0555555555555556
+          ],
+          "ratio_of_medians": 1.027027027027027,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.014792899408284,
+            1.0298507462686568
+          ],
+          "ratio_of_medians": 1.0222882615156017,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9849053977902404,
+            1.0098417434020868
+          ],
+          "ratio_of_medians": 1.0006159577247855,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-download-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9861111111111112,
+            1.020979020979021
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0131926121372032,
+            1.0375335120643432
+          ],
+          "ratio_of_medians": 1.0239680426098536,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9890065156877296,
+            1.0823347759311839
+          ],
+          "ratio_of_medians": 0.9997773206384533,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-full-duplex-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0142045454545454,
+            1.0285714285714285
+          ],
+          "ratio_of_medians": 1.0199714693295292,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9644505273457951,
+            1.0389993518885572
+          ],
+          "ratio_of_medians": 0.9906269775869485,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-full-duplex-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9482758620689655,
+            1.1532567049808429
+          ],
+          "ratio_of_medians": 0.9894366197183099,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.019736842105263,
+            1.0422222222222222
+          ],
+          "ratio_of_medians": 1.032079646017699,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9283390335801994,
+            1.0242318163875108
+          ],
+          "ratio_of_medians": 1.0011505248088357,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-tcp-latency-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9866666666666667,
+            1.0135135135135136
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.8979591836734694,
+            1.0089686098654709
+          ],
+          "ratio_of_medians": 0.9649890590809628,
+          "repeats": 4
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.8241758241758241,
+            1.063660477453581
+          ],
+          "ratio_of_medians": 0.9364161849710982,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0059701492537314,
+            1.033033033033033
+          ],
+          "ratio_of_medians": 1.0224550898203593,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9989157489284157,
+            1.0196179992052548
+          ],
+          "ratio_of_medians": 1.0073046912271706,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-tcp-latency-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9935897435897436,
+            1.0064935064935066
+          ],
+          "ratio_of_medians": 0.9967845659163987,
+          "repeats": 4
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9973614775725593,
+            1.0916230366492146
+          ],
+          "ratio_of_medians": 1.0722733245729303,
+          "repeats": 4
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            1.0173310225303294,
+            1.1182608695652174
+          ],
+          "ratio_of_medians": 1.0451388888888888,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0165289256198347,
+            1.0249307479224377
+          ],
+          "ratio_of_medians": 1.0221300138312586,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9846851586174284,
+            1.0077969950377739
+          ],
+          "ratio_of_medians": 0.9985045482969079,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-upload-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0172413793103448,
+            1.032069970845481
+          ],
+          "ratio_of_medians": 1.0201438848920863,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9667705116522847,
+            1.0158163690225703
+          ],
+          "ratio_of_medians": 0.9928047922053365,
+          "repeats": 4
+        }
+      },
+      "vmess-aes128-socks-upload-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9932432432432432,
+            1.0136986301369864
+          ],
+          "ratio_of_medians": 1.0068493150684932,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.011600928074246,
+            1.044392523364486
+          ],
+          "ratio_of_medians": 1.031431897555297,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9686403882111637,
+            1.0061011104678543
+          ],
+          "ratio_of_medians": 0.9841271372304728,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-download-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.90625,
+            0.967741935483871
+          ],
+          "ratio_of_medians": 0.9375,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0388059701492538,
+            1.0477611940298508
+          ],
+          "ratio_of_medians": 1.0432835820895523,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0019151108181852,
+            1.0412428365611188
+          ],
+          "ratio_of_medians": 1.0054180118219367,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-download-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.995475113122172,
+            1.0091324200913243
+          ],
+          "ratio_of_medians": 1.0068337129840548,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0315789473684212,
+            1.053763440860215
+          ],
+          "ratio_of_medians": 1.035667107001321,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.983817431635479,
+            1.0255462793178494
+          ],
+          "ratio_of_medians": 0.9941658577265293,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9016393442622951,
+            0.9193548387096774
+          ],
+          "ratio_of_medians": 0.9032258064516129,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.042857142857143,
+            1.0547550432276658
+          ],
+          "ratio_of_medians": 1.0516499282639886,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.5861001876939274,
+            1.6136477194042924
+          ],
+          "ratio_of_medians": 1.5994914185982532,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9733924611973392,
+            1.0045146726862302
+          ],
+          "ratio_of_medians": 0.9887766554433222,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.046875,
+            1.0666666666666667
+          ],
+          "ratio_of_medians": 1.0610432852386238,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9899190775837818,
+            1.034511854313108
+          ],
+          "ratio_of_medians": 1.0094457182929253,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-tcp-latency-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.75,
+            0.75
+          ],
+          "ratio_of_medians": 0.75,
+          "repeats": 4
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9375,
+            0.9620253164556962
+          ],
+          "ratio_of_medians": 0.94375,
+          "repeats": 4
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9911111111111112,
+            1.08
+          ],
+          "ratio_of_medians": 1.0555555555555556,
+          "repeats": 4
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.884514435695538,
+            1.1222570532915361
+          ],
+          "ratio_of_medians": 1.0669710806697108,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.026946107784431,
+            1.0419161676646707
+          ],
+          "ratio_of_medians": 1.032934131736527,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.002543912149404,
+            1.0687259714659831
+          ],
+          "ratio_of_medians": 1.05671770149802,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-tcp-latency-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.75,
+            0.8636363636363636
+          ],
+          "ratio_of_medians": 0.8372093023255814,
+          "repeats": 4
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.824468085106383,
+            0.968944099378882
+          ],
+          "ratio_of_medians": 0.9569230769230769,
+          "repeats": 4
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.7830188679245284,
+            1.1864406779661016
+          ],
+          "ratio_of_medians": 1.0623409669211197,
+          "repeats": 4
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.8302631578947368,
+            1.170846394984326
+          ],
+          "ratio_of_medians": 1.0741626794258374,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0138121546961325,
+            1.045325779036827
+          ],
+          "ratio_of_medians": 1.0304709141274238,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0136611135881535,
+            1.3776019600834901
+          ],
+          "ratio_of_medians": 1.0247858132029986,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-upload-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.8928571428571429,
+            0.9642857142857143
+          ],
+          "ratio_of_medians": 0.9454545454545454,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.03768115942029,
+            1.0494186046511629
+          ],
+          "ratio_of_medians": 1.042089985486212,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9965961402655399,
+            1.0269363927718254
+          ],
+          "ratio_of_medians": 1.013163984757442,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-upload-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9952153110047847,
+            1.0
+          ],
+          "ratio_of_medians": 0.9952153110047847,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.032258064516129,
+            1.0636792452830188
+          ],
+          "ratio_of_medians": 1.0442374854481955,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9888335299273953,
+            1.0044701000429999
+          ],
+          "ratio_of_medians": 0.9976502092215577,
+          "repeats": 4
+        }
+      }
+    },
+    "chacha-confirmation-attempt-1": {
+      "vmess-aes128-socks-full-duplex-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.09375
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0142045454545454,
+            1.0300859598853869
+          ],
+          "ratio_of_medians": 1.0228898426323318,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.8652262214834965,
+            1.0051538098997972
+          ],
+          "ratio_of_medians": 0.9953016973571104,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-1/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9722222222222222,
+            1.1864406779661016
+          ],
+          "ratio_of_medians": 0.9859154929577465,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0156472261735419,
+            1.0330459770114941
+          ],
+          "ratio_of_medians": 1.024355300859599,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.8493896693244091,
+            1.0379976842688388
+          ],
+          "ratio_of_medians": 1.004447419399303,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9468267581475128,
+            1.1168831168831168
+          ],
+          "ratio_of_medians": 0.9857142857142858,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0176211453744493,
+            1.0513392857142858
+          ],
+          "ratio_of_medians": 1.0275938189845475,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9275603862701013,
+            1.2277918506758605
+          ],
+          "ratio_of_medians": 1.0471449708662777,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-8/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.8960396039603961,
+            1.0846846846846847
+          ],
+          "ratio_of_medians": 0.9550173010380623,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.020902090209021,
+            1.0569832402234638
+          ],
+          "ratio_of_medians": 1.0332963374028856,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9344182576083874,
+            1.2410687895629307
+          ],
+          "ratio_of_medians": 1.0599254127545168,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.873015873015873,
+            0.9105691056910569
+          ],
+          "ratio_of_medians": 0.8951612903225806,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0442225392296718,
+            1.0606060606060606
+          ],
+          "ratio_of_medians": 1.0502152080344334,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.5459533791668651,
+            1.6240487061069513
+          ],
+          "ratio_of_medians": 1.577320790065509,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.873015873015873,
+            0.9032258064516129
+          ],
+          "ratio_of_medians": 0.8951612903225806,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0457142857142858,
+            1.0547550432276658
+          ],
+          "ratio_of_medians": 1.0487106017191976,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.5661654496921233,
+            1.6018078972747176
+          ],
+          "ratio_of_medians": 1.5810902297174227,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.975609756097561,
+            1.0022421524663676
+          ],
+          "ratio_of_medians": 0.9910313901345291,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.044543429844098,
+            1.0649496080627099
+          ],
+          "ratio_of_medians": 1.0512820512820513,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0032013642323507,
+            1.0212309205887973
+          ],
+          "ratio_of_medians": 1.0129792373667397,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-8/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9856512141280354,
+            0.9977426636568849
+          ],
+          "ratio_of_medians": 0.9954954954954955,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0376106194690264,
+            1.0534521158129175
+          ],
+          "ratio_of_medians": 1.043141592920354,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0012056247265784,
+            1.0324885748449126
+          ],
+          "ratio_of_medians": 1.0085949478656762,
+          "repeats": 6
+        }
+      }
+    },
+    "chacha-cycles-attempt-1": {
+      "vmess-aes128-socks-full-duplex-1-8cycles/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9914893617021276,
+            1.0
+          ],
+          "ratio_of_medians": 0.9957264957264957,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0041436464088398,
+            1.0252808988764044
+          ],
+          "ratio_of_medians": 1.0167130919220055,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9998162596032943,
+            1.005010851775496
+          ],
+          "ratio_of_medians": 1.0010299679560617,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-1-8cycles/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9831223628691983,
+            0.9978632478632479
+          ],
+          "ratio_of_medians": 0.9936034115138592,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.01536312849162,
+            1.0267229254571026
+          ],
+          "ratio_of_medians": 1.022408963585434,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0001669681070016,
+            1.0176202652443143
+          ],
+          "ratio_of_medians": 1.0056651112048676,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1-8cycles/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.8552915766738661,
+            0.8602383531960996
+          ],
+          "ratio_of_medians": 0.857451403887689,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0646067415730338,
+            1.0826330532212884
+          ],
+          "ratio_of_medians": 1.0661040787623066,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.5904639607784308,
+            1.5999436003497567
+          ],
+          "ratio_of_medians": 1.595616306600198,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1-8cycles/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.853763440860215,
+            0.8585313174946004
+          ],
+          "ratio_of_medians": 0.857451403887689,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0631136044880785,
+            1.0875706214689265
+          ],
+          "ratio_of_medians": 1.0646067415730338,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.5923519829579558,
+            1.6078015357445021
+          ],
+          "ratio_of_medians": 1.5970217367653239,
+          "repeats": 6
+        }
+      }
+    },
+    "chacha-idle-attempt-1": {
+      "vmess-aes128-socks-full-duplex-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9459459459459459,
+            1.1724137931034482
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0212765957446808,
+            1.0267379679144386
+          ],
+          "ratio_of_medians": 1.023936170212766,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.793972597357425,
+            1.119889156605629
+          ],
+          "ratio_of_medians": 0.9944466966222203,
+          "repeats": 4
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.8709677419354839,
+            0.9016393442622951
+          ],
+          "ratio_of_medians": 0.8934426229508197,
+          "repeats": 4
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0586666666666666,
+            1.0672043010752688
+          ],
+          "ratio_of_medians": 1.0600801068090788,
+          "repeats": 4
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.5374748882018667,
+            1.614306643474837
+          ],
+          "ratio_of_medians": 1.5790069163928178,
+          "repeats": 4
+        }
+      }
+    },
+    "chacha-latency-confirmation-attempt-1": {
+      "vmess-aes128-socks-tcp-latency-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9866666666666667,
+            1.0133333333333334
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.959051724137931,
+            1.052511415525114
+          ],
+          "ratio_of_medians": 1.0247191011235954,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.9260752688172043,
+            1.057636887608069
+          ],
+          "ratio_of_medians": 0.9800853485064012,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0119047619047619,
+            1.024024024024024
+          ],
+          "ratio_of_medians": 1.017910447761194,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9857450150433827,
+            1.022593432146175
+          ],
+          "ratio_of_medians": 0.9974361871631461,
+          "repeats": 12
+        }
+      },
+      "vmess-aes128-socks-tcp-latency-1/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9866666666666667,
+            1.0135135135135136
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9623430962343096,
+            1.0403587443946187
+          ],
+          "ratio_of_medians": 1.008849557522124,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.8979057591623036,
+            1.145367412140575
+          ],
+          "ratio_of_medians": 0.9913669064748202,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0149253731343284,
+            1.0271084337349397
+          ],
+          "ratio_of_medians": 1.0209580838323353,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9814121214677642,
+            1.0130563119285185
+          ],
+          "ratio_of_medians": 0.9955840590104692,
+          "repeats": 12
+        }
+      },
+      "vmess-aes128-socks-tcp-latency-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.975609756097561,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9744408945686901,
+            1.0163398692810457
+          ],
+          "ratio_of_medians": 0.9903846153846154,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9255583126550868,
+            1.035264483627204
+          ],
+          "ratio_of_medians": 0.9824561403508771,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.9617834394904459,
+            1.0415973377703827
+          ],
+          "ratio_of_medians": 1.0129870129870129,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0151933701657458,
+            1.0222222222222221
+          ],
+          "ratio_of_medians": 1.0193905817174516,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9875020114586062,
+            1.021990901217711
+          ],
+          "ratio_of_medians": 1.0061586032137015,
+          "repeats": 12
+        }
+      },
+      "vmess-aes128-socks-tcp-latency-8/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            1.0,
+            1.0
+          ],
+          "ratio_of_medians": 1.0,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9871794871794872,
+            1.0233333333333334
+          ],
+          "ratio_of_medians": 1.006514657980456,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9443037974683545,
+            1.098314606741573
+          ],
+          "ratio_of_medians": 0.9936628643852978,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.9232488822652757,
+            1.0699241786015163
+          ],
+          "ratio_of_medians": 1.0254724732949876,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0152143845089903,
+            1.0308123249299719
+          ],
+          "ratio_of_medians": 1.0222222222222221,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9760907890055086,
+            1.0045971078455016
+          ],
+          "ratio_of_medians": 0.9895481265067749,
+          "repeats": 12
+        }
+      },
+      "vmess-chacha20-socks-tcp-latency-1/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.75,
+            0.75
+          ],
+          "ratio_of_medians": 0.75,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.925,
+            0.9493670886075949
+          ],
+          "ratio_of_medians": 0.9493670886075949,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9375,
+            1.032258064516129
+          ],
+          "ratio_of_medians": 0.9873684210526316,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.9508196721311475,
+            1.0941176470588236
+          ],
+          "ratio_of_medians": 1.031294452347084,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.035928143712575,
+            1.0436746987951808
+          ],
+          "ratio_of_medians": 1.0406015037593985,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0269569805424443,
+            1.0634288190133006
+          ],
+          "ratio_of_medians": 1.045523760668087,
+          "repeats": 12
+        }
+      },
+      "vmess-chacha20-socks-tcp-latency-1/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.75,
+            0.75
+          ],
+          "ratio_of_medians": 0.75,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9367088607594937,
+            0.9493670886075949
+          ],
+          "ratio_of_medians": 0.9493670886075949,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9394572025052192,
+            1.0063025210084033
+          ],
+          "ratio_of_medians": 0.9811715481171548,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.9182058047493403,
+            1.089820359281437
+          ],
+          "ratio_of_medians": 1.013986013986014,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.035928143712575,
+            1.0453172205438066
+          ],
+          "ratio_of_medians": 1.039039039039039,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0333961949707766,
+            1.0571400101853055
+          ],
+          "ratio_of_medians": 1.047050622765922,
+          "repeats": 12
+        }
+      },
+      "vmess-chacha20-socks-tcp-latency-8/candidate-vs-baseline": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.8181818181818182,
+            0.8809523809523809
+          ],
+          "ratio_of_medians": 0.8372093023255814,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.9263803680981595,
+            0.9875
+          ],
+          "ratio_of_medians": 0.9659442724458205,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            1.0087609511889863,
+            1.1267029972752043
+          ],
+          "ratio_of_medians": 1.0686528497409327,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.8946587537091988,
+            1.0865051903114187
+          ],
+          "ratio_of_medians": 0.9929797191887676,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.0194444444444444,
+            1.0402219140083218
+          ],
+          "ratio_of_medians": 1.025,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.99901544367129,
+            1.0581883744118068
+          ],
+          "ratio_of_medians": 1.0276771446095063,
+          "repeats": 12
+        }
+      },
+      "vmess-chacha20-socks-tcp-latency-8/candidate-vs-control": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.8181818181818182,
+            0.8636363636363636
+          ],
+          "ratio_of_medians": 0.8372093023255814,
+          "repeats": 12
+        },
+        "latency_median": {
+          "paired_bootstrap_95_percentile": [
+            0.937888198757764,
+            0.9782608695652174
+          ],
+          "ratio_of_medians": 0.9629629629629629,
+          "repeats": 12
+        },
+        "latency_p95": {
+          "paired_bootstrap_95_percentile": [
+            0.9760705289672544,
+            1.108433734939759
+          ],
+          "ratio_of_medians": 1.03125,
+          "repeats": 12
+        },
+        "latency_p99": {
+          "paired_bootstrap_95_percentile": [
+            0.9274924471299094,
+            1.103448275862069
+          ],
+          "ratio_of_medians": 1.0503300330033003,
+          "repeats": 12
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            1.020775623268698,
+            1.0416666666666667
+          ],
+          "ratio_of_medians": 1.025,
+          "repeats": 12
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0077595064477887,
+            1.0476812275216216
+          ],
+          "ratio_of_medians": 1.0214763964133258,
+          "repeats": 12
+        }
+      }
+    },
+    "chacha-reference-attempt-1": {
+      "vmess-aes128-socks-full-duplex-1/candidate-vs-singbox": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.6862745098039216,
+            0.7340425531914894
+          ],
+          "ratio_of_medians": 0.7070707070707071,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.20033670033670034,
+            0.20415717539863326
+          ],
+          "ratio_of_medians": 0.2021578648495173,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0891976054689199,
+            1.1467784735010507
+          ],
+          "ratio_of_medians": 1.1220989452592203,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-1/candidate-vs-xray": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.9722222222222222,
+            1.0294117647058822
+          ],
+          "ratio_of_medians": 1.0144927536231885,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.1638470451911935,
+            0.1674081011472723
+          ],
+          "ratio_of_medians": 0.16581276199347927,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.7645942447538061,
+            0.7786476153371634
+          ],
+          "ratio_of_medians": 0.7744655863963289,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-8/candidate-vs-singbox": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.6183908045977011,
+            0.6642685851318945
+          ],
+          "ratio_of_medians": 0.6478365384615384,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.2215841110313472,
+            0.22639668211758965
+          ],
+          "ratio_of_medians": 0.22407139411480945,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0469836912122183,
+            1.2433638451749516
+          ],
+          "ratio_of_medians": 1.1810505236222195,
+          "repeats": 6
+        }
+      },
+      "vmess-aes128-socks-full-duplex-8/candidate-vs-xray": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.7260458839406208,
+            0.7948717948717948
+          ],
+          "ratio_of_medians": 0.7612994350282486,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.1885262517737685,
+            0.19385836640902443
+          ],
+          "ratio_of_medians": 0.19154639175257732,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.0098823404989683,
+            1.2196282373715508
+          ],
+          "ratio_of_medians": 1.1107864509996972,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1/candidate-vs-singbox": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.5091743119266054,
+            0.5601851851851852
+          ],
+          "ratio_of_medians": 0.5161290322580645,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.20322043309272628,
+            0.20662326634588168
+          ],
+          "ratio_of_medians": 0.20441834451901567,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.2468774516750314,
+            1.3313117309587197
+          ],
+          "ratio_of_medians": 1.316269870276431,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-1/candidate-vs-xray": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.7115384615384616,
+            0.7756410256410257
+          ],
+          "ratio_of_medians": 0.717948717948718,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.16452558034708137,
+            0.16955416955416955
+          ],
+          "ratio_of_medians": 0.1671239140374943,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.9257233842711701,
+            1.0107983382034331
+          ],
+          "ratio_of_medians": 0.9953651977927134,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-8/candidate-vs-singbox": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.48620309050772625,
+            0.5062857142857143
+          ],
+          "ratio_of_medians": 0.49690837549184935,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.21520125927591635,
+            0.23312287518212724
+          ],
+          "ratio_of_medians": 0.22767536509456548,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            1.1147085675052293,
+            1.2628939338474654
+          ],
+          "ratio_of_medians": 1.2223204652606114,
+          "repeats": 6
+        }
+      },
+      "vmess-chacha20-socks-full-duplex-8/candidate-vs-xray": {
+        "cpu_millis": {
+          "paired_bootstrap_95_percentile": [
+            0.5550660792951542,
+            0.5753512132822478
+          ],
+          "ratio_of_medians": 0.5634161886551944,
+          "repeats": 6
+        },
+        "peak_rss_kib": {
+          "paired_bootstrap_95_percentile": [
+            0.154095701540957,
+            0.19416088199265005
+          ],
+          "ratio_of_medians": 0.18982035928143712,
+          "repeats": 6
+        },
+        "throughput_mib_s": {
+          "paired_bootstrap_95_percentile": [
+            0.8064489587199868,
+            1.106974460587254
+          ],
+          "ratio_of_medians": 1.0362574853440332,
+          "repeats": 6
+        }
+      }
+    }
+  },
+  "method": "10,000 paired resamples of repeat indexes; ratio of medians; 2.5/97.5 percentiles",
+  "scope": "Within-session sampling uncertainty; not a bound on host/session/WAN variation"
+}

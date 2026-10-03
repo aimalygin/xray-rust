@@ -228,6 +228,30 @@ async fn handle_http_connection(
                 outbound_policy.relay_buffer_size(),
             )
         }
+        TcpOutbound::Trojan(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Vmess(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Shadowsocks2022(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
         TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
             let outbound_policy = effective_policy_for_level(&config, Some(0));
             (

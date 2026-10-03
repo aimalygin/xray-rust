@@ -234,8 +234,8 @@ for job in publish-prerelease; do
     die "$job is not restricted to RC tag publication"
 done
 
-grep -Fxq "    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.')" <<<"$(job_body release-evidence)" || \
-  die "v0.6.0/v0.7 publication is not gated on release evidence"
+grep -Fxq "    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.') || startsWith(github.ref, 'refs/tags/v0.8.')" <<<"$(job_body release-evidence)" || \
+  die "v0.6.0/v0.7/v0.8 publication is not gated on release evidence"
 grep -Fq 'bash scripts/check-release-evidence.sh' <<<"$(job_body release-evidence)" || \
   die "release boundary does not revalidate candidate or promotion evidence"
 

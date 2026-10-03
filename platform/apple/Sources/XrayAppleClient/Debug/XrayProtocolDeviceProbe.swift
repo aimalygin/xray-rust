@@ -66,7 +66,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             let size = try input.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard (1...524_288).contains(size) else { throw Failure.configuration }
             let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: input))
-            guard (1...2).contains(fixture.cases.count), fixture.tcpPort > 0, fixture.udpPort > 0 else {
+            guard (1...5).contains(fixture.cases.count), fixture.tcpPort > 0, fixture.udpPort > 0 else {
                 throw Failure.configuration
             }
             let labels = fixture.trafficHost.split(separator: ".", omittingEmptySubsequences: false)

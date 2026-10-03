@@ -3,6 +3,9 @@ use super::*;
 use xray_transport::hysteria::{HysteriaError, HysteriaUdpSession};
 
 pub(crate) enum Session {
+    Trojan(trojan::UdpSession),
+    Vmess(vmess::UdpSession),
+    Shadowsocks2022(Box<shadowsocks::UdpSession>),
     Hysteria(HysteriaUdpSession),
     Wireguard {
         session: xray_wireguard::UdpSession,
@@ -19,8 +22,24 @@ pub(crate) async fn open(
     destination: &dyn DnsResolver,
     bootstrap: &dyn DnsResolver,
     dialer: &TransportDialer,
+    global_id: [u8; 8],
 ) -> Result<Session, CoreError> {
     match outbound {
+        UdpOutbound::Trojan(outbound) => Ok(Session::Trojan(
+            outbound
+                .open_udp(target, bootstrap, dialer, global_id)
+                .await?,
+        )),
+        UdpOutbound::Vmess(outbound) => Ok(Session::Vmess(
+            outbound
+                .open_udp(target, bootstrap, dialer, global_id)
+                .await?,
+        )),
+        UdpOutbound::Shadowsocks2022(outbound) => Ok(Session::Shadowsocks2022(Box::new(
+            outbound
+                .open_udp(target, bootstrap, dialer, global_id)
+                .await?,
+        ))),
         UdpOutbound::Hysteria(outbound) => Ok(Session::Hysteria(
             outbound.open_udp(bootstrap, dialer).await?,
         )),
@@ -36,6 +55,9 @@ pub(crate) async fn open(
 impl Session {
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
+            Self::Trojan(session) => session.send(target, payload).await,
+            Self::Vmess(session) => session.send(target, payload).await,
+            Self::Shadowsocks2022(session) => session.send(target, payload).await,
             Self::Hysteria(session) => Ok(session.send(target, payload).await?),
             Self::Wireguard { session, requested } => {
                 if target != requested {
@@ -47,6 +69,9 @@ impl Session {
     }
     pub(crate) async fn recv(&self) -> Result<Datagram, CoreError> {
         match self {
+            Self::Trojan(session) => session.recv().await,
+            Self::Vmess(session) => session.recv().await,
+            Self::Shadowsocks2022(session) => session.recv().await,
             Self::Hysteria(session) => {
                 let packet = session.recv().await?;
                 Ok(Datagram {

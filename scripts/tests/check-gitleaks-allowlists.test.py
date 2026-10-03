@@ -2,10 +2,12 @@
 """Exercise evidence exceptions with Gitleaks, including positive leak controls."""
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
 import tomllib
 import unittest
 
@@ -21,6 +23,123 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_iphone_v08_executable_digest_exceptions_are_narrow(self):
+        path = "docs/device-results/2026-10-03-iphone17-v08/manifest.json"
+        manifest = json.loads((ROOT / path).read_text())
+        digests = (
+            "90b0c79c7487f49ba9cf8faf20bed3603b3450e090602e199d12f319ae22f49b",
+            "06f46e890bf381e1b684ca9de3bc61e54fe8b73995492ca5b37a11947d76b029",
+        )
+        reviewed = dict(zip(("XrayClient", "XrayClient.debug.dylib"), digests))
+        for name, digest in reviewed.items():
+            self.assertEqual(manifest["app_files_sha256"][name], digest)
+        self.assertEqual(self.scan({path: json.dumps(reviewed)}), set())
+        unrelated = "docs/device-results/unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({path: json.dumps({"xray": other}), unrelated: json.dumps(reviewed)}),
+                         {(name, "jfrog-identity-token") for name in (path, unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({path: json.dumps({"api_key": synthetic})}),
+                         {(path, "generic-api-key")})
+
+    def test_adaptive_relay_exceptions_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-adaptive-relay/"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        digest = inputs["xray"]["sha256"]
+        paths = [base + "measurements.tar.gz!" + name + "/manifest.json"
+                 for name in inputs["campaigns"]]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        index_paths = [base + name for name in ("evidence-index.json", "data/reviewed-public-hashes.json")]
+        reviewed = json.loads((ROOT / index_paths[1]).read_text())
+        index = json.loads((ROOT / index_paths[0]).read_text())
+        self.assertEqual(len(reviewed), 30)
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name, expected in reviewed.items():
+                self.assertTrue(name.endswith('.log'))
+                self.assertEqual(hashlib.sha256(archive.extractfile(name).read()).hexdigest(), expected)
+                self.assertEqual(index["file_sha256"][name], expected)
+        self.assertEqual(self.scan({p: json.dumps({"xray": list(reviewed.values())}) for p in index_paths}), set())
+        fixture = base + "measurements.tar.gz!investigation/scripts/run-v07-performance.py"
+        self.assertEqual(self.scan({fixture: json.dumps({"privateKey": PUBLIC_FIXTURE})}), set())
+        unrelated = base + "measurements.tar.gz!unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            index_paths[0]: json.dumps({"xray": other}),
+            index_paths[1]: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in [paths[0], *index_paths, unrelated]})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in [*paths, *index_paths, fixture]}),
+                         {(p, "generic-api-key") for p in [*paths, *index_paths, fixture]})
+
+    def test_split_codec_exceptions_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-split/"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        digest = inputs["xray"]["sha256"]
+        campaigns = list(inputs["campaign_variants"]) + ["duplex-pilot-rejected-permission"]
+        paths = [base + "measurements.tar.gz!" + name + "/manifest.json" for name in campaigns]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        index_path = base + "evidence-index.json"
+        index = json.loads((ROOT / index_path).read_text())
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name in ("investigation/interop-xray.log", "investigation/restored-trojan-xray.log"):
+                log_hash = hashlib.sha256(archive.extractfile(name).read()).hexdigest()
+                self.assertEqual(log_hash, index["file_sha256"][name])
+                self.assertEqual(self.scan({index_path: json.dumps({"xray": log_hash})}), set())
+        fixture_path = base + "measurements.tar.gz!investigation/scripts/run-v07-performance.py"
+        self.assertEqual(self.scan({fixture_path: json.dumps({"privateKey": PUBLIC_FIXTURE})}), set())
+        unrelated = base + "measurements.tar.gz!unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            index_path: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in (paths[0], index_path, unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in paths + [index_path, fixture_path]}),
+                         {(p, "generic-api-key") for p in paths + [index_path, fixture_path]})
+
+    def test_duplex_profile_reference_digest_exception_is_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-duplex-profile/"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        self.assertEqual(inputs["xray"]["sha256"], digest)
+        paths = [base + "measurements.tar.gz!" + campaign + "/manifest.json"
+                 for campaign in ("normal-controls", "normal-confirmation", "kernel", "libc")]
+        paths += [base + f"measurements.tar.gz!{engine}-duplex-{i}/capture.json"
+                  for engine in ("rust", "xray") for i in range(1, 5)]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        unrelated = base + "measurements.tar.gz!rust-duplex-5/capture.json"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in (paths[0], unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in paths}),
+                         {(p, "generic-api-key") for p in paths})
+
+    def test_idle_buffer_reference_digest_exception_is_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-idle-buffers/"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        self.assertEqual(inputs["frozen_files"]["target/v08-io-final/bin/xray"], digest)
+        paths = [base + "data/inputs.json"] + [
+            base + "measurements.tar.gz!" + campaign + "/manifest.json"
+            for campaign in ("held", "footprint", "untouched-controls")
+        ]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        unrelated = base + "data/unreviewed.json"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in (paths[0], unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in paths}),
+                         {(p, "generic-api-key") for p in paths})
+
     def scan(self, files):
         binary = os.environ["GITLEAKS_BINARY"]
         with tempfile.TemporaryDirectory(prefix="xray-gitleaks-guards-") as name:
@@ -51,6 +170,19 @@ class EvidenceAllowlists(unittest.TestCase):
                    "dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=\n",
         }), set())
 
+    def test_vmess_oracle_exception_is_derived_and_narrow(self):
+        path = "tests/fixtures/v08/protocol-primitives.json"
+        fixture = json.loads((ROOT / path).read_text())["vmess"]
+        command_key = hashlib.md5(bytes.fromhex("00112233445566778899aabbccddeeff") +
+                                 b"c48619fe-8f02-49e0-b9e9-edf763e17e21").hexdigest()
+        self.assertEqual(fixture["commandKey"], command_key)
+        self.assertEqual(self.scan({path: json.dumps({"commandKey": command_key}, indent=2)}), set())
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            path: json.dumps({"commandKey": synthetic}, indent=2),
+            "unreviewed.json": json.dumps({"commandKey": command_key}, indent=2),
+        }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
+
     def test_other_credentials_in_reviewed_files_are_detected(self):
         synthetic = "ABcdeF01234" + "GHijk56789lMno"
         self.assertEqual(self.scan({
@@ -58,6 +190,140 @@ class EvidenceAllowlists(unittest.TestCase):
             FIXTURE: json.dumps({"privateKey": synthetic}),
             BUILD: json.dumps({"api_key": synthetic}),
         }), {(name, "generic-api-key") for name in (INDEX, FIXTURE, BUILD)})
+
+    def test_relay_manifest_digest_exception_is_narrow(self):
+        base = "docs/benchmarks/results/2026-10-01-v08-relay/measurements.tar.gz!"
+        path = base + "full/attempts/vmess-aes128-socks-upload-1-1/manifest.json"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        self.assertEqual(self.scan({path: json.dumps({"xray": digest})}), set())
+        other_digest = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({
+            path: json.dumps({"xray": other_digest}),
+            "unreviewed.json": json.dumps({"xray": digest}),
+            base + "full/unreviewed.json": json.dumps({"xray": digest}),
+        }), {(name, "jfrog-identity-token") for name in (
+            path, "unreviewed.json", base + "full/unreviewed.json")})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertIn((path, "generic-api-key"), self.scan({
+            path: json.dumps({"api_key": synthetic}),
+        }))
+
+    def test_census_reference_digest_exceptions_are_narrow(self):
+        base = "docs/benchmarks/results/2026-10-01-v08-census/"
+        manifest = base + "measurements.tar.gz!kernel/manifest.json"
+        inspection = base + "data/reference-inspection.json"
+        executable = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        source = "5450877ed206eb66a3dbeaec1f032c015e6e2dc458971293bcd2e9a01551f043"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        data = json.loads((ROOT / inspection).read_text())
+        self.assertEqual(data["files"]["common/crypto/auth.go"], source)
+        self.assertEqual(self.scan({
+            manifest: json.dumps({"xray": executable}),
+            inspection: json.dumps({"common/crypto/auth.go": source}),
+        }), set())
+        self.assertIn((manifest, "jfrog-identity-token"), self.scan({
+            manifest: json.dumps({"xray": other}),
+        }))
+        self.assertIn((inspection, "generic-api-key"), self.scan({
+            inspection: json.dumps({"common/crypto/auth.go": other}),
+        }))
+        for filename, content, rule in [
+            ("unreviewed.json", {"xray": executable}, "jfrog-identity-token"),
+            ("unreviewed.json", {"common/crypto/auth.go": source}, "generic-api-key"),
+            (base + "measurements.tar.gz!unreviewed/manifest.json", {"xray": executable}, "jfrog-identity-token"),
+        ]:
+            self.assertIn((filename, rule), self.scan({filename: json.dumps(content)}))
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            name: json.dumps({"api_key": synthetic}) for name in [manifest, inspection]
+        }), {(name, "generic-api-key") for name in (manifest, inspection)})
+
+    def test_download_manifest_and_log_digests_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-download/"
+        manifest = base + "measurements.tar.gz!comparison/attempts/vmess-aes128-socks-upload-1-1/manifest.json"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({manifest: json.dumps({"xray": digest})}), set())
+        outside = base + "measurements.tar.gz!unreviewed/manifest.json"
+        self.assertEqual(self.scan({
+            manifest: json.dumps({"xray": other}),
+            outside: json.dumps({"xray": digest}),
+        }), {(name, "jfrog-identity-token") for name in (manifest, outside)})
+        index_path = base + "evidence-index.json"
+        index = json.loads((ROOT / index_path).read_text())
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name in ["investigation/xray-interop.log", "investigation/xray-mux.log"]:
+                value = hashlib.sha256(archive.extractfile(name).read()).hexdigest()
+                self.assertEqual(value, index["file_sha256"][name])
+                self.assertEqual(self.scan({index_path: json.dumps({name: value})}), set())
+                self.assertIn(("unreviewed.json", "jfrog-identity-token"), self.scan({
+                    "unreviewed.json": json.dumps({name: value}),
+                }))
+        self.assertIn((index_path, "jfrog-identity-token"), self.scan({
+            index_path: json.dumps({"investigation/xray-interop.log": other}),
+        }))
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            name: json.dumps({"api_key": synthetic}) for name in [manifest, index_path]
+        }), {(name, "generic-api-key") for name in (manifest, index_path)})
+
+    def test_send_manifest_and_log_digests_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-01-v08-send/"
+        manifest = base + "measurements.tar.gz!comparison/attempts/vmess-aes128-socks-upload-1-1/manifest.json"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({manifest: json.dumps({"xray": digest})}), set())
+        outside = base + "measurements.tar.gz!unreviewed/manifest.json"
+        self.assertEqual(self.scan({
+            manifest: json.dumps({"xray": other}),
+            outside: json.dumps({"xray": digest}),
+        }), {(name, "jfrog-identity-token") for name in (manifest, outside)})
+        index_path = base + "evidence-index.json"
+        index = json.loads((ROOT / index_path).read_text())
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name in ["investigation/xray-interop.log", "investigation/xray-mux.log"]:
+                value = hashlib.sha256(archive.extractfile(name).read()).hexdigest()
+                self.assertEqual(value, index["file_sha256"][name])
+                self.assertEqual(self.scan({index_path: json.dumps({name: value})}), set())
+                self.assertIn(("unreviewed.json", "jfrog-identity-token"), self.scan({
+                    "unreviewed.json": json.dumps({name: value}),
+                }))
+        self.assertIn((index_path, "jfrog-identity-token"), self.scan({
+            index_path: json.dumps({"investigation/xray-interop.log": other}),
+        }))
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            name: json.dumps({"api_key": synthetic}) for name in [manifest, index_path]
+        }), {(name, "generic-api-key") for name in (manifest, index_path)})
+
+    def test_batch_manifest_and_log_digests_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-01-v08-batch/"
+        manifest = base + "measurements.tar.gz!comparison/attempts/vmess-aes128-socks-upload-1-1/manifest.json"
+        digest = "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({manifest: json.dumps({"xray": digest})}), set())
+        outside = base + "measurements.tar.gz!comparison/unreviewed.json"
+        self.assertEqual(self.scan({
+            manifest: json.dumps({"xray": other}),
+            outside: json.dumps({"xray": digest}),
+        }), {(name, "jfrog-identity-token") for name in (manifest, outside)})
+        index_path = base + "evidence-index.json"
+        index = json.loads((ROOT / index_path).read_text())
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name in ["investigation/xray-interop.log", "investigation/xray-mux.log"]:
+                value = hashlib.sha256(archive.extractfile(name).read()).hexdigest()
+                self.assertEqual(value, index["file_sha256"][name])
+                self.assertEqual(self.scan({index_path: json.dumps({name: value})}), set())
+                self.assertIn(("unreviewed.json", "jfrog-identity-token"), self.scan({
+                    "unreviewed.json": json.dumps({name: value}),
+                }))
+        self.assertIn((index_path, "jfrog-identity-token"), self.scan({
+            index_path: json.dumps({"investigation/xray-interop.log": other}, indent=2),
+        }))
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({
+            name: json.dumps({"api_key": synthetic}) for name in [manifest, index_path]
+        }), {(name, "generic-api-key") for name in (manifest, index_path)})
 
     def test_same_values_outside_reviewed_paths_are_detected(self):
         self.assertEqual(self.scan({

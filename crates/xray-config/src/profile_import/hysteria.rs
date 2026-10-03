@@ -83,7 +83,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
     finish(ProfileFormat::Hysteria2, name, host, &root.0)
 }
 
-fn decode(value: &str) -> Result<Zeroizing<String>, ImportError> {
+pub(super) fn decode(value: &str) -> Result<Zeroizing<String>, ImportError> {
     let mut bytes = Zeroizing::new(Vec::with_capacity(value.len()));
     let mut input = value.bytes();
     while let Some(byte) = input.next() {

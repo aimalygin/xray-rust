@@ -10,6 +10,73 @@ documents the generated [machine-readable contract](config-contract.json),
 canonical examples, geodata lookup and the boundary between parser acceptance
 and later runtime validation.
 
+## v0.8 development client protocols
+
+The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
+These additions are not part of the published 0.7 artifacts. See the
+[implementation evidence](v08-implementation-plan.md) for verified combinations,
+resource bounds and remaining release gates. The reference stays Xray-core
+v26.7.28; unsupported options fail closed.
+
+| Outbound | Settings | Import |
+| --- | --- | --- |
+| `trojan` | Flat `address`, `port`, `password`, optional `level`; or exactly one entry in `servers` | `trojan://password@host:port` with supported stream/security parameters; TLS default |
+| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers` | SIP002 `ss://` plain or base64 userinfo, SS2022 only |
+| `vmess` | Flat `address`, `port`, `id`, optional `security`, `alterId`, `experiments`, `level`, `email`; or one `vnext` server with exactly one `users` entry | Common v2 base64 JSON and UUID-authority `vmess://` URI |
+
+Flat and legacy settings cannot be mixed. Trojan passwords are 1–4096 UTF-8
+bytes, with no nonempty `flow`; public plaintext servers are rejected. SS2022
+supports `2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm` and
+`2022-blake3-chacha20-poly1305`. AES accepts up to eight colon-separated identity
+keys; ChaCha accepts one. The encoded key string is bounded by 8192 bytes.
+AEAD-2017 ciphers and SIP003 plugins are excluded.
+
+VMess requires a UUID and `alterId` absent/zero. Body encryption is `auto`
+(default), `aes-128-gcm` or `chacha20-poly1305`; `none`, `zero`, CFB and legacy
+VMess authentication are unsupported. `experiments` recognizes the exact names
+`AuthenticatedLength` and `NoTerminationSignal`, separated by `|`, without
+duplicates. Unknown explicit encryption modes fail instead of falling back.
+VMess record counters stop before nonce reuse; see the record-count bound in
+the implementation evidence. No server-side proxy or response-command support
+is implied by these client additions.
+
+All three use the shared raw/WS/HTTPUpgrade/gRPC/XHTTP stream carrier and core
+routing, accounting, SOCKS/HTTP/TUN and DNS paths. SS2022 ordinary UDP uses a
+separate native UDP socket, independently of its TCP carrier. VMess ordinary
+UDP uses per-association XUDP except destinations on ports 53/443. Outer TLS
+verification cannot be disabled. Live tests cover REALITY over raw/gRPC/XHTTP,
+XHTTP H1/H2/H3 with independent downloads, and transport-layer chains among
+the three protocols. REALITY over a chained stream, chained split downloads
+and QUIC chaining retain the existing explicit graph restrictions.
+
+Both pinned SS2022 reference servers retain a UDP session's first return
+address. A network change that changes the client's external UDP port requires
+a fresh association (for example, through the host's runtime reconnect).
+Keeping the old cryptographic session does not provide seamless NAT rebinding.
+Server restart with unchanged keys is verified on an existing client session;
+forged, misbound and replayed replies remain rejected.
+
+`mux.enabled: true` activates bounded shared Mux for these three outbounds.
+TCP `concurrency` defaults to 8 (including zero), a negative value disables TCP
+multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
+a separate UDP pool, and a negative value uses the native protocol UDP path.
+Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
+or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool has at most four
+parents, 128 lifetime child IDs per parent, bounded per-child queues and a
+30-second empty-parent timeout. Queue overload resets the affected child;
+parent failure terminates its children without replay. This Mux is distinct
+from XHTTP's existing `xmux` transport pooling.
+
+The pinned Xray XHTTP inbound permits only UDP Mux children. XHTTP therefore
+requires `mux.concurrency: -1`; use positive `xudpConcurrency` for UDP pooling.
+Enabling TCP Mux on XHTTP is rejected before dialing, including configurations
+built through the Rust API. Ordinary TCP still uses XHTTP's own transport pool.
+
+The shared Rust importer, C ABI 1.8 capability discovery, Swift adapter and
+Kotlin adapter expose all three formats. Host applications still own secure
+profile persistence. Imports preserve credentials in the returned JSON, while
+Debug/error descriptions redact them.
+
 ## Minimal loopback example
 
 This config exposes unauthenticated SOCKS5 only on loopback and routes through
@@ -117,7 +184,7 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
 supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
-engines. Outbound mux, `sendThrough`, multiple VLESS servers, and
+engines. General VLESS mux, `sendThrough`, multiple VLESS servers, and
 protocol-layer chaining remain unsupported. The supported chaining subset
 uses Xray's outbound `proxySettings` with a non-empty `tag` and an explicit
 `"transportLayer": true`:

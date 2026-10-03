@@ -3,6 +3,316 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the signed iPhone app's Mach-O files; these are public digests.
+[[allowlists]]
+description = "Verified iPhone v0.8 app executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^90b0c79c7487f49ba9cf8faf20bed3603b3450e090602e199d12f319ae22f49b$''',
+  '''^06f46e890bf381e1b684ca9de3bc61e54fe8b73995492ca5b37a11947d76b029$''',
+]
+paths = ['''^docs/device-results/2026-10-03-iphone17-v08/manifest\.json$''']
+
+# Exact public digests rehashed from the adaptive-relay archive, not credentials.
+[[allowlists]]
+description = "Verified Xray executable digest in adaptive VMess evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!adaptive\-cycles/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!adaptive\-duplex/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!adaptive\-idle/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-broad\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-confirmation\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-cycles\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-held\-large\-vmess\-aes128\-attempt\-2/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-held\-large\-vmess\-chacha20\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-held\-small\-vmess\-aes128\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-held\-small\-vmess\-chacha20\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-idle\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-latency\-confirmation\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!chacha\-reference\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-broad\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-broad\-attempt\-2/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-clean\-1\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-clean\-1\-attempt\-2/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-clean\-2\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-clean\-3\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-clean\-4\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-clean\-5\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-confirmation\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-cycles\-attempt\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!deferred\-pilot\-1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!final\-broad/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!quota\-confirm/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!quota\-cycles\-aes/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!quota\-long\-aes/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!quota\-pilot/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!selected\-broad/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!selected\-confirm/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!selected\-cycles/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!selected\-held\-large/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!selected\-held\-small/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!selected\-idle/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!separate\-cycles\-aes/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!serial\-cycles/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!serial\-duplex/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!wide\-cycles/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!wide\-duplex/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Thirty verified Xray log digests in the adaptive VMess index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^1b7584d75dd361110e1fddb81f9242f582b02ac681e46b98bcf5ffc65210178b$''',
+  '''^2d3a52bf5a2487d3cb02c8974336f7213957e1f3387b88a6b56364665696e0d4$''',
+  '''^34fd40b33818f027f08b8ab200ca11babe5ea129120af4fd034a461952ef4757$''',
+  '''^48b54cebb6926456b3b2bfaaa981233ecc11f3e20c92c969630a3ea9b693b7ef$''',
+  '''^5294a47bbe1b5a21eb04415fd86dfe6387c3ae28e9b26904dc046caf26691a68$''',
+  '''^52c77b53ad3d099dd80205bb3c59fe45ff1783afe4800b0960b916d757c6996a$''',
+  '''^5b5ac6e89ed4d322c4bf8e2c0c747f3bbbe11a665780b7b7d942159258d8fa9b$''',
+  '''^61c005f53b9c297e91ce9d4c78a6e58043f63f9499747d294a8fec91a90e522f$''',
+  '''^65e41f0d8b8383db609411e97e6793b2e1570494a111ea6db45ab07d88dca7e6$''',
+  '''^689e56d33d4828c7110bd9212a358ee4df205610e64728a33fe82c82c8490d3c$''',
+  '''^72ea9438e57a0826fb1d0b4628c3a1891ea2d68e7beed3874dde00a815eea1cc$''',
+  '''^7720c127711bbd6474cd62c736416ea40bdf5e8a867a198b9172ab43b26cbe7b$''',
+  '''^841189e028865b1946268a77e31adc85601df214bc166bbf70557bab281b1343$''',
+  '''^845e04b9228fdf2f985eaa330c9b43e5753d4243eb13abf59ec65c8e4b76d3bc$''',
+  '''^89293d5a301f95b84b94d4d23888c843f2fda22a93480ada0974ddb32c07b993$''',
+  '''^8f4cecb92eaabc5be29485ee0f73dd44519c72f339b609a7c0f896f224933d7e$''',
+  '''^8f9475345d29099f36dae87a0c49a808afccc5d6cb2c61f8d742b37b0a371d89$''',
+  '''^9032965b86be756a82043b8183b161bccc1e3f178cb2c5525b8d888ca0793829$''',
+  '''^a8a37c495cf4a8efb2ac4a0a077e589c381a1685a6b28681e1969906b4f3e340$''',
+  '''^af0eb04ac91f5c6bcf8f6a3dbf947131448564989008c7115aa3b0344d119fb2$''',
+  '''^b92845c8125fea477f8913f05c9f6413560748cbe6888c45312fb861ab3fd9cc$''',
+  '''^bc5a2c082c4ace54185979f3b8f91b95672f9b95167b3a6cca83cfa6f5c49dc7$''',
+  '''^cc2211f46404330bce111fcddb09be1bdb2851e2576ad60923044bf1f99f6a88$''',
+  '''^d042299d4ef1056c13ca97bdd69a7f8e28dc5502994289fce1a4b84bbe7deb36$''',
+  '''^d57653dc29298dc15a228af7d82eecdf0b94c18ecf35344212fbc36c3982cb6f$''',
+  '''^e223e218ac3e5aa8fa29ee0e84048c45a395fd85107abe19cc24b0c849b13f2a$''',
+  '''^e66c56c80547d9cfb7db4e324cc8be3bd7e2d11134c341c8f0d8f8d689e3859d$''',
+  '''^e7115f0e36bdba37bea178956fb2a1a6c4d818991f9b526c5a7a051b2e4de9d5$''',
+  '''^f81b59c56fecd5ce4899a363c625dc85711d7a69521f2e5cba50ee4a51b80918$''',
+  '''^fc9050ed3c2226b86308f392dcd48593fcc2258fa5c33c5aeeb75677be957042$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/evidence\-index\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/data/reviewed\-public\-hashes\.json$''',
+]
+
+# Exact public executable/log digests, rehashed from the split-codec evidence.
+[[allowlists]]
+description = "Verified Xray executable digest in VMess split-codec evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = ['''^docs/benchmarks/results/2026-10-02-v08-split/measurements\.tar\.gz!(duplex-pilot|duplex-pilot-rejected-permission|broad-controls|activity-controls|held-large|held-small|shared-controls|shared-reference|shared-confirmation|shared-held-large|shared-held-small)/manifest\.json$''']
+
+[[allowlists]]
+description = "Verified Xray interop log digests in VMess split-codec index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^14ece4496cfc1ed1034ba13f6d423976cdc7c2a643ffcd82eeeb67e57c501341$''',
+  '''^3f6fbc8366d81cb5786b710c004615423d350eff0c268af0055e030a6b75ff59$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-02-v08-split/evidence-index\.json$''']
+
+# Rehashed from the unchanged pinned reference; only exact report metadata.
+[[allowlists]]
+description = "Verified Xray executable digest in AES duplex profiling evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-02-v08-duplex-profile/measurements\.tar\.gz!(normal-controls|normal-confirmation|kernel|libc)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-duplex-profile/measurements\.tar\.gz!(rust|xray)-duplex-[1-4]/capture\.json$''',
+]
+
+# Rehashed from the unchanged pinned Xray executable; not a credential.
+[[allowlists]]
+description = "Verified Xray executable digest in idle-buffer evidence"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-02-v08-idle-buffers/data/inputs\.json$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-idle-buffers/measurements\.tar\.gz!(held|footprint|untouched-controls)/manifest\.json$''',
+]
+
+# Rehashed public executable/log digests in the bounded-download evidence.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 download manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-02-v08-download/measurements\.tar\.gz!(read16-controls|four-controls|combined-controls|confirmation|latency-controls|latency-confirmation|small-memory|bulk-memory|comparison|libc|latency-controls-rejected-1)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-download/measurements\.tar\.gz!comparison/attempts/vmess-(aes128|chacha20|auto)-socks-(upload|download|full-duplex|tcp-latency|udp)-(1|8)-1/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Two verified integration-log digests in the v0.8 download index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^8b56acb8d4eaf72d60fbf0e3d2cb98909ac7c1560e09e895f687f5883c69097f$''',
+  '''^6c338816cc7a304b83466645106b06e413e26887ed345df2b5738bfe408475d2$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-02-v08-download/evidence-index\.json$''']
+
+# Rehashed from the frozen Xray binary and the archived integration logs.
+# Allow only these exact public checksums at reviewed send-report paths.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 send manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-send/measurements\.tar\.gz!(arc-controls|pair-controls|chacha-controls|confirmation|latency-controls|small-memory|bulk-memory|comparison|libc|small-memory-rejected-[12])/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-01-v08-send/measurements\.tar\.gz!comparison/attempts/vmess-(aes128|chacha20|auto)-socks-(upload|download|full-duplex|tcp-latency|udp)-(1|8)-1/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Two verified integration-log digests in the v0.8 send index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^f89e513e332aafcb5578cfe21ad6584179835ba83f1917d517e189570a5c4564$''',
+  '''^6639b5957c868bed389fe4984818820fa8a26a0a99fa6d43e3f3f386b8baf2a5$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-send/evidence-index\.json$''']
+
+# Rehashed from the pinned reference executable and its public auth.go source.
+# Only these exact digests in the reviewed census metadata are exempt.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 census manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-census/measurements\.tar\.gz!(kernel|libc|internal|smoke-kernel|smoke-libc|smoke-internal|smoke-libc-v2)/manifest\.json$''']
+
+[[allowlists]]
+description = "Verified public Xray auth.go digest in v0.8 census inspection"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^5450877ed206eb66a3dbeaec1f032c015e6e2dc458971293bcd2e9a01551f043$''']
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-census/(data/|measurements\.tar\.gz!)reference-inspection\.json$''']
+
+# Rehashed from the unchanged pinned Xray executable. Keep this exception
+# confined to its exact public digest in the batching report's manifests.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 batching manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-batch/measurements\.tar\.gz!(batch16-controls|batch2-controls|latency-controls|confirmation-controls|upload-confirmation|active-held-memory|small-held-memory|bulk-held-memory|comparison|profile-bounded|profile-runs)(/attempts/[a-z0-9-]+)?/manifest\.json$''',
+]
+
+# These two checksums are derived from the archived local integration logs.
+[[allowlists]]
+description = "Two verified integration-log digests in the v0.8 batching index"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^4154ec967d62d67f79f176ee644781021dd0220dab8cf185271f16eb25d67f7f$''',
+  '''^ba836870ff2eeb0ce2ac8bdd29f4e5f393fafd4d85e93fecbbfe217d61c0cf60$''',
+]
+paths = ['''^docs/benchmarks/results/2026-10-01-v08-batch/evidence-index\.json$''']
+
+# Rehashed from the unchanged pinned Xray executable. This exception applies
+# only to its exact public digest in the relay report's archived manifests.
+[[allowlists]]
+description = "Verified Xray executable digest in v0.8 relay comparison manifests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''']
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-relay/measurements\.tar\.gz!(full|isolated-controls|batched-controls|batched-clean-controls|aes-upload-confirmation|aes-download-confirmation|final-controls|final-clean-controls|held-memory|final-held-memory|stack-controls|stack-held-memory|ss-aes-duplex-confirmation|profile-baseline)(/attempts/[a-z0-9-]+)?/manifest\.json$''',
+]
+
+# Rehashed from the frozen Xray and final I/O-optimized Rust executables.
+# Only these two public digests in the reviewed report metadata are exempt.
+[[allowlists]]
+description = "Two verified v0.8 I/O comparison executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''',
+  '''^e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-10-01-v08-io/measurements\.tar\.gz!(full|decouple-controls|read-controls|erasure-controls|final-controls|duplex-confirmation|failure-confirmation|held-memory)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-10-01-v08-io/measurements\.tar\.gz!investigation/builds\.json$''',
+  '''^docs/benchmarks/results/2026-10-01-v08-io/data/verification\.json$''',
+]
+
+# Recomputed from the measured Xray and optimized Rust executables. Limit the
+# exception to these exact binary digests inside this report's metadata.
+[[allowlists]]
+description = "Two verified v0.8 CPU comparison executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''',
+  '''^2180631c4187dd3cd85fda27d06c3b98a22f92c0954b841d3a1c13d9bd1beb04$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-09-30-v08-cpu/measurements\.tar\.gz!(full|backend-controls|buffer-controls|workers|workers-vmess-clean|idle-controls|final-controls|held-memory|held-memory-preparation)/manifest\.json$''',
+  '''^docs/benchmarks/results/2026-09-30-v08-cpu/measurements\.tar\.gz!investigation/builds\.json$''',
+  '''^docs/benchmarks/results/2026-09-30-v08-cpu/data/verification\.json$''',
+]
+
+# Recomputed from the frozen Xray executable and the two retained failed-smoke
+# logs. These exact SHA-256 values are provenance, not JFrog credentials.
+[[allowlists]]
+description = "Three verified v0.8 comparison binary/log digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99$''',
+  '''^67a26f8ea82d99fb4ee6997e2cd3a1adba923e20e4b3ac20171d43cad6f9302e$''',
+  '''^289adb9b79e3b84d555b5414d57d3b3ec8391b4d690aaa99b77484cf11c0f4ff$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-09-30-v08-protocols/evidence-index\.json$''',
+  '''^docs/benchmarks/results/2026-09-30-v08-protocols/measurements\.tar\.gz!(full|smoke|pre-preface-smoke|initial-smoke)/manifest\.json$''',
+]
+
+# The pinned VMess oracle derives this command key from the public sequential
+# UUID 00112233-4455-6677-8899-aabbccddeeff, not a deployed account.
+[[allowlists]]
+description = "Deterministic VMess oracle command key from the sequential test UUID"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''^\s*"commandKey"\s*:\s*"d34482dca079f1e8ad37ff8d08a382cf",?\s*$''']
+paths = ['''^tests/fixtures/v08/protocol-primitives\.json$''']
+
 [[allowlists]]
 description = "Deterministic uTLS fixture enum, not a credential"
 targetRules = ["generic-api-key"]
@@ -145,8 +455,10 @@ regexTarget = "secret"
 regexes = ['''^aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks$''']
 paths = [
   '''^scripts/run-v07-performance\.py$''',
+  '''^docs/benchmarks/results/2026\-10\-02\-v08\-adaptive\-relay/measurements\.tar\.gz!investigation/scripts/run\-v07\-performance\.py$''',
   '''^docs/benchmarks/results/2026-09-19-v07/benchmark-source\.patch$''',
   '''^docs/benchmarks/results/2026-09-20-v07-parity/selected-source\.patch$''',
+  '''^docs/benchmarks/results/2026-10-02-v08-split/measurements\.tar\.gz!investigation/scripts/run-v07-performance\.py$''',
 ]
 
 [[allowlists]]

@@ -178,11 +178,29 @@ pub enum TransportError {
     RealityTlsCompletionUnsupported,
 }
 
+pub type ParallelRead = Box<dyn AsyncRead + Send + Unpin>;
+pub type ParallelWrite = Box<dyn AsyncWrite + Send + Unpin>;
+
 pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
+    /// Consume the underlying carrier without a codec-wide lock. Raw TCP
+    /// overrides the generic split with Tokio's independent owned halves.
+    fn into_io_halves(self: Box<Self>) -> (ParallelRead, ParallelWrite)
+    where
+        Self: 'static,
+    {
+        let (read, write) = tokio::io::split(self);
+        (Box::new(read), Box::new(write))
+    }
+
     /// Notify the transport that no consumer will ever switch this stream
     /// into Vision direct mode, so any record-boundary read alignment kept
     /// for a lossless direct-mode unwrap can be dropped. Default: no-op.
     fn release_record_alignment(&mut self) {}
+
+    /// Consuming capability for independently owned protocol directions.
+    fn take_parallel_halves(&mut self) -> Option<(ParallelRead, ParallelWrite)> {
+        None
+    }
 
     fn poll_read_direct(
         self: Pin<&mut Self>,
@@ -206,6 +224,11 @@ pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
 }
 
 impl TransportStream for TcpStream {
+    fn into_io_halves(self: Box<Self>) -> (ParallelRead, ParallelWrite) {
+        let (read, write) = (*self).into_split();
+        (Box::new(read), Box::new(write))
+    }
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,

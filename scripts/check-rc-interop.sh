@@ -41,7 +41,7 @@ env \
 "$xray_core_binary" run -test -format json \
   < "$WORKSPACE_ROOT/tests/fixtures/configs/v05_phase2_oracle.json"
 
-# The encryption/download suites require extra local oracle processes and run
+# The encryption/download/v0.8 carrier suites require extra local oracle processes and run
 # in the blocking go-oracles job through their dedicated guarded scripts.
 # Keep the tag gate representative but bounded: classic and PQ REALITY,
 # reduced burst concurrency, and an XHTTP slice spanning all modes plus
@@ -62,7 +62,7 @@ env \
   -- \
   --ignored \
   --skip rust_socks_client_reaches_target_through_remote_xhttp_profile \
-  --skip vless_encryption:: --skip xhttp_download:: \
+  --skip vless_encryption:: --skip xhttp_download:: --skip v08_carriers:: \
   --nocapture \
   --test-threads=1
 

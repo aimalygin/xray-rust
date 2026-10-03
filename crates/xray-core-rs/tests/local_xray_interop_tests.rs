@@ -1789,6 +1789,7 @@ fn rust_vless_outbound(
     transport: StreamTransport,
 ) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -1813,6 +1814,7 @@ fn rust_vless_outbound(
 
 fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -3425,5 +3427,7 @@ fn bulk_interop_payload(len: usize) -> Vec<u8> {
 #[path = "local_xray_interop_tests/vless_encryption.rs"]
 mod vless_encryption;
 
+#[path = "local_xray_interop_tests/v08_carriers.rs"]
+mod v08_carriers;
 #[path = "local_xray_interop_tests/xhttp_download.rs"]
 mod xhttp_download;

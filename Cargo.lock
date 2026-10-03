@@ -268,6 +268,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-buffer"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
+dependencies = [
+ "hybrid-array",
+ "zeroize",
+]
+
+[[package]]
 name = "brotli"
 version = "8.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -588,7 +598,7 @@ version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
- "block-buffer",
+ "block-buffer 0.10.4",
  "crypto-common 0.1.7",
  "subtle",
 ]
@@ -599,7 +609,10 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
+ "block-buffer 0.12.1",
+ "const-oid",
  "crypto-common 0.2.2",
+ "zeroize",
 ]
 
 [[package]]
@@ -1331,6 +1344,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2018,6 +2041,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest 0.10.7",
+]
+
+[[package]]
+name = "sha3"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be176f1a57ce4e3d31c1a166222d9768de5954f811601fb7ca06fc8203905ce1"
+dependencies = [
+ "digest 0.11.3",
+ "keccak",
 ]
 
 [[package]]
@@ -2818,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "xray-bench"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2843,7 +2876,7 @@ dependencies = [
 
 [[package]]
 name = "xray-cli"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "libc",
  "serde_json",
@@ -2855,7 +2888,7 @@ dependencies = [
 
 [[package]]
 name = "xray-config"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "base64",
  "libc",
@@ -2873,7 +2906,7 @@ dependencies = [
 
 [[package]]
 name = "xray-core-rs"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2910,7 +2943,7 @@ dependencies = [
 
 [[package]]
 name = "xray-ffi"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "bytes",
  "libc",
@@ -2926,13 +2959,22 @@ dependencies = [
 
 [[package]]
 name = "xray-proxy"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
+ "aes",
+ "aes-gcm",
+ "aws-lc-rs",
  "base64",
+ "blake3",
  "bytes",
+ "chacha20poly1305",
+ "crc32fast",
+ "md-5",
  "prost",
  "rand 0.8.6",
  "serde_json",
+ "sha2",
+ "sha3",
  "thiserror 2.0.20",
  "tokio",
  "uuid",
@@ -2942,7 +2984,7 @@ dependencies = [
 
 [[package]]
 name = "xray-routing"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "aho-corasick",
  "bytes",
@@ -2952,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "xray-runtime"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "thiserror 2.0.20",
  "tokio",
@@ -2976,7 +3018,7 @@ dependencies = [
 
 [[package]]
 name = "xray-transport"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3022,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "xray-tun"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "bytes",
  "thiserror 2.0.20",
@@ -3031,11 +3073,11 @@ dependencies = [
 
 [[package]]
 name = "xray-utls"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 
 [[package]]
 name = "xray-vless-encryption"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "aes",
  "aws-lc-rs",
@@ -3052,7 +3094,7 @@ dependencies = [
 
 [[package]]
 name = "xray-wireguard"
-version = "0.7.0"
+version = "0.8.0-rc.1"
 dependencies = [
  "base64",
  "bytes",

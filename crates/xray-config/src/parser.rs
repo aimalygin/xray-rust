@@ -1,8 +1,11 @@
 mod dns;
 mod hysteria;
 mod routing;
+mod shadowsocks;
 mod stream;
+mod trojan;
 mod vless;
+mod vmess;
 mod wireguard;
 mod xhttp;
 
@@ -930,6 +933,9 @@ impl Parser<'_> {
             Some("freedom") => OutboundProtocol::Freedom,
             Some("dns") => OutboundProtocol::Dns,
             Some("vless") => OutboundProtocol::Vless,
+            Some("vmess") => OutboundProtocol::Vmess,
+            Some("trojan") => OutboundProtocol::Trojan,
+            Some("shadowsocks") => OutboundProtocol::Shadowsocks2022,
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
             Some(protocol) => {
@@ -947,6 +953,15 @@ impl Parser<'_> {
         self.validate_outbound_compatibility(outbound, index);
 
         let settings = match protocol {
+            OutboundProtocol::Shadowsocks2022 => {
+                OutboundSettings::Shadowsocks2022(self.parse_shadowsocks_settings(outbound, index)?)
+            }
+            OutboundProtocol::Vmess => {
+                OutboundSettings::Vmess(self.parse_vmess_settings(outbound, index)?)
+            }
+            OutboundProtocol::Trojan => {
+                OutboundSettings::Trojan(self.parse_trojan_settings(outbound, index)?)
+            }
             OutboundProtocol::Wireguard => {
                 OutboundSettings::Wireguard(self.parse_wireguard_settings(outbound, index)?)
             }
@@ -967,6 +982,7 @@ impl Parser<'_> {
         let stream = self.parse_stream_settings(outbound, index)?;
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
+        self.validate_trojan_stream(&settings, &stream, index);
 
         if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
             self.error(
@@ -992,6 +1008,9 @@ impl Parser<'_> {
             OutboundSettings::Freedom
             | OutboundSettings::Dns(_)
             | OutboundSettings::Hysteria(_)
+            | OutboundSettings::Trojan(_)
+            | OutboundSettings::Vmess(_)
+            | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_) => false,
         };
         if rejects_plaintext_server {
@@ -1021,8 +1040,18 @@ impl Parser<'_> {
             }
         }
 
+        let mux = self.parse_mux(outbound, index, &settings);
+        if matches!(&stream.transport, StreamTransport::Xhttp(_))
+            && mux.as_ref().is_some_and(|mux| mux.concurrency >= 0)
+        {
+            self.error(
+                format!("$.outbounds[{index}].mux.concurrency"),
+                "XHTTP requires negative TCP Mux concurrency; use xudpConcurrency for UDP pooling",
+            );
+        }
         Some(OutboundConfig {
             tag: self.string_at(outbound, "tag").map(ToOwned::to_owned),
+            mux,
             proxy_settings,
             stream,
             settings,
@@ -1039,23 +1068,76 @@ impl Parser<'_> {
                 "outbound sendThrough is unsupported",
             );
         }
+    }
 
-        let Some(mux) = outbound.get("mux") else {
-            return;
-        };
+    fn parse_mux(
+        &mut self,
+        outbound: &Value,
+        index: usize,
+        settings: &OutboundSettings,
+    ) -> Option<crate::MuxSettings> {
+        let mux = outbound.get("mux")?;
+        let outbound_path = format!("$.outbounds[{index}]");
         let mux_path = format!("{outbound_path}.mux");
         if !mux.is_object() {
             self.error(mux_path, "outbound mux must be an object");
-            return;
+            return None;
         }
         self.reject_unknown_fields(mux, &mux_path, &surface::MUX);
-        if matches!(
-            self.optional_bool_at(mux, "enabled", format!("{mux_path}.enabled")),
-            Some(true)
-        ) {
-            self.error(format!("{mux_path}.enabled"), "outbound mux is unsupported");
+        let enabled = self
+            .optional_bool_at(mux, "enabled", format!("{mux_path}.enabled"))
+            .unwrap_or(false);
+        let mut numbers = [0i16; 2];
+        for (slot, key) in numbers.iter_mut().zip(["concurrency", "xudpConcurrency"]) {
+            if let Some(value) = mux.get(key) {
+                if let Some(n) = value.as_i64().filter(|n| (-32768..=64).contains(n)) {
+                    *slot = n as i16;
+                } else {
+                    self.error(
+                        format!("{mux_path}.{key}"),
+                        "Mux concurrency must be an integer between -32768 and 64",
+                    );
+                }
+            }
         }
-        self.optional_u32_at(mux, "concurrency", format!("{mux_path}.concurrency"));
+        let udp443 = match self
+            .optional_string_at(
+                mux,
+                "xudpProxyUDP443",
+                format!("{mux_path}.xudpProxyUDP443"),
+            )
+            .unwrap_or("reject")
+        {
+            "" | "reject" => crate::MuxUdp443::Reject,
+            "allow" => crate::MuxUdp443::Allow,
+            "skip" => crate::MuxUdp443::Skip,
+            _ => {
+                self.error(
+                    format!("{mux_path}.xudpProxyUDP443"),
+                    "unsupported Mux UDP/443 policy",
+                );
+                crate::MuxUdp443::Reject
+            }
+        };
+        if !enabled {
+            return None;
+        }
+        if !matches!(
+            settings,
+            OutboundSettings::Trojan(_)
+                | OutboundSettings::Shadowsocks2022(_)
+                | OutboundSettings::Vmess(_)
+        ) {
+            self.error(
+                format!("{mux_path}.enabled"),
+                "Mux requires Trojan, Shadowsocks 2022 or VMess",
+            );
+        }
+        Some(crate::MuxSettings {
+            concurrency: if numbers[0] == 0 { 8 } else { numbers[0] },
+            xudp_concurrency: numbers[1],
+            udp443,
+        })
     }
 
     fn parse_outbound_proxy_settings(

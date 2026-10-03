@@ -22,6 +22,8 @@ struct Request {
     #[serde(default)]
     warmup: bool,
     #[serde(default)]
+    client_preface: bool,
+    #[serde(default)]
     client_env: std::collections::BTreeMap<String, String>,
 }
 
@@ -70,6 +72,8 @@ fn validate(r: &Request) -> Result<(), BenchError> {
         || (r.traffic == "udp" && r.payload_size > 1372)
         || r.config.as_object().is_none()
         || (r.path == "tun" && (r.prepare_client || r.warmup))
+        || (r.client_preface
+            && (r.path != "socks" || matches!(r.traffic.as_str(), "tcp-latency" | "udp")))
     {
         return Err(invalid("invalid bounded protocol benchmark request"));
     }
@@ -241,7 +245,7 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 run_tun_bulk(fd.raw(), &options, StreamBenchTraffic::parse(traffic)?).await?
             }
             (None, traffic) => {
-                stream_transport::run_workload_on(
+                stream_transport::run_workload_with_preface_on(
                     socks,
                     &options,
                     StreamBenchScenario {
@@ -252,6 +256,7 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                     },
                     phase.clone(),
                     local_non_loopback_ipv4()?,
+                    r.client_preface,
                 )
                 .await?
             }
@@ -293,6 +298,7 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 "throughput_mib_s":(outcome.bytes_sent+outcome.bytes_received) as f64/1048576.0/seconds,
                 "peak_rss_kib":summary.peak_rss_kib,"cpu_millis":cpu_ms,
                 "warmup":r.warmup,"prepare_client":r.prepare_client,
+                "client_preface":r.client_preface,
                 "client_startup_seconds":client_startup_seconds,
                 "client_startup_cpu_millis":startup_sample.cpu_millis,
                 "client_cpu_total_millis":samples.last().unwrap().cpu_millis,
@@ -375,9 +381,8 @@ async fn warmup_client(socks: SocketAddr) -> Result<(), BenchError> {
     // JoinSet aborts the one-shot server even when warmup is cancelled.
     let mut server = tokio::task::JoinSet::new();
     server.spawn(async move {
-        let (mut stream, _) = listener.accept().await?;
-        let (mut read, mut write) = stream.split();
-        tokio::io::copy(&mut read, &mut write).await
+        let (stream, _) = listener.accept().await?;
+        warmup_echo(stream).await
     });
     let mut client = TcpStream::connect(socks).await.map_err(io_error)?;
     socks5_connect(&mut client, target).await?;
@@ -401,6 +406,16 @@ async fn warmup_client(socks: SocketAddr) -> Result<(), BenchError> {
         .map_err(|_| invalid("warmup server task failed"))?
         .map_err(io_error)?;
     Ok(())
+}
+
+async fn warmup_echo(mut stream: TcpStream) -> io::Result<()> {
+    // End this fixed-size exchange ourselves. Some reference proxies do not
+    // propagate the client's half-close to the target; waiting for target EOF
+    // would turn a successful warmup into a timeout after the echo was checked.
+    let mut payload = [0; 1024];
+    stream.read_exact(&mut payload).await?;
+    stream.write_all(&payload).await?;
+    stream.shutdown().await
 }
 
 struct Flow {
@@ -674,6 +689,28 @@ async fn run_tun_bulk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn warmup_echo_finishes_without_client_half_close() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            warmup_echo(stream).await.unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut client = TcpStream::connect(address).await.unwrap();
+            client.write_all(&[0x5a; 512]).await.unwrap();
+            client.write_all(&[0x5a; 512]).await.unwrap();
+            let mut response = Vec::new();
+            // Deliberately never send FIN: the server must still reply and close.
+            client.read_to_end(&mut response).await.unwrap();
+            assert_eq!(response, vec![0x5a; 1024]);
+            server.await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
+
     #[test]
     fn measured_process_is_terminated_and_reaped_on_error() {
         let pid = std::cell::Cell::new(0);
@@ -704,6 +741,7 @@ mod tests {
             output: PathBuf::new(),
             prepare_client: false,
             warmup: false,
+            client_preface: false,
             client_env: Default::default(),
         };
         assert!(validate(&r).is_ok());
@@ -744,6 +782,7 @@ mod tests {
         .unwrap();
         assert!(!r.warmup);
         assert!(!r.prepare_client);
+        assert!(!r.client_preface);
         assert_eq!(r.idle_connections, 0);
         assert!(r.client_env.is_empty());
         assert!(validate(&r).is_ok());

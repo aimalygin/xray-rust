@@ -223,6 +223,8 @@ struct RuntimeState {
 #[derive(Debug, Error)]
 pub enum CoreError {
     #[error(transparent)]
+    Trojan(#[from] xray_proxy::trojan::WireError),
+    #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),
@@ -1038,10 +1040,13 @@ impl Core {
         self.outbound_factory().close_sessions();
         if let Some(runtime) = self.runtime.take() {
             for task in runtime.tasks {
-                task.abort();
+                // Runtime owners observe the shutdown signal and join their
+                // connection tasks. Aborting the owner here would skip that
+                // drain and let stop return while children are still closing.
                 let _ = task.await;
             }
         }
+        self.outbound_factory().join_sessions().await;
         self.tun.close();
         self.state = CoreState::Stopped;
         Ok(())
@@ -1351,6 +1356,36 @@ mod tests {
         DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions,
         TunRuntimeProfile,
     };
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stop_waits_for_runtime_shutdown_cleanup() {
+        let config = parse_xray_json(r#"{"outbounds":[{"protocol":"freedom"}]}"#)
+            .unwrap()
+            .config;
+        let mut core = Core::new(config).unwrap();
+        let mut shutdown = core.shutdown.subscribe();
+        let cleaned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = cleaned.clone();
+        let owner = tokio::spawn(async move {
+            while !*shutdown.borrow_and_update() {
+                if shutdown.changed().await.is_err() {
+                    break;
+                }
+            }
+            // Model an owner's asynchronous drain after observing shutdown.
+            tokio::task::yield_now().await;
+            finished.store(true, Ordering::Release);
+        });
+        core.runtime = Some(super::RuntimeState {
+            inbounds: Vec::new(),
+            tasks: vec![owner],
+        });
+        tokio::time::timeout(Duration::from_secs(1), core.stop())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(cleaned.load(Ordering::Acquire));
+    }
 
     struct StaticResolver;
 

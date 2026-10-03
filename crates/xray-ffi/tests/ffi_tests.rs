@@ -151,7 +151,10 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE
         | XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND
         | XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND
-        | XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
+        | XRAY_FFI_CAPABILITY_PROFILE_IMPORT
+        | xray_ffi::XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND
+        | xray_ffi::XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
+        | xray_ffi::XRAY_FFI_CAPABILITY_VMESS_OUTBOUND;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -1284,10 +1287,13 @@ fn ffi_same_tun_fd_owned_to_borrowed_transfer_does_not_close_reused_fd() {
     );
     assert!(fd_is_open(transferred_fd));
 
-    assert_eq!(unsafe { libc::close(transferred_fd) }, 0);
+    // dup2 closes and replaces the descriptor atomically. Closing it first
+    // lets another parallel test allocate the same number before replacement.
     assert_eq!(
         unsafe { libc::dup2(pipe[1].raw(), transferred_fd) },
-        transferred_fd
+        transferred_fd,
+        "dup2 failed: {}",
+        std::io::Error::last_os_error()
     );
     assert!(fd_is_open(transferred_fd));
 

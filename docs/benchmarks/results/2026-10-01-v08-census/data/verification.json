@@ -1,0 +1,16 @@
+{
+  "status": "pass",
+  "archive_members_verified": 134,
+  "full_trials": 84,
+  "kernel_trials": 36,
+  "libc_trials": 36,
+  "internal_trials": 12,
+  "all_summaries_reproduced": true,
+  "all_payload_and_internal_byte_totals_verified": true,
+  "mach_conversion_verified": true,
+  "frozen_inputs_unchanged": true,
+  "production_source_unchanged": true,
+  "restored_release_sha256": "784ce279f375de47332cfb3efa7dd90905767fdd226f8cf5364f27263eb3d937",
+  "runtime_commit": "1804e17890baf4c3a587fbd86d6a17a0787ce9dd",
+  "source_commit": "e557e98fcf8efa6375bbc26c135552e057b74811"
+}

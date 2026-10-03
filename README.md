@@ -64,14 +64,24 @@ The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 
 ## Current scope
 
+The development branch adds Trojan, Shadowsocks 2022 and VMess AEAD for the
+planned 0.8 release, including Swift/Kotlin integration and ABI 1.8. Their
+[implementation and acceptance record](docs/v08-implementation-plan.md)
+distinguishes passing host/CI checks from remaining physical-device gates.
+The [0.8 protocol comparison](docs/benchmarks/results/2026-09-30-v08-protocols/README.md)
+contains 1050 successful full-client trials against Xray-core and sing-box:
+RSS is lower throughout, but SS2022/VMess bulk throughput and CPU targets remain unmet.
+These changes are not a published 0.8 package; the stable source baseline is
+0.7.0, which already includes Hysteria 2 and WireGuard.
+
 | Area | Implemented | Important limits |
 | --- | --- | --- |
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
-| Outbounds | Freedom/direct, VLESS client over TCP, DNS, health-aware selector groups including bounded `leastLoad`, and validated transport-layer TCP chaining | No VMess, Trojan, Shadowsocks, WireGuard, or chaining outside the documented TCP subset |
+| Outbounds | Freedom/direct, VLESS, Hysteria 2, WireGuard, DNS, health-aware selector groups including bounded `leastLoad`, and validated transport-layer TCP chaining; development 0.8 adds Trojan, Shadowsocks 2022 and VMess AEAD | No Shadowsocks AEAD-2017, legacy VMess authentication, server-side proxy protocols, or chaining outside the documented TCP subset |
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, atomic rule/geodata snapshot replacement, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection including routed `tls://` DoT, routed/local HTTP/2 DoH, and provider-local `quic+local://` DoQ, routed multi-address resolution, TTL-aware positive/negative cache with bounded stale-while-revalidate, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | Full config and outbound/balancer topology replacement still requires a new core; no UDP/protocol-layer outbound chaining, `UseSystem` route probing, per-server cache policy, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
-| Management | ABI 1.4 plus Swift/Kotlin expose routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative; no persistent connection history |
+| Management | Development ABI 1.8 plus Swift/Kotlin expose protocol capability discovery and shared profile import alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative; no persistent connection history |
 
 See [project status](docs/status.md) and
 [configuration compatibility](docs/config-compatibility.md) for the detailed

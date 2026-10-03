@@ -1,0 +1,11 @@
+{
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "machine": "arm64",
+  "hw.model": "Mac15,7",
+  "hw.memsize": "19327352832",
+  "hw.logicalcpu": "12",
+  "hw.physicalcpu": "12",
+  "machdep.cpu.brand_string": "Apple M3 Pro",
+  "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=26607715)\t100%; charged; 0:00 remaining present: true\n",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n"
+}
