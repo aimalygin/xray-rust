@@ -1,8 +1,10 @@
 //! AEAD-only VMess client primitives pinned to Xray-core v26.7.28.
 mod crypto;
 mod records;
+mod split;
 mod stream;
 use rand::RngCore;
+pub use split::{ClientReadHalf, ClientWriteHalf};
 use std::{
     fmt, io,
     net::IpAddr,

@@ -567,6 +567,24 @@ async fn handle_socks_connect(
     }
     connection.mark_active();
 
+    if matches!(outbound, TcpOutbound::Vmess(_)) {
+        if let Some(halves) = outbound_stream.take_parallel_halves() {
+            drop(outbound_stream);
+            let _ = Box::pin(crate::policy::copy_split_with_idle_timeout(
+                outbound_router.factory().parallel_vmess_budget(),
+                inbound.into_split(),
+                halves,
+                tunnel_idle,
+                relay_buffer_size,
+                connection_traffic,
+                wait_for_connection_close(&mut connection_close),
+            ))
+            .await;
+            connection.finish();
+            return;
+        }
+    }
+
     let copied = tokio::select! {
         result = copy_bidirectional_with_idle_timeout_and_traffic(
             &mut inbound,

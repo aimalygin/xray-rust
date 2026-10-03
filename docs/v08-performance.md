@@ -1,5 +1,18 @@
 # v0.8 protocol comparison
 
+Latest VMess results: [adaptive ChaCha duplex relay](benchmarks/results/2026-10-02-v08-adaptive-relay/README.md).
+Independent codec directions are retained for SOCKS to direct raw-TCP ChaCha:
+ordinary paired controls show 58–60% faster single-flow duplex with 10–11% less
+CPU; a separate longer diagnostic confirms 14% less CPU. Additional physical
+footprint is 0.92–1.11 MiB at 512 held connections. AES keeps the combined path
+because its parallel variant repeatedly added 7–8% CPU. Eight-flow ChaCha p95
+has a measured 13–27 µs tail cost; median RTT improves, and p99 remains variable.
+All final 432 ordinary trials, 36 diagnostics and 16 memory clients pass.
+Fresh reference medians leave single-flow AES 22.6% slower than Xray; overall
+parity remains unmet. Full patches, failed/rejected trials, A/A controls,
+bootstrap intervals and exact identities are archived. This SOCKS host result
+does not establish TUN, device-energy or mobile-memory acceptance.
+
 The [idle-buffer investigation](benchmarks/results/2026-10-02-v08-idle-buffers/README.md)
 rejects three relay-shrink prototypes: 26 completed memory/resume trials do not
 show reliable footprint savings, and all variants add idle CPU. The four-repeat
@@ -8,7 +21,7 @@ at 512 connections. Runtime and SDK pins remain unchanged. Future idle-memory
 checks should retain footprint alongside RSS; compressed pages can make RSS fall
 without freeing the application's memory charge.
 
-Latest VMess results: [bounded download batching](benchmarks/results/2026-10-02-v08-download/README.md).
+Earlier VMess results: [bounded download batching](benchmarks/results/2026-10-02-v08-download/README.md).
 Runtime `9198a8f` (SDK `7b84921`) combines lazy 16 KiB read-ahead with up to four
 output records and a byte budget below 32 KiB. Five-repeat one-flow AES download
 improves CPU 14.3% and throughput 12.3% relative to `f930d10`. At 512 connections

@@ -12,7 +12,17 @@ use tokio::{
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_routing::{Network, Target, TargetAddr};
 
-#[tokio::test]
+async fn bulk_echo(stream: &mut TcpStream) {
+    let payload = (0..256 * 1024).map(|i| (i % 251) as u8).collect::<Vec<_>>();
+    let mut received = vec![0; payload.len()];
+    let (mut read, mut write) = tokio::io::split(stream);
+    let (sent, read) = tokio::join!(write.write_all(&payload), read.read_exact(&mut received),);
+    sent.unwrap();
+    read.unwrap();
+    assert_eq!(received, payload);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires pinned Xray; run scripts/check-vmess-interop.sh"]
 async fn vmess_runtime_carriers_socks_http_udp_accounting_and_close() {
     let cases = [
@@ -46,6 +56,7 @@ async fn vmess_runtime_carriers_socks_http_udp_accounting_and_close() {
             let proxy = core.inbound_addr(Some("socks-in")).unwrap();
             let (mut tcp, _) = socks(proxy, 1, "localhost", tcp_addr.port()).await;
             echo(&mut tcp, b"TCP through VMess").await;
+            bulk_echo(&mut tcp).await;
             eprintln!("SOCKS TCP passed");
             let mut http = TcpStream::connect(core.inbound_addr(Some("http-in")).unwrap())
                 .await
@@ -66,6 +77,7 @@ async fn vmess_runtime_carriers_socks_http_udp_accounting_and_close() {
             }
             assert!(reply.starts_with(b"HTTP/1.1 200"));
             echo(&mut http, b"HTTP through VMess").await;
+            bulk_echo(&mut http).await;
             eprintln!("HTTP CONNECT passed");
             let (_control, relay) = socks(proxy, 3, "0.0.0.0", 0).await;
             let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();

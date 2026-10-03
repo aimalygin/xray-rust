@@ -1956,7 +1956,10 @@ pub struct OutboundFactory {
     entries: Box<[CachedOutboundEntry]>,
     selection: Arc<OutboundSelectionOverlay>,
     sessions_closed: std::sync::atomic::AtomicBool,
+    parallel_vmess_relays: Arc<tokio::sync::Semaphore>,
 }
+
+const PARALLEL_VMESS_CONNECTIONS: usize = 2;
 
 impl OutboundFactory {
     pub fn new(graph: Arc<OutboundGraph>) -> Self {
@@ -1970,7 +1973,16 @@ impl OutboundFactory {
             entries,
             selection,
             sessions_closed: std::sync::atomic::AtomicBool::new(false),
+            parallel_vmess_relays: Arc::new(tokio::sync::Semaphore::new(
+                PARALLEL_VMESS_CONNECTIONS,
+            )),
         }
+    }
+
+    /// Shared by every router/inbound using this core. Relay I/O continues
+    /// locally while waiting; only active duplex work can occupy admission.
+    pub(crate) fn parallel_vmess_budget(&self) -> Arc<tokio::sync::Semaphore> {
+        self.parallel_vmess_relays.clone()
     }
 
     pub fn graph(&self) -> &OutboundGraph {
@@ -2941,6 +2953,12 @@ impl OutboundFactory {
                 outbound.join().await;
             }
         }
+        // Inbound owners have stopped admitting work. Their cancelled relay
+        // children retain their lease until they stop polling owned I/O.
+        let _all = self
+            .parallel_vmess_relays
+            .acquire_many(PARALLEL_VMESS_CONNECTIONS as u32)
+            .await;
     }
 
     pub(crate) fn rebind_hysteria(&self) -> u64 {
@@ -8167,5 +8185,88 @@ mod future_layout_tests {
         // a 9.8 KiB future and exceed the 100/1000-flow RSS release budgets.
         assert!(std::mem::size_of_val(&plain) <= 4096);
         assert!(std::mem::size_of_val(&routed) <= 4352);
+    }
+}
+
+#[cfg(test)]
+mod parallel_relay_budget_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn join_sessions_waits_for_admitted_relay_owners() {
+        let config = Arc::new(
+            xray_config::parse_xray_json(r#"{"outbounds":[{"protocol":"freedom"}]}"#)
+                .unwrap()
+                .config,
+        );
+        let router = OutboundRouter::new(config);
+        let factory = router.factory_handle();
+        let lease = factory.parallel_vmess_budget().try_acquire_owned().unwrap();
+        factory.close_sessions();
+        let drain = tokio::spawn(async move {
+            factory.join_sessions().await;
+        });
+        tokio::task::yield_now().await;
+        assert!(!drain.is_finished());
+        drop(lease);
+        tokio::time::timeout(Duration::from_secs(1), drain)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[test]
+    fn admission_is_shared_across_routers_but_isolated_across_cores() {
+        let config = Arc::new(
+            xray_config::parse_xray_json(
+                r#"{"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#,
+            )
+            .unwrap()
+            .config,
+        );
+        let first = OutboundRouter::new(config.clone());
+        let second = OutboundRouter::from_factory(first.factory_handle());
+        let other_core = OutboundRouter::new(config);
+        let mut leases = (0..PARALLEL_VMESS_CONNECTIONS)
+            .map(|_| {
+                first
+                    .factory()
+                    .parallel_vmess_budget()
+                    .try_acquire_owned()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert!(first
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_err());
+        assert!(second
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_err());
+        assert!(other_core
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_ok());
+        drop(leases.pop());
+        let replacement = second
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .unwrap();
+        assert!(first
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_err());
+        drop(replacement);
+        drop(leases);
+        assert_eq!(
+            first.factory.parallel_vmess_relays.available_permits(),
+            PARALLEL_VMESS_CONNECTIONS
+        );
     }
 }

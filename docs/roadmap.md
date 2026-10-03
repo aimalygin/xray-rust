@@ -889,6 +889,21 @@ Fresh six-repeat reference controls still put split Rust 7.6% below Xray speed
 and 13.0% above its CPU on one AES duplex flow. A concurrency-limited split is
 an untested next experiment. Production runtime and SDK pins remain unchanged.
 
+The [adaptive VMess follow-up](benchmarks/results/2026-10-02-v08-adaptive-relay/README.md)
+retains independently owned codec directions for SOCKS to direct raw-TCP
+ChaCha, with at most two sustained duplex connections using an extra task per
+core. One-flow paired throughput improves 58–60% with 10–11% less CPU; a longer
+diagnostic confirms a 14% CPU reduction. Additional physical footprint is
+0.92–1.11 MiB at 512 ChaCha connections and remains similar after two resumes.
+AES keeps the combined relay because the parallel variant repeatedly costs
+7–8% more CPU. Eight-flow ChaCha p95 adds 13–27 µs; median RTT improves and p99
+remains variable. All final 432 ordinary trials, 36 diagnostics and 16 memory
+clients pass, with every rejected variant and contaminated attempt retained.
+Fresh references still show a 22.6% single-flow AES speed deficit against Xray;
+overall parity is not met. Stop now awaits inbound owners and admitted child
+cleanup. SDKs receive the same core, but TUN/device/battery acceptance remains
+separate, and physical Apple testing stays deferred.
+
 Goal: make all three protocols usable end to end through the core and both
 mobile SDKs. Complete client support means TCP and UDP, IPv4/IPv6/domain
 destinations, configuration and share-link import, routing/DNS/management

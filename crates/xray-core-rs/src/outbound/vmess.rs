@@ -9,6 +9,7 @@ struct Payload {
     carrier: StreamCarrier,
     mux: Option<super::mux::Runtime>,
     account: Account,
+    parallel_duplex: bool,
     flow_ids: xray_proxy::mux::FlowIds,
     level: u32,
 }
@@ -35,6 +36,7 @@ impl VmessOutbound {
         Ok(Self(Arc::new(Payload {
             carrier,
             account,
+            parallel_duplex: cipher == Cipher::ChaCha20Poly1305,
             flow_ids: xray_proxy::mux::FlowIds::default(),
             level: settings.level,
             mux: super::mux::Runtime::new(&config.mux, &config.stream.transport)?,
@@ -113,6 +115,15 @@ impl VmessOutbound {
         inner.release_record_alignment();
         let mut stream = ClientStream::new(inner, &self.0.account, target)?;
         stream.flush().await?;
+        // Independent tasks reduce measured ChaCha CPU cost. Keep AES on the
+        // combined relay: its parallel variant used more CPU for the same load.
+        if self.0.parallel_duplex
+            && target.network == RoutingNetwork::Tcp
+            && matches!(self.0.carrier.transport_layer, TransportLayer::Raw)
+            && matches!(self.0.carrier.transport, ConnectorConfig::Tcp)
+        {
+            return Ok(Box::new(ParallelStream(Some(stream))));
+        }
         Ok(Box::new(protocol_stream::ProtocolStream(stream)))
     }
     pub(super) async fn open_udp(
@@ -225,5 +236,68 @@ impl NativeUdpSession {
             source: self.target.clone(),
             payload,
         })
+    }
+}
+
+struct ParallelStream(Option<ClientStream<BoxedTransportStream>>);
+impl AsyncRead for ParallelStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        out: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        match self.get_mut().0.as_mut() {
+            Some(s) => Pin::new(s).poll_read(cx, out),
+            None => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+        }
+    }
+}
+impl AsyncWrite for ParallelStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut().0.as_mut() {
+            Some(s) => Pin::new(s).poll_write(cx, input),
+            None => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+        }
+    }
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut().0.as_mut() {
+            Some(s) => Pin::new(s).poll_flush(cx),
+            None => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+        }
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut().0.as_mut() {
+            Some(s) => Pin::new(s).poll_shutdown(cx),
+            None => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
+        }
+    }
+}
+impl TransportStream for ParallelStream {
+    fn poll_read_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        out: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        self.poll_read(cx, out)
+    }
+    fn poll_write_direct(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        input: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.poll_write(cx, input)
+    }
+    fn take_parallel_halves(
+        &mut self,
+    ) -> Option<(xray_transport::ParallelRead, xray_transport::ParallelWrite)> {
+        let (read, write) = self
+            .0
+            .take()?
+            .into_split_with(|inner| inner.into_io_halves());
+        Some((Box::new(read), Box::new(write)))
     }
 }

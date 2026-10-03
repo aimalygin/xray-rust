@@ -1,11 +1,16 @@
 use std::io;
 use std::time::Duration;
 
-use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(test)]
+use tokio::io::{ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
 use xray_config::CoreConfig;
 
 use crate::connection::ConnectionTraffic;
+
+mod split_relay;
+pub(crate) use split_relay::copy_split_with_idle_timeout;
 
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONN_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -218,10 +223,20 @@ where
     copy_direction_with_counter(reader, writer, activity, buffer_size, None).await
 }
 
+trait CopyActivity {
+    fn record(&mut self, bytes: usize);
+}
+impl CopyActivity for mpsc::Sender<()> {
+    #[inline]
+    fn record(&mut self, _: usize) {
+        let _ = self.try_send(());
+    }
+}
+
 async fn copy_direction_with_counter<R, W>(
-    reader: &mut ReadHalf<R>,
-    writer: &mut WriteHalf<W>,
-    activity: mpsc::Sender<()>,
+    reader: &mut R,
+    writer: &mut W,
+    mut activity: impl CopyActivity,
     buffer_size: usize,
     counter: Option<&std::sync::atomic::AtomicU64>,
 ) -> io::Result<u64>
@@ -260,7 +275,7 @@ where
                 }
                 let was_clean = unflushed == 0;
                 unflushed = unflushed.saturating_add(len);
-                let _ = activity.try_send(());
+                activity.record(len);
 
                 if unflushed >= COPY_FLUSH_THRESHOLD {
                     writer.flush().await?;

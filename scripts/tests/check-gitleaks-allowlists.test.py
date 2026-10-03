@@ -23,6 +23,37 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_adaptive_relay_exceptions_are_derived_and_narrow(self):
+        base = "docs/benchmarks/results/2026-10-02-v08-adaptive-relay/"
+        inputs = json.loads((ROOT / base / "data/inputs.json").read_text())
+        digest = inputs["xray"]["sha256"]
+        paths = [base + "measurements.tar.gz!" + name + "/manifest.json"
+                 for name in inputs["campaigns"]]
+        self.assertEqual(self.scan({p: json.dumps({"xray": digest}) for p in paths}), set())
+        index_paths = [base + name for name in ("evidence-index.json", "data/reviewed-public-hashes.json")]
+        reviewed = json.loads((ROOT / index_paths[1]).read_text())
+        index = json.loads((ROOT / index_paths[0]).read_text())
+        self.assertEqual(len(reviewed), 30)
+        with tarfile.open(ROOT / base / "measurements.tar.gz") as archive:
+            for name, expected in reviewed.items():
+                self.assertTrue(name.endswith('.log'))
+                self.assertEqual(hashlib.sha256(archive.extractfile(name).read()).hexdigest(), expected)
+                self.assertEqual(index["file_sha256"][name], expected)
+        self.assertEqual(self.scan({p: json.dumps({"xray": list(reviewed.values())}) for p in index_paths}), set())
+        fixture = base + "measurements.tar.gz!investigation/scripts/run-v07-performance.py"
+        self.assertEqual(self.scan({fixture: json.dumps({"privateKey": PUBLIC_FIXTURE})}), set())
+        unrelated = base + "measurements.tar.gz!unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({
+            paths[0]: json.dumps({"xray": other}),
+            index_paths[0]: json.dumps({"xray": other}),
+            index_paths[1]: json.dumps({"xray": other}),
+            unrelated: json.dumps({"xray": digest}),
+        }), {(p, "jfrog-identity-token") for p in [paths[0], *index_paths, unrelated]})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({p: json.dumps({"api_key": synthetic}) for p in [*paths, *index_paths, fixture]}),
+                         {(p, "generic-api-key") for p in [*paths, *index_paths, fixture]})
+
     def test_split_codec_exceptions_are_derived_and_narrow(self):
         base = "docs/benchmarks/results/2026-10-02-v08-split/"
         inputs = json.loads((ROOT / base / "data/inputs.json").read_text())

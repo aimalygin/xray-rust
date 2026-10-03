@@ -14,13 +14,22 @@ const BULK_READ_AHEAD: usize = 16 * 1024;
 /// reads require room for the complete datagram and never truncate it.
 pub struct ClientStream<S> {
     inner: S,
+    read: ReadState,
+    write: WriteState,
+}
+#[derive(Clone, Copy)]
+enum Phase {
+    HeaderLength,
+    Header,
+    Length,
+    Payload,
+    Plain,
+}
+pub(super) struct ReadState {
     keys: Option<SessionKeys>,
-    writer: Records,
     reader: Records,
     options: Options,
     packet: bool,
-    pending: Zeroizing<Vec<u8>>,
-    pending_pos: usize,
     body: crate::record_buffer::RecordBuffer,
     plain_len: usize,
     plain_pos: usize,
@@ -30,15 +39,15 @@ pub struct ClientStream<S> {
     failed: bool,
     read_error: Option<io::Error>,
     eof: bool,
-    closing: bool,
 }
-#[derive(Clone, Copy)]
-enum Phase {
-    HeaderLength,
-    Header,
-    Length,
-    Payload,
-    Plain,
+pub(super) struct WriteState {
+    writer: Records,
+    options: Options,
+    packet: bool,
+    pending: Zeroizing<Vec<u8>>,
+    pending_pos: usize,
+    failed: bool,
+    closing: bool,
 }
 impl<S> ClientStream<S> {
     pub fn new(inner: S, account: &Account, target: &Target) -> io::Result<Self> {
@@ -84,34 +93,82 @@ impl<S> ClientStream<S> {
             &keys.response_iv,
             auth_length,
         );
+        let packet = target.is_some_and(|t| t.network == Network::Udp);
         Ok(Self {
             inner,
-            keys: Some(keys),
-            writer,
-            reader,
-            options: account.options,
-            packet: target.is_some_and(|t| t.network == Network::Udp),
-            pending,
-            pending_pos: 0,
-            body: crate::record_buffer::RecordBuffer::new(
-                18,
-                if account.options.authenticated_length {
-                    18
-                } else {
-                    2
-                },
-            ),
-            plain_len: 0,
-            plain_pos: 0,
-            bulk_read_remaining: BULK_READ_THRESHOLD,
-            phase: Phase::HeaderLength,
-            padding: 0,
-            failed: false,
-            read_error: None,
-            eof: false,
-            closing: false,
+            read: ReadState {
+                keys: Some(keys),
+                reader,
+                options: account.options,
+                packet,
+                body: crate::record_buffer::RecordBuffer::new(
+                    18,
+                    if account.options.authenticated_length {
+                        18
+                    } else {
+                        2
+                    },
+                ),
+                plain_len: 0,
+                plain_pos: 0,
+                bulk_read_remaining: BULK_READ_THRESHOLD,
+                phase: Phase::HeaderLength,
+                padding: 0,
+                failed: false,
+                read_error: None,
+                eof: false,
+            },
+            write: WriteState {
+                writer,
+                options: account.options,
+                packet,
+                pending,
+                pending_pos: 0,
+                failed: false,
+                closing: false,
+            },
         })
     }
+    fn failed(&self) -> bool {
+        self.read.failed || self.write.failed
+    }
+    /// Move the existing codec states and buffers into independently owned halves.
+    /// The owner must cancel the peer on error; write shutdown remains a half-close.
+    pub fn into_split(
+        self,
+    ) -> (
+        super::ClientReadHalf<tokio::io::ReadHalf<S>>,
+        super::ClientWriteHalf<tokio::io::WriteHalf<S>>,
+    )
+    where
+        S: AsyncRead + AsyncWrite,
+    {
+        self.into_split_with(tokio::io::split)
+    }
+
+    /// Use a carrier-specific owned split (for example, native TCP halves).
+    pub fn into_split_with<R: AsyncRead, W: AsyncWrite>(
+        mut self,
+        split: impl FnOnce(S) -> (R, W),
+    ) -> (super::ClientReadHalf<R>, super::ClientWriteHalf<W>) {
+        if self.failed() {
+            self.read.failed = true;
+            self.write.failed = true;
+        }
+        let (read, write) = split(self.inner);
+        (
+            super::ClientReadHalf {
+                inner: read,
+                state: self.read,
+            },
+            super::ClientWriteHalf {
+                inner: write,
+                state: self.write,
+            },
+        )
+    }
+}
+impl ReadState {
     fn expect(&mut self, n: usize, phase: Phase) {
         // Plaintext is erased as it is delivered, including partial reads.
         // Other phases can still contain a decrypted header/length.
@@ -189,49 +246,20 @@ impl<S> ClientStream<S> {
         Ok(())
     }
 }
-impl<S: AsyncWrite + Unpin> ClientStream<S> {
-    fn drain(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        while self.pending_pos < self.pending.len() {
-            match ready!(Pin::new(&mut self.inner).poll_write(cx, &self.pending[self.pending_pos..]))
-            {
-                Ok(0) => {
-                    self.failed = true;
-                    return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
-                }
-                Ok(n) => self.pending_pos += n,
-                Err(e) => {
-                    self.failed = true;
-                    return Poll::Ready(Err(e));
-                }
-            }
-        }
-        // A successfully encoded pending frame contains only wire ciphertext
-        // and public headers. Keep its allocation for the next write; the
-        // Zeroizing owner still wipes the full capacity when dropped.
-        self.pending.clear();
-        self.pending_pos = 0;
-        Poll::Ready(Ok(()))
-    }
-}
-impl<S: AsyncRead + AsyncWrite + Unpin> ClientStream<S> {
-    fn poll_read_one(
-        self: Pin<&mut Self>,
+impl ReadState {
+    fn poll_read_one<S: AsyncRead + Unpin>(
+        &mut self,
+        inner: &mut S,
         cx: &mut Context<'_>,
         out: &mut ReadBuf<'_>,
         byte_budget: usize,
     ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
+        let this = self;
         if this.failed {
             return Poll::Ready(Err(invalid("VMess stream failed")));
         }
         if out.remaining() == 0 || this.eof {
             return Poll::Ready(Ok(()));
-        }
-        // Try to advance buffered writes, but backpressure in that direction
-        // must not prevent receiving an already available response. In
-        // particular both peers may be writing with full socket buffers.
-        if let Poll::Ready(result) = this.drain(cx) {
-            result?;
         }
         loop {
             if matches!(this.phase, Phase::Plain) {
@@ -251,7 +279,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ClientStream<S> {
                 }
                 this.expect(this.reader.size_bytes(), Phase::Length);
             }
-            match ready!(this.body.poll_frame(&mut this.inner, cx)) {
+            match ready!(this.body.poll_frame(&mut *inner, cx)) {
                 Ok(true) => {}
                 Ok(false) if matches!(this.phase, Phase::Length) => {
                     this.eof = true;
@@ -273,12 +301,12 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ClientStream<S> {
             }
         }
     }
-}
-impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
+    pub(super) fn poll_read<S: AsyncRead + Unpin>(
+        &mut self,
+        inner: &mut S,
         cx: &mut Context<'_>,
         out: &mut ReadBuf<'_>,
+        mut prepare: impl FnMut(&mut S, &mut Context<'_>) -> io::Result<()>,
     ) -> Poll<io::Result<()>> {
         if let Some(error) = self.read_error.take() {
             return Poll::Ready(Err(error));
@@ -296,10 +324,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
         // the reverse direction. UDP must keep exactly one datagram per read.
         for _ in 0..MAX_READ_RECORDS {
             let before = out.filled().len();
-            match self
-                .as_mut()
-                .poll_read_one(cx, out, byte_budget - (before - started))
-            {
+            let result = if self.failed || out.remaining() == 0 || self.eof {
+                self.poll_read_one(inner, cx, out, byte_budget - (before - started))
+            } else if let Err(error) = prepare(inner, cx) {
+                self.failed = true;
+                Poll::Ready(Err(error))
+            } else {
+                self.poll_read_one(inner, cx, out, byte_budget - (before - started))
+            };
+            match result {
                 Poll::Pending if out.filled().len() == started => return Poll::Pending,
                 Poll::Pending => return Poll::Ready(Ok(())),
                 Poll::Ready(Err(error)) if out.filled().len() != started => {
@@ -324,13 +357,40 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
         Poll::Ready(Ok(()))
     }
 }
-impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
-    fn poll_write(
-        self: Pin<&mut Self>,
+impl WriteState {
+    pub(super) fn drain<S: AsyncWrite + Unpin>(
+        &mut self,
+        inner: &mut S,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
+        while self.pending_pos < self.pending.len() {
+            match ready!(Pin::new(&mut *inner).poll_write(cx, &self.pending[self.pending_pos..])) {
+                Ok(0) => {
+                    self.failed = true;
+                    return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
+                }
+                Ok(n) => self.pending_pos += n,
+                Err(e) => {
+                    self.failed = true;
+                    return Poll::Ready(Err(e));
+                }
+            }
+        }
+        // A successfully encoded pending frame contains only wire ciphertext
+        // and public headers. Keep its allocation for the next write; the
+        // Zeroizing owner still wipes the full capacity when dropped.
+        self.pending.clear();
+        self.pending_pos = 0;
+        Poll::Ready(Ok(()))
+    }
+    pub(super) fn poll_write<S: AsyncWrite + Unpin>(
+        &mut self,
+        inner: &mut S,
         cx: &mut Context<'_>,
         data: &[u8],
+        eager: bool,
     ) -> Poll<io::Result<usize>> {
-        let this = self.get_mut();
+        let this = self;
         if this.failed || this.closing {
             return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
         }
@@ -340,7 +400,7 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
                 "VMess datagram exceeds record limit",
             )));
         }
-        ready!(this.drain(cx))?;
+        ready!(this.drain(inner, cx))?;
         if data.is_empty() {
             return Poll::Ready(Ok(0));
         }
@@ -352,7 +412,18 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
             this.writer.seal_pair_into(data, &mut this.pending)
         };
         match result {
-            Ok(n) => Poll::Ready(Ok(n)),
+            Ok(n) => {
+                // A reader cannot flush an independent writer. Finish a
+                // complete write promptly, including small RPCs. If this
+                // write accepted only part of the input, the next poll drains
+                // the record before encrypting more, as in the combined path.
+                if eager && n == data.len() {
+                    if let Poll::Ready(Err(error)) = this.drain(inner, cx) {
+                        return Poll::Ready(Err(error));
+                    }
+                }
+                Poll::Ready(Ok(n))
+            }
             Err(e) => {
                 this.pending.as_mut_slice().zeroize();
                 this.pending.clear();
@@ -361,21 +432,29 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
             }
         }
     }
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
+    pub(super) fn poll_flush<S: AsyncWrite + Unpin>(
+        &mut self,
+        inner: &mut S,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self;
         if this.failed {
             return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
         }
-        ready!(this.drain(cx))?;
-        let result = ready!(Pin::new(&mut this.inner).poll_flush(cx));
+        ready!(this.drain(inner, cx))?;
+        let result = ready!(Pin::new(&mut *inner).poll_flush(cx));
         if result.is_err() {
             this.failed = true;
         }
         Poll::Ready(result)
     }
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        ready!(self.as_mut().poll_flush(cx))?;
-        let this = self.get_mut();
+    pub(super) fn poll_shutdown<S: AsyncWrite + Unpin>(
+        &mut self,
+        inner: &mut S,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
+        ready!(self.poll_flush(inner, cx))?;
+        let this = self;
         if !this.closing {
             this.closing = true;
             if !this.options.no_termination_signal {
@@ -385,12 +464,58 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
                 }
             }
         }
-        ready!(this.drain(cx))?;
-        ready!(Pin::new(&mut this.inner).poll_flush(cx))?;
-        Pin::new(&mut this.inner).poll_shutdown(cx)
+        ready!(this.drain(inner, cx))?;
+        ready!(Pin::new(&mut *inner).poll_flush(cx))?;
+        Pin::new(&mut *inner).poll_shutdown(cx)
     }
 }
 
+impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ClientStream<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        out: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if this.write.failed {
+            this.read.failed = true;
+        }
+        this.read.poll_read(&mut this.inner, cx, out, |inner, cx| {
+            // Preserve the combined stream's opportunistic write progress.
+            match this.write.drain(inner, cx) {
+                Poll::Ready(result) => result,
+                Poll::Pending => Ok(()),
+            }
+        })
+    }
+}
+impl<S: AsyncWrite + Unpin> AsyncWrite for ClientStream<S> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        data: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        if this.read.failed {
+            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+        }
+        this.write.poll_write(&mut this.inner, cx, data, false)
+    }
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if this.read.failed {
+            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+        }
+        this.write.poll_flush(&mut this.inner, cx)
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        if this.read.failed {
+            return Poll::Ready(Err(io::ErrorKind::BrokenPipe.into()));
+        }
+        this.write.poll_shutdown(&mut this.inner, cx)
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,16 +585,16 @@ mod tests {
         )
         .unwrap()
     }
-    fn response_header(client: &ClientStream<Wire>, size: u16, marker: u8) -> Vec<u8> {
+    fn response_header<S>(client: &ClientStream<S>, size: u16, marker: u8) -> Vec<u8> {
         response_header_options(client, size, marker, 0)
     }
-    fn response_header_options(
-        client: &ClientStream<Wire>,
+    fn response_header_options<S>(
+        client: &ClientStream<S>,
         size: u16,
         marker: u8,
         options: u8,
     ) -> Vec<u8> {
-        let keys = client.keys.as_ref().unwrap();
+        let keys = client.read.keys.as_ref().unwrap();
         let (aead, nonce) = crypto::header_aead(
             &*keys.response_key,
             &*keys.response_iv,
@@ -489,13 +614,14 @@ mod tests {
         wire.extend(header);
         wire
     }
-    fn response_records(client: &ClientStream<Wire>, cipher: Cipher) -> Records {
-        let keys = client.keys.as_ref().unwrap();
+    fn response_records<S>(client: &ClientStream<S>, cipher: Cipher) -> Records {
+        let keys = client.read.keys.as_ref().unwrap();
         Records::new(
             cipher,
             &keys.response_key,
             &keys.response_iv,
             client
+                .read
                 .options
                 .authenticated_length
                 .then_some((&*keys.request_key, &*keys.request_iv)),
@@ -515,15 +641,18 @@ mod tests {
                 for network in [Network::Tcp, Network::Udp] {
                     let mut client = client(cipher, auth, network);
                     let mut records = response_records(&client, cipher);
-                    let mut wire =
-                        response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                    let mut wire = response_header(
+                        &client,
+                        4,
+                        client.read.keys.as_ref().unwrap().response_marker,
+                    );
                     let payload = vec![0x73; 48 * 1024];
                     wire.extend_from_slice(&records.seal_peer_record(&payload));
                     wire.extend_from_slice(&records.seal(&[]).unwrap());
                     client.inner.incoming.extend(wire);
                     let mut out = vec![0xaa; 64 * 1024];
                     let first = if network == Network::Tcp {
-                        MAX_READ_RECORDS * client.reader.max_payload()
+                        MAX_READ_RECORDS * client.read.reader.max_payload()
                     } else {
                         payload.len()
                     };
@@ -532,7 +661,7 @@ mod tests {
                     );
                     assert_eq!(&out[..first], &payload[..first]);
                     assert!(out[first..].iter().all(|&b| b == 0xaa));
-                    assert!(client.body.frame()[..first].iter().all(|&b| b == 0));
+                    assert!(client.read.body.frame()[..first].iter().all(|&b| b == 0));
                     if first < payload.len() {
                         assert!(
                             matches!(poll_read(&mut client, &mut out), Poll::Ready(Ok(n)) if n == payload.len() - first)
@@ -555,8 +684,11 @@ mod tests {
                 for network in [Network::Tcp, Network::Udp] {
                     let mut client = client(cipher, auth, network);
                     let mut records = response_records(&client, cipher);
-                    let mut wire =
-                        response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                    let mut wire = response_header(
+                        &client,
+                        4,
+                        client.read.keys.as_ref().unwrap().response_marker,
+                    );
                     wire.extend_from_slice(&records.seal(&[7; 4096]).unwrap());
                     client.inner.incoming.extend(wire);
                     let mut out = [0; 4096];
@@ -565,7 +697,7 @@ mod tests {
                         Poll::Ready(Ok(4096))
                     ));
                     assert_eq!(out, [7; 4096]);
-                    assert!(client.bulk_read_remaining > 0);
+                    assert!(client.read.bulk_read_remaining > 0);
                     for _ in 1..17 {
                         client
                             .inner
@@ -578,7 +710,7 @@ mod tests {
                         assert_eq!(out, [8; 4096]);
                     }
                     assert_eq!(
-                        client.bulk_read_remaining,
+                        client.read.bulk_read_remaining,
                         if network == Network::Udp {
                             BULK_READ_THRESHOLD
                         } else {
@@ -597,8 +729,11 @@ mod tests {
             for auth in [false, true] {
                 let mut client = client(cipher, auth, Network::Tcp);
                 let mut records = response_records(&client, cipher);
-                let mut wire =
-                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                let mut wire = response_header(
+                    &client,
+                    4,
+                    client.read.keys.as_ref().unwrap().response_marker,
+                );
                 for index in 0..=MAX_READ_RECORDS {
                     wire.extend_from_slice(&records.seal(&[index as u8; 64]).unwrap());
                 }
@@ -614,7 +749,7 @@ mod tests {
                 assert!(out[MAX_READ_RECORDS * 64..]
                     .iter()
                     .all(|&byte| byte == 0xaa));
-                assert!(client.body.frame()[..64].iter().all(|&byte| byte == 0));
+                assert!(client.read.body.frame()[..64].iter().all(|&byte| byte == 0));
                 assert!(matches!(
                     poll_read(&mut client, &mut out),
                     Poll::Ready(Ok(64))
@@ -631,8 +766,11 @@ mod tests {
             for auth in [false, true] {
                 let mut client = client(cipher, auth, Network::Tcp);
                 let mut records = response_records(&client, cipher);
-                let mut wire =
-                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                let mut wire = response_header(
+                    &client,
+                    4,
+                    client.read.keys.as_ref().unwrap().response_marker,
+                );
                 wire.extend_from_slice(&records.seal(b"first").unwrap());
                 let second = records.seal(b"second").unwrap();
                 wire.extend_from_slice(&second[..1]);
@@ -657,7 +795,7 @@ mod tests {
                     matches!(poll_read(&mut client, &mut out), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::UnexpectedEof)
                 );
                 assert_eq!(out, [0xaa; 32]);
-                assert!(client.failed);
+                assert!(client.failed());
             }
         }
     }
@@ -668,8 +806,11 @@ mod tests {
             for auth in [false, true] {
                 let mut client = client(cipher, auth, Network::Tcp);
                 let mut records = response_records(&client, cipher);
-                let mut wire =
-                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                let mut wire = response_header(
+                    &client,
+                    4,
+                    client.read.keys.as_ref().unwrap().response_marker,
+                );
                 wire.extend_from_slice(&records.seal(b"first").unwrap());
                 let mut bad = records.seal(b"second").unwrap();
                 bad[records.size_bytes()] ^= 1;
@@ -681,7 +822,7 @@ mod tests {
                     Poll::Ready(Ok(2))
                 ));
                 assert_eq!(&out[..2], b"fi");
-                assert!(client.body.frame()[..2].iter().all(|&b| b == 0));
+                assert!(client.read.body.frame()[..2].iter().all(|&b| b == 0));
                 assert!(matches!(
                     poll_read(&mut client, &mut out),
                     Poll::Ready(Ok(3))
@@ -693,7 +834,7 @@ mod tests {
                     Poll::Ready(Err(_))
                 ));
                 assert_eq!(out, [0xaa; 32]);
-                assert!(client.failed);
+                assert!(client.failed());
             }
         }
     }
@@ -704,15 +845,18 @@ mod tests {
             for auth in [false, true] {
                 let mut client = client(cipher, auth, Network::Tcp);
                 let mut records = response_records(&client, cipher);
-                let mut wire =
-                    response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                let mut wire = response_header(
+                    &client,
+                    4,
+                    client.read.keys.as_ref().unwrap().response_marker,
+                );
                 wire.extend_from_slice(&records.seal(b"response").unwrap());
                 let mut cx = Context::from_waker(Waker::noop());
                 assert!(matches!(
                     Pin::new(&mut client).poll_write(&mut cx, b"request"),
                     Poll::Ready(Ok(7))
                 ));
-                let request = client.pending.clone();
+                let request = client.write.pending.clone();
                 let sent = client.inner.outgoing.len();
                 client.inner.write_quota = 1;
                 client.inner.incoming.extend(wire);
@@ -722,7 +866,7 @@ mod tests {
                     Poll::Ready(Ok(8))
                 ));
                 assert_eq!(&output[..8], b"response");
-                assert_eq!(client.pending_pos, 1);
+                assert_eq!(client.write.pending_pos, 1);
                 client.inner.write_quota = usize::MAX;
                 assert!(matches!(
                     Pin::new(&mut client).poll_flush(&mut cx),
@@ -742,8 +886,11 @@ mod tests {
                 for split in 0..180 {
                     let mut client = client(cipher, auth, Network::Tcp);
                     let mut records = response_records(&client, cipher);
-                    let mut wire =
-                        response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+                    let mut wire = response_header(
+                        &client,
+                        4,
+                        client.read.keys.as_ref().unwrap().response_marker,
+                    );
                     wire.extend_from_slice(&records.seal(b"response").unwrap());
                     if split >= wire.len() {
                         continue;
@@ -774,7 +921,7 @@ mod tests {
     fn vmess_forged_headers_records_and_termination_poison_both_directions() {
         for case in 0..7 {
             let mut client = client(Cipher::Aes128Gcm, true, Network::Tcp);
-            let marker = client.keys.as_ref().unwrap().response_marker;
+            let marker = client.read.keys.as_ref().unwrap().response_marker;
             let mut wire = response_header(
                 &client,
                 if case == 0 { 260 } else { 4 },
@@ -813,7 +960,11 @@ mod tests {
     fn vmess_udp_reads_preserve_whole_datagrams_and_reject_oversize_writes() {
         let mut client = client(Cipher::ChaCha20Poly1305, false, Network::Udp);
         let mut records = response_records(&client, Cipher::ChaCha20Poly1305);
-        let mut wire = response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+        let mut wire = response_header(
+            &client,
+            4,
+            client.read.keys.as_ref().unwrap().response_marker,
+        );
         wire.extend_from_slice(&records.seal(b"one datagram").unwrap());
         wire.extend_from_slice(&records.seal(b"two").unwrap());
         client.inner.incoming.extend(wire);
@@ -831,11 +982,11 @@ mod tests {
             Poll::Ready(Ok(3))
         ));
         assert_eq!(&output[..3], b"two");
-        let oversize = vec![0; client.writer.max_payload() + 1];
+        let oversize = vec![0; client.write.writer.max_payload() + 1];
         assert!(
             matches!(Pin::new(&mut client).poll_write(&mut Context::from_waker(Waker::noop()), &oversize), Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::InvalidInput)
         );
-        assert!(!client.failed);
+        assert!(!client.failed());
     }
 
     #[test]
@@ -843,25 +994,25 @@ mod tests {
         for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
             for auth in [false, true] {
                 let mut client = client(cipher, auth, Network::Tcp);
-                let keys = client.keys.as_ref().unwrap();
+                let keys = client.read.keys.as_ref().unwrap();
                 let mut reader = Records::new(
                     cipher,
                     &keys.request_key,
                     &keys.request_iv,
                     auth.then_some((&*keys.request_key, &*keys.request_iv)),
                 );
-                let max = client.writer.max_payload();
+                let max = client.write.writer.max_payload();
                 let data = [vec![0x31; max], vec![0x72; max], vec![0x93; 17]].concat();
                 let mut cx = Context::from_waker(Waker::noop());
-                let header_len = client.pending.len();
+                let header_len = client.write.pending.len();
                 assert!(matches!(
                     Pin::new(&mut client).poll_write(&mut cx, &data),
                     Poll::Ready(Ok(n)) if n == 2 * max
                 ));
-                assert!(client.pending.len() <= 16384);
-                assert!(client.pending.capacity() <= 16384);
-                let pair = client.pending.clone();
-                let allocation = client.pending.as_ptr();
+                assert!(client.write.pending.len() <= 16384);
+                assert!(client.write.pending.capacity() <= 16384);
+                let pair = client.write.pending.clone();
+                let allocation = client.write.pending.as_ptr();
                 client.inner.write_quota = 1;
                 assert!(Pin::new(&mut client).poll_flush(&mut cx).is_pending());
                 assert!(Pin::new(&mut client)
@@ -877,7 +1028,7 @@ mod tests {
                     Pin::new(&mut client).poll_write(&mut cx, &data[2 * max..]),
                     Poll::Ready(Ok(17))
                 ));
-                assert_eq!(allocation, client.pending.as_ptr());
+                assert_eq!(allocation, client.write.pending.as_ptr());
                 assert!(matches!(
                     Pin::new(&mut client).poll_shutdown(&mut cx),
                     Poll::Ready(Ok(()))
@@ -900,17 +1051,79 @@ mod tests {
     }
 
     #[test]
+    fn vmess_split_bulk_tail_flushes_and_partial_ciphertext_resumes_exactly() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let client = client(cipher, auth, Network::Tcp);
+                let keys = client.read.keys.as_ref().unwrap();
+                let mut reader = Records::new(
+                    cipher,
+                    &keys.request_key,
+                    &keys.request_iv,
+                    auth.then_some((&*keys.request_key, &*keys.request_iv)),
+                );
+                let max = client.write.writer.max_payload();
+                let data = [vec![0x31; max], vec![0x72; max], vec![0x93; 17]].concat();
+                let mut cx = Context::from_waker(Waker::noop());
+                let header_len = client.write.pending.len();
+                let (_, mut writer) = client.into_split_with(|wire| (tokio::io::empty(), wire));
+                assert!(matches!(
+                    Pin::new(&mut writer).poll_write(&mut cx, &data),
+                    Poll::Ready(Ok(n)) if n == 2 * max
+                ));
+                assert!(writer.state.pending.len() <= 16384);
+                assert!(writer.state.pending.capacity() <= 16384);
+                let pair = writer.state.pending.clone();
+                let allocation = writer.state.pending.as_ptr();
+                writer.inner.write_quota = 1;
+                assert!(Pin::new(&mut writer).poll_flush(&mut cx).is_pending());
+                assert!(Pin::new(&mut writer)
+                    .poll_write(&mut cx, &data[2 * max..])
+                    .is_pending());
+                writer.inner.write_quota = usize::MAX;
+                assert!(matches!(
+                    Pin::new(&mut writer).poll_flush(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+                assert_eq!(&writer.inner.outgoing[header_len..], pair.as_slice());
+                assert!(matches!(
+                    Pin::new(&mut writer).poll_write(&mut cx, &data[2 * max..]),
+                    Poll::Ready(Ok(17))
+                ));
+                assert_eq!(allocation, writer.state.pending.as_ptr());
+                assert!(matches!(
+                    Pin::new(&mut writer).poll_shutdown(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+                let mut wire = &writer.inner.outgoing[header_len..];
+                // Decode independently: two distinct authenticated records,
+                // the short tail, and exactly one authenticated termination.
+                for expected in [&data[..max], &data[max..2 * max], &data[2 * max..], &[]] {
+                    let prefix = reader.size_bytes();
+                    let mut length = wire[..prefix].to_vec();
+                    let (size, padding) = reader.decode_length(&mut length).unwrap();
+                    let mut body = wire[prefix..prefix + size].to_vec();
+                    reader.open(&mut body, padding).unwrap();
+                    assert_eq!(body, expected);
+                    wire = &wire[prefix + size..];
+                }
+                assert!(wire.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn vmess_short_writes_and_datagrams_do_not_grow_a_pair_buffer() {
         for network in [Network::Tcp, Network::Udp] {
             let mut client = client(Cipher::Aes128Gcm, false, network);
-            let max = client.writer.max_payload();
+            let max = client.write.writer.max_payload();
             let mut cx = Context::from_waker(Waker::noop());
             for n in [1, max] {
                 assert!(matches!(
                     Pin::new(&mut client).poll_write(&mut cx, &vec![42; n]),
                     Poll::Ready(Ok(written)) if written == n
                 ));
-                assert!(client.pending.capacity() <= 8192);
+                assert!(client.write.pending.capacity() <= 8192);
                 assert!(matches!(
                     Pin::new(&mut client).poll_flush(&mut cx),
                     Poll::Ready(Ok(()))
@@ -924,18 +1137,18 @@ mod tests {
         let mut client = client(Cipher::Aes128Gcm, true, Network::Tcp);
         let mut scratch = Vec::new();
         for _ in 0..u16::MAX {
-            client.writer.seal_into(&[], &mut scratch).unwrap();
+            client.write.writer.seal_into(&[], &mut scratch).unwrap();
             scratch.clear();
         }
         let mut cx = Context::from_waker(Waker::noop());
-        let header = client.pending.clone();
-        let payload = vec![42; 2 * client.writer.max_payload()];
+        let header = client.write.pending.clone();
+        let payload = vec![42; 2 * client.write.writer.max_payload()];
         assert!(matches!(
             Pin::new(&mut client).poll_write(&mut cx, &payload),
             Poll::Ready(Err(e)) if e.kind() == io::ErrorKind::InvalidData
         ));
-        assert!(client.failed);
-        assert!(client.pending.is_empty());
+        assert!(client.failed());
+        assert!(client.write.pending.is_empty());
         assert_eq!(client.inner.outgoing, *header);
         assert!(matches!(
             Pin::new(&mut client).poll_flush(&mut cx),
@@ -950,7 +1163,7 @@ mod tests {
     #[test]
     fn vmess_partial_write_flush_and_shutdown_resume_without_duplicate_bytes() {
         let mut client = client(Cipher::Aes128Gcm, false, Network::Tcp);
-        let request = client.pending.clone();
+        let request = client.write.pending.clone();
         client.inner.write_quota = 1;
         let mut cx = Context::from_waker(Waker::noop());
         assert!(Pin::new(&mut client)
@@ -962,7 +1175,7 @@ mod tests {
             Poll::Ready(Ok(7))
         ));
         assert_eq!(client.inner.outgoing, *request);
-        let record = client.pending.clone();
+        let record = client.write.pending.clone();
         client.inner.write_quota = 1;
         assert!(Pin::new(&mut client).poll_flush(&mut cx).is_pending());
         client.inner.write_quota = usize::MAX;
@@ -976,7 +1189,7 @@ mod tests {
         );
         client.inner.write_quota = 1;
         assert!(Pin::new(&mut client).poll_shutdown(&mut cx).is_pending());
-        let termination = client.pending.clone();
+        let termination = client.write.pending.clone();
         client.inner.write_quota = usize::MAX;
         assert!(matches!(
             Pin::new(&mut client).poll_shutdown(&mut cx),
@@ -1001,7 +1214,11 @@ mod tests {
     fn vmess_truncated_response_is_never_successful_eof() {
         for cut in [0, 1, 17, 18, 19, 37] {
             let mut client = client(Cipher::Aes128Gcm, false, Network::Tcp);
-            let wire = response_header(&client, 4, client.keys.as_ref().unwrap().response_marker);
+            let wire = response_header(
+                &client,
+                4,
+                client.read.keys.as_ref().unwrap().response_marker,
+            );
             client.inner.incoming.extend(&wire[..cut]);
             client.inner.closed = true;
             assert!(
@@ -1016,12 +1233,16 @@ mod tests {
             for no_termination in [false, true] {
                 for valid in [false, true] {
                     let mut client = client(Cipher::Aes128Gcm, auth, Network::Tcp);
-                    client.options.no_termination_signal = no_termination;
-                    let options = if valid { client.options.wire() } else { 0x80 };
+                    client.read.options.no_termination_signal = no_termination;
+                    let options = if valid {
+                        client.read.options.wire()
+                    } else {
+                        0x80
+                    };
                     let mut wire = response_header_options(
                         &client,
                         4,
-                        client.keys.as_ref().unwrap().response_marker,
+                        client.read.keys.as_ref().unwrap().response_marker,
                         options,
                     );
                     wire.extend_from_slice(
@@ -1035,9 +1256,183 @@ mod tests {
                         assert!(matches!(result, Poll::Ready(Ok(14))));
                     } else {
                         assert!(matches!(result, Poll::Ready(Err(_))));
-                        assert!(client.failed);
+                        assert!(client.failed());
                     }
                 }
+            }
+        }
+    }
+
+    struct SharedWire(std::sync::Arc<std::sync::Mutex<Wire>>);
+    impl AsyncRead for SharedWire {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            out: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Pin::new(&mut *self.0.lock().unwrap()).poll_read(cx, out)
+        }
+    }
+    impl AsyncWrite for SharedWire {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            data: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            Pin::new(&mut *self.0.lock().unwrap()).poll_write(cx, data)
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[test]
+    fn vmess_split_read_progress_small_write_flush_and_half_close() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let wire = std::sync::Arc::new(std::sync::Mutex::new(Wire::default()));
+                let client = ClientStream::new(
+                    SharedWire(wire.clone()),
+                    &Account::new(
+                        &[7; 16],
+                        cipher,
+                        Options {
+                            authenticated_length: auth,
+                            no_termination_signal: false,
+                        },
+                    ),
+                    &Target::new(TargetAddr::Domain("example.test".into()), 443, Network::Tcp),
+                )
+                .unwrap();
+                let request = client.write.pending.clone();
+                let mut records = response_records(&client, cipher);
+                let mut response = response_header(
+                    &client,
+                    4,
+                    client.read.keys.as_ref().unwrap().response_marker,
+                );
+                response.extend_from_slice(&records.seal(b"response").unwrap());
+                wire.lock().unwrap().incoming.extend(response);
+                let (mut reader, mut writer) = client.into_split();
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(Pin::new(&mut writer)
+                    .poll_write(&mut cx, b"request")
+                    .is_pending());
+                let mut bytes = [0; 8];
+                let mut out = ReadBuf::new(&mut bytes);
+                assert!(matches!(
+                    Pin::new(&mut reader).poll_read(&mut cx, &mut out),
+                    Poll::Ready(Ok(()))
+                ));
+                assert_eq!(out.filled(), b"response");
+                assert!(reader.state.body.frame()[..8].iter().all(|b| *b == 0));
+                wire.lock().unwrap().write_quota = usize::MAX;
+                assert!(matches!(
+                    Pin::new(&mut writer).poll_write(&mut cx, b"request"),
+                    Poll::Ready(Ok(7))
+                ));
+                assert!(writer.state.pending.is_empty());
+                assert!(wire.lock().unwrap().outgoing.len() > request.len() + 7);
+                assert!(matches!(
+                    Pin::new(&mut writer).poll_shutdown(&mut cx),
+                    Poll::Ready(Ok(()))
+                ));
+                let mut final_response = records.seal(b"after-close").unwrap().to_vec();
+                final_response.extend_from_slice(&records.seal(&[]).unwrap());
+                wire.lock().unwrap().incoming.extend(final_response);
+                let mut bytes = [0; 16];
+                let mut out = ReadBuf::new(&mut bytes);
+                assert!(matches!(
+                    Pin::new(&mut reader).poll_read(&mut cx, &mut out),
+                    Poll::Ready(Ok(()))
+                ));
+                assert_eq!(out.filled(), b"after-close");
+                let mut out = ReadBuf::new(&mut bytes);
+                assert!(matches!(
+                    Pin::new(&mut reader).poll_read(&mut cx, &mut out),
+                    Poll::Ready(Ok(()))
+                ));
+                assert!(out.filled().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn vmess_split_moves_pending_buffer_and_resumes_partial_writes() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            let wire = std::sync::Arc::new(std::sync::Mutex::new(Wire {
+                write_quota: usize::MAX,
+                ..Wire::default()
+            }));
+            let mut client = ClientStream::new(
+                SharedWire(wire.clone()),
+                &Account::new(&[7; 16], cipher, Options::default()),
+                &Target::new(TargetAddr::Domain("example.test".into()), 443, Network::Tcp),
+            )
+            .unwrap();
+            let mut cx = Context::from_waker(Waker::noop());
+            let payload = vec![0x57; 2 * client.write.writer.max_payload()];
+            assert!(
+                matches!(Pin::new(&mut client).poll_write(&mut cx,&payload),Poll::Ready(Ok(n)) if n==payload.len())
+            );
+            let allocation = client.write.pending.as_ptr();
+            let capacity = client.write.pending.capacity();
+            let expected = client.write.pending.clone();
+            assert!(capacity <= 16384);
+            let header = wire.lock().unwrap().outgoing.clone();
+            let (_reader, mut writer) = client.into_split();
+            assert_eq!(allocation, writer.state.pending.as_ptr());
+            assert_eq!(capacity, writer.state.pending.capacity());
+            wire.lock().unwrap().write_quota = 1;
+            assert!(Pin::new(&mut writer).poll_flush(&mut cx).is_pending());
+            wire.lock().unwrap().write_quota = usize::MAX;
+            assert!(matches!(
+                Pin::new(&mut writer).poll_flush(&mut cx),
+                Poll::Ready(Ok(()))
+            ));
+            assert_eq!(
+                wire.lock().unwrap().outgoing,
+                [header.as_slice(), expected.as_slice()].concat()
+            );
+            assert_eq!(allocation, writer.state.pending.as_ptr());
+        }
+    }
+
+    #[test]
+    fn vmess_split_auth_failure_never_exposes_forged_record() {
+        for cipher in [Cipher::Aes128Gcm, Cipher::ChaCha20Poly1305] {
+            for auth in [false, true] {
+                let mut client = client(cipher, auth, Network::Tcp);
+                let mut records = response_records(&client, cipher);
+                let mut response = response_header(
+                    &client,
+                    4,
+                    client.read.keys.as_ref().unwrap().response_marker,
+                );
+                response.extend_from_slice(&records.seal(b"verified").unwrap());
+                let mut forged = records.seal(b"forged").unwrap();
+                forged[records.size_bytes() + 1] ^= 0x80;
+                response.extend_from_slice(&forged);
+                client.inner.incoming.extend(response);
+                let (mut reader, _writer) = client.into_split();
+                let mut bytes = [0xaa; 64];
+                let mut out = ReadBuf::new(&mut bytes);
+                let mut cx = Context::from_waker(Waker::noop());
+                assert!(matches!(
+                    Pin::new(&mut reader).poll_read(&mut cx, &mut out),
+                    Poll::Ready(Ok(()))
+                ));
+                assert_eq!(out.filled(), b"verified");
+                let mut out = ReadBuf::new(&mut bytes);
+                assert!(matches!(
+                    Pin::new(&mut reader).poll_read(&mut cx, &mut out),
+                    Poll::Ready(Err(_))
+                ));
+                assert!(out.filled().is_empty());
+                assert!(reader.state.failed);
             }
         }
     }

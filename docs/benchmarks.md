@@ -11,8 +11,16 @@ current harness target.
 
 ## v0.8 candidate protocol comparisons
 
+The [adaptive VMess duplex report](benchmarks/results/2026-10-02-v08-adaptive-relay/README.md)
+retains a bounded ChaCha relay improvement: one-flow paired speed +58–60%, CPU
+−10–11%, with 0.92–1.11 MiB additional footprint at 512 connections. AES stays
+on the combined relay to avoid a measured CPU increase. The report preserves
+the latency-tail tradeoff, A/A controls, fresh Xray/sing-box comparisons and
+all rejected variants; overall reference parity remains unmet. See the
+[v0.8 performance history](v08-performance.md) for earlier complete matrices.
+
 The [relay and VMess padding report](benchmarks/results/2026-10-01-v08-relay/README.md)
-records the current v0.8 runtime `fdc0dad`, with all 630 Trojan/SS2022/VMess
+records the earlier v0.8 runtime `fdc0dad`, with all 630 Trojan/SS2022/VMess
 trials against the pinned Xray-core and sing-box clients, paired optimization
 controls and memory scaling through 512 held connections. It retains all
 numeric results, rejected experiments and measurement-quality selection maps;
