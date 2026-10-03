@@ -3,6 +3,18 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the signed iPhone app's Mach-O files; these are public digests.
+[[allowlists]]
+description = "Verified iPhone v0.8 app executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^90b0c79c7487f49ba9cf8faf20bed3603b3450e090602e199d12f319ae22f49b$''',
+  '''^06f46e890bf381e1b684ca9de3bc61e54fe8b73995492ca5b37a11947d76b029$''',
+]
+paths = ['''^docs/device-results/2026-10-03-iphone17-v08/manifest\.json$''']
+
 # Exact public digests rehashed from the adaptive-relay archive, not credentials.
 [[allowlists]]
 description = "Verified Xray executable digest in adaptive VMess evidence"
