@@ -69,6 +69,13 @@ passing controls; the latter prevents claiming clean legacy acceptance. The
 collector's separate console-interleaving interruption is also retained. These
 changes do not repin the native runtime or establish complete performance gates.
 
+A [same-device 0.7/0.8 WireGuard comparison](device-results/2026-10-04-iphone17-wg-baseline/README.md)
+then passed three alternating invocations per version (nine start/close/recovery
+cycles each), plus three complete Trojan lifecycle repeats. A 7.26-second first
+TCP exchange also occurred on 0.7.0. The earlier failures did not recur under
+diagnostics; their causes and intermittent regression risk remain unresolved.
+The separate CI accounting-test race is fixed without changing runtime code.
+
 ## Remaining acceptance, in order
 
 - [x] Freeze the runtime candidate commit/tree and SDK pin after metadata/source

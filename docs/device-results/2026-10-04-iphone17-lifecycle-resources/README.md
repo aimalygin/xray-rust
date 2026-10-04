@@ -5,6 +5,10 @@ Physical follow-up on 2026-10-04, iPhone 17 Pro Max (`iPhone18,2`), now running
 [2026-10-03 campaign](../2026-10-03-iphone17-v08/README.md) on iOS 27.0.
 This is bounded device evidence, not a complete v0.8 release archive.
 
+The later [0.7/0.8 WireGuard baseline and Trojan repeats](../2026-10-04-iphone17-wg-baseline/README.md)
+passed without reproducing the failures retained here. They do not establish a
+root cause or replace these original verdicts.
+
 The release Rust iOS-arm64 library is unchanged from runtime candidate
 `de33998158e84c03f280f979ba2d4212072e5bc4`, SHA-256
 `94e80251e1e4f867c23339455c5cfcad4cb429aafe3e2739fb5e9b1d0da6ab2d`.

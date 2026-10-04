@@ -788,6 +788,11 @@ testing resumed: [LAN/WAN protocol checks](device-results/2026-10-03-iphone17-v0
 and [cancellation, resource and legacy checks](device-results/2026-10-04-iphone17-lifecycle-resources/README.md)
 retain their measurements and failures. The original SS2022 WAN condition and
 intermittent WireGuard checks remain unresolved; full release acceptance is open.
+A [same-device WireGuard baseline comparison](device-results/2026-10-04-iphone17-wg-baseline/README.md)
+passed nine start/close/recovery cycles each on 0.7 and 0.8, with three further
+Trojan lifecycle passes. Earlier failures did not recur, but are not explained
+or erased by these controls. The CI relay accounting test now waits for the
+counter update before cancellation; production code is unchanged.
 The separate unregistered iPad test remains deferred.
 The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 contains 1050/1050 verified trials against pinned Xray-core and sing-box.
