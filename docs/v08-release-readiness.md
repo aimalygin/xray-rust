@@ -86,6 +86,20 @@ Wi-Fi/cellular/Wi-Fi plus lock/wake. No relay or client runtime change is used.
 This localizes the observed response loss; the exact dropping hop and persistent
 production configuration remain unvalidated. All failed controls are retained.
 
+The [ordered reliability/deployment follow-up](device-results/2026-10-04-iphone17-reliability-deployment/README.md)
+then passes five further WireGuard smoke and five Trojan lifecycle invocations:
+210 TCP / 140 UDP echoes match backend bytes, with 15 close/recovery cycles,
+15 cancellations and 25 rapid restarts. The original failures remain unexplained.
+An [optional SS2022 startup hook](ss2022-server-udp-pmtu.md) reapplies the per-socket
+policy on five starts including two actual service restarts; a wrong binary pin
+fails closed. It adds no resident helper and changes no client runtime. All three
+ciphers have WAN controls, with failed trials retained: two ChaCha Go sweeps are
+40/44, the AES-128 phone sweep is 38/40, and a later AES-128 Go sweep is 43/44.
+Captured losses include absent requests and a 1398-byte unfragmented reply that
+leaves the server but is not delivered. AES-256 passes Go 44/44 and phone 40/40;
+AES-128 ordinary phone smoke passes. Restart persistence is validated, while
+general WAN reliability and a production deployment remain unqualified.
+
 ## Remaining acceptance, in order
 
 - [x] Freeze the runtime candidate commit/tree and SDK pin after metadata/source
@@ -94,9 +108,11 @@ production configuration remain unvalidated. All failed controls are retained.
   change requires reassessing applicability and collecting fresh evidence.
 - [ ] Complete Apple device acceptance for Trojan, SS2022 and VMess. The owner
   supplied an iPhone already covered by signing; the bounded checks above are
-  complete. Validate a persistent SS2022 production-path/MTU solution beyond
-  the successful temporary socket diagnostic, resolve intermittent
-  WireGuard failures, investigate the isolated Trojan timeout, and finish the
+  complete. The optional SS2022 service hook persists across tested restarts;
+  locate the remaining request/reply path losses and decide the supported
+  deployment/path limits before calling WAN acceptance complete. Resolve
+  intermittent WireGuard failures and the isolated Trojan timeout (the bounded
+  diagnostic repeats passed without establishing their causes), and finish the
   remaining calibrated performance/evidence requirements. Bounded cancellation,
   restart and resource observations are linked above; their limits remain open. The
   separate unregistered iPad remains deferred; no account change was made.

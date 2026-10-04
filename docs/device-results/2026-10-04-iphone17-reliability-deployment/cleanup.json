@@ -1,0 +1,12 @@
+{
+  "hostPmtuSysctlUnchanged": true,
+  "localEphemeralProfilesAndSSHHelpersRemoved": true,
+  "originalServicesRestored": true,
+  "phoneInputAbsent": true,
+  "phoneNormalAppRestored": true,
+  "probeCleanupCompleted": true,
+  "productionAndLoopbackPIDsUnchanged": true,
+  "remotePrivateDirectoryRemoved": true,
+  "temporaryUnitFilesRemoved": true,
+  "temporaryUnitsInactive": true
+}

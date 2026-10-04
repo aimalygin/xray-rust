@@ -9,6 +9,14 @@ adds an exact same-socket DF control, server/client size correlation and a
 passing direct iPhone transition/lock sequence. The test socket mitigation
 does not change the native candidate or qualify a persistent production setup.
 
+The subsequent [ordered reliability and deployment checks](device-results/2026-10-04-iphone17-reliability-deployment/README.md)
+pass ten further WireGuard/Trojan invocations and validate an optional SS2022
+startup hook across five starts, including two service restarts. The hook has
+no resident process and leaves client/runtime/SDK inputs unchanged. New WAN
+controls retain absent large requests and one lost unfragmented reply; the
+server policy's persistence does not close general path reliability. Original
+WireGuard/Trojan causes remain unresolved despite passing bounded repeats.
+
 Started 2026-09-30 (America/Chicago).
 
 The owner selected complete **Trojan, Shadowsocks 2022 and VMess AEAD** clients

@@ -798,6 +798,14 @@ Trojan lifecycle passes. Earlier failures did not recur, but are not explained
 or erased by these controls. The CI relay accounting test now waits for the
 counter update before cancellation; production code is unchanged.
 The separate unregistered iPad test remains deferred.
+The [ordered reliability/deployment follow-up](device-results/2026-10-04-iphone17-reliability-deployment/README.md)
+adds five passing WireGuard smoke and five Trojan lifecycle invocations, with
+210 TCP / 140 UDP exchanges independently matched at the backend. Causes of the
+earlier failures remain unknown. An optional per-service SS2022 UDP startup hook
+reapplies the setting on five starts including two restarts, without a resident
+helper or client changes. WAN controls cover all three ciphers but retain
+request and reply losses, including an unfragmented AES-128 reply; reliable
+production-path acceptance remains open. See the [deployment recipe and limits](ss2022-server-udp-pmtu.md).
 The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 contains 1050/1050 verified trials against pinned Xray-core and sing-box.
 The [first CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM
