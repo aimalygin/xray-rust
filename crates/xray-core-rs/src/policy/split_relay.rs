@@ -555,10 +555,21 @@ mod tests {
                 assert!(chatty_bytes > 0);
             }
         }
-        assert_eq!(
-            traffic.uplink_bytes.load(Ordering::Relaxed),
-            512 * 1024 + chatty_bytes
-        );
+        // A duplex reader can consume the last write on another worker before
+        // write_all returns and the relay records that write. Receiving every
+        // byte is not a barrier for the counters, so wait for both updates
+        // before aborting the still-open relay. A missing update still fails.
+        let expected = 512 * 1024 + chatty_bytes;
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while traffic.uplink_bytes.load(Ordering::Relaxed) != expected
+                || traffic.downlink_bytes.load(Ordering::Relaxed) != expected
+            {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("relay must account for all received bytes before cancellation");
+        assert_eq!(traffic.uplink_bytes.load(Ordering::Relaxed), expected);
         assert_eq!(
             traffic.downlink_bytes.load(Ordering::Relaxed),
             512 * 1024 + chatty_bytes
