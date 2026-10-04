@@ -783,8 +783,12 @@ Swift/Kotlin adapters are implemented. Pinned Xray, independent sing-box,
 Mux/TUN/DNS, REALITY, split-XHTTP and cross-protocol chain matrices pass.
 Full workspace and host Swift/JNI regressions pass. Candidate-bound device,
 performance and distribution artifact acceptance remain open; see the
-[current implementation evidence](v08-implementation-plan.md). Physical Apple
-testing is deferred by the owner; the release gate remains open.
+[current implementation evidence](v08-implementation-plan.md). Physical iPhone
+testing resumed: [LAN/WAN protocol checks](device-results/2026-10-03-iphone17-v08/README.md)
+and [cancellation, resource and legacy checks](device-results/2026-10-04-iphone17-lifecycle-resources/README.md)
+retain their measurements and failures. The original SS2022 WAN condition and
+intermittent WireGuard checks remain unresolved; full release acceptance is open.
+The separate unregistered iPad test remains deferred.
 The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 contains 1050/1050 verified trials against pinned Xray-core and sing-box.
 The [first CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM

@@ -42,6 +42,26 @@ class EvidenceAllowlists(unittest.TestCase):
         self.assertEqual(self.scan({path: json.dumps({"api_key": synthetic})}),
                          {(path, "generic-api-key")})
 
+    def test_iphone_lifecycle_digest_exceptions_are_narrow(self):
+        path = "docs/device-results/2026-10-04-iphone17-lifecycle-resources/manifest.json"
+        manifest = json.loads((ROOT / path).read_text())
+        names = ("XrayClient", "XrayClient.debug.dylib")
+        digests = (
+            "f6c7c7bc1d3098812f1a1b7daad838640fe421769792ca448b86aa2b574bd3db",
+            "9db02665e7e335231b38eab280ed29ef3b9310a98726c1dacb0f4db2a5d3a4fe",
+        )
+        reviewed = dict(zip(names, digests))
+        for name, digest in reviewed.items():
+            self.assertEqual(manifest["build"]["binaries"][name], digest)
+        self.assertEqual(self.scan({path: json.dumps(reviewed)}), set())
+        unrelated = "docs/device-results/unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({path: json.dumps({"xray": other}), unrelated: json.dumps(reviewed)}),
+                         {(name, "jfrog-identity-token") for name in (path, unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({path: json.dumps({"api_key": synthetic})}),
+                         {(path, "generic-api-key")})
+
     def test_adaptive_relay_exceptions_are_derived_and_narrow(self):
         base = "docs/benchmarks/results/2026-10-02-v08-adaptive-relay/"
         inputs = json.loads((ROOT / base / "data/inputs.json").read_text())

@@ -1,0 +1,8 @@
+{"event": "abi", "major": 1, "minor": 8, "protocol": "setup", "time": "2026-10-04T18:37:22Z"}
+{"event": "import", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T18:37:22Z"}
+{"cycle": 1, "event": "connected", "protocol": "wireguard", "seconds": 0.29899299144744873, "time": "2026-10-04T18:37:23Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T18:37:23Z"}
+{"code": 1, "domain": "XrayProtocolDeviceProbe.Network", "event": "failure", "protocol": "wireguard", "time": "2026-10-04T18:37:33Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23311.115374750003"}, {"interface": "", "kind": "applied", "uptime": "23311.648537833335"}, {"interface": "en0", "kind": "unchanged", "uptime": "23315.39646529167"}], "protocol": "wireguard", "stage": "failure", "time": "2026-10-04T18:37:33Z"}
+{"cycle": 0, "droppedPackets": 0, "event": "sample", "footprint": 4392584, "inboundPackets": 205, "outboundPackets": 129, "protocol": "wireguard", "rss": 31686656, "runtime": "8ad1415c-fc02-48de-b7d6-2fe1785b5bf8", "stage": "failure", "tcp": 1, "threads": 8, "time": "2026-10-04T18:37:33Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "complete", "protocol": "wireguard", "result": "failed", "time": "2026-10-04T18:37:33Z"}

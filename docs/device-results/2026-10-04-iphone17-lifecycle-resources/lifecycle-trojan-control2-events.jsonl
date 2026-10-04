@@ -1,0 +1,115 @@
+{"event": "abi", "major": 1, "minor": 8, "protocol": "setup", "time": "2026-10-04T18:41:42Z"}
+{"event": "import", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:42Z"}
+{"cycle": 1, "event": "startup-cancelled", "protocol": "trojan", "result": "passed", "seconds": 1.02165262500057, "time": "2026-10-04T18:41:43Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:43Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 3.138595416665339, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:46Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:46Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.15477616666612448, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:47Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:41:47Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1457925000031537, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:47Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:47Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07521558333246503, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:47Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:47Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.141505583334947, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:47Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:47Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23571.860790833336"}, {"interface": "", "kind": "applied", "uptime": "23572.390608375"}], "protocol": "trojan", "stage": "after-cancel-restart", "time": "2026-10-04T18:41:47Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4523656, "inboundPackets": 198, "outboundPackets": 191, "protocol": "trojan", "rss": 32555008, "runtime": "0cf2c8b8-527d-4613-aa42-edd86acaa773", "stage": "after-cancel-restart", "tcp": 3, "threads": 10, "time": "2026-10-04T18:41:47Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "startup-cancelled", "protocol": "trojan", "result": "passed", "seconds": 1.0271645416687534, "time": "2026-10-04T18:41:49Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:49Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2093215833301656, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:49Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:49Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11205095833429368, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:49Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:41:49Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.14498708333121613, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:50Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:50Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.0832993333315244, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:50Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:50Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07348391666891985, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:50Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:50Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23577.621151625"}, {"interface": "", "kind": "applied", "uptime": "23578.152080791668"}], "protocol": "trojan", "stage": "after-cancel-restart", "time": "2026-10-04T18:41:50Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4720264, "inboundPackets": 186, "outboundPackets": 178, "protocol": "trojan", "rss": 32194560, "runtime": "6b0d8e98-a72f-4a96-94a3-9933e4eea474", "stage": "after-cancel-restart", "tcp": 3, "threads": 11, "time": "2026-10-04T18:41:50Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 4}
+{"cycle": 3, "event": "startup-cancelled", "protocol": "trojan", "result": "passed", "seconds": 1.017238708333025, "time": "2026-10-04T18:41:52Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:52Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.29682270833291113, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:52Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:52Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11034945833307575, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:52Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:41:52Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.15968804166914197, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:52Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:52Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07292529166443273, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:53Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:53Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07602716666588094, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:53Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:53Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23580.347463708335"}, {"interface": "", "kind": "applied", "uptime": "23580.880309458335"}], "protocol": "trojan", "stage": "after-cancel-restart", "time": "2026-10-04T18:41:53Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 5064328, "inboundPackets": 201, "outboundPackets": 181, "protocol": "trojan", "rss": 32735232, "runtime": "e0971118-9482-4a4f-886a-dc3420fa083c", "stage": "after-cancel-restart", "tcp": 3, "threads": 10, "time": "2026-10-04T18:41:53Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 10}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1608437499999127, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:54Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.206630041666358, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:54Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.16115349999745376, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07408779166507884, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:54Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.15613779166596942, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:54Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:55Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23582.089094208335"}, {"interface": "en0", "kind": "unchanged", "uptime": "23582.35831479167"}, {"interface": "", "kind": "applied", "uptime": "23582.616775541668"}], "protocol": "trojan", "stage": "rapid-restart", "time": "2026-10-04T18:41:55Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4572784, "inboundPackets": 195, "outboundPackets": 178, "protocol": "trojan", "rss": 31916032, "runtime": "2507fafa-caf1-497f-a7a1-6f76cc2abc49", "stage": "rapid-restart", "tcp": 3, "threads": 11, "time": "2026-10-04T18:41:55Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "rapid-restart", "protocol": "trojan", "result": "passed", "seconds": 1.7770516249984212, "time": "2026-10-04T18:41:55Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:55Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.23419970833492698, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:56Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:56Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11284320833510719, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:56Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:41:56Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.14251512500050012, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:56Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:56Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.08154270833256305, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:56Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:56Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07500487499783048, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:56Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:56Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23583.894044958335"}, {"interface": "", "kind": "applied", "uptime": "23584.423089125"}], "protocol": "trojan", "stage": "rapid-restart", "time": "2026-10-04T18:41:56Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4425328, "inboundPackets": 207, "outboundPackets": 179, "protocol": "trojan", "rss": 31752192, "runtime": "8626745c-2a67-4656-9aaf-b85629013432", "stage": "rapid-restart", "tcp": 3, "threads": 10, "time": "2026-10-04T18:41:56Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "rapid-restart", "protocol": "trojan", "result": "passed", "seconds": 1.6354465416661697, "time": "2026-10-04T18:41:57Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:57Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 1.3064745416631922, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:58Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10728620833106106, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:58Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:41:59Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.22248991666492657, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:59Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:41:59Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07504295833496144, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:59Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:41:59Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07304416666738689, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:59Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:41:59Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23585.574629875002"}, {"interface": "", "kind": "applied", "uptime": "23586.102738166668"}], "protocol": "trojan", "stage": "rapid-restart", "time": "2026-10-04T18:41:59Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4540016, "inboundPackets": 199, "outboundPackets": 181, "protocol": "trojan", "rss": 32096256, "runtime": "95b15faf-0193-45b6-9a6b-e572548e00f5", "stage": "rapid-restart", "tcp": 3, "threads": 11, "time": "2026-10-04T18:41:59Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "rapid-restart", "protocol": "trojan", "result": "passed", "seconds": 2.7836466666667548, "time": "2026-10-04T18:42:00Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:42:00Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.17038125000181026, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:00Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:42:00Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2080947083341016, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:00Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:42:00Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.20100270833427203, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:01Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:42:01Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07500399999844376, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:01Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:42:01Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07485516666565672, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:01Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:01Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23588.405429958333"}, {"interface": "", "kind": "applied", "uptime": "23588.936302416667"}], "protocol": "trojan", "stage": "rapid-restart", "time": "2026-10-04T18:42:01Z"}
+{"cycle": 4, "droppedPackets": 0, "event": "sample", "footprint": 4572784, "inboundPackets": 209, "outboundPackets": 184, "protocol": "trojan", "rss": 31965184, "runtime": "a11e0320-f733-4f5f-be01-d5c0ef0538a2", "stage": "rapid-restart", "tcp": 4, "threads": 10, "time": "2026-10-04T18:42:01Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 4, "event": "rapid-restart", "protocol": "trojan", "result": "passed", "seconds": 1.7127079583333398, "time": "2026-10-04T18:42:01Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:42:02Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2758748750020459, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:02Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:42:02Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11411000000225613, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:02Z"}
+{"event": "tcp-start", "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "time": "2026-10-04T18:42:02Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.24983166666788748, "host": "v07-probe-e18bc291a455.test", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:02Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:42:02Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.0747272916669317, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:02Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:42:03Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07581775000289781, "host": "2001:db8::7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:03Z"}
+{"event": "dns-anchor", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:03Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23590.189351458335"}, {"interface": "en0", "kind": "unchanged", "uptime": "23590.382400083334"}, {"interface": "", "kind": "applied", "uptime": "23590.721284500003"}], "protocol": "trojan", "stage": "rapid-restart", "time": "2026-10-04T18:42:03Z"}
+{"cycle": 5, "droppedPackets": 0, "event": "sample", "footprint": 4310640, "inboundPackets": 201, "outboundPackets": 175, "protocol": "trojan", "rss": 31621120, "runtime": "e50dc2dd-a8dd-4f76-8544-590f018ffa4c", "stage": "rapid-restart", "tcp": 3, "threads": 10, "time": "2026-10-04T18:42:03Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 5, "event": "rapid-restart", "protocol": "trojan", "result": "passed", "seconds": 1.7915116250005667, "time": "2026-10-04T18:42:03Z"}
+{"event": "complete", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:42:03Z"}

@@ -1,6 +1,6 @@
 # v0.8 release readiness
 
-Reviewed on 2026-10-03. Development implementation is ready for candidate
+Reviewed on 2026-10-04. Development implementation is ready for candidate
 acceptance; **release acceptance is not complete**. Required scope is Trojan,
 Shadowsocks 2022 (all three methods) and VMess AEAD in the core and both SDKs.
 Shadowsocks AEAD-2017 and legacy VMess authentication remain excluded.
@@ -59,6 +59,16 @@ failed; Go controls reproduced the network size/DF dependence. SS2022 transition
 success requires the report's explicit diagnostic fragmentation relay. All
 failures and limits remain visible; this is not full device/release acceptance.
 
+The [2026-10-04 iPhone follow-up](device-results/2026-10-04-iphone17-lifecycle-resources/README.md)
+uses the same Rust library and SDK sources on iOS 27.0.1, with DEBUG reference-app
+instrumentation. Startup cancellation and rapid restarts passed for every new
+cipher configuration. Bounded extension CPU/footprint measurements and legacy
+controls are retained with their actual workloads and thermal states. An initial
+Trojan TCP timeout and two intermittent WireGuard failures remain failed despite
+passing controls; the latter prevents claiming clean legacy acceptance. The
+collector's separate console-interleaving interruption is also retained. These
+changes do not repin the native runtime or establish complete performance gates.
+
 ## Remaining acceptance, in order
 
 - [x] Freeze the runtime candidate commit/tree and SDK pin after metadata/source
@@ -67,8 +77,10 @@ failures and limits remain visible; this is not full device/release acceptance.
   change requires reassessing applicability and collecting fresh evidence.
 - [ ] Complete Apple device acceptance for Trojan, SS2022 and VMess. The owner
   supplied an iPhone already covered by signing; the bounded checks above are
-  complete. Resolve the SS2022 production-path/MTU condition and collect the
-  remaining lifecycle/resource/performance and shared legacy evidence. The
+  complete. Resolve the SS2022 production-path/MTU condition and intermittent
+  WireGuard failures, investigate the isolated Trojan timeout, and finish the
+  remaining calibrated performance/evidence requirements. Bounded cancellation,
+  restart and resource observations are linked above; their limits remain open. The
   separate unregistered iPad remains deferred; no account change was made.
 - [ ] Collect Android scenarios for each protocol through both FileDescriptor
   and PacketPump. Android hardware was unavailable at the last acceptance

@@ -86,9 +86,9 @@ class DNS(Echo):
         self.transport.sendto(header + data[12:end] + answer, address)
 
 
-async def tcp_echo(reader, writer):
+async def tcp_echo(reader, writer, byte_limit=1024 * 1024):
     try:
-        remaining = 1024 * 1024
+        remaining = byte_limit
         while remaining:
             data = await asyncio.wait_for(reader.read(min(8192, remaining)), 10)
             if not data:
@@ -269,7 +269,9 @@ async def serve(args):
         loop.add_signal_handler(sig, stop.set)
     transports, child, tcp = [], None, None
     try:
-        tcp = await asyncio.start_server(tcp_echo, "127.0.0.1", 0, limit=8192)
+        tcp = await asyncio.start_server(
+            lambda r, w: tcp_echo(r, w, 1024 * 1024 * 1024 if args.mode == "resources" else 1024 * 1024),
+            "127.0.0.1", 0, limit=8192)
         # Each fixture gets a fresh name so an OS-level negative answer from a
         # previous, stopped VPN does not poison the next baseline before DNS I/O.
         probe_host = f"v07-probe-{secrets.token_hex(6)}.test"
@@ -323,7 +325,7 @@ def main():
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
     parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", "trojan", "shadowsocks2022", "vmess"), default="both")
     parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
-    parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset"), default="smoke")
+    parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
     args = parser.parse_args()
     address = ipaddress.IPv4Address(args.bind)

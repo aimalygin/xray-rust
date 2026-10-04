@@ -15,6 +15,18 @@ regexes = [
 ]
 paths = ['''^docs/device-results/2026-10-03-iphone17-v08/manifest\.json$''']
 
+# Rehashed from this campaign's signed Mach-O files, not authentication tokens.
+[[allowlists]]
+description = "Verified iPhone lifecycle app executable digests"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^f6c7c7bc1d3098812f1a1b7daad838640fe421769792ca448b86aa2b574bd3db$''',
+  '''^9db02665e7e335231b38eab280ed29ef3b9310a98726c1dacb0f4db2a5d3a4fe$''',
+]
+paths = ['''^docs/device-results/2026-10-04-iphone17-lifecycle-resources/manifest\.json$''']
+
 # Exact public digests rehashed from the adaptive-relay archive, not credentials.
 [[allowlists]]
 description = "Verified Xray executable digest in adaptive VMess evidence"
