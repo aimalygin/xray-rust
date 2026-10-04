@@ -325,7 +325,7 @@ def main():
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
     parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", "trojan", "shadowsocks2022", "vmess"), default="both")
     parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
-    parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources"), default="smoke")
+    parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources", "udp-sweep"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
     args = parser.parse_args()
     address = ipaddress.IPv4Address(args.bind)

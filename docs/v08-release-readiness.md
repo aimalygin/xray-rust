@@ -76,6 +76,16 @@ TCP exchange also occurred on 0.7.0. The earlier failures did not recur under
 diagnostics; their causes and intermittent regression risk remain unresolved.
 The separate CI accounting-test race is fixed without changing runtime code.
 
+A [direct SS2022 socket/MTU campaign](device-results/2026-10-04-iphone17-ss2022-mtu/README.md)
+reproduces the original loss in Go and on iPhone. The detailed default-mode
+control delivers all 56 requests to the server but only 36 replies to the
+client; failing DF replies begin at tested outer IPv4 size 1482 bytes, while
+1480 passes. Changing only the test Xray UDP socket to `IP_PMTUDISC_DONT`
+passes 56/56 Go boundary trials, 40/40 iPhone size trials and direct iPhone
+Wi-Fi/cellular/Wi-Fi plus lock/wake. No relay or client runtime change is used.
+This localizes the observed response loss; the exact dropping hop and persistent
+production configuration remain unvalidated. All failed controls are retained.
+
 ## Remaining acceptance, in order
 
 - [x] Freeze the runtime candidate commit/tree and SDK pin after metadata/source
@@ -84,7 +94,8 @@ The separate CI accounting-test race is fixed without changing runtime code.
   change requires reassessing applicability and collecting fresh evidence.
 - [ ] Complete Apple device acceptance for Trojan, SS2022 and VMess. The owner
   supplied an iPhone already covered by signing; the bounded checks above are
-  complete. Resolve the SS2022 production-path/MTU condition and intermittent
+  complete. Validate a persistent SS2022 production-path/MTU solution beyond
+  the successful temporary socket diagnostic, resolve intermittent
   WireGuard failures, investigate the isolated Trojan timeout, and finish the
   remaining calibrated performance/evidence requirements. Bounded cancellation,
   restart and resource observations are linked above; their limits remain open. The

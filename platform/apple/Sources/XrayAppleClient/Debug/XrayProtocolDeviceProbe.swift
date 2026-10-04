@@ -31,6 +31,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
     private struct Fixture: Decodable {
         enum Mode: String, Decodable {
             case smoke, transitions, lifecycle, resources
+            case udpSweep = "udp-sweep"
             case lockWake = "lock-wake"
             case transitionsReset = "transitions-reset"
         }
@@ -40,6 +41,8 @@ private final class ProtocolDeviceProbe: ObservableObject {
         let mode: Mode?
         let probeHost: String?
         let loadSeconds: Int?
+        let udpPayloadSizes: [Int]?
+        let udpRepeats: Int?
         var trafficHost: String { probeHost ?? "v07-probe.test" }
     }
     private struct Profile: Decodable {
@@ -99,6 +102,11 @@ private final class ProtocolDeviceProbe: ObservableObject {
                         hostBundleIdentifier: Bundle.main.bundleIdentifier),
                     serverAddress: item.serverAddress, configJSON: item.configJSON,
                     debugLoggingEnabled: false, useTunFileDescriptor: true, tunRuntimeProfile: .mobile)
+                if fixture.mode == .udpSweep {
+                    try await udpSweep(fixture, profile: profile, update: update)
+                    try await cleanup()
+                    continue
+                }
                 if fixture.mode == .lifecycle || fixture.mode == .resources {
                     if fixture.mode == .lifecycle { try await lifecycle(fixture, profile: profile, update: update) }
                     else { try await resources(fixture, profile: profile, update: update) }
@@ -146,6 +154,49 @@ private final class ProtocolDeviceProbe: ObservableObject {
         } catch { passed = false; emit(["event": "fixture-removal", "result": "failed"]) }
         emit(["event": "complete", "result": passed ? "passed" : "failed"])
         update(passed ? "Checks passed. Test VPN removed." : "A check failed. See the device report.")
+    }
+
+    private func udpSweep(_ fixture: Fixture, profile: XrayClientProfile,
+                          update: (String) -> Void) async throws {
+        let sizes = fixture.udpPayloadSizes ?? [32, 1200, 1300, 1340, 1350, 1360, 1372, 1392, 1420, 1450]
+        let repeats = fixture.udpRepeats ?? 2
+        guard (1...16).contains(sizes.count), (1...3).contains(repeats),
+              sizes.allSatisfy({ (1...4096).contains($0) }) else { throw Failure.configuration }
+        try await controller.start(profile: profile)
+        try await sample(cycle: 0, stage: "udp-sweep-start")
+        var failures = 0
+        for host in ["198.51.100.7", "2001:db8::7"] {
+            for size in sizes {
+                for attempt in 1...repeats {
+                    update("\(label): UDP \(size) bytes — \(attempt)/\(repeats)")
+                    let payload = Data((0..<size).map { UInt8($0 % 251) })
+                    let started = ProcessInfo.processInfo.systemUptime
+                    emit(["event": "udp-size-start", "host": host, "bytes": size,
+                          "attempt": attempt, "timeoutSeconds": 2])
+                    do {
+                        let reply = try await ProbeExchange.run(host: host, port: fixture.udpPort,
+                            request: payload, tcpLength: nil, timeout: 2)
+                        guard reply == payload else { throw Failure.mismatch }
+                        emit(["event": "udp-size-result", "host": host, "bytes": size,
+                              "attempt": attempt, "result": "passed",
+                              "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
+                    } catch {
+                        failures += 1
+                        let detail = error as NSError
+                        emit(["event": "udp-size-result", "host": host, "bytes": size,
+                              "attempt": attempt, "result": "failed", "domain": detail.domain,
+                              "code": detail.code,
+                              "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
+                    }
+                }
+            }
+        }
+        try await sample(cycle: 0, stage: "udp-sweep-end")
+        try await controller.stop()
+        try await waitDisconnected()
+        emit(["event": "udp-sweep-complete", "attempts": sizes.count * repeats * 2,
+              "failures": failures])
+        guard failures == 0 else { throw Failure.mismatch }
     }
 
     private func lifecycle(_ fixture: Fixture, profile: XrayClientProfile,
@@ -576,7 +627,7 @@ private final class ProbeExchange: @unchecked Sendable {
         } else {
             connection.receiveMessage { [self] data, _, _, error in
                 if let error { finish(.failure(error)) }
-                else if let data, data.count <= 2048 { finish(.success(data)) }
+                else if let data, data.count <= 4096 { finish(.success(data)) }
                 else { finish(.failure(Failure.oversized)) }
             }
         }

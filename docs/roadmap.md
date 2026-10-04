@@ -786,8 +786,12 @@ performance and distribution artifact acceptance remain open; see the
 [current implementation evidence](v08-implementation-plan.md). Physical iPhone
 testing resumed: [LAN/WAN protocol checks](device-results/2026-10-03-iphone17-v08/README.md)
 and [cancellation, resource and legacy checks](device-results/2026-10-04-iphone17-lifecycle-resources/README.md)
-retain their measurements and failures. The original SS2022 WAN condition and
-intermittent WireGuard checks remain unresolved; full release acceptance is open.
+retain their measurements and failures. A [direct-socket SS2022 investigation](device-results/2026-10-04-iphone17-ss2022-mtu/README.md)
+localizes the tested UDP boundary loss to the return path after DF replies leave
+the server. Allowing fragmentation on only the temporary native Xray socket
+passes Go/iPhone size controls and iPhone Wi-Fi/cellular/Wi-Fi plus lock/wake,
+without a relay. A persistent production-path solution remains unvalidated;
+intermittent WireGuard checks and full release acceptance remain open.
 A [same-device WireGuard baseline comparison](device-results/2026-10-04-iphone17-wg-baseline/README.md)
 passed nine start/close/recovery cycles each on 0.7 and 0.8, with three further
 Trojan lifecycle passes. Earlier failures did not recur, but are not explained

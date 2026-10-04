@@ -4,6 +4,11 @@ Current acceptance status and next steps are consolidated in the
 [release readiness checklist](v08-release-readiness.md). The dated sections
 below retain their original runtime identities and historical limits.
 
+The [2026-10-04 native SS2022 UDP diagnosis](device-results/2026-10-04-iphone17-ss2022-mtu/README.md)
+adds an exact same-socket DF control, server/client size correlation and a
+passing direct iPhone transition/lock sequence. The test socket mitigation
+does not change the native candidate or qualify a persistent production setup.
+
 Started 2026-09-30 (America/Chicago).
 
 The owner selected complete **Trojan, Shadowsocks 2022 and VMess AEAD** clients
