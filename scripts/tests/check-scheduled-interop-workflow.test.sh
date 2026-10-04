@@ -379,6 +379,7 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-mobile-device-evidence.test.sh
           python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence scripts.tests.test_v07_stable_promotion scripts.tests.test_v08_release_evidence
           python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison
+          python3 scripts/tests/set-xray-ss2022-udp-pmtu.test.py
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
