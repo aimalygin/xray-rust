@@ -20,7 +20,7 @@
   "policySources": [
     {
       "path": "scripts/check-v08-release-evidence.py",
-      "sha256": "34c2dd85c0a5727c6274ed8343e491dfd91196ec15ffea007c72cedfbb97113e"
+      "sha256": "db87a7ed20516fd16d650f35bb51e6aa3b901e2621d87509552a4d97f16d8a35"
     },
     {
       "path": "scripts/check-v06-release-evidence.py",
@@ -114,7 +114,7 @@
       "artifacts": [
         {
           "path": "docs/device-results/2026-10-04-android-v08/README.md",
-          "sha256": "7e940801be5b9b58aa002129ee8fcdffa54a2fa077628ca4b8e64e7d0e0d39be"
+          "sha256": "8e2a3dcc4e157f3606131efcf595119d8f276aceece3c1be6c191bc726250157"
         },
         {
           "path": "docs/device-results/2026-10-04-android-v08/manifest.json",
@@ -127,7 +127,7 @@
       "artifacts": [
         {
           "path": "docs/device-results/2026-10-04-android-v08/packet-pump-fix/README.md",
-          "sha256": "5f2a6af572c4769288691532edaa8d216aa44039e1caaf6b344e90ac78ea5e34"
+          "sha256": "f77f092d61f153eea64f694072de2054cee3efee16f83644c882c027053bb53b"
         },
         {
           "path": "docs/device-results/2026-10-04-android-v08/packet-pump-fix/manifest.json",
@@ -353,18 +353,20 @@
             "ipv4-udp",
             "ipv6-tcp",
             "ipv6-udp",
-            "lock-wake",
             "reconnect",
             "resource-recovery",
             "routed-dns",
-            "start-stop",
-            "wifi-cellular-wifi"
+            "start-stop"
           ],
           "nonemptyTransitionsRequired": true,
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
             "android-readiness-wait"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
           ]
         },
         {
@@ -376,18 +378,20 @@
             "ipv4-udp",
             "ipv6-tcp",
             "ipv6-udp",
-            "lock-wake",
             "reconnect",
             "resource-recovery",
             "routed-dns",
-            "start-stop",
-            "wifi-cellular-wifi"
+            "start-stop"
           ],
           "nonemptyTransitionsRequired": true,
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
             "android-readiness-wait"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
           ]
         },
         {
@@ -399,18 +403,20 @@
             "ipv4-udp",
             "ipv6-tcp",
             "ipv6-udp",
-            "lock-wake",
             "reconnect",
             "resource-recovery",
             "routed-dns",
-            "start-stop",
-            "wifi-cellular-wifi"
+            "start-stop"
           ],
           "nonemptyTransitionsRequired": true,
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
             "android-readiness-wait"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
           ]
         },
         {
@@ -422,18 +428,20 @@
             "ipv4-udp",
             "ipv6-tcp",
             "ipv6-udp",
-            "lock-wake",
             "reconnect",
             "resource-recovery",
             "routed-dns",
-            "start-stop",
-            "wifi-cellular-wifi"
+            "start-stop"
           ],
           "nonemptyTransitionsRequired": true,
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
             "android-readiness-wait"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
           ]
         },
         {
@@ -452,18 +460,20 @@
             "ipv4-udp",
             "ipv6-tcp",
             "ipv6-udp",
-            "lock-wake",
             "reconnect",
             "resource-recovery",
             "routed-dns",
-            "start-stop",
-            "wifi-cellular-wifi"
+            "start-stop"
           ],
           "nonemptyTransitionsRequired": true,
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
             "android-readiness-wait"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
           ]
         },
         {
@@ -475,18 +485,20 @@
             "ipv4-udp",
             "ipv6-tcp",
             "ipv6-udp",
-            "lock-wake",
             "reconnect",
             "resource-recovery",
             "routed-dns",
-            "start-stop",
-            "wifi-cellular-wifi"
+            "start-stop"
           ],
           "nonemptyTransitionsRequired": true,
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
             "android-readiness-wait"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
           ]
         },
         {
@@ -503,7 +515,7 @@
         "apiLevel": 35,
         "abi": "arm64-v8a"
       },
-      "preparation": "Physical baseline and corrected-adapter LAN matrices complete with separate identities; network/shared and exact-new-pin acceptance remain open",
+      "preparation": "Physical baseline and corrected-adapter LAN matrices complete with separate identities; network/lock owner-skipped, not tested; active-flow/shared and exact-new-pin acceptance remain open",
       "boundedFollowup": {
         "functionalCases": 14,
         "http": 182,
@@ -640,7 +652,7 @@
     "transition-timeline"
   ],
   "openWork": [
-    "Android network/lock, active-flow and shared/legacy scenarios; preserve small-UDP stress failures",
+    "Android active-flow and shared/legacy scenarios; retain network/lock owner skips and small-UDP stress failures",
     "Reassess exact-candidate qualification after Android adapter source pin change",
     "Apple shared-scenario coverage and per-run transition/resource mapping",
     "Unresolved separate WireGuard/Trojan failures",
@@ -652,5 +664,25 @@
     "revision": "de33998158e84c03f280f979ba2d4212072e5bc4",
     "tree": "3d628e533f68671721ecf2e6ad786c15ce6f7291",
     "nativeInputsChanged": false
+  },
+  "androidOwnerDecision": {
+    "decidedOn": "2026-10-04",
+    "instruction": "для android пропускаем",
+    "selectedContext": "Дальше — Wi-Fi ↔ мобильная сеть и блокировка экрана; для переходов нужна работающая SIM.",
+    "release": "0.8",
+    "platform": "android",
+    "paths": [
+      "file-descriptor",
+      "packet-pump"
+    ],
+    "transitions": [
+      "lock-wake",
+      "wifi-cellular-wifi"
+    ],
+    "status": "owner-skipped-not-tested",
+    "policyEffect": "Excluded only from v0.8 Android required transitions; preserve in final known-limitations artifact",
+    "appleRequirementsChanged": false,
+    "failedVerdictsChanged": false,
+    "releaseAuthorized": false
   }
 }

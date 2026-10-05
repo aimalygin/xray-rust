@@ -31,7 +31,8 @@ against a clean checkout. Artifact locks are unprepared.
 These are separately identified adapter-on-native-baseline measurements, not
 fresh exact-new-pin native device builds. The earlier iPhone and Android
 reports keep their original identities. Release evidence applicability must
-be reviewed after this adapter change; no schema-4 exception is introduced.
+be reviewed after this adapter change. The adapter fix itself waives no checks;
+the subsequent owner decision below separately narrows Android acceptance.
 
 ## Physical regression and resource results
 
@@ -103,4 +104,8 @@ The recorded scripts keep failed events and separate memory/traffic verdicts.
 No formal release performance thresholds, sustained bulk transfer, Go/sing-box
 phone comparisons, Android Wi-Fi/cellular transitions, lock/wake, complete
 shared/legacy matrix or exact-candidate schema-4 archive are claimed.
+On 2026-10-04 the owner skipped Android Wi-Fi/cellular and lock/wake checks
+for v0.8 on both paths. They remain not tested, as recorded in the current
+[acceptance inventory](../../../v08-release-evidence.md); other requirements
+and all measured failures remain unchanged.
 No merge, tag, release or package publication was performed.

@@ -173,8 +173,11 @@ controller logic with private device/address settings supplied at run time.
 Run `python3 docs/device-results/2026-10-04-android-v08/verify.py` to verify
 artifact hashes, event aggregates and the native/adapter identity distinction.
 
-Android WAN transitions, lock/wake, the complete shared/legacy matrix and
-formal profiler/evidence archive remain open. Wi-Fi/cellular coverage requires
-a working SIM and operator actions; it is not inferred from local tests.
+Android WAN transitions and lock/wake were not tested. On 2026-10-04 the
+owner skipped both for v0.8, on both TUN paths; the current
+[acceptance inventory](../../v08-release-evidence.md) records the narrow policy
+change. The complete shared/legacy matrix, active-flow controls and formal
+profiler/evidence archive remain open. No WAN or lock/wake result is inferred
+from these local tests.
 No merge, release or package publication was performed. A later SDK pin must
 identify the readiness-wait adapter change separately from this native baseline.

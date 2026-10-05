@@ -18,6 +18,14 @@ PROTOCOL_TRANSITIONS = {
     "routed-dns", "start-stop", "cancel-active-flow", "reconnect",
     "wifi-cellular-wifi", "lock-wake", "resource-recovery",
 }
+# Owner decision on 2026-10-04 for v0.8: these Android checks are not tested,
+# not successful transitions. Retain the omission in release known limitations.
+ANDROID_OWNER_SKIPPED_TRANSITIONS = {"wifi-cellular-wifi", "lock-wake"}
+ANDROID_PROTOCOL_SCENARIOS = {
+    f"{protocol}-{path}"
+    for protocol in PROTOCOLS
+    for path in ("file-descriptor", "packet-pump")
+}
 SHARED_SCENARIOS = COMMON.REQUIRED_SCENARIOS | {"profile-import", "legacy-regression"}
 
 
@@ -40,14 +48,12 @@ class V08Policy(COMMON.EvidencePolicy):
     def scenarios(platform: str) -> set[str]:
         if platform == "apple":
             return SHARED_SCENARIOS | PROTOCOLS
-        return SHARED_SCENARIOS | {
-            f"{protocol}-{path}"
-            for protocol in PROTOCOLS
-            for path in ("file-descriptor", "packet-pump")
-        }
+        return SHARED_SCENARIOS | ANDROID_PROTOCOL_SCENARIOS
 
     @staticmethod
     def transitions(scenario: str) -> set[str]:
+        if scenario in ANDROID_PROTOCOL_SCENARIOS:
+            return PROTOCOL_TRANSITIONS - ANDROID_OWNER_SKIPPED_TRANSITIONS
         if any(scenario == name or scenario.startswith(name + "-") for name in PROTOCOLS):
             return PROTOCOL_TRANSITIONS
         if scenario == "profile-import":

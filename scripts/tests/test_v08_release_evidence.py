@@ -60,11 +60,28 @@ class V08ReleaseEvidenceTests(unittest.TestCase):
         for platform in ["apple", "android"]:
             for name in V08.POLICY.scenarios(platform) - V08.SHARED_SCENARIOS:
                 for transition in V08.PROTOCOL_TRANSITIONS:
+                    if platform == "android" and transition in {"wifi-cellular-wifi", "lock-wake"}:
+                        continue
                     with self.subTest(platform=platform, scenario=name, transition=transition):
                         def omit(m, _):
                             device = next(d for d in m["devices"] if d["platform"] == platform)
                             next(s for s in device["scenarios"] if s["id"] == name)["transitions"].remove(transition)
                         self.reject(omit, "transitions must include")
+
+    def test_owner_skip_is_limited_to_android_network_and_lock(self):
+        expected = {"wifi-cellular-wifi", "lock-wake"}
+        for protocol in ["trojan", "shadowsocks2022", "vmess"]:
+            self.assertEqual(V08.POLICY.transitions(protocol), V08.PROTOCOL_TRANSITIONS)
+            for path in ["file-descriptor", "packet-pump"]:
+                self.assertEqual(
+                    V08.POLICY.transitions(f"{protocol}-{path}"),
+                    V08.PROTOCOL_TRANSITIONS - expected,
+                )
+        manifest, _ = self.evidence()
+        android = next(d for d in manifest["devices"] if d["platform"] == "android")
+        for scenario in android["scenarios"]:
+            self.assertTrue(expected.isdisjoint(scenario["transitions"]))
+        V08.validate_archive(self.write_zip(), legacy.REVISION, legacy.TREE)
 
     def test_each_protocol_budget_is_enforced(self):
         for name in V08.POLICY.measurement_comparisons:

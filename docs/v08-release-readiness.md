@@ -128,7 +128,12 @@ The SDK development source pin is now `0d788564d85505ba0e2778320a561bc3d6500346`
 checks pass locally. Rust/JNI used by these phone runs remains `de339981`; this
 is not a fresh exact-new-pin release build. Earlier iPhone/native evidence is
 historical supporting material whose applicability must be reviewed, and all
-original failures remain retained. No schema-4 exception is added.
+original failures remain retained. The adapter change itself waives no checks.
+
+On 2026-10-04 the owner separately skipped Android Wi-Fi/cellular transitions
+and lock/wake for v0.8, on both FileDescriptor and PacketPump. These are
+**not tested**, not passes; the v0.8 policy omits only those two Android
+requirements. Apple requirements and recorded UDP failures remain unchanged.
 
 ## Remaining acceptance, in order
 
@@ -147,11 +152,13 @@ original failures remain retained. No schema-4 exception is added.
   separate unregistered iPad remains deferred; no account change was made.
 - [ ] Collect Android scenarios for each protocol through both FileDescriptor
   and PacketPump. Physical LAN/lifecycle/resource observations now exist;
-  network/lock transitions and shared/legacy coverage remain incomplete.
-  Host tests and emulator results do not close this device gate.
+  network/lock transitions are owner-skipped (not tested). Active-flow controls
+  and shared/legacy coverage remain open. Host tests and emulator results do
+  not close this device gate.
 - [ ] For each protocol/device path, record IPv4/IPv6 TCP and UDP, domain
   destinations, routed DNS, start/stop, cancellation, reconnect, Wi-Fi/cellular
-  transitions, lock/wake and bounded resource recovery. Include profile imports,
+  transitions and lock/wake (Apple; owner-skipped on Android), and bounded
+  resource recovery. Include profile imports,
   redacted failures and the shared legacy scenarios. There is no fixed-duration
   long-soak requirement; record actual durations and limits.
 - [ ] Assemble the exact-candidate schema-4 archive required by

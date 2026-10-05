@@ -809,7 +809,10 @@ production-path acceptance remains open. See the [deployment recipe and limits](
 On 2026-10-04 the owner deferred additional SS2022 UDP diagnosis and directed
 work to continue. The losses remain recorded as known limitations. Next work
 is [physical-device and schema-4 evidence assembly](v08-release-evidence.md),
-with Android network/shared scenarios and exact-candidate measurements still needed.
+with Android shared scenarios and exact-candidate measurements still needed.
+On 2026-10-04 the owner skipped Android Wi-Fi/cellular and lock/wake checks
+for v0.8 on both paths. They remain explicitly not tested; the v0.8 policy
+excludes only these two Android requirements, while Apple coverage is unchanged.
 The [Samsung LAN report](device-results/2026-10-04-android-v08/README.md) preserves
 both TUN paths, all ciphers, original UDP stress losses and the PacketPump
 idle-CPU diagnosis. A bounded readiness wait corrects the adapter busy loop;

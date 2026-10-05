@@ -44,8 +44,10 @@ retains rare UDP stress timeouts and revealed an independent PacketPump idle
 CPU busy loop. `Os.poll` now waits after empty TUN reads without larger packet
 buffers. SDK source pin `0d788564d85505ba0e2778320a561bc3d6500346` carries that
 adapter fix; phone native/JNI remains the separately identified `de339981`
-baseline. Reassess release evidence after the adapter change; network/lock,
-shared scenarios and exact-candidate qualification remain open.
+baseline. Reassess release evidence after the adapter change; active-flow
+controls, shared scenarios and exact-candidate qualification remain open.
+On 2026-10-04 the owner skipped Android Wi-Fi/cellular and lock/wake checks
+for v0.8 on both paths. Record them as not tested; Apple requirements remain.
 
 ## Fixed compatibility and distribution boundaries
 
@@ -239,7 +241,9 @@ failed/uncertain measurements.
 
 Physical acceptance covers import, TCP/UDP/DNS, cancellation, reconnect,
 lock/wake, network transitions and bounded resource recovery for all three
-protocols, including Android FileDescriptor and PacketPump. Reports identify
+protocols, including Android FileDescriptor and PacketPump. The subsequent
+2026-10-04 owner decision excludes Android network transitions and lock/wake
+from v0.8 acceptance; these two checks remain not tested. Reports identify
 the exact candidate, device/OS, durations, transitions and measured limits.
 The 0.7 Android cellular and timeout exceptions are not inherited, and there is
 no fixed-duration long-soak requirement.
