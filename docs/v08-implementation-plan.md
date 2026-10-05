@@ -44,8 +44,11 @@ retains rare UDP stress timeouts and revealed an independent PacketPump idle
 CPU busy loop. `Os.poll` now waits after empty TUN reads without larger packet
 buffers. SDK source pin `0d788564d85505ba0e2778320a561bc3d6500346` carries that
 adapter fix; phone native/JNI remains the separately identified `de339981`
-baseline. Reassess release evidence after the adapter change; active-flow
-controls, shared scenarios and exact-candidate qualification remain open.
+baseline. The [legacy and active-flow follow-up](device-results/2026-10-04-android-regressions/README.md)
+separates local cancellation, server teardown and recovery. It retains
+WireGuard/SS2022 remote-close failures and a Trojan UDP recovery timeout.
+Review those findings, complete other shared scenarios and reassess
+exact-candidate qualification after the adapter change.
 On 2026-10-04 the owner skipped Android Wi-Fi/cellular and lock/wake checks
 for v0.8 on both paths. Record them as not tested; Apple requirements remain.
 

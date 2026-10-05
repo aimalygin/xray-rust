@@ -1,0 +1,982 @@
+{"fixture": "legacy-udp-pilot", "backend": "http", "status": 204}
+{"fixture": "legacy-udp-pilot", "backend": "udp-pending", "queryTag": "1215c5e1cf1103d4", "time": 1791166299.285356, "delaySeconds": 3}
+{"fixture": "legacy-udp-pilot", "backend": "udp", "requestBytes": 67, "time": 1791166302.287157, "queryTag": "1215c5e1cf1103d4", "responseBytes": 83}
+{"fixture": "legacy-udp-pilot", "backend": "http", "status": 204}
+{"fixture": "legacy-udp-pilot", "backend": "udp-pending", "queryTag": "c0f1059e41b9e54b", "time": 1791166305.577763, "delaySeconds": 3}
+{"fixture": "legacy-udp-pilot", "backend": "udp", "requestBytes": 67, "time": 1791166308.5794098, "queryTag": "c0f1059e41b9e54b", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "048ba9b352424e73", "time": 1791166360.656956, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166363.657411, "queryTag": "048ba9b352424e73", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "7a9c75e5fb159e20", "time": 1791166367.127051, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166370.128421, "queryTag": "7a9c75e5fb159e20", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "a9d543dd029bb57a", "time": 1791166378.650444, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166381.6517582, "queryTag": "a9d543dd029bb57a", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "21fdb210a5920915", "time": 1791166385.148428, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166388.149865, "queryTag": "21fdb210a5920915", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "a419d2da37b5a976", "time": 1791166395.629057, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166398.630285, "queryTag": "a419d2da37b5a976", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "d7a9a0880505df2a", "time": 1791166411.3178508, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166414.318738, "queryTag": "d7a9a0880505df2a", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "326345b1c1296cc5", "time": 1791166417.87237, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166420.873764, "queryTag": "326345b1c1296cc5", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "bd3b565ca7fe9f8e", "time": 1791166429.09955, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166432.101114, "queryTag": "bd3b565ca7fe9f8e", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "c782ef0f1c1b4852", "time": 1791166435.484617, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166438.486134, "queryTag": "c782ef0f1c1b4852", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "e48042f51fd98de8", "time": 1791166448.299048, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166451.3006039, "queryTag": "e48042f51fd98de8", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "c30c1057ec8c367d", "time": 1791166462.766005, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166465.7674549, "queryTag": "c30c1057ec8c367d", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "41c1bf491462c9ea", "time": 1791166469.031012, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166472.032434, "queryTag": "41c1bf491462c9ea", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "97f2f01e56a74904", "time": 1791166480.04703, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166483.0484202, "queryTag": "97f2f01e56a74904", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "adfdf0124b71c45c", "time": 1791166486.97793, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166489.979444, "queryTag": "adfdf0124b71c45c", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "83a3b22dfba7ff7a", "time": 1791166497.435054, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166500.4354072, "queryTag": "83a3b22dfba7ff7a", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "968144a5ae6d03a6", "time": 1791166511.295634, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166514.2971919, "queryTag": "968144a5ae6d03a6", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "52106aa1dbbcc550", "time": 1791166517.369688, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166520.370998, "queryTag": "52106aa1dbbcc550", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "4d33687d3dd9a727", "time": 1791166528.402977, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166531.4044201, "queryTag": "4d33687d3dd9a727", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "acf1044384e6d735", "time": 1791166535.08153, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166538.082806, "queryTag": "acf1044384e6d735", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "e9d531baa80e1f7c", "time": 1791166546.113354, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166549.114608, "queryTag": "e9d531baa80e1f7c", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "6df21db909f41dea", "time": 1791166560.7976131, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166563.798157, "queryTag": "6df21db909f41dea", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "e0270e336e252489", "time": 1791166567.048875, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166570.050153, "queryTag": "e0270e336e252489", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "7d8c2953ff2d4cea", "time": 1791166578.38864, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166581.390076, "queryTag": "7d8c2953ff2d4cea", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "6a4ad53c2f5a1a25", "time": 1791166585.154443, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166588.155166, "queryTag": "6a4ad53c2f5a1a25", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "f1dce8bc4b6a6fc5", "time": 1791166595.9410508, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166598.9423401, "queryTag": "f1dce8bc4b6a6fc5", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "77831f0e56558904", "time": 1791166610.086758, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166613.087713, "queryTag": "77831f0e56558904", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "4eb27218f1025d0f", "time": 1791166616.293172, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166619.294753, "queryTag": "4eb27218f1025d0f", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "49bb1fd2f8c9c06b", "time": 1791166627.447457, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166630.448684, "queryTag": "49bb1fd2f8c9c06b", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "6e531feaf9d00b87", "time": 1791166634.247688, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166637.249163, "queryTag": "6e531feaf9d00b87", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "5f381d3209e7c033", "time": 1791166644.794202, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166647.795684, "queryTag": "5f381d3209e7c033", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "180e4c1d1891cf32", "time": 1791166659.381129, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166662.3836899, "queryTag": "180e4c1d1891cf32", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "7df9f58a224d2902", "time": 1791166665.6117609, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166668.614313, "queryTag": "7df9f58a224d2902", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "9092fb69b7aa7675", "time": 1791166676.5994618, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166679.60185, "queryTag": "9092fb69b7aa7675", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "edfcef48cc7974ba", "time": 1791166683.269345, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166686.271706, "queryTag": "edfcef48cc7974ba", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "54533d26ff1b00ba", "time": 1791166694.275063, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166697.2774441, "queryTag": "54533d26ff1b00ba", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "81fc9de8a4b652c7", "time": 1791166707.732142, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166710.733788, "queryTag": "81fc9de8a4b652c7", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "09da13383b9fa6f3", "time": 1791166713.8760252, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166716.8777862, "queryTag": "09da13383b9fa6f3", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "c2d0dd093674e23e", "time": 1791166724.9556339, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166727.957056, "queryTag": "c2d0dd093674e23e", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "b28447da36b5104e", "time": 1791166731.708954, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166734.711196, "queryTag": "b28447da36b5104e", "responseBytes": 83}
+{"fixture": "legacy-udp", "backend": "http", "status": 204}
+{"fixture": "legacy-udp", "backend": "udp-pending", "queryTag": "c4f7cae294010e8f", "time": 1791166742.6479611, "delaySeconds": 3}
+{"fixture": "legacy-udp", "backend": "udp", "requestBytes": 67, "time": 1791166745.650329, "queryTag": "c4f7cae294010e8f", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165919.11961, "queryTag": "0d2fcab2d5cf607b", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165920.366519, "queryTag": "f90eaa4080246f20", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165922.4538639, "queryTag": "399b261e212a2b8c", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165923.771182, "queryTag": "b44684ab52a338e3", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165926.135426, "queryTag": "08fd9e75d9ded38c", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165927.477168, "queryTag": "d5a35c385c0422bc", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 1001, "time": 1791165931.265614}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165933.728987, "queryTag": "e396fc0af19baf3c", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-close", "id": 1001, "reason": "eof", "time": 1791165934.535715}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165942.032979, "queryTag": "416d48d9f9894f60", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165943.319896, "queryTag": "d9795a4f42509bf9", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 1002, "time": 1791165946.523394}
+{"fixture": "legacy", "backend": "hold-close", "id": 1002, "reason": "eof", "time": 1791165947.75214}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165956.333434, "queryTag": "a792f0dac6ce9634", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165957.581952, "queryTag": "8fc50f373b57996d", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165981.59358, "queryTag": "652efde254e7e6e5", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165983.580668, "queryTag": "5b4c78fefaaac291", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165986.9705431, "queryTag": "a33bca552f4f4459", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165988.345244, "queryTag": "2ac4637ddd5a4c3f", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165990.699671, "queryTag": "0e2c0bb4876a87c7", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165992.007945, "queryTag": "4af81507933f0ed8", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11001, "time": 1791165995.1464791}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791165997.4616, "queryTag": "d9975db380df8665", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-close", "id": 11001, "reason": "eof", "time": 1791165998.354155}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166005.746189, "queryTag": "e9625a19577738fa", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166007.057591, "queryTag": "abe7c7ff793e81c1", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11002, "time": 1791166010.346378}
+{"fixture": "legacy", "backend": "hold-close", "id": 11002, "reason": "eof", "time": 1791166011.7729962}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166020.308977, "queryTag": "38fdf3087ff709ba", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166021.588523, "queryTag": "ca92b386d800061d", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166031.979923, "queryTag": "fd8e98fe49c7d29d", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166033.070932, "queryTag": "3b48e272c5ed2df1", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166035.483392, "queryTag": "234acc83f33df4f9", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166036.594743, "queryTag": "348cf46bd5b94ccd", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166039.0450711, "queryTag": "f2baf6cc59628fcd", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166040.154088, "queryTag": "f079e6af210c0812", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11003, "time": 1791166043.5421262}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166043.779049, "queryTag": "6f74265180de7dd5", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-close", "id": 11003, "reason": "eof", "time": 1791166044.746315}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166052.134735, "queryTag": "e7b359c5be61d0ea", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166053.2632298, "queryTag": "f4181a4b02d26376", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11004, "time": 1791166056.695856}
+{"fixture": "legacy", "backend": "hold-close", "id": 11004, "reason": "eof", "time": 1791166057.877228}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166066.368952, "queryTag": "2ea65000727c829e", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166067.4444008, "queryTag": "faab223c3f4b750b", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166077.501529, "queryTag": "4fbf92082a096fc3", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166078.6416278, "queryTag": "394dec825b3ecaef", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166081.055559, "queryTag": "05ba658a8c00c8d7", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166082.182395, "queryTag": "1a09abe92bb59245", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166084.640438, "queryTag": "ecaf663ae7ff54dc", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166085.770654, "queryTag": "979067e781e19187", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11005, "time": 1791166089.179243}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166089.40219, "queryTag": "abcdead19ea3c831", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-close", "id": 11005, "reason": "eof", "time": 1791166090.360667}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166097.9388359, "queryTag": "bedb35d123741323", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166099.038802, "queryTag": "2af2d10e25a5d5f8", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11006, "time": 1791166102.294846}
+{"fixture": "legacy", "backend": "hold-close", "id": 11006, "reason": "eof", "time": 1791166103.5239098}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166111.963437, "queryTag": "87a868a4aec2a2ba", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166113.034871, "queryTag": "6fedfabaac251e4b", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166123.037048, "queryTag": "643223795a576511", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166124.075278, "queryTag": "20089be9c1230d2f", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166125.810861, "queryTag": "ccfa3f74fc50ce10", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166126.853558, "queryTag": "379a5050ed8c1476", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166128.759789, "queryTag": "9e10f156e031cb0d", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166129.804033, "queryTag": "3c2a6a9366979cfb", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11007, "time": 1791166133.3040378}
+{"fixture": "legacy", "backend": "hold-close", "id": 11007, "reason": "eof", "time": 1791166133.503786}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166133.507088, "queryTag": "e52bd369a992ff58", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166140.780096, "queryTag": "6713a05bc25daa89", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166141.8226728, "queryTag": "3dc20e923b96276c", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11008, "time": 1791166144.933842}
+{"fixture": "legacy", "backend": "hold-close", "id": 11008, "reason": "eof", "time": 1791166145.102997}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166153.600157, "queryTag": "756b9afae9a629e7", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166154.6302872, "queryTag": "c8135679db30063e", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166164.902591, "queryTag": "f3f06ed776403adb", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166165.9443, "queryTag": "5ffd61e97451cbff", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166168.257011, "queryTag": "6a25c7e69a3cce39", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166169.29032, "queryTag": "326bd51de36e4c7c", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166171.3511062, "queryTag": "cb8f64969fd8bcac", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166172.479912, "queryTag": "79509d5ea2008ce7", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11009, "time": 1791166175.8678021}
+{"fixture": "legacy", "backend": "hold-close", "id": 11009, "reason": "eof", "time": 1791166176.062094}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166176.075519, "queryTag": "44e748b1dde8f6a5", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166183.235445, "queryTag": "69def6b2841a01f8", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166184.270016, "queryTag": "4a254d11868e4a68", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11010, "time": 1791166187.232977}
+{"fixture": "legacy", "backend": "hold-close", "id": 11010, "reason": "eof", "time": 1791166187.49935}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166195.9019752, "queryTag": "3462777a1092fbb3", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166196.945715, "queryTag": "224410c44cc5645a", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166207.516476, "queryTag": "db026da60b8b06c0", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166208.553113, "queryTag": "53f6cb1a90bd6f21", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166210.470388, "queryTag": "60b7bba559f4c46c", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166211.552025, "queryTag": "465ed0cdc560db7a", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166213.8839629, "queryTag": "f96be29cf82c6fdf", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166215.247467, "queryTag": "ecdf183827c301fa", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11011, "time": 1791166218.406081}
+{"fixture": "legacy", "backend": "hold-close", "id": 11011, "reason": "eof", "time": 1791166218.5760782}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166218.576422, "queryTag": "fc2bd74fdf157df9", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166225.757579, "queryTag": "af5e6e83c9dbacd6", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166227.025867, "queryTag": "fef6cc25de4d1d58", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11012, "time": 1791166230.3934112}
+{"fixture": "legacy", "backend": "hold-close", "id": 11012, "reason": "eof", "time": 1791166230.565703}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166238.8675132, "queryTag": "ecf6babf962fd0c7", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166239.93585, "queryTag": "e39c2664994e93dc", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166249.518047, "queryTag": "f443c5bcaeb534e1", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166250.668231, "queryTag": "121295e21a4bc3de", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166252.97774, "queryTag": "71abd648db9fad99", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166254.023731, "queryTag": "70ebd1d91faaab84", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166255.823562, "queryTag": "482cd4c8561e51f6", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166256.88398, "queryTag": "a8c9a3b5993d9bb2", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11013, "time": 1791166259.8579268}
+{"fixture": "legacy", "backend": "hold-close", "id": 11013, "reason": "eof", "time": 1791166260.0334752}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166260.035845, "queryTag": "f26221cd81ed10b1", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166267.281446, "queryTag": "696ffe56bd29a1b0", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166268.347902, "queryTag": "0e90b21d9dfc8e83", "responseBytes": 83}
+{"fixture": "legacy", "backend": "hold-open", "id": 11014, "time": 1791166271.382568}
+{"fixture": "legacy", "backend": "hold-close", "id": 11014, "reason": "eof", "time": 1791166271.813476}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166280.343929, "queryTag": "f4aaade408af4c36", "responseBytes": 83}
+{"fixture": "legacy", "backend": "http", "status": 204}
+{"fixture": "legacy", "backend": "udp", "requestBytes": 67, "time": 1791166281.570385, "queryTag": "2dcbc6fa06ee63cc", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 7001, "time": 1791168403.9690309}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 7001, "reason": "TimeoutError", "time": 1791168423.9718888}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 7002, "time": 1791168424.1184099}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 7002, "reason": "TimeoutError", "time": 1791168444.119234}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 7003, "time": 1791168444.257632}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 7003, "reason": "TimeoutError", "time": 1791168464.26021}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6001, "time": 1791168468.564822}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168468.734853, "queryTag": "7375c1f567397ebc", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168477.503556, "queryTag": "ab7f1eec5329196a", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168478.5911849, "queryTag": "c432628ba01e6e28", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6001, "reason": "TimeoutError", "time": 1791168488.5674372}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6002, "time": 1791168495.152808}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168505.189666, "queryTag": "e6664bdfe436e867", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168506.243728, "queryTag": "27de205b1ada1cff", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6002, "reason": "TimeoutError", "time": 1791168515.1546519}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6003, "time": 1791168521.37109}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168521.523071, "queryTag": "678892414e1d1333", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168530.590409, "queryTag": "a6f5b979c0b22d48", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168531.660749, "queryTag": "061a5f43a4c5b5c3", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6003, "reason": "TimeoutError", "time": 1791168541.374157}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6004, "time": 1791168547.483733}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168557.550684, "queryTag": "ab5c7cd3c45bfb02", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168558.593921, "queryTag": "16c6b74305b61124", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6004, "reason": "TimeoutError", "time": 1791168567.486752}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6005, "time": 1791168574.8743591}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168575.0053818, "queryTag": "18900d2c783be0f1", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168583.934458, "queryTag": "7b4b7c0da0e0d3c0", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168585.008846, "queryTag": "678eaaab0e5ecdc0", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6005, "reason": "TimeoutError", "time": 1791168594.876876}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6006, "time": 1791168601.433738}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168611.5217211, "queryTag": "1943ebc775c8ee56", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168612.56415, "queryTag": "98980f9eb4ef850c", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6006, "reason": "TimeoutError", "time": 1791168621.4365828}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6007, "time": 1791168627.852302}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168628.200746, "queryTag": "a29d5d121316a50d", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168637.0842292, "queryTag": "82e6ff5c1c347157", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168638.20522, "queryTag": "c0e175b804b0dc18", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6007, "reason": "TimeoutError", "time": 1791168647.8551428}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6008, "time": 1791168654.324657}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168664.3852952, "queryTag": "c52f3eeb99fd59c7", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168665.4290712, "queryTag": "c43700300326e7ee", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6008, "reason": "TimeoutError", "time": 1791168674.3275}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6009, "time": 1791168680.447577}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168680.60289, "queryTag": "743ee1e61f9238c6", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168689.3619578, "queryTag": "26d1b38a756660c2", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168690.3995469, "queryTag": "ea250293eff2d0b5", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6009, "reason": "TimeoutError", "time": 1791168700.450328}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6010, "time": 1791168707.3422341}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168717.447225, "queryTag": "73f762dca6be22cf", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168718.495156, "queryTag": "ef2a7ba1a10ef29d", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6010, "reason": "TimeoutError", "time": 1791168727.345025}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6011, "time": 1791168733.7303429}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168733.9784179, "queryTag": "2685b3aed38c4234", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168742.6987252, "queryTag": "ac0f14dd2614b313", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168743.7386088, "queryTag": "45f76b30ca9fd19f", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6011, "reason": "TimeoutError", "time": 1791168753.733286}
+{"fixture": "ss2022-control", "backend": "hold-open", "id": 6012, "time": 1791168760.153079}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168771.1047199, "queryTag": "4f69642ac8d6e4f8", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "http", "status": 204}
+{"fixture": "ss2022-control", "backend": "udp", "requestBytes": 67, "time": 1791168772.151168, "queryTag": "21e1d6ec239e5c6c", "responseBytes": 83}
+{"fixture": "ss2022-control", "backend": "hold-close", "id": 6012, "reason": "TimeoutError", "time": 1791168780.154166}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "b786e64f059e5a7b", "time": 1791166914.6751292, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166917.676616, "queryTag": "b786e64f059e5a7b", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "ac4b9929d1da79a8", "time": 1791166921.4896152, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166924.490947, "queryTag": "ac4b9929d1da79a8", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "709172adade550e5", "time": 1791166932.299953, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166935.301335, "queryTag": "709172adade550e5", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "4e5efbc28bef911f", "time": 1791166938.321017, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166941.322386, "queryTag": "4e5efbc28bef911f", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "9db239388e56a4da", "time": 1791166949.021198, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166952.0224829, "queryTag": "9db239388e56a4da", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "5d7f01a9819c95d4", "time": 1791166962.449504, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166965.4502132, "queryTag": "5d7f01a9819c95d4", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "adf65b1bc6e29c51", "time": 1791166968.699969, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166971.701299, "queryTag": "adf65b1bc6e29c51", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "9140e7ec62140e72", "time": 1791166979.9689941, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166982.9704661, "queryTag": "9140e7ec62140e72", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "95f8240650ed7b84", "time": 1791166986.024041, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166989.025391, "queryTag": "95f8240650ed7b84", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "bebd9223a99adf6a", "time": 1791166996.9601521, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791166999.961476, "queryTag": "bebd9223a99adf6a", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "2e0ab0e104c839c2", "time": 1791167010.637048, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167013.637716, "queryTag": "2e0ab0e104c839c2", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "869e37ff304a46fa", "time": 1791167016.682251, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167019.682831, "queryTag": "869e37ff304a46fa", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "95c049160417f490", "time": 1791167027.972259, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167030.9736881, "queryTag": "95c049160417f490", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "78563e8964b262d6", "time": 1791167034.695335, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167037.696667, "queryTag": "78563e8964b262d6", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "791f744ea37d9cd0", "time": 1791167044.937425, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167047.938813, "queryTag": "791f744ea37d9cd0", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "5285a983562c68d2", "time": 1791167058.966547, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167061.967368, "queryTag": "5285a983562c68d2", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "f3f1d9a9ae4146be", "time": 1791167065.090107, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167068.091723, "queryTag": "f3f1d9a9ae4146be", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "c85970094d2f884b", "time": 1791167076.663718, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167079.6650088, "queryTag": "c85970094d2f884b", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "913fa40454e299f4", "time": 1791167083.43717, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167086.43855, "queryTag": "913fa40454e299f4", "responseBytes": 83}
+{"fixture": "v07-udp", "backend": "http", "status": 204}
+{"fixture": "v07-udp", "backend": "udp-pending", "queryTag": "7cc7b3f523eef40e", "time": 1791167094.2637582, "delaySeconds": 3}
+{"fixture": "v07-udp", "backend": "udp", "requestBytes": 67, "time": 1791167097.265248, "queryTag": "7cc7b3f523eef40e", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166757.925596, "queryTag": "9fc6a7493d59ac7e", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166758.970082, "queryTag": "37071c77427aacba", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166760.770742, "queryTag": "9f2868c5f4333a0a", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166761.804734, "queryTag": "c6d4ae3092ff7227", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166763.674597, "queryTag": "a43125fe29875ac7", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166764.758772, "queryTag": "9ca21898c7b0a04b", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-open", "id": 2001, "time": 1791166768.3258162}
+{"fixture": "v07", "backend": "hold-close", "id": 2001, "reason": "eof", "time": 1791166770.576069}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166770.579504, "queryTag": "d99ce68cb6687f63", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166777.7726789, "queryTag": "47c7260818df2765", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166778.82646, "queryTag": "a270123c571a0b5d", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-open", "id": 2002, "time": 1791166782.802979}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166793.511654, "queryTag": "dd0925e95e9cb6e7", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166794.550546, "queryTag": "1b9e9fe51be46674", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166796.9187799, "queryTag": "9f492c305416275b", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166797.951763, "queryTag": "f4d52e72d5d70c47", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166799.910208, "queryTag": "967f130bd64f1b9f", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166801.016237, "queryTag": "67107808b597c29c", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-close", "id": 2002, "reason": "TimeoutError", "time": 1791166802.804683}
+{"fixture": "v07", "backend": "hold-open", "id": 2003, "time": 1791166804.3917272}
+{"fixture": "v07", "backend": "hold-close", "id": 2003, "reason": "eof", "time": 1791166806.629538}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166806.635056, "queryTag": "0a59fb55e26a3ffb", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166813.951787, "queryTag": "e0b1ed2e2bd4cfba", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166815.000731, "queryTag": "b91edd87389fddb8", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-open", "id": 2004, "time": 1791166818.514509}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166829.55739, "queryTag": "5efb5e5602ff7348", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166830.609046, "queryTag": "c6ae7155be1594f2", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166832.456331, "queryTag": "6d9e2614c942b82a", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166833.491713, "queryTag": "9cde1d1dda253991", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166835.2894132, "queryTag": "5831751c0b57c6ad", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166836.349074, "queryTag": "3fcdd727216daf77", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-close", "id": 2004, "reason": "TimeoutError", "time": 1791166838.5162392}
+{"fixture": "v07", "backend": "hold-open", "id": 2005, "time": 1791166839.309351}
+{"fixture": "v07", "backend": "hold-close", "id": 2005, "reason": "eof", "time": 1791166839.484981}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166839.4851809, "queryTag": "806825e2a54e6710", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166846.668593, "queryTag": "6e2856bc64918892", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166847.706624, "queryTag": "a6429a8dca783e22", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-open", "id": 2006, "time": 1791166850.727248}
+{"fixture": "v07", "backend": "hold-close", "id": 2006, "reason": "eof", "time": 1791166850.927312}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166859.24574, "queryTag": "6b30bebdd9b02c12", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166860.2856681, "queryTag": "f74737192538bbd6", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166869.821326, "queryTag": "bffec220c235da2b", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166870.9604611, "queryTag": "f13c1d8101309a39", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166873.3143659, "queryTag": "bc47a9ca63f2dc38", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166874.3524458, "queryTag": "f6b7db4141816686", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166876.181365, "queryTag": "9269ada7cf1ee22a", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166877.225396, "queryTag": "73b41e9f64bdb137", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-open", "id": 2007, "time": 1791166880.185493}
+{"fixture": "v07", "backend": "hold-close", "id": 2007, "reason": "eof", "time": 1791166880.381202}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166880.381505, "queryTag": "181af7871a29771d", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166887.6007218, "queryTag": "2bdf6836ec0261ba", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166888.6790771, "queryTag": "a0ed72f900382a4a", "responseBytes": 83}
+{"fixture": "v07", "backend": "hold-open", "id": 2008, "time": 1791166892.2297862}
+{"fixture": "v07", "backend": "hold-close", "id": 2008, "reason": "eof", "time": 1791166892.568983}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166900.860432, "queryTag": "70027677057743c7", "responseBytes": 83}
+{"fixture": "v07", "backend": "http", "status": 204}
+{"fixture": "v07", "backend": "udp", "requestBytes": 67, "time": 1791166901.906234, "queryTag": "66ca91db88775150", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "f153ec456f710418", "time": 1791167511.66089, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167514.662306, "queryTag": "f153ec456f710418", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "6e96802428f9bd17", "time": 1791167518.356467, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167521.357825, "queryTag": "6e96802428f9bd17", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "8ce230f6b34b7770", "time": 1791167529.4707708, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167532.471435, "queryTag": "8ce230f6b34b7770", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "cac03511c11cd923", "time": 1791167536.1741078, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167539.175503, "queryTag": "cac03511c11cd923", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "a4461d2833be5d3c", "time": 1791167546.9398441, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167549.940537, "queryTag": "a4461d2833be5d3c", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "1a82d7ecbfbd4326", "time": 1791167561.159405, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167564.161068, "queryTag": "1a82d7ecbfbd4326", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d2d2e2a484eba9c0", "time": 1791167568.0276139, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167571.029119, "queryTag": "d2d2e2a484eba9c0", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "46c9564fccd01bbe", "time": 1791167579.754889, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167582.756604, "queryTag": "46c9564fccd01bbe", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "f0e990fba041d75a", "time": 1791167587.333052, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167590.3338728, "queryTag": "f0e990fba041d75a", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d309e831485adf70", "time": 1791167597.861114, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167600.862493, "queryTag": "d309e831485adf70", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "283e871f7e554ee9", "time": 1791167612.749411, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167615.750441, "queryTag": "283e871f7e554ee9", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "8aeb657e7ff2750a", "time": 1791167618.9957812, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167621.997371, "queryTag": "8aeb657e7ff2750a", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "fa37f51763c769d9", "time": 1791167630.33592, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167633.337219, "queryTag": "fa37f51763c769d9", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "a33a71125063b4d5", "time": 1791167637.085556, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167640.086824, "queryTag": "a33a71125063b4d5", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "dbe027ef0d709f8e", "time": 1791167648.901075, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167651.902635, "queryTag": "dbe027ef0d709f8e", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "7e8f4f477b2cd510", "time": 1791167662.56097, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167665.562378, "queryTag": "7e8f4f477b2cd510", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "5e98e0c427340239", "time": 1791167668.901771, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167671.9031801, "queryTag": "5e98e0c427340239", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "7bdbc190e579694b", "time": 1791167680.847948, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167683.849254, "queryTag": "7bdbc190e579694b", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "7e20852ca9e7f820", "time": 1791167687.611905, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167690.61342, "queryTag": "7e20852ca9e7f820", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "9b30283fff339c73", "time": 1791167698.208813, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167701.21039, "queryTag": "9b30283fff339c73", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "40f98df372a520b3", "time": 1791167713.104218, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167716.105723, "queryTag": "40f98df372a520b3", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "b59041b208430fa5", "time": 1791167719.50331, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167722.504535, "queryTag": "b59041b208430fa5", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "f683de3cdcaecd58", "time": 1791167730.772746, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167733.7740622, "queryTag": "f683de3cdcaecd58", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "e5cefa5660403784", "time": 1791167740.447535, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167743.448912, "queryTag": "e5cefa5660403784", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "f288750761780b12", "time": 1791167751.00354, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167754.00491, "queryTag": "f288750761780b12", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d3090902fdfe803b", "time": 1791167765.235792, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167768.237362, "queryTag": "d3090902fdfe803b", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "e3b671fbafef2bfe", "time": 1791167771.369953, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167774.37106, "queryTag": "e3b671fbafef2bfe", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "06eb559d9a9741e7", "time": 1791167782.39237, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167785.393787, "queryTag": "06eb559d9a9741e7", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "a10b0b40aa79220c", "time": 1791167789.1737669, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167792.175336, "queryTag": "a10b0b40aa79220c", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "f2e246ae26e43234", "time": 1791167800.246529, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167803.247894, "queryTag": "f2e246ae26e43234", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "a5d87513c2da366c", "time": 1791167814.3795042, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167817.382232, "queryTag": "a5d87513c2da366c", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "7235911b1e1d3ada", "time": 1791167820.716584, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167823.719229, "queryTag": "7235911b1e1d3ada", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "9589ce16f85784fe", "time": 1791167831.9850261, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167834.9874449, "queryTag": "9589ce16f85784fe", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "129e693ce8f568f7", "time": 1791167838.804696, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167841.8071702, "queryTag": "129e693ce8f568f7", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d268e04c2415a314", "time": 1791167849.9219258, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167852.924499, "queryTag": "d268e04c2415a314", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "4741d5941dd7e3eb", "time": 1791167864.197031, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167867.1995142, "queryTag": "4741d5941dd7e3eb", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d7e68b5b1bfb09fa", "time": 1791167870.369785, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167873.3722491, "queryTag": "d7e68b5b1bfb09fa", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "34a5def180cc9c8b", "time": 1791167881.510317, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167884.512793, "queryTag": "34a5def180cc9c8b", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "29c23d95281c2d69", "time": 1791167888.3163352, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167891.318781, "queryTag": "29c23d95281c2d69", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "eae3a668a153e46f", "time": 1791167898.809098, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167901.811274, "queryTag": "eae3a668a153e46f", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "53531b178540e847", "time": 1791167913.568867, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167916.569568, "queryTag": "53531b178540e847", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "88488de09506a067", "time": 1791167920.828565, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167923.83111, "queryTag": "88488de09506a067", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "76d610723f9632da", "time": 1791167931.981956, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167934.984359, "queryTag": "76d610723f9632da", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "1b53777d888089bb", "time": 1791167938.121901, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167941.124233, "queryTag": "1b53777d888089bb", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "2c3aa79d5c6b926d", "time": 1791167948.6303492, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167951.6327412, "queryTag": "2c3aa79d5c6b926d", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "ebf756f7f49e9d93", "time": 1791167962.155506, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167965.1583931, "queryTag": "ebf756f7f49e9d93", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "0f0cfb88231e3d60", "time": 1791167968.266905, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167971.2680562, "queryTag": "0f0cfb88231e3d60", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "0359d0010561e8d0", "time": 1791167979.9458392, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167982.9482281, "queryTag": "0359d0010561e8d0", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "a34fcd16b05a160b", "time": 1791167986.594696, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791167989.597035, "queryTag": "a34fcd16b05a160b", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "68bf9a7104ef3ae6", "time": 1791167997.2465658, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168000.24859, "queryTag": "68bf9a7104ef3ae6", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "0a4739506e1711aa", "time": 1791168011.965579, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168014.967249, "queryTag": "0a4739506e1711aa", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "39c891be702a4f0b", "time": 1791168018.2331011, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168021.235727, "queryTag": "39c891be702a4f0b", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "62eb3a44d06c8104", "time": 1791168029.887317, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168032.889706, "queryTag": "62eb3a44d06c8104", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "1dc31990a1855a78", "time": 1791168036.449004, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168039.451628, "queryTag": "1dc31990a1855a78", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "a3fc36df3826a5ea", "time": 1791168046.855716, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168049.8579872, "queryTag": "a3fc36df3826a5ea", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "3a9eb712e1f66da3", "time": 1791168060.9015198, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168063.903906, "queryTag": "3a9eb712e1f66da3", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "ce59a923d7b17ff1", "time": 1791168067.055413, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168070.057002, "queryTag": "ce59a923d7b17ff1", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "f6f6898658a74af8", "time": 1791168078.327631, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168081.329983, "queryTag": "f6f6898658a74af8", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "938cc09266c1dd49", "time": 1791168085.1881092, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168088.190721, "queryTag": "938cc09266c1dd49", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "65f3473961d91f48", "time": 1791168095.936814, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168098.9392262, "queryTag": "65f3473961d91f48", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "6f49376fc7c7899c", "time": 1791168110.4034328, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168113.405843, "queryTag": "6f49376fc7c7899c", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d5c9901afd680c53", "time": 1791168116.5047429, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168119.50751, "queryTag": "d5c9901afd680c53", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "eda14b4a3f7b1f2b", "time": 1791168128.010442, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168131.012904, "queryTag": "eda14b4a3f7b1f2b", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "dd16bae0addd8aad", "time": 1791168134.851156, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168137.853696, "queryTag": "dd16bae0addd8aad", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "c520dcc0de54854d", "time": 1791168145.240143, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168148.2425869, "queryTag": "c520dcc0de54854d", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "1dce77be39d45349", "time": 1791168158.768404, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168161.7714581, "queryTag": "1dce77be39d45349", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "d640a920d70d8e17", "time": 1791168164.8668191, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168167.869397, "queryTag": "d640a920d70d8e17", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "9804871fc6dfc96e", "time": 1791168176.135563, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168179.1377401, "queryTag": "9804871fc6dfc96e", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "763bc2b1983cbf45", "time": 1791168182.1857972, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168185.188239, "queryTag": "763bc2b1983cbf45", "responseBytes": 83}
+{"fixture": "v08-udp", "backend": "http", "status": 204}
+{"fixture": "v08-udp", "backend": "udp-pending", "queryTag": "06dab34b5bc75564", "time": 1791168193.003212, "delaySeconds": 3}
+{"fixture": "v08-udp", "backend": "udp", "requestBytes": 67, "time": 1791168196.005564, "queryTag": "06dab34b5bc75564", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167109.4296472, "queryTag": "bc43eb634e941717", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167110.500531, "queryTag": "073f4948793aa2fb", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3001, "time": 1791167113.436141}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167115.706547, "queryTag": "9aba08b3c376b338", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3001, "reason": "eof", "time": 1791167116.6764832}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167123.882998, "queryTag": "b24cb376a1fc3e7f", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167124.963524, "queryTag": "610b8c8135a84ee6", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3002, "time": 1791167128.653271}
+{"fixture": "v08", "backend": "hold-close", "id": 3002, "reason": "eof", "time": 1791167129.849826}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167138.2121081, "queryTag": "2fd729b763f63001", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167139.2878761, "queryTag": "1bf9f5b4acdcc708", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167149.0587049, "queryTag": "1ab1bccf0e8f1611", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167150.146964, "queryTag": "c26d6bef94d7a6fd", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3003, "time": 1791167153.737185}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167156.000872, "queryTag": "689b73a0b2af8cb6", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3003, "reason": "eof", "time": 1791167156.974304}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167164.2148259, "queryTag": "4c54caa55d4fa468", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167165.4417448, "queryTag": "1ac3a3355bdf0b97", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3004, "time": 1791167168.906971}
+{"fixture": "v08", "backend": "hold-close", "id": 3004, "reason": "eof", "time": 1791167170.234456}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167178.6369789, "queryTag": "c4ddad03d9c2ad14", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167179.7115672, "queryTag": "29536bf0aa6642a3", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167190.04084, "queryTag": "5e37fc07f07dedbe", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167191.093811, "queryTag": "5876e204348fbcf1", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3005, "time": 1791167194.114759}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167194.303804, "queryTag": "405f0a44a0c6b65b", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167205.155754, "queryTag": "661cc58f15a65135", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167206.1971579, "queryTag": "64a8cca08e6dca7f", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3006, "time": 1791167209.278699}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167209.485095, "queryTag": "fc7cf77423dc9954", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3005, "reason": "TimeoutError", "time": 1791167214.1163461}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167221.1149282, "queryTag": "b862bd05c0019a80", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167222.196651, "queryTag": "c1d9d6a4bc6ed5df", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3007, "time": 1791167225.130774}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167225.338034, "queryTag": "302b666f1847c7e2", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3007, "reason": "eof", "time": 1791167226.326724}
+{"fixture": "v08", "backend": "hold-close", "id": 3006, "reason": "TimeoutError", "time": 1791167229.2800682}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167233.5442922, "queryTag": "4212d91e2672671f", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167234.591319, "queryTag": "15d6e3329d65d90f", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3008, "time": 1791167237.5707462}
+{"fixture": "v08", "backend": "hold-close", "id": 3008, "reason": "eof", "time": 1791167238.740341}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167247.093021, "queryTag": "e76fdb25856fb32d", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167248.152353, "queryTag": "3d8d0de1ec932d2c", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167257.692706, "queryTag": "1b4a7c8ae353387f", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167258.756448, "queryTag": "e1173f96cb634de4", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3009, "time": 1791167261.7206059}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167261.923119, "queryTag": "6ba7851d1bde92d4", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3009, "reason": "eof", "time": 1791167262.909239}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167270.117804, "queryTag": "c11e6e6cd93dff6d", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167271.194717, "queryTag": "7916457d5807940b", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3010, "time": 1791167274.105053}
+{"fixture": "v08", "backend": "hold-close", "id": 3010, "reason": "eof", "time": 1791167275.3669848}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167283.71207, "queryTag": "724ca0de8e51cb1a", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167284.8767219, "queryTag": "d275780e8dc01848", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167294.831928, "queryTag": "ee1df68002f348b5", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167295.882014, "queryTag": "13d764c9dc3513d2", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3011, "time": 1791167299.034562}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167299.2215319, "queryTag": "84bcc80cb9935824", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167310.096194, "queryTag": "365dbcad643672d4", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167311.3378189, "queryTag": "15f6d97a322fddfb", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3012, "time": 1791167314.691257}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167314.882184, "queryTag": "c4d2ff569f1536f7", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3011, "reason": "TimeoutError", "time": 1791167319.036412}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167326.530675, "queryTag": "53b20c2021f9a105", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167327.569869, "queryTag": "c95971f75c339ada", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3013, "time": 1791167330.539731}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167330.7271821, "queryTag": "8ddddbb0794756a8", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3012, "reason": "TimeoutError", "time": 1791167334.692775}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167341.514356, "queryTag": "e570e6f2fb5371ae", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167342.7177742, "queryTag": "cd91784d5fcac366", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3014, "time": 1791167346.142596}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167346.3267798, "queryTag": "f06525f54c5cb9a7", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3013, "reason": "TimeoutError", "time": 1791167350.541501}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167357.258122, "queryTag": "85ff151893fb5c64", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167358.306072, "queryTag": "8902a6a55a1a0558", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3015, "time": 1791167361.39579}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167361.61602, "queryTag": "c673760221e34545", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3015, "reason": "eof", "time": 1791167362.605421}
+{"fixture": "v08", "backend": "hold-close", "id": 3014, "reason": "TimeoutError", "time": 1791167366.144605}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167369.8369012, "queryTag": "0a09080f0cee7926", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167370.986542, "queryTag": "02d4ec5b3c41e9d3", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3016, "time": 1791167374.451474}
+{"fixture": "v08", "backend": "hold-close", "id": 3016, "reason": "eof", "time": 1791167375.638531}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167383.938303, "queryTag": "3f88afffc488e232", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167384.992678, "queryTag": "23b4d301c1f4144f", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167395.0872068, "queryTag": "f7c5268cd33aaaf0", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167396.1386309, "queryTag": "b03e5fdbad2d6bd8", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3017, "time": 1791167399.105854}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167399.3111, "queryTag": "66de507a12920baa", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3017, "reason": "eof", "time": 1791167400.300548}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167407.44718, "queryTag": "e6a3a6c859a24191", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167408.570965, "queryTag": "e06cdd51d2e73984", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3018, "time": 1791167412.183727}
+{"fixture": "v08", "backend": "hold-close", "id": 3018, "reason": "eof", "time": 1791167413.5560188}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167421.790706, "queryTag": "caf5100f238e655a", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167422.847801, "queryTag": "80c6fb10ae3f8ac2", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167433.192617, "queryTag": "b694c9f1811b81c8", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167434.271879, "queryTag": "07f13fe659c578a7", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3019, "time": 1791167437.630954}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167437.88924, "queryTag": "2625bf77187b022d", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3019, "reason": "eof", "time": 1791167438.832118}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167446.057887, "queryTag": "98472a62b535ce14", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167447.1043541, "queryTag": "ca6c8356ec402980", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3020, "time": 1791167450.082774}
+{"fixture": "v08", "backend": "hold-close", "id": 3020, "reason": "eof", "time": 1791167451.259806}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167459.737756, "queryTag": "d38a2d8446c5e240", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167460.793906, "queryTag": "bae7db3a31ead4dd", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167470.697472, "queryTag": "644e08592bd2ad30", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167471.9579651, "queryTag": "3ba3cfe24f261605", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3021, "time": 1791167475.3417568}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167475.6763399, "queryTag": "327197c7c56985b0", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-close", "id": 3021, "reason": "eof", "time": 1791167476.581779}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167483.776555, "queryTag": "60e8d33a52140865", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167484.8518982, "queryTag": "6eb8e42eaa21e2cc", "responseBytes": 83}
+{"fixture": "v08", "backend": "hold-open", "id": 3022, "time": 1791167487.761347}
+{"fixture": "v08", "backend": "hold-close", "id": 3022, "reason": "eof", "time": 1791167489.017448}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167497.272885, "queryTag": "3795e65dc1527288", "responseBytes": 83}
+{"fixture": "v08", "backend": "http", "status": 204}
+{"fixture": "v08", "backend": "udp", "requestBytes": 67, "time": 1791167498.321366, "queryTag": "e852f5684f6b0805", "responseBytes": 83}
+{"fixture": "wireguard-stop-retry", "backend": "hold-open", "id": 4101, "time": 1791168355.8829372}
+{"fixture": "wireguard-stop-retry", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop-retry", "backend": "udp", "requestBytes": 67, "time": 1791168366.051093, "queryTag": "c16af56d006035ac", "responseBytes": 83}
+{"fixture": "wireguard-stop-retry", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop-retry", "backend": "udp", "requestBytes": 67, "time": 1791168367.088924, "queryTag": "c545773cd1e3201b", "responseBytes": 83}
+{"fixture": "wireguard-stop-retry", "backend": "hold-close", "id": 4101, "reason": "TimeoutError", "time": 1791168375.879663}
+{"fixture": "wireguard-stop-retry", "backend": "hold-open", "id": 4102, "time": 1791168381.932713}
+{"fixture": "wireguard-stop-retry", "backend": "hold-close", "id": 4102, "reason": "eof", "time": 1791168382.0861819}
+{"fixture": "wireguard-stop-retry", "backend": "udp", "requestBytes": 67, "time": 1791168382.086317, "queryTag": "fee13d1574c47d71", "responseBytes": 83}
+{"fixture": "wireguard-stop-retry", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop-retry", "backend": "udp", "requestBytes": 67, "time": 1791168392.7923388, "queryTag": "5e0a3aad06aa1947", "responseBytes": 83}
+{"fixture": "wireguard-stop-retry", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop-retry", "backend": "udp", "requestBytes": 67, "time": 1791168393.824308, "queryTag": "87770a767af21a95", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "hold-open", "id": 4001, "time": 1791168212.512953}
+{"fixture": "wireguard-stop", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168222.7187681, "queryTag": "26f2fe61939889b0", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168223.760201, "queryTag": "4cfbc6f5ac363952", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "hold-close", "id": 4001, "reason": "TimeoutError", "time": 1791168232.516106}
+{"fixture": "wireguard-stop", "backend": "hold-open", "id": 4002, "time": 1791168239.033931}
+{"fixture": "wireguard-stop", "backend": "hold-close", "id": 4002, "reason": "eof", "time": 1791168239.1783621}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168239.182229, "queryTag": "e6c282cd7aeac1d5", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168249.1580732, "queryTag": "b4bcf3e2846054e1", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168250.1902459, "queryTag": "29af8c344981b95a", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "hold-open", "id": 4003, "time": 1791168257.917173}
+{"fixture": "wireguard-stop", "backend": "hold-close", "id": 4003, "reason": "eof", "time": 1791168258.159352}
+{"fixture": "wireguard-stop", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168268.127232, "queryTag": "a76102f5c2d4356c", "responseBytes": 83}
+{"fixture": "wireguard-stop", "backend": "http", "status": 204}
+{"fixture": "wireguard-stop", "backend": "udp", "requestBytes": 67, "time": 1791168269.170277, "queryTag": "ba027e8bb4cf9e03", "responseBytes": 83}

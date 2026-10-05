@@ -11,7 +11,7 @@
     "description": "SDK development source pin; existing native/JNI device binary retains the nativeBaseline identity"
   },
   "ownerDecision": {
-    "instruction": "давай тогда пока оставим это так и будем двигаться дальше",
+    "instruction": "\u0434\u0430\u0432\u0430\u0439 \u0442\u043e\u0433\u0434\u0430 \u043f\u043e\u043a\u0430 \u043e\u0441\u0442\u0430\u0432\u0438\u043c \u044d\u0442\u043e \u0442\u0430\u043a \u0438 \u0431\u0443\u0434\u0435\u043c \u0434\u0432\u0438\u0433\u0430\u0442\u044c\u0441\u044f \u0434\u0430\u043b\u044c\u0448\u0435",
     "scope": "Further investigation of remaining SS2022 UDP losses",
     "status": "deferred",
     "failedVerdictsChanged": false,
@@ -30,17 +30,17 @@
   "ci": [
     {
       "repository": "aimalygin/xray-rust",
-      "revision": "2c04d987fdc9a1312d0d7a799d6fcd3c1e2c6478",
-      "run": 37232384891,
+      "revision": "3c7b1628544dc64ffc6f1284169c5bf6ac136c48",
+      "run": 37253541471,
       "result": "success",
-      "scope": "ordinary CI; optional/full jobs skipped"
+      "scope": "ordinary CI before regression-report changes; optional/full release jobs skipped"
     },
     {
       "repository": "aimalygin/xray-rust-mobile",
-      "revision": "f18254a6571a0165c6ecb557d57bc87ad688818e",
-      "run": 37232264692,
+      "revision": "90355c5f4d11bed53dfe4748a262521044a87407",
+      "run": 37253545430,
       "result": "success",
-      "scope": "Apple, Android, metadata and secrets"
+      "scope": "Apple, Android, metadata and secrets before regression-report changes"
     }
   ],
   "supportingReports": [
@@ -132,6 +132,19 @@
         {
           "path": "docs/device-results/2026-10-04-android-v08/packet-pump-fix/manifest.json",
           "sha256": "69e3f33b3cc992bddd90e5e61342af5816e26d6614721a4e6ae476cff1a1779e"
+        }
+      ]
+    },
+    {
+      "id": "android-active-regression",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-android-regressions/README.md",
+          "sha256": "e81169c1da47294fa7fa38cb888986c77a234c8a1f116008c0d06bdd9100ef1c"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-android-regressions/manifest.json",
+          "sha256": "6ffffbdaed405aecb62f5081d5b3ecf5b91153961606a8aa70ef5a2e4c692703"
         }
       ]
     }
@@ -298,7 +311,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ]
         },
         {
@@ -326,8 +340,10 @@
             "xhttp-h3"
           ],
           "nonemptyTransitionsRequired": true,
-          "state": "not-collected-for-acceptance",
-          "supportingReports": []
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-active-regression"
+          ]
         },
         {
           "id": "profile-import",
@@ -362,7 +378,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ],
           "ownerSkippedTransitions": [
             "lock-wake",
@@ -387,7 +404,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ],
           "ownerSkippedTransitions": [
             "lock-wake",
@@ -412,7 +430,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ],
           "ownerSkippedTransitions": [
             "lock-wake",
@@ -437,7 +456,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ],
           "ownerSkippedTransitions": [
             "lock-wake",
@@ -469,7 +489,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ],
           "ownerSkippedTransitions": [
             "lock-wake",
@@ -494,7 +515,8 @@
           "state": "partial-physical-evidence-needs-review",
           "supportingReports": [
             "android-lan-baseline",
-            "android-readiness-wait"
+            "android-readiness-wait",
+            "android-active-regression"
           ],
           "ownerSkippedTransitions": [
             "lock-wake",
@@ -667,8 +689,8 @@
   },
   "androidOwnerDecision": {
     "decidedOn": "2026-10-04",
-    "instruction": "для android пропускаем",
-    "selectedContext": "Дальше — Wi-Fi ↔ мобильная сеть и блокировка экрана; для переходов нужна работающая SIM.",
+    "instruction": "\u0434\u043b\u044f android \u043f\u0440\u043e\u043f\u0443\u0441\u043a\u0430\u0435\u043c",
+    "selectedContext": "\u0414\u0430\u043b\u044c\u0448\u0435 \u2014 Wi-Fi \u2194 \u043c\u043e\u0431\u0438\u043b\u044c\u043d\u0430\u044f \u0441\u0435\u0442\u044c \u0438 \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0430 \u044d\u043a\u0440\u0430\u043d\u0430; \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0445\u043e\u0434\u043e\u0432 \u043d\u0443\u0436\u043d\u0430 \u0440\u0430\u0431\u043e\u0442\u0430\u044e\u0449\u0430\u044f SIM.",
     "release": "0.8",
     "platform": "android",
     "paths": [
@@ -684,5 +706,18 @@
     "appleRequirementsChanged": false,
     "failedVerdictsChanged": false,
     "releaseAuthorized": false
+  },
+  "androidActiveRegressionFindings": {
+    "report": "android-active-regression",
+    "tcpCasesMeetingAllPrimaryCriteria": 18,
+    "tcpCasesTotal": 26,
+    "udpCasesMeetingAllPrimaryCriteria": 25,
+    "udpCasesTotal": 26,
+    "wireguard": "Ordinary address/DNS traffic and per-flow cancellation pass; whole-VPN remote EOF is intermittent. Four paired local stop/recovery controls pass, and close-before-stop delivers EOF; original failures and the incomplete unexpected-EOF control are retained.",
+    "shadowsocks2022": "Six primary remote-EOF criteria fail; twelve supplemental local cancel/recovery controls pass. All three pinned Go-client/Go-server controls reproduce backend retention after client exit. This is distinct from deferred WAN UDP-loss work.",
+    "trojan": "One PacketPump post-disconnect UDP recovery times out after backend response submission. Four fresh-fixture repeats are preserved separately; they do not erase the first failure or establish its cause.",
+    "runtimeChanged": false,
+    "failedVerdictsChanged": false,
+    "releaseAcceptanceComplete": false
   }
 }

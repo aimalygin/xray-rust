@@ -1,0 +1,37 @@
+{
+  "classification": "unresolved-udp-recovery-timeout",
+  "primaryFailure": {
+    "hostTime": 1791167604.32756,
+    "kind": "udp-case-fail",
+    "suite": "v08",
+    "case": "trojan-tls",
+    "backend": "packet-pump",
+    "error": "traffic failure: ipv4 {\"running\": \"false\", \"http-failed\": \"0\", \"udp-failed\": \"1\", \"http-passed\": \"1\", \"udp-passed\": \"0\"}"
+  },
+  "queryTag": "d309e831485adf70",
+  "backendRows": [
+    {
+      "backend": "udp-pending",
+      "queryTag": "d309e831485adf70",
+      "time": 1791167597.861114,
+      "delaySeconds": 3
+    },
+    {
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791167600.862493,
+      "queryTag": "d309e831485adf70",
+      "responseBytes": 83
+    }
+  ],
+  "probeRows": [
+    "1791167602.934 23960  9768 W XrayDeviceProbe: XRAY_ANDROID_UDP_FAILURE queryTag=d309e831485adf70 localPort=34777 errorCode=SocketTimeoutException",
+    "1791167602.936 23960  9768 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=failed errorCode=SocketTimeoutException elapsedSeconds=5"
+  ],
+  "interpretation": "The backend received the fresh post-restart request and submitted its nonce-matched 83-byte response after 3.001 seconds; the probe timed out at its five-second deadline. Response submission is not proof of delivery through the encrypted carrier or to the app. No layer of loss is established. The first failure remains independently recorded; later passing repeats cannot erase it.",
+  "notCovered": [
+    "packet capture at every hop",
+    "matched physical Android Go-client comparison",
+    "WAN/MTU diagnosis"
+  ]
+}

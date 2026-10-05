@@ -152,9 +152,11 @@ requirements. Apple requirements and recorded UDP failures remain unchanged.
   separate unregistered iPad remains deferred; no account change was made.
 - [ ] Collect Android scenarios for each protocol through both FileDescriptor
   and PacketPump. Physical LAN/lifecycle/resource observations now exist;
-  network/lock transitions are owner-skipped (not tested). Active-flow controls
-  and shared/legacy coverage remain open. Host tests and emulator results do
-  not close this device gate.
+  network/lock transitions are owner-skipped (not tested). The
+  [legacy and active-flow follow-up](device-results/2026-10-04-android-regressions/README.md)
+  retains WireGuard/SS2022 remote-close failures and a Trojan UDP recovery
+  timeout. Review these findings and complete the other shared scenarios.
+  Host tests and emulator results do not close this device gate.
 - [ ] For each protocol/device path, record IPv4/IPv6 TCP and UDP, domain
   destinations, routed DNS, start/stop, cancellation, reconnect, Wi-Fi/cellular
   transitions and lock/wake (Apple; owner-skipped on Android), and bounded

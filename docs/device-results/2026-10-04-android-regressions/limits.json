@@ -1,0 +1,16 @@
+{
+  "heldBackendTimeoutSeconds": 20,
+  "probeReadTimeoutSeconds": 5,
+  "cancellationBackendCloseLimitSeconds": 3,
+  "maximumTotalHeldLifetimeForUnambiguousCancellationSeconds": 4.5,
+  "controlMinimumOpenSeconds": 2,
+  "scope": "Physical LAN; TCP/UDP active cancellation and fresh HTTP/UDP recovery. Not WAN, lock/wake, throughput or sustained resource qualification.",
+  "udpCancellation": {
+    "replyDelaySeconds": 3,
+    "cancelAfterBackendRequestLimitSeconds": 1,
+    "clientTimeoutSeconds": 5,
+    "control": "delayed nonce response must pass without cancellation",
+    "afterCancellation": "pending reply must not reach probe; idempotent close must accept zero; fresh HTTP/UDP must recover"
+  },
+  "clockScope": "Backend/dispatch durations share the host clock. Supplemental device-error delays mix uncalibrated device/host epoch clocks and are diagnostic estimates, not precision API latency."
+}

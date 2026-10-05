@@ -817,7 +817,11 @@ The [Samsung LAN report](device-results/2026-10-04-android-v08/README.md) preser
 both TUN paths, all ciphers, original UDP stress losses and the PacketPump
 idle-CPU diagnosis. A bounded readiness wait corrects the adapter busy loop;
 its measured follow-up and SDK source pin are distinct from the old native
-baseline. Full device/schema-4 acceptance remains open.
+baseline. The [legacy and active-flow follow-up](device-results/2026-10-04-android-regressions/README.md)
+covers VLESS/REALITY, XHTTP H1/H2/H3, WireGuard and Hysteria2 on both paths,
+plus TCP/UDP cancellation for the new protocols. WireGuard/SS2022 remote-close
+criteria and a Trojan UDP recovery trial fail; local, remote and recovery
+verdicts remain separate. Full device/schema-4 acceptance remains open.
 The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 contains 1050/1050 verified trials against pinned Xray-core and sing-box.
 The [first CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM

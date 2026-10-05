@@ -1,0 +1,6 @@
+{
+  "classification": "controller-log-parser-error",
+  "cause": "logcat epoch lines have leading whitespace; anchored regex returned no lifecycle events",
+  "runtimeVerdict": "incomplete; preserve failed pilot, then repeat with corrected parsing",
+  "correctedParserFindsCloseRequest": true
+}

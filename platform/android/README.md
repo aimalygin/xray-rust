@@ -328,6 +328,17 @@ Trojan, all three SS2022 ciphers, and VMess auto/AES/ChaCha. HTTP success is an
 availability check, not byte-integrity or throughput evidence. Explicitly set
 both probe endpoints to this fixture before starting the probe app.
 
+For legacy regression, select `--suite legacy` (VLESS/REALITY and XHTTP
+H1/H2/H3) or `--suite v07` (WireGuard and Hysteria2). These suites require
+dynamically allocated ports. `/v08-hold/NUMBER` withholds an HTTP response for
+up to twenty seconds and records peer EOF separately from the fixture timeout.
+`--udp-delay-seconds 3` submits the same nonce-checked UDP response after three
+seconds, so an active receive can be cancelled before the response. Run a
+no-cancellation control and fresh traffic after cancellation; an intentional
+timeout alone is not proof of working teardown or recovery. The
+[physical regression report](../../docs/device-results/2026-10-04-android-regressions/README.md)
+preserves separate local, remote-close and recovery verdicts and replay scripts.
+
 ## Geodata
 
 Geodata databases are not bundled. The current Kotlin wrapper does not expose a

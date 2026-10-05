@@ -41,26 +41,14 @@ def oracle_reply(query):
 
 
 class Oracle(fixture.Echo):
-    delay_seconds = 0
-
     def datagram_received(self, data, address):
         response = oracle_reply(data)
         if response is not None:
-            query_tag = hashlib.sha256(data).hexdigest()[:16]
-
-            def reply():
-                if not self.transport.is_closing():
-                    self.transport.sendto(response, address)
-                    print(json.dumps({"backend": "udp", "requestBytes": len(data),
-                                      "time": time.time(), "queryTag": query_tag,
-                                      "responseBytes": len(response)}), flush=True)
-
-            if self.delay_seconds:
-                print(json.dumps({"backend": "udp-pending", "queryTag": query_tag,
-                                  "time": time.time(), "delaySeconds": self.delay_seconds}), flush=True)
-                asyncio.get_running_loop().call_later(self.delay_seconds, reply)
-            else:
-                reply()
+            self.transport.sendto(response, address)
+            print(json.dumps({"backend": "udp", "requestBytes": len(data),
+                              "time": time.time(),
+                              "queryTag": hashlib.sha256(data).hexdigest()[:16],
+                              "responseBytes": len(response)}), flush=True)
 
 
 async def http_probe(reader, writer, byte_limit=0):
@@ -166,12 +154,9 @@ def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwarg
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--suite", choices=("v08", "legacy", "v07"), default="v08")
-    parser.add_argument("--udp-delay-seconds", type=int, choices=(0, 3), default=0,
-                        help="delay a nonce-matched reply to test cancellation during UDP receive")
     args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
     fixture.Echo = Oracle
-    Oracle.delay_seconds = args.udp_delay_seconds
     fixture.tcp_echo = http_probe
     fixture.write_fixtures = (write_fixtures if args.suite == "v08" else
                               lambda *a, **kw: write_regression(*a, suite=args.suite, **kw))

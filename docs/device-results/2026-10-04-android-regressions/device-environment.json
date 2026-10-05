@@ -1,0 +1,14 @@
+[
+  {
+    "collectedAt": 1791166603.790575,
+    "phase": "legacy UDP campaign; diagnostics only",
+    "battery": [
+      "USB powered: true",
+      "level: 100",
+      "temperature: 284"
+    ],
+    "thermal": [
+      "Thermal Status: 0"
+    ]
+  }
+]

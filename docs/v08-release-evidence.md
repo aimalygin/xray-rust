@@ -27,10 +27,11 @@ coverage and every other acceptance requirement remain unchanged. Preserve
 these omissions in the final known-limitations artifact. A pass under this
 reduced scope must not be described as Android network/lock coverage.
 
-Before the Android follow-up, ordinary CI passed for core `2c04d987fdc9a1312d0d7a799d6fcd3c1e2c6478`
-([run 37232384891](https://github.com/aimalygin/xray-rust/actions/runs/37232384891))
-and SDK `f18254a6571a0165c6ecb557d57bc87ad688818e`
-([run 37232264692](https://github.com/aimalygin/xray-rust-mobile/actions/runs/37232264692)).
+Before the regression-report changes, ordinary CI passed for core `3c7b1628544dc64ffc6f1284169c5bf6ac136c48`
+([run 37253541471](https://github.com/aimalygin/xray-rust/actions/runs/37253541471))
+and SDK `90355c5f4d11bed53dfe4748a262521044a87407`
+([run 37253545430](https://github.com/aimalygin/xray-rust-mobile/actions/runs/37253545430)).
+Optional/full core release jobs were skipped.
 These later source/diagnostic checks do not relabel measured native binaries.
 Full candidate CI remains recorded in [release readiness](v08-release-readiness.md).
 
@@ -41,7 +42,7 @@ Full candidate CI remains recorded in [release readiness](v08-release-readiness.
 | Apple new protocols | [LAN and WAN](device-results/2026-10-03-iphone17-v08/README.md), [lifecycle/resources](device-results/2026-10-04-iphone17-lifecycle-resources/README.md), [direct SS2022 transitions](device-results/2026-10-04-iphone17-ss2022-mtu/README.md) | Map each required transition to its actual run and fixture; retain SS2022 conditions and failed controls. Startup cancellation alone is not evidence of every active-flow cancellation case. |
 | Apple shared scenarios | Legacy smoke and connection-close/recovery observations; successful shared imports | Complete the distinct VLESS-encryption, IP-on-demand, XHTTP download-session and host-adapter-projection scenarios; map general cancellation explicitly. A VLESS/REALITY smoke result does not by itself cover VLESS encryption. Physical invalid-input/redaction evidence is not established by successful imports. |
 | Apple legacy reliability | [0.7/0.8 controls](device-results/2026-10-04-iphone17-wg-baseline/README.md), [ten further repeats](device-results/2026-10-04-iphone17-reliability-deployment/README.md) | Preserve the original WireGuard/Trojan failures and unresolved causes; passing repeats do not erase them. The SS2022 deferral does not decide these separate issues. |
-| Android | [Physical Samsung LAN baseline and follow-up](device-results/2026-10-04-android-v08/README.md): all ciphers on both paths, import, IPv4/IPv6/domain, close/restart, bounded request/resource checks and invalid-input controls | Preserve original UDP timeouts and the PacketPump idle-CPU finding. Wi-Fi/cellular and lock/wake are owner-skipped, not tested. Complete active-flow cancellation and shared/legacy scenarios; these LAN checks do not complete the physical gate. |
+| Android | [Physical Samsung LAN baseline and follow-up](device-results/2026-10-04-android-v08/README.md): all ciphers on both paths, import, IPv4/IPv6/domain, close/restart, bounded request/resource checks and invalid-input controls | Preserve original UDP timeouts and the PacketPump idle-CPU finding. Wi-Fi/cellular and lock/wake are owner-skipped, not tested. The [legacy and active-flow follow-up](device-results/2026-10-04-android-regressions/README.md) separates local cancellation, remote EOF and traffic recovery; preserve WireGuard/SS2022 remote-close failures and the Trojan UDP recovery timeout. Review these findings and complete the other shared scenarios; LAN checks do not complete the physical gate. |
 | Device resource profiles | Bounded iPhone CPU, RSS, footprint, threads and recovery observations | Bind raw intervals, thermal state, load definitions, predeclared limits and observed deltas to each device report. Sparse samples are not continuous peaks or energy measurements. Keep CPU and memory visible together. |
 | Performance gate | [Historical comparisons](v08-performance.md) with exact source/binary identities, including accepted VMess AES tradeoff | Collect/identify five clean exact-candidate samples for each of the 13 required measurements. Historical benchmark identities and two-interval phone loads must not be relabeled as these samples. Freeze workloads and thresholds before collection. |
 | Distribution | Candidate source/CI consumer validation | Prepare canonical artifacts and clean consumers only in the release order; current artifact locks remain unprepared. No tag, merge or publication is authorized. |
@@ -116,8 +117,10 @@ The validator checks structure and thresholds; measurements still need review.
    is a separate finding from intermittent small-UDP stress failures. Do not
    infer that correcting CPU also corrects packet loss. Reassess exact-candidate
    coverage after the Kotlin change and SDK source repin.
-2. Complete the missing Android shared/legacy scenarios and active-flow
-   controls. Retain every failed attempt. Do not request a SIM or run the
+2. Review the [Android legacy/active-flow findings](device-results/2026-10-04-android-regressions/README.md):
+   remote-close limits for WireGuard/SS2022 and the failed Trojan UDP recovery
+   remain explicit. Complete the distinct VLESS-encryption, IP-on-demand,
+   XHTTP download-session and host-adapter-projection scenarios. Retain every failed attempt. Do not request a SIM or run the
    owner-skipped network/lock checks; record them as not tested.
 3. Assemble Apple transition/resource references and collect the missing shared
    scenarios. Prepare calibrated exact-candidate host samples in a quiet window,
