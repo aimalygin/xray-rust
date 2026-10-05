@@ -3,9 +3,14 @@ package org.xrayrust.mobile
 import android.content.pm.PackageManager.NameNotFoundException
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
 import java.io.EOFException
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.Callable
 import java.util.concurrent.Executor
@@ -564,9 +569,32 @@ open class XrayVpnService : VpnService() {
         try {
             val input = FileInputStream(session.tunnel.fileDescriptor)
             val packetBuffer = ByteArray(PACKET_BYTES)
+            val readable = StructPollfd().apply {
+                fd = session.tunnel.fileDescriptor
+                events = OsConstants.POLLIN.toShort()
+            }
+            val pollDescriptors = arrayOf(readable)
 
             while (session.active.get() && !Thread.currentThread().isInterrupted) {
                 val read = input.read(packetBuffer)
+                if (read == 0) {
+                    // Android maps EAGAIN on a nonblocking TUN to a zero-byte
+                    // FileInputStream read. Wait for readiness instead of spinning.
+                    // A bounded poll also lets shutdown join this worker even if
+                    // closing the descriptor does not immediately wake poll().
+                    try {
+                        Os.poll(pollDescriptors, POLL_WAIT_MILLISECONDS)
+                    } catch (error: ErrnoException) {
+                        if (error.errno != OsConstants.EINTR) throw error
+                        continue
+                    }
+                    if (readable.revents.toInt() and
+                        (OsConstants.POLLERR or OsConstants.POLLHUP or OsConstants.POLLNVAL) != 0
+                    ) {
+                        throw IOException("Android VPN tunnel poll failed")
+                    }
+                    continue
+                }
                 if (read < 0) {
                     throw EOFException("Android VPN tunnel reached EOF")
                 }
