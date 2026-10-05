@@ -806,6 +806,15 @@ reapplies the setting on five starts including two restarts, without a resident
 helper or client changes. WAN controls cover all three ciphers but retain
 request and reply losses, including an unfragmented AES-128 reply; reliable
 production-path acceptance remains open. See the [deployment recipe and limits](ss2022-server-udp-pmtu.md).
+On 2026-10-04 the owner deferred additional SS2022 UDP diagnosis and directed
+work to continue. The losses remain recorded as known limitations. Next work
+is [physical-device and schema-4 evidence assembly](v08-release-evidence.md),
+with Android network/shared scenarios and exact-candidate measurements still needed.
+The [Samsung LAN report](device-results/2026-10-04-android-v08/README.md) preserves
+both TUN paths, all ciphers, original UDP stress losses and the PacketPump
+idle-CPU diagnosis. A bounded readiness wait corrects the adapter busy loop;
+its measured follow-up and SDK source pin are distinct from the old native
+baseline. Full device/schema-4 acceptance remains open.
 The [initial three-client comparison](benchmarks/results/2026-09-30-v08-protocols/README.md)
 contains 1050/1050 verified trials against pinned Xray-core and sing-box.
 The [first CPU follow-up](benchmarks/results/2026-09-30-v08-cpu/README.md) fixes ARM

@@ -4,6 +4,11 @@ Current acceptance status and next steps are consolidated in the
 [release readiness checklist](v08-release-readiness.md). The dated sections
 below retain their original runtime identities and historical limits.
 
+Further SS2022 UDP diagnosis was deferred by the owner on 2026-10-04. Continue
+with [device/evidence assembly](v08-release-evidence.md), retaining all failed
+controls and known path limits. The deferred investigation does not reopen the
+accepted VMess implementation or change the frozen native/SDK pins.
+
 The [2026-10-04 native SS2022 UDP diagnosis](device-results/2026-10-04-iphone17-ss2022-mtu/README.md)
 adds an exact same-socket DF control, server/client size correlation and a
 passing direct iPhone transition/lock sequence. The test socket mitigation
@@ -32,6 +37,15 @@ sing-box, REALITY, split-XHTTP and cross-protocol chain matrices now pass.
 The existing graph boundaries remain explicit; candidate-bound release
 acceptance is still outstanding. These are local development changes, not a
 published 0.8 release.
+
+The [physical Android LAN baseline and follow-up](device-results/2026-10-04-android-v08/README.md)
+cover all new ciphers through FileDescriptor and PacketPump. The baseline
+retains rare UDP stress timeouts and revealed an independent PacketPump idle
+CPU busy loop. `Os.poll` now waits after empty TUN reads without larger packet
+buffers. SDK source pin `0d788564d85505ba0e2778320a561bc3d6500346` carries that
+adapter fix; phone native/JNI remains the separately identified `de339981`
+baseline. Reassess release evidence after the adapter change; network/lock,
+shared scenarios and exact-candidate qualification remain open.
 
 ## Fixed compatibility and distribution boundaries
 

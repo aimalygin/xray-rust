@@ -15,6 +15,18 @@ android {
         versionName = "0.5.0-device-gate"
     }
 
+    buildTypes {
+        getByName("debug") {
+            // Isolate physical campaigns from an existing device profile store.
+            providers.gradleProperty("deviceGateApplicationIdSuffix").orNull?.let { suffix ->
+                require(Regex("\\.[a-z][a-z0-9_]*").matches(suffix)) {
+                    "deviceGateApplicationIdSuffix must be one lowercase package component"
+                }
+                applicationIdSuffix = suffix
+            }
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8

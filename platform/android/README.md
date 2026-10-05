@@ -71,6 +71,13 @@ passed through `VpnService.protect(fd)` before use. With
 TCP candidate before connect; cancelled and losing candidates are not detached.
 This prevents proxy sockets from being routed back into the VPN.
 
+PacketPump waits up to 250 ms for TUN readability after a zero-byte
+nonblocking read. This avoids the Android `EAGAIN` busy loop while preserving
+MTU-sized buffers and bounded worker teardown. `EINTR` retries respect the
+active/interrupted checks; terminal poll errors use the existing fatal path.
+FileDescriptor remains the default path. See the separately identified
+[physical Android baseline and follow-up](../../docs/device-results/2026-10-04-android-v08/README.md).
+
 ## VLESS share-link import
 
 Development v0.7 additionally provides
@@ -233,8 +240,17 @@ platform/android/gradlew -p platform/android \
   :devicehost:assembleDebug :deviceprobe:assembleDebug
 ```
 
+For a separate physical campaign, append
+`-PdeviceGateApplicationIdSuffix=.v08` to the debug build. Both application IDs
+then end in `.v08`, with separate UIDs, Keystore entries and profile storage;
+component class names retain their original namespaces. Omit the property for
+the original IDs. Supply `XRAY_FFI_ANDROID_DIR` from the verified candidate build.
+An arm64-only device rehearsal can use `-Pandroid.injected.build.abi=arm64-v8a`;
+it does not qualify the other release ABIs.
+
 `devicehost` is a minimal `VpnService` owner. It imports the supported VLESS
-share-link subset, immediately converts it to core JSON, encrypts that JSON with
+share-link subset and Trojan, SS2022, VMess and Hysteria2 links through their
+existing SDK importers, immediately converts them to core JSON, encrypts that JSON with
 an Android Keystore AES-GCM key, and stores the ciphertext under the app's
 no-backup directory. Backup and device-to-device transfer are disabled. The
 profile input and clipboard are cleared after import, and structured
@@ -243,6 +259,23 @@ counts, TUN counters, and sanitized error classes. The app can connect,
 disconnect, cancel an asynchronous start from the same service command, close
 one inventory snapshot through the public connection-management API, and reset
 campaign counters while stopped.
+
+The two connect buttons select FileDescriptor or PacketPump. The selected path
+is retained through VPN-consent activity recreation and recorded as `tunBackend`
+in lifecycle/resource logs. Automation `connect` and `rapid-stop` commands accept
+the string extra `tun-backend` with exactly `file-descriptor` or `packet-pump`;
+omission preserves the original FileDescriptor default, and unknown values are
+rejected. Switching paths requires a separate stopped/started test cycle. A
+compile/unit-test pass for this harness does not establish device-path coverage.
+Resource samples include all process threads from `/proc/self/status`, resident
+memory, dropped TUN packets, cumulative process CPU milliseconds and monotonic
+elapsed time. CPU deltas must be compared within one process lifetime.
+For controlled resource loads, automation can add the boolean extra
+`probe-only=true`. Only the matching `deviceprobe` application ID is then
+included in the VPN, keeping other apps out of the measured workload. Interface
+addresses, routes and MTU match the SDK default. Missing probe packages fail
+closed. The running status and resource samples identify this scope. Normal
+connect buttons restore the full VPN scope; keep both scopes distinct in reports.
 
 `deviceprobe` has a separate UID, so its traffic traverses `devicehost`'s TUN
 instead of being excluded with the VPN owner. Its ordinary loop drives an HTTP
@@ -253,7 +286,10 @@ bounded stress action defaults to 240 HTTP attempts, 480 UDP attempts, and 32
 workers. Either protocol count may be zero for a transport-specific rehearsal,
 but a cycle must contain at least one attempt. Attempts and concurrency are
 validated against hard upper bounds, a second stress request is rejected while
-one is active, and logs expose only aggregate counts and elapsed time.
+one is active. Logs expose counts, elapsed time and sanitized failure classes;
+they never include failed URLs or remote addresses. A failed UDP query also
+records its SHA-256 prefix and local source port to correlate the synthetic
+request with the controlled backend without logging payloads.
 
 Both activities accept test-automation commands through the string extra
 `command`. Host commands are `connect`, `disconnect`, `rapid-stop`,
@@ -276,9 +312,21 @@ not a general application import API. Canonical parsing remains fail-closed;
 do not use `allowInsecure` for a device rehearsal.
 
 These applications produce diagnostic rehearsal telemetry. They do not create
-the checksum-authenticated six-hour report required by the release-evidence
-validator, replace Perfetto, or waive the full scenario matrix in
+the checksum-authenticated report required by the release-evidence validator,
+replace Perfetto, or waive the full scenario matrix in
 [mobile testing](../../docs/mobile-testing.md).
+The current v0.8 gate has no fixed soak duration; retain actual durations,
+independently verified recovery and resource limits. In particular, the host's
+placeholder `unrecoveredTransitions` telemetry field is not a measured verdict.
+See [v0.8 evidence assembly](../../docs/v08-release-evidence.md).
+
+For the new protocols, `scripts/run-v08-android-protocol-fixture.py --protocol
+v08` uses the same pinned Xray-core and private cleanup rules as the Apple
+fixture. It provides HTTP `/v08-probe` (204), the nonce-checked UDP oracle and
+routed DNS on synthetic IPv4/IPv6 destinations. The private envelope includes
+Trojan, all three SS2022 ciphers, and VMess auto/AES/ChaCha. HTTP success is an
+availability check, not byte-integrity or throughput evidence. Explicitly set
+both probe endpoints to this fixture before starting the probe app.
 
 ## Geodata
 

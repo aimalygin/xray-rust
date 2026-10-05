@@ -1,0 +1,45 @@
+[
+  {
+    "queryTag": "cdd09ff09ecf24b3",
+    "failureEpoch": 1791163583.664,
+    "localPort": 37798,
+    "error": "SocketTimeoutException",
+    "backendReplySubmissions": [
+      {
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791163578.550729,
+        "queryTag": "cdd09ff09ecf24b3",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromSubmissionToFailure": 5.113,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "880787f86981f054",
+    "failureEpoch": 1791163749.045,
+    "localPort": 39654,
+    "error": "SocketTimeoutException",
+    "backendReplySubmissions": [
+      {
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791163743.922712,
+        "queryTag": "880787f86981f054",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromSubmissionToFailure": 5.122,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "027e66cf3d23f3c6",
+    "failureEpoch": 1791164063.652,
+    "localPort": 49444,
+    "error": "SocketTimeoutException",
+    "backendReplySubmissions": [],
+    "secondsFromSubmissionToFailure": null,
+    "expectedVpnOffControl": true
+  }
+]

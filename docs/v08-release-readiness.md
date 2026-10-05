@@ -47,7 +47,7 @@ Completed evidence at the reviewed revisions:
 | Runtime controls | Shared codec tests cover malformed records, nonce exhaustion and partial writes; relay tests cover quota, quiet migration, half-close and cancellation. Core and pinned live interop checks are recorded in the [adaptive relay report](benchmarks/results/2026-10-02-v08-adaptive-relay/README.md). |
 | Performance | [Performance history](v08-performance.md) retains each tested runtime, failures and controls. Final ChaCha single-flow duplex improves speed 58–60% and CPU 10–11%, costing 0.92–1.11 MiB across 512 held connections and 13–27 microseconds of eight-flow p95 latency. AES single-flow duplex remains 22.6% slower than Xray; the owner accepted retaining this implementation for 0.8. No universal or device parity is claimed. |
 
-The frozen runtime candidate is core `de33998158e84c03f280f979ba2d4212072e5bc4`
+The earlier frozen native candidate is core `de33998158e84c03f280f979ba2d4212072e5bc4`
 and SDK `0148543fef8736e01625bc678ca321cc483e1e12`. Its
 [ordinary core CI](https://github.com/aimalygin/xray-rust/actions/runs/37136652768),
 [full core CI](https://github.com/aimalygin/xray-rust/actions/runs/37136753222) and
@@ -100,25 +100,55 @@ leaves the server but is not delivered. AES-256 passes Go 44/44 and phone 40/40;
 AES-128 ordinary phone smoke passes. Restart persistence is validated, while
 general WAN reliability and a production deployment remain unqualified.
 
+On 2026-10-04 the owner deferred further investigation of those remaining
+SS2022 UDP losses and asked to continue with the other work. They remain known
+limitations with all failed verdicts retained; this is not a client fix or a
+release authorization. The [evidence assembly inventory](v08-release-evidence.md)
+now records the next collection order and exact schema-4 gaps. Ordinary CI is
+green at core `2c04d98` ([run](https://github.com/aimalygin/xray-rust/actions/runs/37232384891))
+and SDK `f18254a` ([run](https://github.com/aimalygin/xray-rust-mobile/actions/runs/37232264692)).
+
+The [physical Android report](device-results/2026-10-04-android-v08/README.md)
+records Samsung SM-A145F / Android 15 LAN tests on both paths. The original
+functional matrix passes 14/14 combinations (182 HTTP and 182 UDP checks).
+Bounded stress retains two losses among 11,520 UDP attempts; all 5,760 HTTP
+attempts and twelve RSS/thread recovery criteria pass. Passing memory bounds
+alone did not establish acceptable CPU: PacketPump consumed about one core
+while idle. Its `xray-tun-in` loop immediately retried zero-byte nonblocking
+reads. The corrected adapter waits for readiness with a bounded `Os.poll` and
+unchanged buffers. The follow-up again passes 14/14 functional combinations
+and all twelve RSS/thread criteria, with recovery CPU about 2.6–3.1% of one
+core on PacketPump. It retains two UDP timeouts (SS2022 AES-128/AES-256 PP)
+among 11,520 attempts; fixing CPU does not resolve their cause. Maximum
+positive recovery-median RSS growth is 7.61 MiB, with no positive thread delta.
+Follow-up identities/results are recorded separately.
+
+The SDK development source pin is now `0d788564d85505ba0e2778320a561bc3d6500346`
+(tree `f71235a8b17a5e5e88809ada36ce4efc19f29b00`). Exact source/header/adapter
+checks pass locally. Rust/JNI used by these phone runs remains `de339981`; this
+is not a fresh exact-new-pin release build. Earlier iPhone/native evidence is
+historical supporting material whose applicability must be reviewed, and all
+original failures remain retained. No schema-4 exception is added.
+
 ## Remaining acceptance, in order
 
-- [x] Freeze the runtime candidate commit/tree and SDK pin after metadata/source
-  review, and pass its ordinary/full CI. The identities and runs are above.
-  Later documentation does not relabel these binaries; any runtime/build-input
-  change requires reassessing applicability and collecting fresh evidence.
+- [ ] Reconfirm the candidate commit/tree and SDK pin after the Android adapter
+  fix, pass its CI and reassess exact-candidate evidence. The earlier freeze/CI
+  is recorded above; it does not automatically qualify a changed adapter.
 - [ ] Complete Apple device acceptance for Trojan, SS2022 and VMess. The owner
   supplied an iPhone already covered by signing; the bounded checks above are
   complete. The optional SS2022 service hook persists across tested restarts;
-  locate the remaining request/reply path losses and decide the supported
-  deployment/path limits before calling WAN acceptance complete. Resolve
+  further SS2022 request/reply-loss diagnosis is owner-deferred. Preserve the
+  supported fixture/path conditions and known limits in the evidence. Resolve
   intermittent WireGuard failures and the isolated Trojan timeout (the bounded
   diagnostic repeats passed without establishing their causes), and finish the
   remaining calibrated performance/evidence requirements. Bounded cancellation,
   restart and resource observations are linked above; their limits remain open. The
   separate unregistered iPad remains deferred; no account change was made.
 - [ ] Collect Android scenarios for each protocol through both FileDescriptor
-  and PacketPump. Android hardware was unavailable at the last acceptance
-  attempt; host tests and emulator results do not close this device gate.
+  and PacketPump. Physical LAN/lifecycle/resource observations now exist;
+  network/lock transitions and shared/legacy coverage remain incomplete.
+  Host tests and emulator results do not close this device gate.
 - [ ] For each protocol/device path, record IPv4/IPv6 TCP and UDP, domain
   destinations, routed DNS, start/stop, cancellation, reconnect, Wi-Fi/cellular
   transitions, lock/wake and bounded resource recovery. Include profile imports,

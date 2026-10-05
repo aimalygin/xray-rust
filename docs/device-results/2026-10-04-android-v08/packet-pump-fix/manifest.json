@@ -1,0 +1,1000 @@
+{
+  "scope": "Android adapter readiness-wait follow-up; not full release acceptance",
+  "nativeRevision": "de33998158e84c03f280f979ba2d4212072e5bc4",
+  "nativeBinaryUnchanged": true,
+  "jniBinaryUnchanged": true,
+  "adapterChanged": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVpnService.kt",
+  "resourceRows": [
+    {
+      "case": "trojan-tls",
+      "backend": "file-descriptor",
+      "resourcePassed": true,
+      "rssGrowthMiB": 7.609,
+      "recoveredRssMiB": [
+        164.289,
+        171.898
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        3.65,
+        3.64
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.43,
+        2.06
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 39080,
+          "heapSizeKiB": 48940,
+          "allocatedKiB": 18658,
+          "freeKiB": 30281
+        },
+        {
+          "rssKiB": 39832,
+          "heapSizeKiB": 48940,
+          "allocatedKiB": 18294,
+          "freeKiB": 30645
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "resourcePassed": true,
+      "rssGrowthMiB": -12.383,
+      "recoveredRssMiB": [
+        172.633,
+        160.25
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        4.37,
+        4.36
+      ],
+      "recoveryCpuPercentOneCore": [
+        3.12,
+        2.94
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 39864,
+          "heapSizeKiB": 49892,
+          "allocatedKiB": 18152,
+          "freeKiB": 31739
+        },
+        {
+          "rssKiB": 27596,
+          "heapSizeKiB": 36284,
+          "allocatedKiB": 18787,
+          "freeKiB": 17496
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "resourcePassed": true,
+      "rssGrowthMiB": 0.27,
+      "recoveredRssMiB": [
+        168.812,
+        169.082
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        1.8,
+        1.79
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.02,
+        2.21
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 35920,
+          "heapSizeKiB": 71684,
+          "allocatedKiB": 27076,
+          "freeKiB": 44607
+        },
+        {
+          "rssKiB": 35068,
+          "heapSizeKiB": 71128,
+          "allocatedKiB": 25677,
+          "freeKiB": 45450
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "resourcePassed": true,
+      "rssGrowthMiB": -1.41,
+      "recoveredRssMiB": [
+        169.457,
+        168.047
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        2.34,
+        2.31
+      ],
+      "recoveryCpuPercentOneCore": [
+        3.13,
+        2.93
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 35736,
+          "heapSizeKiB": 70396,
+          "allocatedKiB": 26202,
+          "freeKiB": 44193
+        },
+        {
+          "rssKiB": 35036,
+          "heapSizeKiB": 69524,
+          "allocatedKiB": 26263,
+          "freeKiB": 43260
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "resourcePassed": true,
+      "rssGrowthMiB": 0.816,
+      "recoveredRssMiB": [
+        168.055,
+        168.871
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        1.87,
+        1.81
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.43,
+        2.02
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 34296,
+          "heapSizeKiB": 69784,
+          "allocatedKiB": 27422,
+          "freeKiB": 42361
+        },
+        {
+          "rssKiB": 36252,
+          "heapSizeKiB": 71236,
+          "allocatedKiB": 26150,
+          "freeKiB": 45085
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "resourcePassed": true,
+      "rssGrowthMiB": 6.59,
+      "recoveredRssMiB": [
+        161.457,
+        168.047
+      ],
+      "threadGrowth": 0,
+      "cpuSeconds": [
+        2.44,
+        2.31
+      ],
+      "recoveryCpuPercentOneCore": [
+        3.12,
+        2.93
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 27632,
+          "heapSizeKiB": 52040,
+          "allocatedKiB": 26892,
+          "freeKiB": 25147
+        },
+        {
+          "rssKiB": 34880,
+          "heapSizeKiB": 69476,
+          "allocatedKiB": 25833,
+          "freeKiB": 43642
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 959,
+      "udpFailed": 1
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "resourcePassed": true,
+      "rssGrowthMiB": 0.355,
+      "recoveredRssMiB": [
+        167.688,
+        168.043
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        1.87,
+        1.82
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.19,
+        1.83
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 34980,
+          "heapSizeKiB": 70000,
+          "allocatedKiB": 26962,
+          "freeKiB": 43037
+        },
+        {
+          "rssKiB": 26388,
+          "heapSizeKiB": 49632,
+          "allocatedKiB": 25758,
+          "freeKiB": 23873
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "resourcePassed": true,
+      "rssGrowthMiB": -8.543,
+      "recoveredRssMiB": [
+        168.871,
+        160.328
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        2.34,
+        2.38
+      ],
+      "recoveryCpuPercentOneCore": [
+        3.13,
+        2.76
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 27664,
+          "heapSizeKiB": 50980,
+          "allocatedKiB": 27055,
+          "freeKiB": 23924
+        },
+        {
+          "rssKiB": 26768,
+          "heapSizeKiB": 50376,
+          "allocatedKiB": 26878,
+          "freeKiB": 23497
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 959,
+      "udpFailed": 1
+    },
+    {
+      "case": "vmess-aes-128-gcm",
+      "backend": "file-descriptor",
+      "resourcePassed": true,
+      "rssGrowthMiB": -3.41,
+      "recoveredRssMiB": [
+        158.926,
+        155.516
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        2.19,
+        2.16
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.2,
+        2.38
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 25924,
+          "heapSizeKiB": 32616,
+          "allocatedKiB": 17531,
+          "freeKiB": 15084
+        },
+        {
+          "rssKiB": 22916,
+          "heapSizeKiB": 29376,
+          "allocatedKiB": 17523,
+          "freeKiB": 11852
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "vmess-aes-128-gcm",
+      "backend": "packet-pump",
+      "resourcePassed": true,
+      "rssGrowthMiB": 6.594,
+      "recoveredRssMiB": [
+        151.758,
+        158.352
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        2.67,
+        2.73
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.58,
+        2.78
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 20232,
+          "heapSizeKiB": 26632,
+          "allocatedKiB": 17322,
+          "freeKiB": 9309
+        },
+        {
+          "rssKiB": 24976,
+          "heapSizeKiB": 31600,
+          "allocatedKiB": 17237,
+          "freeKiB": 14362
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "vmess-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "resourcePassed": true,
+      "rssGrowthMiB": -1.48,
+      "recoveredRssMiB": [
+        160.406,
+        158.926
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        2.14,
+        2.18
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.23,
+        2.21
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 27172,
+          "heapSizeKiB": 33760,
+          "allocatedKiB": 17715,
+          "freeKiB": 16044
+        },
+        {
+          "rssKiB": 26512,
+          "heapSizeKiB": 33116,
+          "allocatedKiB": 17336,
+          "freeKiB": 15779
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    },
+    {
+      "case": "vmess-chacha20-poly1305",
+      "backend": "packet-pump",
+      "resourcePassed": true,
+      "rssGrowthMiB": 4.957,
+      "recoveredRssMiB": [
+        153.664,
+        158.621
+      ],
+      "threadGrowth": -1,
+      "cpuSeconds": [
+        2.72,
+        2.73
+      ],
+      "recoveryCpuPercentOneCore": [
+        3.13,
+        2.74
+      ],
+      "nativeHeap": [
+        {
+          "rssKiB": 22200,
+          "heapSizeKiB": 28668,
+          "allocatedKiB": 17353,
+          "freeKiB": 11314
+        },
+        {
+          "rssKiB": 25360,
+          "heapSizeKiB": 31816,
+          "allocatedKiB": 17153,
+          "freeKiB": 14662
+        }
+      ],
+      "httpPassed": 480,
+      "httpFailed": 0,
+      "udpPassed": 960,
+      "udpFailed": 0
+    }
+  ],
+  "functionalPassedCases": 14,
+  "functionalHttpPassed": 182,
+  "functionalUdpPassed": 182,
+  "functionalFailures": 0,
+  "idleControls": [
+    {
+      "hostTime": 1791162816.9464252,
+      "kind": "idle-cpu-control",
+      "backend": "packet-pump",
+      "before": {
+        "time": 1791162802.107264,
+        "cpuTicks": 617,
+        "rssBytes": 139431936,
+        "threads": 37
+      },
+      "after": {
+        "time": 1791162816.946325,
+        "cpuTicks": 668,
+        "rssBytes": 138104832,
+        "threads": 36
+      },
+      "threads": [
+        {
+          "name": ".devicehost.v08",
+          "cpuSeconds": 0.13
+        },
+        {
+          "name": "RenderThread",
+          "cpuSeconds": 0.08
+        },
+        {
+          "name": "xray-tun-in",
+          "cpuSeconds": 0.05
+        },
+        {
+          "name": "HeapTaskDaemon",
+          "cpuSeconds": 0.04
+        },
+        {
+          "name": "mali-cmar-backe",
+          "cpuSeconds": 0.04
+        },
+        {
+          "name": "xray-tun-out",
+          "cpuSeconds": 0.03
+        },
+        {
+          "name": "mali-mem-purge",
+          "cpuSeconds": 0.02
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.02
+        },
+        {
+          "name": "Jit thread pool",
+          "cpuSeconds": 0.01
+        },
+        {
+          "name": "xray-android-de",
+          "cpuSeconds": 0.01
+        },
+        {
+          "name": "Signal Catcher",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "perfetto_hprof_",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "ADB-JDWP Connec",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "ReferenceQueueD",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "FinalizerDaemon",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "FinalizerWatchd",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_1",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_2",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_3",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "Profile Saver",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "queued-work-loo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "SurfaceSyncGrou",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "hwuiTask0",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "hwuiTask1",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_4",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_3",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-vpn-start-",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "Thread-2",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        }
+      ]
+    },
+    {
+      "hostTime": 1791162837.733891,
+      "kind": "idle-cpu-control",
+      "backend": "file-descriptor",
+      "before": {
+        "time": 1791162823.161663,
+        "cpuTicks": 693,
+        "rssBytes": 140685312,
+        "threads": 34
+      },
+      "after": {
+        "time": 1791162837.733793,
+        "cpuTicks": 729,
+        "rssBytes": 141021184,
+        "threads": 34
+      },
+      "threads": [
+        {
+          "name": ".devicehost.v08",
+          "cpuSeconds": 0.13
+        },
+        {
+          "name": "RenderThread",
+          "cpuSeconds": 0.08
+        },
+        {
+          "name": "mali-cmar-backe",
+          "cpuSeconds": 0.03
+        },
+        {
+          "name": "mali-mem-purge",
+          "cpuSeconds": 0.02
+        },
+        {
+          "name": "binder:9003_4",
+          "cpuSeconds": 0.01
+        },
+        {
+          "name": "xray-android-de",
+          "cpuSeconds": 0.01
+        },
+        {
+          "name": "Signal Catcher",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "perfetto_hprof_",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "ADB-JDWP Connec",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "Jit thread pool",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "HeapTaskDaemon",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "ReferenceQueueD",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "FinalizerDaemon",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "FinalizerWatchd",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_1",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_2",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_3",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "Profile Saver",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "mali-utility-wo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "queued-work-loo",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "SurfaceSyncGrou",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "hwuiTask0",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "hwuiTask1",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "binder:9003_3",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-vpn-start-",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "xray-ffi",
+          "cpuSeconds": 0.0
+        },
+        {
+          "name": "Thread-3",
+          "cpuSeconds": 0.0
+        }
+      ]
+    }
+  ],
+  "negativeControls": [
+    {
+      "hostTime": 1791164050.016602,
+      "kind": "invalid-import-control",
+      "format": "trojan",
+      "passed": true,
+      "status": {
+        "state": "failed",
+        "detail": "pending-profile-XrayCoreException",
+        "runtime-generation": "14",
+        "fatal-tun-errors": "0"
+      },
+      "profileCiphertextUnchanged": true,
+      "pendingRemoved": true,
+      "markerAbsentFromHostLog": true
+    },
+    {
+      "hostTime": 1791164051.488896,
+      "kind": "invalid-import-control",
+      "format": "shadowsocks2022",
+      "passed": true,
+      "status": {
+        "state": "failed",
+        "detail": "pending-profile-XrayCoreException",
+        "runtime-generation": "14",
+        "fatal-tun-errors": "0"
+      },
+      "profileCiphertextUnchanged": true,
+      "pendingRemoved": true,
+      "markerAbsentFromHostLog": true
+    },
+    {
+      "hostTime": 1791164052.965396,
+      "kind": "invalid-import-control",
+      "format": "vmess",
+      "passed": true,
+      "status": {
+        "state": "failed",
+        "detail": "pending-profile-XrayCoreException",
+        "runtime-generation": "14",
+        "fatal-tun-errors": "0"
+      },
+      "profileCiphertextUnchanged": true,
+      "pendingRemoved": true,
+      "markerAbsentFromHostLog": true
+    },
+    {
+      "hostTime": 1791164064.167029,
+      "kind": "vpn-off-negative-control",
+      "passed": true,
+      "status": {
+        "running": "true",
+        "http-failed": "1",
+        "udp-failed": "1",
+        "http-passed": "0",
+        "udp-passed": "0"
+      },
+      "expectedTrafficFailure": true
+    }
+  ],
+  "limits": {
+    "rssGrowthBytes": 8388608,
+    "rssGrowthFraction": 0.25,
+    "threadGrowth": 4,
+    "cycles": 2,
+    "httpAttempts": 240,
+    "udpAttempts": 480,
+    "workers": 32,
+    "settleSeconds": 20
+  },
+  "cleanup": {
+    "complete": true,
+    "ownedServicesStopped": true,
+    "ownedAppProcessesStopped": true,
+    "ownedProfileAndPendingImportsRemoved": true,
+    "fixtureCredentialsRemoved": true,
+    "previousAppPackagesUntouched": true,
+    "stateBeforeForceStop": {
+      "host": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "14",
+        "fatal-tun-errors": "0"
+      },
+      "probe": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "0",
+        "udp-passed": "0"
+      }
+    },
+    "finalConditions": {
+      "battery": [
+        "USB powered: true",
+        "status: 5",
+        "level: 100",
+        "temperature: 290"
+      ],
+      "thermal": [
+        "Thermal Status: 0"
+      ]
+    }
+  },
+  "releaseAcceptanceComplete": false,
+  "artifacts": [
+    {
+      "path": "backend-events.jsonl",
+      "sha256": "0342e6199f1fb372bafe228b9634ab59840098e5798fee681ced9d5634ac1e97"
+    },
+    {
+      "path": "build-identity.json",
+      "sha256": "3bd5398df1565e988e8d5f251ce936ba3a9d326d18dea47672b067a7820548b5"
+    },
+    {
+      "path": "events.jsonl",
+      "sha256": "46f9bff30f47b0012b0c12317b9407cabdfc539267e2742c02a01c3710681932"
+    },
+    {
+      "path": "sanitized-log.txt",
+      "sha256": "82895cac0a0d7819cda49a5bee1fbc9c2ea459206c2ffe8878543ea3ea017775"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "33319197ac9222fa0cd049886bde4cca0a92cb7fa56b75ff795141b2cc8dc168"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "dba829ba9b65bcef2852b2d93c3fc3b8d5b804c6de3c11da38fb6d1780da3567"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-packet-pump-cycle1-meminfo.txt",
+      "sha256": "bd090c7fae66da0e18679238108af8c9b71fe663b9636f82a415565517f3e1d6"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-packet-pump-cycle2-meminfo.txt",
+      "sha256": "f22d78e8bbbcce53591976646e5f3d832c8418c5e5f463c1ac9b4f097047ef3d"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "27c785749872f137b1d4bd9b2a6a2ec331bc364f3ccc2345c008b49262b22318"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "e98d2ed8cbcf469902a97dfdc5f44a2a76740c073c7418b226962aceb87b88e8"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-packet-pump-cycle1-meminfo.txt",
+      "sha256": "4048a549f7cae1f342701846ba1b430b3e04acf3d58ae53148c18527401622db"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-packet-pump-cycle2-meminfo.txt",
+      "sha256": "9a862fafe18e4285401bb071027b8a706515bfcf098744ff208e2b10baa47a03"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "9753e1055a50522e8f6317f00cd810a7e47adb4f6f80f79c5e5b272fd922e1e3"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "52a7d4f33515c3f10fdce779edae66dc4d568cf25889c1d519341de7a93e2bf3"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-packet-pump-cycle1-meminfo.txt",
+      "sha256": "5e07d6c215a42be12224e83869647a88fc204fdc6510035af5366b79d9b1ed94"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-packet-pump-cycle2-meminfo.txt",
+      "sha256": "2fb9ffa5358a7e240ece8db452721e31083fdb2bef5eec8ca5ca19b00767aaa3"
+    },
+    {
+      "path": "trojan-tls-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "0767ae8428efb429671bee090c4d235caec101a790809492bff2363f7a5fbc3f"
+    },
+    {
+      "path": "trojan-tls-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "b5de7989ad4c5920e90d13166112472ec5d6797fe83c2f2b73a61d3139408370"
+    },
+    {
+      "path": "trojan-tls-packet-pump-cycle1-meminfo.txt",
+      "sha256": "30e64d4cd036798910ef4135d153daed448253d993cf83150809dd7f66cdf8cd"
+    },
+    {
+      "path": "trojan-tls-packet-pump-cycle2-meminfo.txt",
+      "sha256": "a40c955456967a3a3ee7d6273a0b380621776851977597b89b1a838567948555"
+    },
+    {
+      "path": "udp-correlation.json",
+      "sha256": "ce9f8fd35783db1904abfb6770ace7a8967e8cab7b47cc6d1d434dc11b7c5b8a"
+    },
+    {
+      "path": "vmess-aes-128-gcm-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "579a95950a654e98ed73df1a8ac9a11ded5c81de5dec84d712e43c133cd95d3b"
+    },
+    {
+      "path": "vmess-aes-128-gcm-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "2e9ce759f8a58ab07dfbd5ab2c825a652f1537b7655c018a7a7e1bd4e46ff943"
+    },
+    {
+      "path": "vmess-aes-128-gcm-packet-pump-cycle1-meminfo.txt",
+      "sha256": "a961900d51d314211df742f56a37faa7fb0d61fa70e8e08bf9f84da761e2db5c"
+    },
+    {
+      "path": "vmess-aes-128-gcm-packet-pump-cycle2-meminfo.txt",
+      "sha256": "21bcc32ee96df4b6f6487012ac0021c2895652443ff8eb86ca287e4f1c11ee0d"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "14c3beec8738ca579812613da432df0310bcd0e55cb5a0bcbb7f2f8a93adc3d3"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "f166827a6fb0483626655172a94ddee56a29d1c2d21ea92d30052093882ac747"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-packet-pump-cycle1-meminfo.txt",
+      "sha256": "b08db6770a63c1072cf53fb08a600b776a33a3b3f99368c60acf91a767c546c1"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-packet-pump-cycle2-meminfo.txt",
+      "sha256": "d43deba60bfbed70b0206404b2a03d415500a3dfb15ff235bb3bd2616124eab8"
+    }
+  ]
+}

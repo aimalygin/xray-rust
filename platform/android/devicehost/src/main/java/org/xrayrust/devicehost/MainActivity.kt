@@ -23,6 +23,8 @@ import android.widget.Toast
 import org.json.JSONObject
 import org.xrayrust.mobile.XrayVlessUrlImportException
 import org.xrayrust.mobile.XrayVlessUrlImporter
+import org.xrayrust.mobile.XrayProfileImporter
+import org.xrayrust.mobile.XrayTunBackend
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -31,7 +33,10 @@ class MainActivity : Activity() {
     private lateinit var profileInput: EditText
     private lateinit var statusText: TextView
     private lateinit var connectButton: Button
+    private lateinit var packetPumpButton: Button
     private lateinit var disconnectButton: Button
+    private var requestedBackend = XrayTunBackend.FileDescriptor
+    private var requestedProbeOnly = false
     private val refreshStatus = object : Runnable {
         override fun run() {
             renderStatus()
@@ -41,6 +46,10 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedBackend = DeviceGateOptions.backend(
+            savedInstanceState?.getString(DeviceGateOptions.EXTRA_TUN_BACKEND),
+        )
+        requestedProbeOnly = savedInstanceState?.getBoolean("probe-only", false) ?: false
         setContentView(buildContentView())
         requestNotificationPermission()
         handleAutomationCommand(intent)
@@ -50,6 +59,15 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAutomationCommand(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("probe-only", requestedProbeOnly)
+        outState.putString(
+            DeviceGateOptions.EXTRA_TUN_BACKEND,
+            DeviceGateOptions.backendName(requestedBackend),
+        )
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -102,7 +120,7 @@ class MainActivity : Activity() {
         content.addView(statusText, matchWrap())
 
         profileInput = EditText(this).apply {
-            hint = "Paste a VLESS share link"
+            hint = "Paste a VLESS, Trojan, SS2022, VMess or Hysteria2 link"
             minLines = 3
             maxLines = 7
             inputType = InputType.TYPE_CLASS_TEXT or
@@ -112,13 +130,21 @@ class MainActivity : Activity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
             }
-            contentDescription = "VLESS profile input"
+            contentDescription = "Protocol profile input"
         }
         content.addView(profileInput, matchWrap(top = 18))
 
         content.addView(button("Import and encrypt profile") { importProfile() })
-        connectButton = button("Connect VPN") { requestVpnConsentAndConnect() }
+        connectButton = button("Connect using FileDescriptor") {
+            requestedProbeOnly = false
+            requestVpnConsentAndConnect()
+        }
         content.addView(connectButton)
+        packetPumpButton = button("Connect using PacketPump") {
+            requestedProbeOnly = false
+            requestVpnConsentAndConnect(XrayTunBackend.PacketPump)
+        }
+        content.addView(packetPumpButton)
         disconnectButton = button("Disconnect VPN") { sendServiceAction(DeviceGateVpnService.ACTION_STOP) }
         content.addView(disconnectButton)
         content.addView(button("Rapid connect then stop") { rapidConnectThenStop() })
@@ -144,7 +170,7 @@ class MainActivity : Activity() {
     private fun importProfile() {
         val rawUrl = profileInput.text.toString()
         if (rawUrl.isBlank()) {
-            showToast("Paste a VLESS share link first")
+            showToast("Paste a supported share link first")
             return
         }
         try {
@@ -157,7 +183,7 @@ class MainActivity : Activity() {
             val parameter = error.parameter?.let { " ($it)" } ?: ""
             showToast("Profile rejected: ${error.code}$parameter")
         } catch (error: Throwable) {
-            showToast("Profile storage failed: ${error.javaClass.simpleName}")
+            showToast("Profile import/storage failed: ${error.javaClass.simpleName}")
         }
     }
 
@@ -223,7 +249,13 @@ class MainActivity : Activity() {
     }
 
     private fun importRawProfile(rawUrl: String) {
-        val profile = XrayVlessUrlImporter.profile(rawUrl)
+        val text = rawUrl.trim()
+        val format = DeviceGateOptions.profileFormat(text)
+        val profile = if (format == null) {
+            XrayVlessUrlImporter.profile(text)
+        } else {
+            XrayProfileImporter.profile(text, format)
+        }
         EncryptedProfileStore(this).write(profile.configJson)
         DeviceGateStatus.write(this, state = "stopped", detail = "profile-ready")
     }
@@ -247,11 +279,12 @@ class MainActivity : Activity() {
         runCatching { file.delete() }
     }
 
-    private fun requestVpnConsentAndConnect() {
+    private fun requestVpnConsentAndConnect(backend: XrayTunBackend = XrayTunBackend.FileDescriptor) {
         if (!EncryptedProfileStore(this).exists()) {
             showToast("Import a profile first")
             return
         }
+        requestedBackend = backend
         val consent = VpnService.prepare(this)
         if (consent == null) {
             startVpnService()
@@ -283,6 +316,11 @@ class MainActivity : Activity() {
 
     private fun sendServiceAction(action: String, foreground: Boolean = true) {
         val serviceIntent = Intent(this, DeviceGateVpnService::class.java).setAction(action)
+            .putExtra("probe-only", requestedProbeOnly)
+            .putExtra(
+                DeviceGateOptions.EXTRA_TUN_BACKEND,
+                DeviceGateOptions.backendName(requestedBackend),
+            )
         if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(serviceIntent)
         } else {
@@ -291,8 +329,20 @@ class MainActivity : Activity() {
     }
 
     private fun handleAutomationCommand(intent: Intent?) {
-        when (intent?.getStringExtra(EXTRA_COMMAND)) {
-            COMMAND_CONNECT -> requestVpnConsentAndConnect()
+        val command = intent?.getStringExtra(EXTRA_COMMAND)
+        if (command == COMMAND_CONNECT || command == COMMAND_RAPID_STOP) {
+            requestedProbeOnly = intent?.getBooleanExtra("probe-only", false) ?: false
+            requestedBackend = try {
+                DeviceGateOptions.backend(intent?.getStringExtra(DeviceGateOptions.EXTRA_TUN_BACKEND))
+            } catch (_: IllegalArgumentException) {
+                showToast("Unsupported test TUN backend")
+                intent?.removeExtra(EXTRA_COMMAND)
+                intent?.removeExtra(DeviceGateOptions.EXTRA_TUN_BACKEND)
+                return
+            }
+        }
+        when (command) {
+            COMMAND_CONNECT -> requestVpnConsentAndConnect(requestedBackend)
             COMMAND_DISCONNECT -> sendServiceAction(
                 DeviceGateVpnService.ACTION_STOP,
                 foreground = false,
@@ -310,6 +360,8 @@ class MainActivity : Activity() {
             COMMAND_IMPORT_PENDING_CONFIG -> importPendingPrivateConfig()
         }
         intent?.removeExtra(EXTRA_COMMAND)
+        intent?.removeExtra(DeviceGateOptions.EXTRA_TUN_BACKEND)
+        intent?.removeExtra("probe-only")
     }
 
     private fun renderStatus() {
@@ -326,6 +378,7 @@ class MainActivity : Activity() {
             detail,
         )
         connectButton.isEnabled = status.hasProfile && status.state !in setOf("running", "starting")
+        packetPumpButton.isEnabled = connectButton.isEnabled
         disconnectButton.isEnabled = status.state in setOf("running", "starting", "fatal")
     }
 
