@@ -1,6 +1,6 @@
 {
   "archive": "measurements.tar.gz",
-  "archive_sha256": "19680e732c53739b1a8017ad4bdb032633943158f2eaf13b57019cdca925b9f2",
+  "archive_sha256": "1d81d46715621ae9b8dfe579da21539646938912a11f48439fbcc32bf863a2e9",
   "members": {
     "collectors/paired-fragment.py": {
       "bytes": 8037,
@@ -15089,6 +15089,10 @@
     "validation/fragment-clippy.log": {
       "bytes": 1404,
       "sha256": "fae9a83413fe44e2d8689189e46501c47a9dc7268287cc4182b9fa2e5d566cfd"
+    },
+    "validation/fragment-interop-final-runtime.log": {
+      "bytes": 716,
+      "sha256": "7bd85bda1d23d9c66c382d5e7724250ce2bff7c70fdabfb2f3a51cfbd9f49a88"
     },
     "validation/fragment-interop.log": {
       "bytes": 603,

@@ -53,6 +53,8 @@ first failed (18 accounted bytes instead of 6), then passed after the fix; it
 also verifies that the old decision cannot admit the replacement flow. All
 523 core unit tests and 190 runtime tests pass (16 external tests ignored),
 as does strict core Clippy. This path is only entered when admission is enabled.
+The four live fragmentation cases also pass again on this final runtime and
+are now selected by `check-v08-carrier-interop.sh` in ordinary PR CI.
 
 ## Physical Android check
 

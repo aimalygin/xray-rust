@@ -33,3 +33,9 @@ XRAY_DOWNLOAD_ORACLE="$TEST_ROOT/download-oracle" XRAY_VLESS_ENCRYPTION_ORACLE="
 XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests \
     v08_carriers::v08_carrier_ -- --ignored --nocapture
+
+# Exercise the protected first-ClientHello path in ordinary PR CI, including
+# REALITY authentication, Vision direct mode and the legacy dialerProxy form.
+XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" XRAY_CORE_CHECKOUT="$CHECKOUT" \
+  cargo test --locked -p xray-core-rs --test local_xray_interop_tests \
+    fragment_ -- --ignored --nocapture
