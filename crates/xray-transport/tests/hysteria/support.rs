@@ -13,6 +13,7 @@ use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use xray_transport::hysteria::HysteriaConfig;
 use xray_transport::{TlsClientConfig, TlsConnector};
 
+pub const SALAMANDER_PASSWORD: &str = "synthetic-salamander-password";
 pub const AUTH: &str = "synthetic-local-hysteria-test-auth";
 pub const DEADLINE: Duration = Duration::from_secs(8);
 
@@ -29,6 +30,7 @@ pub fn tls_settings() -> TlsClientConfig {
 
 pub struct Identity {
     pub connector: TlsConnector,
+    pub acceptor: tokio_rustls::TlsAcceptor,
     pub server: quinn::ServerConfig,
     pub cert_pem: String,
     pub key_pem: String,
@@ -48,6 +50,7 @@ pub fn identity() -> Identity {
         )
         .unwrap();
     tls.alpn_protocols = vec![b"h3".to_vec()];
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls.clone()));
     let server = quinn::ServerConfig::with_crypto(Arc::new(
         quinn::crypto::rustls::QuicServerConfig::try_from(tls).unwrap(),
     ));
@@ -60,6 +63,7 @@ pub fn identity() -> Identity {
         .with_no_client_auth();
     Identity {
         connector: TlsConnector::with_pinned_client_config(Arc::new(client)),
+        acceptor,
         server,
         cert_pem: pem("CERTIFICATE", cert.cert.der()),
         key_pem: pem("PRIVATE KEY", &cert.signing_key.serialize_der()),
@@ -91,6 +95,10 @@ impl ReferenceServer {
     }
 
     pub async fn start_with_udp(udp_enabled: bool) -> Self {
+        Self::start_with_carrier(udp_enabled, false).await
+    }
+
+    pub async fn start_with_carrier(udp_enabled: bool, salamander: bool) -> Self {
         let (binary, native) = match (
             std::env::var_os("XRAY_HYSTERIA_BINARY"),
             std::env::var_os("NATIVE_HYSTERIA_BINARY"),
@@ -119,7 +127,7 @@ impl ReferenceServer {
         std::fs::write(directory.join("key.pem"), identity.key_pem).unwrap();
         let reservation = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = reservation.local_addr().unwrap();
-        let config = if native {
+        let mut config = if native {
             serde_json::json!({
                 "listen": address.to_string(),
                 "tls": {"cert": directory.join("cert.pem"), "key": directory.join("key.pem")},
@@ -137,6 +145,13 @@ impl ReferenceServer {
             // These synthetic echo fixtures explicitly permit loopback only.
             "outbounds":[{"protocol":"freedom","settings":{"finalRules":[{"action":"allow","ip":["127.0.0.0/8","::1/128"]}]}}]})
         };
+        if salamander {
+            if native {
+                config["obfs"] = serde_json::json!({"type":"salamander", "salamander":{"password":SALAMANDER_PASSWORD}});
+            } else {
+                config["inbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({"udp":[{"type":"salamander","settings":{"password":SALAMANDER_PASSWORD}}]});
+            }
+        }
         std::fs::write(
             directory.join("config.json"),
             serde_json::to_vec(&config).unwrap(),

@@ -44,7 +44,8 @@ impl Parser<'_> {
                 "REALITY only supports RAW, XHTTP and gRPC for now",
             );
         }
-        let quic_params = self.parse_quic_params(stream, index);
+        let quic_params = self.parse_quic_params(stream, stream_network, index);
+        let tcp_fragment = self.parse_tcp_fragment_mask(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -75,6 +76,7 @@ impl Parser<'_> {
             transport,
             security,
             quic_params,
+            tcp_fragment,
             socket_options,
         })
     }
@@ -462,11 +464,11 @@ impl Parser<'_> {
     ///
     /// `quicParams` is a Go pointer, so `None` deliberately distinguishes an
     /// absent/null pointer from an explicitly present, default-valued object.
-    /// TCP/UDP masks require runtime plugins we do not implement and therefore
-    /// fail closed instead of being silently discarded.
+    /// Unsupported masks fail closed; Hysteria parses its Salamander mask separately.
     pub(super) fn parse_quic_params(
         &mut self,
         stream: Option<&Value>,
+        network: StreamNetwork,
         index: usize,
     ) -> Option<QuicParamsSettings> {
         let finalmask = stream?.get("finalmask")?;
@@ -480,8 +482,9 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(finalmask, &finalmask_path, &surface::FINALMASK);
-        self.reject_finalmask_masks(finalmask, "tcp", &finalmask_path);
-        self.reject_finalmask_masks(finalmask, "udp", &finalmask_path);
+        if network != StreamNetwork::Hysteria {
+            self.reject_finalmask_masks(finalmask, "udp", &finalmask_path);
+        }
 
         let quic = finalmask.get("quicParams")?;
         if quic.is_null() {
@@ -493,6 +496,16 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(quic, &quic_path, &surface::QUIC_PARAMS);
+        if network == StreamNetwork::Hysteria {
+            for key in quic.as_object().expect("checked object").keys() {
+                if key != "udpHop" {
+                    self.error(
+                        format!("{quic_path}.{key}"),
+                        "Hysteria only supports the udpHop QUIC override",
+                    );
+                }
+            }
+        }
 
         // Go's encoding/json treats null for scalar struct fields as their
         // existing zero value. The nullable helpers below preserve that rule.
@@ -815,6 +828,13 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(socket_options, &socket_options_path, &surface::SOCKOPT);
+        // The bounded freedom-fragment dialerProxy form is resolved across
+        // outbounds after parsing, then normalized into tcp_fragment.
+        self.nullable_string_at(
+            socket_options,
+            "dialerProxy",
+            format!("{socket_options_path}.dialerProxy"),
+        )?;
         let happy_eyeballs = socket_options
             .get("happyEyeballs")
             .and_then(|settings| self.parse_happy_eyeballs_settings(settings, index));

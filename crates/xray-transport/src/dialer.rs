@@ -16,6 +16,7 @@ pub struct TransportDialer {
     reality: Option<Arc<dyn RealityTlsEngine>>,
     socket_protector: Option<Arc<dyn SocketProtector>>,
     resolved_tcp_connector: Option<Arc<dyn ResolvedTcpConnector>>,
+    tcp_fragment: Option<Arc<crate::TcpFragmentConfig>>,
 }
 
 #[derive(Clone)]
@@ -63,6 +64,7 @@ impl TransportDialer {
             reality: Some(Arc::new(reality)),
             socket_protector,
             resolved_tcp_connector: None,
+            tcp_fragment: None,
         })
     }
 
@@ -73,6 +75,7 @@ impl TransportDialer {
             reality: None,
             socket_protector,
             resolved_tcp_connector: None,
+            tcp_fragment: None,
         }
     }
 
@@ -89,6 +92,11 @@ impl TransportDialer {
 
     pub fn with_resolved_tcp_connector(mut self, connector: Arc<dyn ResolvedTcpConnector>) -> Self {
         self.resolved_tcp_connector = Some(connector);
+        self
+    }
+
+    pub fn with_tcp_fragment(mut self, config: Arc<crate::TcpFragmentConfig>) -> Self {
+        self.tcp_fragment = Some(config);
         self
     }
 
@@ -109,6 +117,11 @@ impl TransportDialer {
         &self,
         config: &ConnectorConfig,
     ) -> Result<H3DialMaterial, TransportError> {
+        if self.tcp_fragment.is_some() {
+            return Err(TransportError::UnsupportedConnectorConfig(
+                "TCP fragmentation over QUIC",
+            ));
+        }
         if self.resolved_tcp_connector.is_some() {
             return Err(TransportError::UnsupportedChainedTransport("XHTTP HTTP/3"));
         }
@@ -128,6 +141,15 @@ impl TransportDialer {
         config: &ConnectorConfig,
         target: &Target,
     ) -> Result<BoxedTransportStream, TransportError> {
+        if self.tcp_fragment.is_some() {
+            let address = match &target.addr {
+                TargetAddr::Ip(ip) => SocketAddr::new(*ip, target.port),
+                TargetAddr::Domain(domain) => return Err(TransportError::NeedsDns(domain.clone())),
+            };
+            return self
+                .connect_resolved(config, target, &[address], None)
+                .await;
+        }
         match config {
             ConnectorConfig::Tcp => Ok(Box::new(
                 connect_tcp_target(target, self.socket_protector.as_deref()).await?,
@@ -285,6 +307,26 @@ impl TransportDialer {
                 let race_config = happy_eyeballs
                     .filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2);
 
+                if let Some(fragment) = &self.tcp_fragment {
+                    let prepared = reality
+                        .prepare_preconnected(reality_config, original_target)?
+                        .ok_or(TransportError::UnsupportedConnectorConfig(
+                            "REALITY tlshello fragmentation",
+                        ))?;
+                    let stream = match race_config {
+                        Some(race) => {
+                            connect_tcp_happy_eyeballs(
+                                candidates,
+                                self.socket_protector.as_deref(),
+                                race,
+                            )
+                            .await?
+                        }
+                        None => connect_tcp_stream(first, self.socket_protector.as_deref()).await?,
+                    };
+                    return prepared.complete_fragmented(stream, fragment.clone()).await;
+                }
+
                 let Some(race_config) = race_config else {
                     return reality
                         .connect_socket_addr(reality_config, original_target, first)
@@ -312,6 +354,21 @@ impl TransportDialer {
     }
 
     async fn connect_tcp_carrier(
+        &self,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let stream = self
+            .connect_tcp_carrier_unmasked(original_target, candidates, happy_eyeballs)
+            .await?;
+        Ok(match &self.tcp_fragment {
+            Some(config) => Box::new(crate::fragment::FragmentStream::new(stream, config.clone())),
+            None => stream,
+        })
+    }
+
+    async fn connect_tcp_carrier_unmasked(
         &self,
         original_target: &Target,
         candidates: &[SocketAddr],

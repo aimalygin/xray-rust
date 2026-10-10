@@ -38,6 +38,7 @@ mod sniffing;
 mod socks;
 mod startup_probe;
 mod tun;
+mod tun_admission;
 mod tun_fd;
 
 #[cfg(feature = "fuzzing")]
@@ -72,6 +73,7 @@ pub use startup_probe::{
     OutboundProbeError, OutboundProbeOutcome, StartupProbeError, StartupProbeOptions,
     MAX_OUTBOUND_PROBE_TIMEOUT,
 };
+pub use tun_admission::{TunAdmissionPolicy, TunFlow, TunFlowAdmission};
 pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +88,53 @@ pub struct TunRuntimeOptions {
     pub collect_tcp_timings: bool,
     pub profile: TunRuntimeProfile,
     pub dns_bootstrap: DnsBootstrapMode,
+    /// Host resource limits for each Hysteria outbound, shared by all inbounds.
+    /// Independent of the TUN profile and never interpreted as Xray JSON fields.
+    pub hysteria_stream_limits: HysteriaStreamLimits,
+}
+
+/// Bounded concurrent streams per Hysteria connection. Existing defaults are
+/// retained; increasing the limits admits more flows, not larger per-flow queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HysteriaStreamLimits {
+    max_tcp_streams: u32,
+    max_udp_sessions: u32,
+}
+
+impl Default for HysteriaStreamLimits {
+    fn default() -> Self {
+        Self {
+            max_tcp_streams: 64,
+            max_udp_sessions: 32,
+        }
+    }
+}
+
+impl HysteriaStreamLimits {
+    pub fn new(max_tcp_streams: u32, max_udp_sessions: u32) -> Result<Self, CoreError> {
+        if !(1..=256).contains(&max_tcp_streams) || !(1..=128).contains(&max_udp_sessions) {
+            return Err(xray_transport::hysteria::HysteriaError::Configuration.into());
+        }
+        Ok(Self {
+            max_tcp_streams,
+            max_udp_sessions,
+        })
+    }
+
+    pub fn max_tcp_streams(self) -> u32 {
+        self.max_tcp_streams
+    }
+    pub fn max_udp_sessions(self) -> u32 {
+        self.max_udp_sessions
+    }
+
+    pub(crate) fn transport_limits(self) -> xray_transport::hysteria::HysteriaLimits {
+        xray_transport::hysteria::HysteriaLimits {
+            max_tcp_streams: self.max_tcp_streams as usize,
+            max_udp_sessions: self.max_udp_sessions as usize,
+            ..Default::default()
+        }
+    }
 }
 
 /// Controls bootstrap and no-configured-server fallback for managed runtime DNS.
@@ -242,6 +291,8 @@ impl std::fmt::Debug for ProbeDnsResolvers {
 
 #[derive(Debug, Error)]
 pub enum CoreError {
+    #[error(transparent)]
+    Trojan(#[from] xray_proxy::trojan::WireError),
     #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
@@ -400,6 +451,7 @@ pub struct Core {
     outbound_router: Arc<OutboundRouter>,
     connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<TunAdmissionPolicy>,
     startup_probe: Option<StartupProbeOptions>,
     runtime_logger: RuntimeLogger,
 }
@@ -621,6 +673,31 @@ impl Core {
         }
         ensure_effective_dns_tag(&mut config);
         for outbound in &config.outbounds {
+            if let Some(fragment) = &outbound.stream.tcp_fragment {
+                if outbound.stream.network != xray_config::Network::Tcp
+                    || matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                        && (outbound.stream.security != xray_config::StreamSecurity::None
+                            || outbound.stream.transport != xray_config::StreamTransport::Raw)
+                    || !matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                        && outbound.stream.security == xray_config::StreamSecurity::None
+                    || matches!(&outbound.stream.transport, xray_config::StreamTransport::Xhttp(xhttp) if xhttp.download.is_some() || matches!(&outbound.stream.security, xray_config::StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
+                    || matches!(
+                        outbound.settings,
+                        xray_config::OutboundSettings::Dns(_)
+                            | xray_config::OutboundSettings::Hysteria(_)
+                            | xray_config::OutboundSettings::Wireguard(_)
+                            | xray_config::OutboundSettings::Blackhole(_)
+                    )
+                {
+                    return Err(CoreError::UnsupportedOutboundNetwork);
+                }
+                xray_transport::TcpFragmentConfig::new(
+                    fragment.lengths.iter().map(|r| r.from..=r.to).collect(),
+                    fragment.delays_ms.iter().map(|r| r.from..=r.to).collect(),
+                    fragment.max_split.from..=fragment.max_split.to,
+                )
+                .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+            }
             if matches!(
                 outbound.settings,
                 xray_config::OutboundSettings::Wireguard(_)
@@ -640,7 +717,10 @@ impl Core {
         let config = Arc::new(config);
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
-        let outbound_factory = Arc::new(OutboundFactory::new(outbound_graph));
+        let outbound_factory = Arc::new(OutboundFactory::with_hysteria_stream_limits(
+            outbound_graph,
+            tun_runtime_options.hysteria_stream_limits,
+        ));
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
@@ -669,6 +749,7 @@ impl Core {
             outbound_router,
             connection_registry: Arc::new(ConnectionRegistry::new()),
             tun_runtime_options,
+            tun_admission: None,
             startup_probe: None,
             runtime_logger: RuntimeLogger::disabled(),
         })
@@ -681,6 +762,18 @@ impl Core {
     pub fn with_startup_probe(mut self, options: StartupProbeOptions) -> Self {
         self.startup_probe = Some(options);
         self
+    }
+
+    /// Configure admission before start; existing flows cannot be reclassified.
+    pub fn set_tun_admission(
+        &mut self,
+        policy: Option<TunAdmissionPolicy>,
+    ) -> Result<(), CoreError> {
+        if self.state == CoreState::Running {
+            return Err(CoreError::AlreadyRunning);
+        }
+        self.tun_admission = policy;
+        Ok(())
     }
 
     pub fn set_startup_probe(&mut self, options: Option<StartupProbeOptions>) {
@@ -1080,6 +1173,7 @@ impl Core {
                 Arc::clone(&self.transport_dialer),
                 Arc::clone(&self.connection_registry),
                 tun_runtime_options,
+                self.tun_admission.clone(),
                 self.runtime_logger.clone(),
                 self.shutdown.subscribe(),
             )));
@@ -1166,10 +1260,13 @@ impl Core {
         self.outbound_factory().close_sessions();
         if let Some(runtime) = self.runtime.take() {
             for task in runtime.tasks {
-                task.abort();
+                // Runtime owners observe the shutdown signal and join their
+                // connection tasks. Aborting the owner here would skip that
+                // drain and let stop return while children are still closing.
                 let _ = task.await;
             }
         }
+        self.outbound_factory().join_sessions().await;
         self.tun.close();
         self.state = CoreState::Stopped;
         Ok(())
@@ -1479,6 +1576,40 @@ mod tests {
         DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions,
         TunRuntimeProfile,
     };
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stop_waits_for_runtime_shutdown_cleanup() {
+        let config = parse_xray_json(r#"{"outbounds":[{"protocol":"freedom"}]}"#)
+            .unwrap()
+            .config;
+        let mut core = Core::new(config).unwrap();
+        let mut shutdown = core.shutdown.subscribe();
+        let cleaned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = cleaned.clone();
+        let owner = tokio::spawn(async move {
+            while !*shutdown.borrow_and_update() {
+                if shutdown.changed().await.is_err() {
+                    break;
+                }
+            }
+            // Model an owner's asynchronous drain after observing shutdown.
+            tokio::task::yield_now().await;
+            finished.store(true, Ordering::Release);
+        });
+        core.runtime = Some(super::RuntimeState {
+            inbounds: Vec::new(),
+            tasks: vec![owner],
+            probe_dns: super::ProbeDnsResolvers {
+                destination: Arc::new(StaticResolver),
+                bootstrap: Arc::new(StaticResolver),
+            },
+        });
+        tokio::time::timeout(Duration::from_secs(1), core.stop())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(cleaned.load(Ordering::Acquire));
+    }
 
     struct StaticResolver;
 

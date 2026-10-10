@@ -27,6 +27,45 @@ final class XrayProfileImporterTests: XCTestCase {
         XCTAssertEqual(client.providerBundleIdentifier, "example.test.tunnel")
     }
 
+    func testNativeTrojanImportPreservesCredentialsAndPassesMobilePreflight() throws {
+        let profile = try XrayProfileImporter.profile(from: "trojan://synthetic%3Apass+word@trojan.example?type=ws&path=%2Ftrojan#Test%20%E2%9C%93", format: .trojan)
+        XCTAssertEqual(profile.name, "Test ✓")
+        XCTAssertEqual(profile.serverAddress, "trojan.example")
+        XCTAssertTrue(XrayCore.ffiInfo.supportsProfileImport(.trojan))
+        XCTAssertTrue(profile.configJSON.contains("synthetic:pass+word"))
+        XCTAssertFalse(String(reflecting: profile).contains("synthetic"))
+        try XrayMobileDNSPreflight.validate(profile.configJSON)
+        _ = try XrayCore(configJSON: profile.configJSON)
+        let old = XrayFFIInfo(version: .init(major: 1, minor: 7), capabilities: [.profileImport, .hysteria2Outbound])
+        XCTAssertFalse(old.supportsProfileImport(.trojan))
+    }
+
+    func testNativeVmessImportPreservesCredentialsAndPassesMobilePreflight() throws {
+        let profile = try XrayProfileImporter.profile(from: "vmess://00112233-4455-6677-8899-aabbccddeeff@vmess.example?type=ws&path=%2Fvmess#Test%20%E2%9C%93", format: .vmess)
+        XCTAssertEqual(profile.name, "Test ✓")
+        XCTAssertEqual(profile.serverAddress, "vmess.example")
+        XCTAssertTrue(XrayCore.ffiInfo.supportsProfileImport(.vmess))
+        XCTAssertTrue(profile.configJSON.contains("00112233-4455-6677-8899-aabbccddeeff"))
+        XCTAssertFalse(String(reflecting: profile).contains("00112233"))
+        try XrayMobileDNSPreflight.validate(profile.configJSON)
+        _ = try XrayCore(configJSON: profile.configJSON)
+        let old = XrayFFIInfo(version: .init(major: 1, minor: 7), capabilities: [.profileImport, .hysteria2Outbound])
+        XCTAssertFalse(old.supportsProfileImport(.vmess))
+    }
+
+    func testNativeShadowsocks2022ImportPreservesCredentialsAndPassesMobilePreflight() throws {
+        let profile = try XrayProfileImporter.profile(from: "ss://2022-blake3-aes-128-gcm:AQEBAQEBAQEBAQEBAQEBAQ==@ss2022.example:8388#Test%20%E2%9C%93", format: .shadowsocks2022)
+        XCTAssertEqual(profile.name, "Test ✓")
+        XCTAssertEqual(profile.serverAddress, "ss2022.example")
+        XCTAssertTrue(XrayCore.ffiInfo.supportsProfileImport(.shadowsocks2022))
+        XCTAssertTrue(profile.configJSON.contains("AQEBAQEBAQEBAQEBAQEBAQ=="))
+        XCTAssertFalse(String(reflecting: profile).contains("AQEB"))
+        try XrayMobileDNSPreflight.validate(profile.configJSON)
+        _ = try XrayCore(configJSON: profile.configJSON)
+        let old = XrayFFIInfo(version: .init(major: 1, minor: 7), capabilities: [.profileImport, .hysteria2Outbound])
+        XCTAssertFalse(old.supportsProfileImport(.shadowsocks2022))
+    }
+
     func testNativeWireguardImportPreservesPeersAndRealDNS() throws {
         let profile = try XrayProfileImporter.profile(from: fixture("wireguard.conf"), format: .wireguard, name: "Tunnel 🔑")
         XCTAssertEqual(profile.name, "Tunnel 🔑")

@@ -11,6 +11,8 @@ pub struct HysteriaOutbound {
 
 #[derive(Debug)]
 struct SessionOwner {
+    limits: xray_transport::hysteria::HysteriaLimits,
+    carrier: xray_transport::hysteria::HysteriaCarrierConfig,
     server: Target,
     tls: TlsClientConfig,
     auth: xray_config::HysteriaSettings,
@@ -36,6 +38,13 @@ impl Drop for CachedSession {
 
 impl HysteriaOutbound {
     pub(crate) fn new(config: &OutboundConfig) -> Result<Self, CoreError> {
+        Self::with_stream_limits(config, crate::HysteriaStreamLimits::default())
+    }
+
+    pub(crate) fn with_stream_limits(
+        config: &OutboundConfig,
+        limits: crate::HysteriaStreamLimits,
+    ) -> Result<Self, CoreError> {
         let (
             OutboundSettings::Hysteria(server),
             StreamTransport::Hysteria(auth),
@@ -48,9 +57,9 @@ impl HysteriaOutbound {
         else {
             return Err(CoreError::UnsupportedOutboundSecurity);
         };
-        if config.stream.network != Network::Udp
+        if config.stream.tcp_fragment.is_some()
+            || config.stream.network != Network::Udp
             || config.proxy_settings.is_some()
-            || config.stream.quic_params.is_some()
             || config.stream.socket_options.is_some()
             || tls.allow_insecure
             || tls.fingerprint.is_some()
@@ -59,6 +68,45 @@ impl HysteriaOutbound {
             || auth.auth.is_empty()
             || auth.auth.len() > 4096
             || auth.auth.bytes().any(|b| b < 0x20 || b == 0x7f)
+        {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
+        let mut carrier = xray_transport::hysteria::HysteriaCarrierConfig {
+            salamander_password: auth.salamander_password.clone().map(Arc::new),
+            ..Default::default()
+        };
+        if let Some(quic) = &config.stream.quic_params {
+            let mut remaining = quic.clone();
+            remaining.udp_hop = Default::default();
+            if remaining != QuicParamsSettings::default() {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
+            let hop = &quic.udp_hop;
+            let interval = |value: i32| -> Result<Duration, CoreError> {
+                if value == 0 {
+                    Ok(Duration::from_secs(30))
+                } else if value >= 5 {
+                    Ok(Duration::from_secs(value as u64))
+                } else {
+                    Err(CoreError::UnsupportedOutboundNetwork)
+                }
+            };
+            carrier.udp_hop = H3UdpHopConfig {
+                ports: hop.ports.clone(),
+                interval_min: interval(hop.interval.from)?,
+                interval_max: interval(hop.interval.to)?,
+            };
+            if carrier.udp_hop.ports.len() > 65_535
+                || carrier.udp_hop.ports.contains(&0)
+                || carrier.udp_hop.interval_max < carrier.udp_hop.interval_min
+            {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
+        }
+        if carrier
+            .salamander_password
+            .as_ref()
+            .is_some_and(|p| !(4..=4096).contains(&p.len()))
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
@@ -74,6 +122,8 @@ impl HysteriaOutbound {
             .map_err(|_| CoreError::UnsupportedOutboundSecurity)?;
         Ok(Self {
             inner: Arc::new(SessionOwner {
+                limits: limits.transport_limits(),
+                carrier,
                 server: Target::new(
                     match &server.server {
                         TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
@@ -168,6 +218,8 @@ impl HysteriaOutbound {
         for candidate in candidates.into_iter().take(8) {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());
             config.auth = self.inner.auth.auth.clone();
+            config.limits = self.inner.limits;
+            config.carrier = self.inner.carrier.clone();
             // Give later DNS candidates a chance within the total operation deadline.
             let generation = self.inner.network_generation.load(Ordering::Acquire);
             let attempt = tokio::time::timeout(

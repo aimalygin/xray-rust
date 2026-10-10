@@ -1,0 +1,25 @@
+{
+  "runtime_commit": "0250497b7f8aaca66b0086b95892558e7042cc98",
+  "driver_and_collector_commit": "2d8afb6e6d9f601f0446aa74382f6e24dac9a7dd",
+  "unchanged_product_source_paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates",
+    ":(exclude)crates/xray-bench",
+    "vendor"
+  ],
+  "changed_paths": [
+    ".github/workflows/ci.yml",
+    "README.md",
+    "crates/xray-bench/src/protocol_bench.rs",
+    "crates/xray-bench/src/stream_transport.rs",
+    "docs/status.md",
+    "docs/v08-implementation-plan.md",
+    "docs/v08-performance.md",
+    "scripts/prepare-v08-protocol-comparison.py",
+    "scripts/run-v08-protocol-comparison.py",
+    "scripts/tests/test_v08_protocol_comparison.py",
+    "scripts/v08-reference-client.py"
+  ],
+  "mobile_commit": "d78b9f17df3a65e72d9e3fccb51cfd7c12002f08"
+}

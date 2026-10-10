@@ -1874,6 +1874,7 @@ fn rust_vless_outbound(
     transport: StreamTransport,
 ) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -1881,6 +1882,7 @@ fn rust_vless_outbound(
             transport,
             security,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -1898,6 +1900,7 @@ fn rust_vless_outbound(
 
 fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -1905,6 +1908,7 @@ fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -3510,5 +3514,139 @@ fn bulk_interop_payload(len: usize) -> Vec<u8> {
 #[path = "local_xray_interop_tests/vless_encryption.rs"]
 mod vless_encryption;
 
+#[path = "local_xray_interop_tests/v08_carriers.rs"]
+mod v08_carriers;
 #[path = "local_xray_interop_tests/xhttp_download.rs"]
 mod xhttp_download;
+
+/// Record-level observer: it forwards the finalized ClientHello unchanged and
+/// then becomes a byte relay, including Vision's later direct-mode payload.
+async fn fragment_observer(
+    upstream: SocketAddr,
+) -> (SocketAddr, tokio::task::JoinHandle<Vec<usize>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let (mut client, _) = listener.accept().await.unwrap();
+        let mut server = TcpStream::connect(upstream).await.unwrap();
+        let mut hello = Vec::new();
+        let mut sizes = Vec::new();
+        loop {
+            let mut header = [0; 5];
+            client.read_exact(&mut header).await.unwrap();
+            assert_eq!(header[0], 22);
+            let length = u16::from_be_bytes([header[3], header[4]]) as usize;
+            let start = hello.len();
+            hello.resize(start + length, 0);
+            client.read_exact(&mut hello[start..]).await.unwrap();
+            server.write_all(&header).await.unwrap();
+            server.write_all(&hello[start..]).await.unwrap();
+            sizes.push(length);
+            assert!(sizes.len() <= 24, "maxSplit must bound the wire records");
+            if hello.len() >= 4 {
+                assert_eq!(hello[0], 1, "only the ClientHello is fragmented");
+                let total =
+                    ((hello[1] as usize) << 16) | ((hello[2] as usize) << 8) | hello[3] as usize;
+                if hello.len() >= total + 4 {
+                    assert_eq!(hello.len(), total + 4);
+                    break;
+                }
+            }
+        }
+        let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+        sizes
+    });
+    (addr, task)
+}
+
+async fn run_fragmented_xray_interop(reality: bool, legacy: bool, vision: bool) {
+    use serde_json::json;
+    let flow = vision.then_some("xtls-rprx-vision");
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &resolve_xray_checkout(),
+            XrayVlessServerConfig {
+                security: if reality {
+                    XrayInboundSecurity::Reality
+                } else {
+                    XrayInboundSecurity::Tls
+                },
+                transport: XrayInboundTransport::Raw,
+                flow,
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    if reality {
+        warm_up_reality_server_detector(
+            &xray,
+            rust_reality_vision_core_config(xray.addr, "chrome"),
+        )
+        .await;
+    }
+    let (relay, observation) = fragment_observer(xray.addr).await;
+    let mut stream = if reality {
+        json!({"security":"reality","realitySettings":{"serverName":REALITY_SERVER_NAME,"fingerprint":"chrome","publicKey":REALITY_PUBLIC_KEY_BASE64,"shortId":REALITY_SHORT_ID_HEX}})
+    } else {
+        json!({"security":"tls","tlsSettings":{"serverName":TLS_SERVER_NAME}})
+    };
+    if legacy {
+        stream["sockopt"] = json!({"dialerProxy":"fragment"});
+    } else {
+        stream["finalmask"] = json!({"tcp":[{"type":"fragment","settings":{"packets":"tlshello","lengths":[11,37],"delays":[0],"maxSplit":24}}]});
+    }
+    let mut user = json!({"id":TEST_UUID,"encryption":"none"});
+    if let Some(flow) = flow {
+        user["flow"] = json!(flow);
+    }
+    let mut outbounds = vec![
+        json!({"protocol":"vless","tag":"proxy","settings":{"vnext":[{"address":"127.0.0.1","port":relay.port(),"users":[user]}]},"streamSettings":stream}),
+    ];
+    if legacy {
+        outbounds.push(json!({"protocol":"freedom","tag":"fragment","settings":{"fragment":{"packets":"tlshello","length":11,"interval":1,"maxSplit":24}}}));
+    }
+    let raw = json!({"inbounds":[{"tag":"socks-in","listen":"127.0.0.1","port":0,"protocol":"socks","settings":{"auth":"noauth"}}],"outbounds":outbounds});
+    let config = parse_xray_json(&raw.to_string()).unwrap().config;
+    let dialer = (!reality).then(|| rust_tls_core_config_and_dialer(&xray, flow).1);
+    if vision {
+        run_inner_tls_interop_scenario(xray, config, dialer).await;
+    } else {
+        run_local_xray_vless_interop_scenario(xray, config, dialer).await;
+    }
+    let sizes = timeout(Duration::from_secs(5), observation)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        sizes.len() > 2,
+        "ClientHello must actually fragment on the socket"
+    );
+    assert_eq!(sizes[0], 11);
+    assert_eq!(sizes[1], if legacy { 11 } else { 37 });
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn fragment_finalmask_tls_interop() {
+    run_fragmented_xray_interop(false, false, false).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn fragment_finalmask_tls_vision_direct_interop() {
+    run_fragmented_xray_interop(false, false, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary and REALITY cover network"]
+async fn fragment_finalmask_reality_vision_direct_interop() {
+    run_fragmented_xray_interop(true, false, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary and REALITY cover network"]
+async fn fragment_legacy_dialer_proxy_reality_vision_direct_interop() {
+    run_fragmented_xray_interop(true, true, true).await;
+}

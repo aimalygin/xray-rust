@@ -27,6 +27,7 @@ pub(crate) struct CapturedStream<S> {
     limiter_released: bool,
 }
 
+#[cfg(test)]
 pub(crate) type CapturedTcpStream = CapturedStream<TcpStream>;
 
 impl<S> CapturedStream<S> {

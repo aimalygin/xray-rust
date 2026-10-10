@@ -63,3 +63,5 @@ AGENT_CONTEXT.md
 *.log
 tmp/
 temp/
+
+/platform/android/deviceprobe/.cxx/

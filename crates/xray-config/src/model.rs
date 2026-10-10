@@ -527,9 +527,25 @@ pub enum InboundProtocol {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundConfig {
     pub tag: Option<String>,
+    pub mux: Option<MuxSettings>,
     pub proxy_settings: Option<OutboundProxySettings>,
     pub stream: StreamSettings,
     pub settings: OutboundSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MuxSettings {
+    /// Zero is normalized to 8; a negative value disables TCP multiplexing.
+    pub concurrency: i16,
+    /// Zero shares the TCP pool; a negative value uses native UDP.
+    pub xudp_concurrency: i16,
+    pub udp443: MuxUdp443,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MuxUdp443 {
+    Reject,
+    Allow,
+    Skip,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -543,6 +559,9 @@ pub enum OutboundProtocol {
     Freedom,
     Dns,
     Vless,
+    Trojan,
+    Vmess,
+    Shadowsocks2022,
     Hysteria,
     Wireguard,
     Blackhole,
@@ -553,6 +572,9 @@ pub enum OutboundSettings {
     Freedom,
     Dns(DnsOutboundSettings),
     Vless(VlessOutboundSettings),
+    Trojan(TrojanOutboundSettings),
+    Vmess(VmessOutboundSettings),
+    Shadowsocks2022(Shadowsocks2022OutboundSettings),
     Hysteria(HysteriaOutboundSettings),
     Wireguard(WireguardOutboundSettings),
     Blackhole(BlackholeOutboundSettings),
@@ -564,6 +586,9 @@ impl OutboundSettings {
             Self::Freedom => OutboundProtocol::Freedom,
             Self::Dns(_) => OutboundProtocol::Dns,
             Self::Vless(_) => OutboundProtocol::Vless,
+            Self::Vmess(_) => OutboundProtocol::Vmess,
+            Self::Trojan(_) => OutboundProtocol::Trojan,
+            Self::Shadowsocks2022(_) => OutboundProtocol::Shadowsocks2022,
             Self::Hysteria(_) => OutboundProtocol::Hysteria,
             Self::Wireguard(_) => OutboundProtocol::Wireguard,
             Self::Blackhole(_) => OutboundProtocol::Blackhole,
@@ -624,12 +649,15 @@ pub struct HysteriaOutboundSettings {
 #[derive(Clone, PartialEq, Eq)]
 pub struct HysteriaSettings {
     pub auth: zeroize::Zeroizing<String>,
+    /// The single supported `finalmask.udp` mask, consumed by this carrier.
+    pub salamander_password: Option<zeroize::Zeroizing<String>>,
 }
 
 impl fmt::Debug for HysteriaSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HysteriaSettings")
             .field("auth", &"<redacted>")
+            .field("salamander", &self.salamander_password.is_some())
             .finish()
     }
 }
@@ -735,6 +763,68 @@ impl DnsQTypeRange {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct VmessOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub user_id: zeroize::Zeroizing<[u8; 16]>,
+    pub security: String,
+    pub options: xray_proxy::vmess::Options,
+    pub level: u32,
+}
+impl fmt::Debug for VmessOutboundSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VmessOutboundSettings")
+            .field("server", &self.server)
+            .field("port", &self.port)
+            .field("user_id", &"<redacted>")
+            .field("security", &self.security)
+            .field("options", &self.options)
+            .field("level", &self.level)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct TrojanOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub password: zeroize::Zeroizing<String>,
+    pub level: u32,
+}
+
+impl fmt::Debug for TrojanOutboundSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TrojanOutboundSettings")
+            .field("server", &self.server)
+            .field("port", &self.port)
+            .field("password", &"<redacted>")
+            .field("level", &self.level)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct Shadowsocks2022OutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub method: String,
+    pub password: zeroize::Zeroizing<String>,
+    pub level: u32,
+}
+
+impl fmt::Debug for Shadowsocks2022OutboundSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Shadowsocks2022OutboundSettings")
+            .field("server", &self.server)
+            .field("port", &self.port)
+            .field("method", &self.method)
+            .field("password", &"<redacted>")
+            .field("level", &self.level)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VlessOutboundSettings {
     pub server: TargetAddr,
@@ -796,7 +886,23 @@ pub struct StreamSettings {
     /// preserves the distinction between an absent/null Go pointer and an
     /// explicitly present (possibly default-valued) configuration.
     pub quic_params: Option<QuicParamsSettings>,
+    /// One normalized FinalMask or legacy freedom `tlshello` transform.
+    pub tcp_fragment: Option<TcpFragmentSettings>,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// Bounded first-ClientHello record fragmentation. Ranges are inclusive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TcpFragmentSettings {
+    pub lengths: Vec<FragmentRange>,
+    pub delays_ms: Vec<FragmentRange>,
+    pub max_split: FragmentRange,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FragmentRange {
+    pub from: u32,
+    pub to: u32,
 }
 
 /// Xray's final QUIC parameters after config-build normalization.

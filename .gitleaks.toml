@@ -3,6 +3,7 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+
 # These v0.8 exceptions were reviewed in 1388c613971c8785f22107e2fac6be85f956e388.
 # CI scans --all, so main also needs their exact path/value/rule scope while
 # the v0.8 evidence is still on a separate branch.
@@ -550,4 +551,160 @@ regexes = [
   '''^afdffd5d1e3f22302caab6448cc208cfa9ab5557cd8b80520a2e08033f159c48$''',
   '''^e1097624ca6baef6c59eb7831958aaf37267f60c668a6030dc8907fbf100ac72$''',
   '''^34cd2ff77efc0280505c000d6095de6b0f7313d3c445c9925c67c1512e7431f1$''',
+]
+
+# PR42 issue evidence executable digests, rehashed from the frozen binaries.
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary 258f93fa4729"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^258f93fa4729fab1e235c6840654e56ba4ab64b7cd610dcc2a0c325340974236$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-smoke/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-repeat/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary 34cd2ff77efc"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^34cd2ff77efc0280505c000d6095de6b0f7313d3c445c9925c67c1512e7431f1$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-smoke/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-repeat/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2\-udp\-long/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-fragment/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-diagnostic/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-ab/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary 45da52601c9f"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^45da52601c9fc1377d64e7dd8fc17b8f4d69385edf4976483453c27fa7bb5a57$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2\-udp\-long/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary 5596eead51ff"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^5596eead51ff28a2a8f048c56340a96383378b358421d9680b98a6211825eadb$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary 5b90da0b207e"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^5b90da0b207ead0173d456e95a5c44a60e9aa9d341ce1013a7a35e4374f253a1$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-ab/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary 7112bebebe15"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^7112bebebe157563dd55db4c88126a9bf348b437b67376b7c121feb462eed153$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-smoke/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-repeat/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2\-udp\-long/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-diagnostic/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-ab/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary ba296560da80"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^ba296560da80d0285dbd783b9692812fdca2ddfa34cb83d437d676630227baa3$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-smoke/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1\-udp\-repeat/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage1/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2\-udp\-long/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage2/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage3/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-aa/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-diagnostic/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary ba6424e834e7"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^ba6424e834e76f5594bb9041efe50d1b86a4f05c148a7397f3f06828a1b9c95b$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary e0c293701fd1"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^e0c293701fd10c52fe383c6122ca899d911340eb27a92e1716060a5faf10e0e5$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-fragment/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary eb0b95e01857"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^eb0b95e01857c401f007f89dce6e17ef72350d06f00aab0a3e7e54f6b234ffd0$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-fragment/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-diagnostic/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-ab/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
 ]

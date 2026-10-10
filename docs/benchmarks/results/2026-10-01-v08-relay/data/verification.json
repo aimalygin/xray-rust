@@ -1,0 +1,12 @@
+{
+  "archive_files_verified": 2488,
+  "complete_case_selections_verified": 118,
+  "control_summary_reproduced": true,
+  "core_and_sdk_ci_pass": true,
+  "ffi_fixture_commit": "9c16a656c4102b150b744f652e1286fe96203cec",
+  "ffi_fixture_rust_and_secrets_ci_pass": true,
+  "mobile_commit": "874cc8e8103ade25b8ea3e53938e826431a9aeee",
+  "release_rebuild_sha256": "1ed77d5b5afbf4fe466dde699442d3d6938c8e7ffd12b20f5cf987ab355c797d",
+  "runtime_commit": "fdc0dad1aa1ffe39d3621008ab66512b30ccf452",
+  "strict_and_3pct_summaries_reproduced": true
+}

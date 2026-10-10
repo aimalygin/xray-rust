@@ -218,7 +218,11 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         match outbound {
-            outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+            outbound @ (UdpOutbound::Trojan(_)
+            | UdpOutbound::Vmess(_)
+            | UdpOutbound::Shadowsocks2022(_)
+            | UdpOutbound::Hysteria(_)
+            | UdpOutbound::Wireguard(_)) => {
                 if server_socket_has_nonzero_scope(server) {
                     return Err(io::Error::other(
                         "scoped IPv6 DNS target is unsupported by this outbound",
@@ -230,6 +234,7 @@ impl RoutedDnsQueryTransport {
                     self.bootstrap_resolver.as_ref(),
                     self.bootstrap_resolver.as_ref(),
                     self.transport_dialer.as_ref(),
+                    [0; 8],
                 )
                 .await
                 .map_err(io::Error::other)?;
@@ -427,17 +432,22 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         Ok(match selected.outbound {
-            outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
+            outbound @ (TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_)) => {
                 let candidates = self.resolved_servers(server).await?;
                 open_routed_freedom_dns_tcp_stream(
-                    self.transport_dialer.as_ref(),
+                    &outbound.freedom_dialer(&self.transport_dialer),
                     &target,
                     &candidates,
                     outbound.freedom_happy_eyeballs(),
                 )
                 .await?
             }
-            outbound @ (TcpOutbound::Vless(_)
+            outbound @ (TcpOutbound::Trojan(_)
+            | TcpOutbound::Vmess(_)
+            | TcpOutbound::Shadowsocks2022(_)
+            | TcpOutbound::Vless(_)
             | TcpOutbound::Hysteria(_)
             | TcpOutbound::Wireguard(_)) => {
                 if server_socket_has_nonzero_scope(server) {
@@ -456,8 +466,13 @@ impl RoutedDnsQueryTransport {
                 .map_err(io::Error::other)?
             }
             outbound @ TcpOutbound::Chained { .. } => {
-                if matches!(outbound.primary(), TcpOutbound::Vless(_))
-                    && server_socket_has_nonzero_scope(server)
+                if matches!(
+                    outbound.primary(),
+                    TcpOutbound::Vless(_)
+                        | TcpOutbound::Trojan(_)
+                        | TcpOutbound::Vmess(_)
+                        | TcpOutbound::Shadowsocks2022(_)
+                ) && server_socket_has_nonzero_scope(server)
                 {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -1138,6 +1153,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         )
@@ -1151,6 +1167,7 @@ mod tests {
         Arc::new(CoreConfig {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
+                mux: None,
                 tag: Some("dns-out".to_owned()),
                 proxy_settings: None,
                 stream,
@@ -1171,6 +1188,7 @@ mod tests {
         network: Network,
     ) -> Arc<CoreConfig> {
         let direct = OutboundConfig {
+            mux: None,
             tag: Some("direct".to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -1178,11 +1196,13 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
         };
         let dns_outbound = OutboundConfig {
+            mux: None,
             tag: Some("dns-out".to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -1190,6 +1210,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(DnsOutboundSettings {
@@ -1238,6 +1259,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         )
@@ -1688,6 +1710,7 @@ mod tests {
         let config = Arc::new(CoreConfig {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
+                mux: None,
                 tag: Some("direct".to_owned()),
                 proxy_settings: None,
                 stream: StreamSettings {
@@ -1695,6 +1718,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -2079,6 +2103,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2137,6 +2162,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2246,6 +2272,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2313,6 +2340,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2750,6 +2778,7 @@ mod tests {
         let config = Arc::new(CoreConfig {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
+                mux: None,
                 tag: Some("direct".to_owned()),
                 proxy_settings: None,
                 stream: StreamSettings {
@@ -2757,6 +2786,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -2953,6 +2983,7 @@ mod tests {
         let config = Arc::new(CoreConfig {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
+                mux: None,
                 tag: Some("direct".to_owned()),
                 proxy_settings: None,
                 stream: StreamSettings {
@@ -2960,6 +2991,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -3024,6 +3056,7 @@ mod tests {
         let config = Arc::new(CoreConfig {
             inbounds: Vec::new(),
             outbounds: vec![OutboundConfig {
+                mux: None,
                 tag: Some("direct".to_owned()),
                 proxy_settings: None,
                 stream: StreamSettings {
@@ -3031,6 +3064,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,

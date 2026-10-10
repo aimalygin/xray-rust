@@ -1,0 +1,74 @@
+{
+  "footprint/vmess-aes128/baseline": {
+    "idle-0_cpu_ms": 0,
+    "idle-0_footprint_mib": 105.31293487548828,
+    "idle-1_cpu_ms": 0,
+    "idle-1_footprint_mib": 105.31293487548828,
+    "resumed-bulk-0_footprint_mib": 105.31293487548828,
+    "resumed-bulk-1_footprint_mib": 105.31293487548828,
+    "warm_footprint_mib": 105.31293487548828
+  },
+  "footprint/vmess-aes128/shrink": {
+    "idle-0_cpu_ms": 150,
+    "idle-0_footprint_mib": 109.34418487548828,
+    "idle-1_cpu_ms": 140,
+    "idle-1_footprint_mib": 102.96918487548828,
+    "resumed-bulk-0_footprint_mib": 102.96918487548828,
+    "resumed-bulk-1_footprint_mib": 106.46918487548828,
+    "warm_footprint_mib": 105.54728698730469
+  },
+  "footprint/vmess-aes128/trim": {
+    "idle-0_cpu_ms": 200,
+    "idle-0_footprint_mib": 109.48480987548828,
+    "idle-1_cpu_ms": 150,
+    "idle-1_footprint_mib": 113.40668487548828,
+    "resumed-bulk-0_footprint_mib": 113.40668487548828,
+    "resumed-bulk-1_footprint_mib": 97.32855987548828,
+    "warm_footprint_mib": 105.53168487548828
+  },
+  "footprint/vmess-chacha20/baseline": {
+    "idle-0_cpu_ms": 0,
+    "idle-0_footprint_mib": 105.17230987548828,
+    "idle-1_cpu_ms": 0,
+    "idle-1_footprint_mib": 105.17230987548828,
+    "resumed-bulk-0_footprint_mib": 105.17230987548828,
+    "resumed-bulk-1_footprint_mib": 105.17230987548828,
+    "warm_footprint_mib": 105.17230987548828
+  },
+  "footprint/vmess-chacha20/shrink": {
+    "idle-0_cpu_ms": 180,
+    "idle-0_footprint_mib": 109.10980987548828,
+    "idle-1_cpu_ms": 170,
+    "idle-1_footprint_mib": 113.15666198730469,
+    "resumed-bulk-0_footprint_mib": 113.15666198730469,
+    "resumed-bulk-1_footprint_mib": 108.54728698730469,
+    "warm_footprint_mib": 105.17230987548828
+  },
+  "footprint/vmess-chacha20/trim": {
+    "idle-0_cpu_ms": 220,
+    "idle-0_footprint_mib": 109.50041198730469,
+    "idle-1_cpu_ms": 140,
+    "idle-1_footprint_mib": 113.39105987548828,
+    "resumed-bulk-0_footprint_mib": 113.79728698730469,
+    "resumed-bulk-1_footprint_mib": 109.54728698730469,
+    "warm_footprint_mib": 105.50041198730469
+  },
+  "untouched-controls/vmess-aes128/baseline": {
+    "idle-0_cpu_ms": 0.0,
+    "idle-0_footprint_mib": 105.28167343139648,
+    "idle-1_cpu_ms": 0.0,
+    "idle-1_footprint_mib": 105.28948593139648,
+    "resumed-bulk-0_footprint_mib": 105.28948593139648,
+    "resumed-bulk-1_footprint_mib": 105.28948593139648,
+    "warm_footprint_mib": 105.28167343139648
+  },
+  "untouched-controls/vmess-aes128/untouched": {
+    "idle-0_cpu_ms": 30.0,
+    "idle-0_footprint_mib": 109.37543487548828,
+    "idle-1_cpu_ms": 30.0,
+    "idle-1_footprint_mib": 109.37543487548828,
+    "resumed-bulk-0_footprint_mib": 113.50824737548828,
+    "resumed-bulk-1_footprint_mib": 107.85200881958008,
+    "warm_footprint_mib": 105.43012237548828
+  }
+}

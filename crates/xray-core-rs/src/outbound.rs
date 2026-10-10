@@ -1,13 +1,24 @@
+mod vmess;
+pub use vmess::VmessOutbound;
+mod protocol_stream;
+mod shadowsocks;
+pub use shadowsocks::Shadowsocks2022Outbound;
 mod blackhole;
 pub(crate) use blackhole::{absorb_udp_datagrams, BlackholeOutbound, BLACKHOLE_RESPONSE_GRACE};
 mod encryption;
+mod trojan;
+pub use trojan::TrojanOutbound;
 pub(crate) mod hysteria;
 pub use hysteria::HysteriaOutbound;
 pub(crate) mod wireguard;
 pub use wireguard::WireguardOutbound;
+mod carrier;
 pub(crate) mod datagram;
+mod mux;
 mod routing;
 mod xhttp;
+mod xudp;
+use carrier::StreamCarrier;
 
 use xhttp::*;
 
@@ -276,15 +287,9 @@ pub struct VlessTcpOutbound {
 
 #[derive(Debug)]
 struct VlessTcpOutboundPayload {
-    server: Target,
+    carrier: StreamCarrier,
     user: VlessUser,
     encryption: Option<xray_vless_encryption::Client>,
-    transport: ConnectorConfig,
-    /// The dial-ready framing layered over the security layer, with the host
-    /// precedence already resolved. Encryption also admits Vision on wrappers.
-    transport_layer: TransportLayer,
-    download: Option<XhttpDownloadOutbound>,
-    happy_eyeballs: Option<HappyEyeballsConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -333,10 +338,20 @@ pub(crate) enum DnsHappyEyeballsMode {
 }
 
 #[derive(Debug, Clone)]
+pub struct FragmentedFreedomOutbound {
+    fragment: Arc<xray_transport::TcpFragmentConfig>,
+    happy_eyeballs: Option<HappyEyeballsConfig>,
+}
+
+#[derive(Debug, Clone)]
 pub enum TcpOutbound {
     Freedom,
     FreedomHappyEyeballs(HappyEyeballsConfig),
+    FreedomFragment(Box<FragmentedFreedomOutbound>),
     Vless(Box<VlessTcpOutbound>),
+    Trojan(TrojanOutbound),
+    Vmess(VmessOutbound),
+    Shadowsocks2022(Shadowsocks2022Outbound),
     Hysteria(HysteriaOutbound),
     Wireguard(WireguardOutbound),
     Chained {
@@ -355,6 +370,9 @@ pub(crate) struct SelectedTcpOutbound {
 pub enum UdpOutbound {
     Freedom,
     Vless(Box<VlessTcpOutbound>),
+    Trojan(TrojanOutbound),
+    Vmess(VmessOutbound),
+    Shadowsocks2022(Shadowsocks2022Outbound),
     Hysteria(HysteriaOutbound),
     Wireguard(WireguardOutbound),
 }
@@ -554,15 +572,15 @@ pub enum VlessUdpFraming {
 
 impl VlessTcpOutbound {
     pub fn server(&self) -> &Target {
-        &self.payload.server
+        &self.payload.carrier.server
     }
 
     pub fn transport(&self) -> &ConnectorConfig {
-        &self.payload.transport
+        &self.payload.carrier.transport
     }
 
     pub fn transport_layer(&self) -> &TransportLayer {
-        &self.payload.transport_layer
+        &self.payload.carrier.transport_layer
     }
 
     pub fn user(&self) -> &VlessUser {
@@ -573,8 +591,9 @@ impl VlessTcpOutbound {
         self.payload.encryption.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn happy_eyeballs(&self) -> Option<&HappyEyeballsConfig> {
-        self.payload.happy_eyeballs.as_ref()
+        self.payload.carrier.happy_eyeballs.as_ref()
     }
 
     /// True for the regular `xtls-rprx-vision` flow, which (matching upstream
@@ -588,6 +607,17 @@ impl VlessTcpOutbound {
 }
 
 impl TcpOutbound {
+    pub(crate) fn freedom_dialer<'a>(
+        &self,
+        dialer: &'a TransportDialer,
+    ) -> std::borrow::Cow<'a, TransportDialer> {
+        match self.primary() {
+            Self::FreedomFragment(config) => {
+                std::borrow::Cow::Owned(dialer.clone().with_tcp_fragment(config.fragment.clone()))
+            }
+            _ => std::borrow::Cow::Borrowed(dialer),
+        }
+    }
     pub(crate) fn primary(&self) -> &Self {
         match self {
             Self::Chained { outbound, .. } => outbound.primary(),
@@ -599,7 +629,13 @@ impl TcpOutbound {
         match self.primary() {
             Self::Freedom => None,
             Self::FreedomHappyEyeballs(config) => Some(config),
-            Self::Vless(_) | Self::Hysteria(_) | Self::Wireguard(_) => None,
+            Self::FreedomFragment(config) => config.happy_eyeballs.as_ref(),
+            Self::Vless(_)
+            | Self::Vmess(_)
+            | Self::Trojan(_)
+            | Self::Shadowsocks2022(_)
+            | Self::Hysteria(_)
+            | Self::Wireguard(_) => None,
             Self::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
         }
     }
@@ -621,8 +657,11 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
         match self.outbound.primary() {
-            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-                self.transport_dialer
+            TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_) => {
+                self.outbound
+                    .freedom_dialer(&self.transport_dialer)
                     .connect_resolved(
                         &ConnectorConfig::Tcp,
                         original_target,
@@ -637,6 +676,33 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
             TcpOutbound::Hysteria(_) => Err(TransportError::ChainedOutbound(
                 "Hysteria chaining is unsupported".into(),
             )),
+            TcpOutbound::Trojan(outbound) => outbound
+                .open_resolved(
+                    original_target,
+                    &self.server_candidates,
+                    &[],
+                    &self.transport_dialer,
+                )
+                .await
+                .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
+            TcpOutbound::Vmess(outbound) => outbound
+                .open_resolved(
+                    original_target,
+                    &self.server_candidates,
+                    &[],
+                    &self.transport_dialer,
+                )
+                .await
+                .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
+            TcpOutbound::Shadowsocks2022(outbound) => outbound
+                .open_resolved(
+                    original_target,
+                    &self.server_candidates,
+                    &[],
+                    &self.transport_dialer,
+                )
+                .await
+                .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
             TcpOutbound::Vless(outbound) => open_vless_tcp_stream_with_resolved_server_and_dialer(
                 outbound,
                 original_target,
@@ -679,13 +745,33 @@ fn prepare_outbound_proxy_dialer<'a>(
                     .into_boxed_slice()
             }
             TcpOutbound::Vless(_) => Box::default(),
+            TcpOutbound::Trojan(outbound) if requires_local_resolution => {
+                resolve_server_candidates(outbound.server(), dns_resolver)
+                    .await?
+                    .into_boxed_slice()
+            }
+            TcpOutbound::Vmess(outbound) if requires_local_resolution => {
+                resolve_server_candidates(outbound.server(), dns_resolver)
+                    .await?
+                    .into_boxed_slice()
+            }
+            TcpOutbound::Shadowsocks2022(outbound) if requires_local_resolution => {
+                resolve_server_candidates(outbound.server(), dns_resolver)
+                    .await?
+                    .into_boxed_slice()
+            }
+            TcpOutbound::Trojan(_) => Box::default(),
+            TcpOutbound::Vmess(_) => Box::default(),
+            TcpOutbound::Shadowsocks2022(_) => Box::default(),
             TcpOutbound::Wireguard(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("WireGuard"));
             }
             TcpOutbound::Hysteria(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("Hysteria"))
             }
-            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => Box::default(),
+            TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_) => Box::default(),
             TcpOutbound::Chained { .. } => {
                 unreachable!("a compiled chain wrapper has one plain primary outbound")
             }
@@ -703,8 +789,15 @@ fn prepare_outbound_proxy_dialer<'a>(
 
 fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
     match proxy.primary() {
-        TcpOutbound::Vless(_) | TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => false,
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => match proxy {
+        TcpOutbound::Vless(_)
+        | TcpOutbound::Trojan(_)
+        | TcpOutbound::Vmess(_)
+        | TcpOutbound::Shadowsocks2022(_)
+        | TcpOutbound::Hysteria(_)
+        | TcpOutbound::Wireguard(_) => false,
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => match proxy {
             TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
             _ => true,
         },
@@ -721,6 +814,7 @@ fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
 /// crash.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CachedOutboundError {
+    Trojan(xray_proxy::trojan::WireError),
     NoSupportedOutbound,
     UnsupportedOutboundNetwork,
     UnsupportedOutboundSecurity,
@@ -737,6 +831,7 @@ enum CachedOutboundError {
 impl CachedOutboundError {
     fn from_core_error(error: CoreError) -> Self {
         match error {
+            CoreError::Trojan(error) => Self::Trojan(error),
             CoreError::NoSupportedOutbound => Self::NoSupportedOutbound,
             CoreError::UnsupportedOutboundNetwork => Self::UnsupportedOutboundNetwork,
             CoreError::UnsupportedOutboundSecurity => Self::UnsupportedOutboundSecurity,
@@ -760,6 +855,7 @@ impl CachedOutboundError {
 
     fn into_core_error(self) -> CoreError {
         match self {
+            Self::Trojan(error) => CoreError::Trojan(error),
             Self::NoSupportedOutbound => CoreError::NoSupportedOutbound,
             Self::UnsupportedOutboundNetwork => CoreError::UnsupportedOutboundNetwork,
             Self::UnsupportedOutboundSecurity => CoreError::UnsupportedOutboundSecurity,
@@ -787,6 +883,9 @@ struct CachedOutboundEntry {
     udp: OnceLock<Result<UdpOutbound, CachedOutboundError>>,
     dns: OnceLock<Result<DnsOutbound, CachedOutboundError>>,
     vless: OnceLock<Result<VlessTcpOutbound, CachedOutboundError>>,
+    trojan: OnceLock<Result<TrojanOutbound, CachedOutboundError>>,
+    vmess: OnceLock<Result<VmessOutbound, CachedOutboundError>>,
+    shadowsocks: OnceLock<Result<Shadowsocks2022Outbound, CachedOutboundError>>,
     hysteria: OnceLock<Result<HysteriaOutbound, CachedOutboundError>>,
     wireguard: OnceLock<Result<WireguardOutbound, CachedOutboundError>>,
 }
@@ -807,6 +906,9 @@ pub enum OutboundNodeKind {
     Wireguard,
     Freedom,
     Vless,
+    Trojan,
+    Vmess,
+    Shadowsocks2022,
     Dns,
     Blackhole,
     Selector,
@@ -1015,6 +1117,9 @@ impl OutboundGraph {
                 kind: match outbound.settings {
                     OutboundSettings::Freedom => OutboundNodeKind::Freedom,
                     OutboundSettings::Vless(_) => OutboundNodeKind::Vless,
+                    OutboundSettings::Trojan(_) => OutboundNodeKind::Trojan,
+                    OutboundSettings::Vmess(_) => OutboundNodeKind::Vmess,
+                    OutboundSettings::Shadowsocks2022(_) => OutboundNodeKind::Shadowsocks2022,
                     OutboundSettings::Hysteria(_) => OutboundNodeKind::Hysteria,
                     OutboundSettings::Wireguard(_) => OutboundNodeKind::Wireguard,
                     OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
@@ -1886,25 +1991,46 @@ impl OutboundSelectionOverlay {
 /// transport pools for the lifetime of the core.
 #[derive(Debug)]
 pub struct OutboundFactory {
+    hysteria_stream_limits: crate::HysteriaStreamLimits,
     graph: Arc<OutboundGraph>,
     entries: Box<[CachedOutboundEntry]>,
     selection: Arc<OutboundSelectionOverlay>,
     sessions_closed: std::sync::atomic::AtomicBool,
+    parallel_vmess_relays: Arc<tokio::sync::Semaphore>,
 }
+
+const PARALLEL_VMESS_CONNECTIONS: usize = 2;
 
 impl OutboundFactory {
     pub fn new(graph: Arc<OutboundGraph>) -> Self {
+        Self::with_hysteria_stream_limits(graph, crate::HysteriaStreamLimits::default())
+    }
+
+    pub fn with_hysteria_stream_limits(
+        graph: Arc<OutboundGraph>,
+        hysteria_stream_limits: crate::HysteriaStreamLimits,
+    ) -> Self {
         let entries = (0..graph.leaf_count)
             .map(|_| CachedOutboundEntry::default())
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let selection = Arc::new(OutboundSelectionOverlay::new(Arc::clone(&graph)));
         Self {
+            hysteria_stream_limits,
             graph,
             entries,
             selection,
             sessions_closed: std::sync::atomic::AtomicBool::new(false),
+            parallel_vmess_relays: Arc::new(tokio::sync::Semaphore::new(
+                PARALLEL_VMESS_CONNECTIONS,
+            )),
         }
+    }
+
+    /// Shared by every router/inbound using this core. Relay I/O continues
+    /// locally while waiting; only active duplex work can occupy admission.
+    pub(crate) fn parallel_vmess_budget(&self) -> Arc<tokio::sync::Semaphore> {
+        self.parallel_vmess_relays.clone()
     }
 
     pub fn graph(&self) -> &OutboundGraph {
@@ -2709,6 +2835,88 @@ impl OutboundFactory {
         }
     }
 
+    fn cached_trojan_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<TrojanOutbound, CachedOutboundError> {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let result = self
+            .entry(node)?
+            .trojan
+            .get_or_init(|| {
+                TrojanOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+            })
+            .clone();
+        if self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = &result {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        result
+    }
+
+    fn cached_vmess_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<VmessOutbound, CachedOutboundError> {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let result = self
+            .entry(node)?
+            .vmess
+            .get_or_init(|| {
+                VmessOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+            })
+            .clone();
+        if self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = &result {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        result
+    }
+
+    fn cached_shadowsocks_outbound(
+        &self,
+        node: OutboundNodeId,
+    ) -> Result<Shadowsocks2022Outbound, CachedOutboundError> {
+        if self.sessions_closed.load(Ordering::Acquire) {
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        let configured = self
+            .graph
+            .configured_outbound(node)
+            .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        let result = self
+            .entry(node)?
+            .shadowsocks
+            .get_or_init(|| {
+                Shadowsocks2022Outbound::new(configured)
+                    .map_err(CachedOutboundError::from_core_error)
+            })
+            .clone();
+        if self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = &result {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
+        result
+    }
+
     fn cached_hysteria_outbound(
         &self,
         node: OutboundNodeId,
@@ -2724,7 +2932,8 @@ impl OutboundFactory {
             .entry(node)?
             .hysteria
             .get_or_init(|| {
-                HysteriaOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+                HysteriaOutbound::with_stream_limits(configured, self.hysteria_stream_limits)
+                    .map_err(CachedOutboundError::from_core_error)
             })
             .clone();
         if self.sessions_closed.load(Ordering::Acquire) {
@@ -2766,6 +2975,15 @@ impl OutboundFactory {
     pub(crate) fn close_sessions(&self) {
         self.sessions_closed.store(true, Ordering::Release);
         for entry in &self.entries {
+            if let Some(Ok(outbound)) = entry.trojan.get() {
+                outbound.close();
+            }
+            if let Some(Ok(outbound)) = entry.shadowsocks.get() {
+                outbound.close();
+            }
+            if let Some(Ok(outbound)) = entry.vmess.get() {
+                outbound.close();
+            }
             if let Some(Ok(outbound)) = entry.wireguard.get() {
                 outbound.close();
             }
@@ -2773,6 +2991,26 @@ impl OutboundFactory {
                 outbound.close();
             }
         }
+    }
+
+    pub(crate) async fn join_sessions(&self) {
+        for entry in &self.entries {
+            if let Some(Ok(outbound)) = entry.trojan.get() {
+                outbound.join().await;
+            }
+            if let Some(Ok(outbound)) = entry.shadowsocks.get() {
+                outbound.join().await;
+            }
+            if let Some(Ok(outbound)) = entry.vmess.get() {
+                outbound.join().await;
+            }
+        }
+        // Inbound owners have stopped admitting work. Their cancelled relay
+        // children retain their lease until they stop polling owned I/O.
+        let _all = self
+            .parallel_vmess_relays
+            .acquire_many(PARALLEL_VMESS_CONNECTIONS as u32)
+            .await;
     }
 
     pub(crate) fn rebind_hysteria(&self) -> u64 {
@@ -2805,6 +3043,17 @@ impl OutboundFactory {
             .graph
             .configured_outbound(node)
             .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        if outbound.mux.is_some()
+            && !matches!(
+                outbound.settings,
+                OutboundSettings::Trojan(_)
+                    | OutboundSettings::Shadowsocks2022(_)
+                    | OutboundSettings::Vmess(_)
+            )
+        {
+            return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+        }
+
         if outbound.stream.network != Network::Tcp
             && !matches!(outbound.settings, OutboundSettings::Hysteria(_))
         {
@@ -2818,6 +3067,13 @@ impl OutboundFactory {
             OutboundSettings::Wireguard(_) => self
                 .cached_wireguard_outbound(node)
                 .map(TcpOutbound::Wireguard),
+            OutboundSettings::Trojan(_) => {
+                self.cached_trojan_outbound(node).map(TcpOutbound::Trojan)
+            }
+            OutboundSettings::Vmess(_) => self.cached_vmess_outbound(node).map(TcpOutbound::Vmess),
+            OutboundSettings::Shadowsocks2022(_) => self
+                .cached_shadowsocks_outbound(node)
+                .map(TcpOutbound::Shadowsocks2022),
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom => {
@@ -2827,7 +3083,8 @@ impl OutboundFactory {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
-                Ok(build_freedom_tcp_outbound(&outbound.stream))
+                build_freedom_tcp_outbound(&outbound.stream)
+                    .map_err(CachedOutboundError::from_core_error)
             }
             OutboundSettings::Vless(_) => self
                 .cached_vless_outbound(node)
@@ -2854,6 +3111,17 @@ impl OutboundFactory {
             .graph
             .configured_outbound(node)
             .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        if outbound.mux.is_some()
+            && !matches!(
+                outbound.settings,
+                OutboundSettings::Trojan(_)
+                    | OutboundSettings::Shadowsocks2022(_)
+                    | OutboundSettings::Vmess(_)
+            )
+        {
+            return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+        }
+
         if outbound.proxy_settings.is_some() {
             return Err(CachedOutboundError::UnsupportedOutboundProxyNetwork("UDP"));
         }
@@ -2864,6 +3132,13 @@ impl OutboundFactory {
             OutboundSettings::Wireguard(_) => self
                 .cached_wireguard_outbound(node)
                 .map(UdpOutbound::Wireguard),
+            OutboundSettings::Trojan(_) => {
+                self.cached_trojan_outbound(node).map(UdpOutbound::Trojan)
+            }
+            OutboundSettings::Vmess(_) => self.cached_vmess_outbound(node).map(UdpOutbound::Vmess),
+            OutboundSettings::Shadowsocks2022(_) => self
+                .cached_shadowsocks_outbound(node)
+                .map(UdpOutbound::Shadowsocks2022),
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom => {
@@ -2893,6 +3168,17 @@ impl OutboundFactory {
             .graph
             .configured_outbound(node)
             .ok_or(CachedOutboundError::NoSupportedOutbound)?;
+        if configured.mux.is_some()
+            && !matches!(
+                configured.settings,
+                OutboundSettings::Trojan(_)
+                    | OutboundSettings::Shadowsocks2022(_)
+                    | OutboundSettings::Vmess(_)
+            )
+        {
+            return Err(CachedOutboundError::UnsupportedOutboundNetwork);
+        }
+
         if configured.proxy_settings.is_some() {
             return Err(CachedOutboundError::UnsupportedOutboundProxyNetwork("DNS"));
         }
@@ -2908,6 +3194,9 @@ impl OutboundFactory {
             OutboundSettings::Freedom
             | OutboundSettings::Vless(_)
             | OutboundSettings::Hysteria(_)
+            | OutboundSettings::Trojan(_)
+            | OutboundSettings::Vmess(_)
+            | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_) => Err(CachedOutboundError::NoSupportedOutbound),
         }
     }
@@ -2933,280 +3222,6 @@ fn stream_transport_is_dialable(stream: &StreamSettings) -> bool {
     matches!(stream.transport, StreamTransport::Raw)
 }
 
-/// Resolves the config's transport into the dial-ready one.
-///
-/// WebSocket and HTTPUpgrade's `Host` header follows Xray's precedence -- the
-/// transport's own `host`, else the TLS/REALITY server name, else the
-/// destination address -- and never carries a port. XHTTP resolves the same
-/// sources separately below because its scheme, authority validation, and
-/// native-client port rule belong to its request URL.
-///
-/// gRPC's `:authority` looks like the same question and is not: it has its own
-/// chain, its own view of REALITY, and a fallback that does carry the port.
-/// [`grpc_authority`] has it, and `host_fallback` below is the wrong answer to
-/// it in three separate ways.
-fn build_transport_layer(
-    outbound: &OutboundConfig,
-    connector: &ConnectorConfig,
-) -> Result<TransportLayer, CoreError> {
-    let OutboundSettings::Vless(settings) = &outbound.settings else {
-        return Err(CoreError::NoSupportedOutbound);
-    };
-
-    let host_fallback = || match connector {
-        ConnectorConfig::Tls(tls) if !tls.server_name.is_empty() => tls.server_name.clone(),
-        ConnectorConfig::Reality(reality) if !reality.server_name.is_empty() => {
-            reality.server_name.clone()
-        }
-        _ => match &settings.server {
-            TargetAddr::Domain(domain) => domain.clone(),
-            TargetAddr::Ip(ip) => ip.to_string(),
-        },
-    };
-
-    Ok(match &outbound.stream.transport {
-        StreamTransport::Raw => TransportLayer::Raw,
-        StreamTransport::Hysteria(_) => return Err(CoreError::UnsupportedOutboundNetwork),
-        StreamTransport::WebSocket(websocket) => TransportLayer::WebSocket(WebSocketConfig {
-            path: websocket.path.clone(),
-            host: websocket.host.clone().unwrap_or_else(host_fallback),
-            headers: websocket.headers.clone(),
-            early_data_bytes: websocket.early_data_bytes,
-            heartbeat_period_secs: websocket.heartbeat_period_secs,
-        }),
-        StreamTransport::HttpUpgrade(upgrade) => TransportLayer::HttpUpgrade(HttpUpgradeConfig {
-            path: upgrade.path.clone(),
-            host: upgrade.host.clone().unwrap_or_else(host_fallback),
-            headers: upgrade.headers.clone(),
-        }),
-        StreamTransport::Grpc(grpc) => TransportLayer::Grpc(GrpcTransport::new(GrpcConfig {
-            service_name: grpc.service_name.clone(),
-            multi_mode: grpc.multi_mode,
-            authority: grpc_authority(
-                grpc.authority.as_deref(),
-                &outbound.stream.security,
-                &settings.server,
-                settings.port,
-            )?,
-            user_agent: grpc_user_agent(grpc.user_agent.as_deref())?,
-            idle_timeout_secs: grpc.idle_timeout_secs,
-            health_check_timeout_secs: grpc.health_check_timeout_secs,
-            permit_without_stream: grpc.permit_without_stream,
-            initial_windows_size: grpc.initial_windows_size,
-        })),
-        StreamTransport::Xhttp(xhttp) => TransportLayer::Xhttp(build_xhttp_transport(
-            xhttp,
-            &outbound.stream.security,
-            &settings.server,
-            outbound.stream.quic_params.as_ref(),
-        )?),
-    })
-}
-
-// The config keys the derived half of the `:authority` chain can come from, as
-// `CoreError::UnrepresentableGrpcAuthority` names them.
-//
-// Spelled as the paths the config parser reports its own errors under — the
-// address key verbatim (`crates/xray-config/src/parser.rs:2440`), and the TLS
-// server name as the object path the parser uses plus the key it accepts
-// inside it (`parser.rs:3211,3220`) — minus the `$.outbounds[N]` prefix this
-// layer no longer knows, so the message is something to search a profile for
-// rather than a description of it. `realitySettings.serverName` is not among
-// them on purpose: `dial.go:162` never reads it, for the reason `grpc_authority`
-// gives.
-//
-// `SERVER_ENDPOINT_KEYS` names a pair because the last-resort branch *composes*
-// its value out of two keys, and printing one of them next to `例え.jp:443`
-// would send the user looking for a `:443` that key does not hold.
-const TLS_SERVER_NAME_KEY: &str = "streamSettings.tlsSettings.serverName";
-const SERVER_ADDRESS_KEY: &str = "settings.vnext[0].address";
-const SERVER_ENDPOINT_KEYS: &str = "settings.vnext[0].address and settings.vnext[0].port";
-
-/// The `:authority` one gRPC outbound dials with.
-///
-/// Xray's chain is `grpcSettings.authority`, else `tlsSettings.serverName`,
-/// else the destination *domain* and only when REALITY is absent, else the
-/// empty string (`Xray-core/transport/internet/grpc/dial.go:159-167`).
-///
-/// **Three ways this differs from `build_transport_layer`'s `host_fallback`**,
-/// which resolves the `Host` header for ws and httpupgrade and is the obvious
-/// thing to reuse here:
-///
-/// * REALITY's server name is not in the chain. `dial.go:162` reads
-///   `tlsConfig.ServerName`, and `tls.ConfigFromStreamSettings` returns nil for
-///   a REALITY stream because the type assertion on `SecuritySettings` fails
-///   (`transport/internet/tls/config.go:510-519`), so under REALITY the whole
-///   branch is skipped rather than answered with the REALITY SNI.
-/// * The destination branch needs the destination to be a domain. An IP one
-///   leaves the authority empty even with no REALITY in sight.
-/// * **The empty string is not an omitted header.** `initAuthority` walks past
-///   the dial option to the transport credentials, and Xray's are
-///   `insecure.NewCredentials()` (`dial.go:157`), whose `Info().ServerName` is
-///   empty (`grpc@v1.81.0/credentials/insecure/insecure.go:51-53`); the
-///   passthrough resolver is no `AuthorityOverrider` either, so the chain ends
-///   at `encodeAuthority(endpoint)` (`clientconn.go:1976-1986`) over the target
-///   Xray built as `passthrough:///host:port` (`dial.go:181-191`) — port
-///   included. Verified on the wire against grpc-go v1.81.0 for a domain, an
-///   IPv4 and an IPv6 destination. `encodeAuthority` leaves `:`, `[`, `]` and
-///   `@` unescaped (`clientconn.go:1889-1942`), which is why an IPv6 literal
-///   keeps its brackets instead of arriving as `%5B`. Under REALITY this
-///   fallback is the default path, not an edge case.
-///
-/// **The parse is split between the configured value and the derived ones**,
-/// because refusing an outbound over them is two different acts.
-///
-/// `grpcSettings.authority` is a string the user typed, and refusing it is the
-/// better of two bad options: [`xray_transport::stream::GrpcConfig::authority`]
-/// has the reasoning, which is that a `/` in it silently calls a gRPC method
-/// nobody configured. They can fix what they typed.
-///
-/// The other three are values *we* derive on their behalf, and
-/// `CoreError::InvalidGrpcAuthority` over one of those would blame a key their
-/// config does not contain. They get
-/// [`CoreError::UnrepresentableGrpcAuthority`], which names the key that
-/// actually produced the value.
-///
-/// **Both still refuse, because nothing else is reachable.** An IDN
-/// destination is the case that provokes the question — `Authority` rejects
-/// every byte above `0x7f` (`http-1.5.0/src/uri/authority.rs:493-516`), and
-/// grpc-go sends `例え.jp` verbatim, verified on the wire against v1.81.0 — and
-/// none of the alternatives survive contact with it:
-///
-/// * **Falling through the chain does not rescue it, it moves it.** The step
-///   after the destination domain is [`host_and_port`], which is that same
-///   domain with a `:443` appended, so it fails identically. The step after
-///   `tlsSettings.serverName` is the destination, which would answer — with a
-///   *different* authority than Xray sends, on a stream whose TLS layer is
-///   about to refuse the same name anyway (`TransportError::InvalidTlsServerName`).
-///   Sending the wrong authority to buy one extra failed handshake is not a
-///   trade worth making.
-/// * **Carrying it as a `String` only relocates the refusal.** `h2` reads
-///   `:authority` out of `Request::uri()` and nowhere else
-///   (`h2-0.4.15/src/frame/headers.rs:561-604`, `src/client.rs:1604-1664`), and
-///   an `http::Uri`'s authority *is* an [`Authority`]. A value this rejects is
-///   one no request can carry, so the only thing deferring the parse buys is
-///   the same failure once per dial, each behind a TCP connect and a TLS or
-///   REALITY handshake.
-/// * **Reproducing grpc-go's escaping does not help either.** `encodeAuthority`
-///   percent-escapes the `host:port` fallback, so upstream really does put
-///   `%E4%BE%8B%E3%81%88.jp:443` on the wire for an IDN destination under
-///   REALITY — also verified — and that form is *pure ASCII*. It still will not
-///   parse: `http` allows `%` only in userinfo or an IPv6 zone id and rejects
-///   it in a host (`authority.rs:503-514,564-567`).
-/// * **The IDNA A-label is the one form that would parse, and nothing here can
-///   build it.** `Authority::try_from("xn--r8jz45g.jp")` is `Ok` where the raw
-///   `例え.jp` is `InvalidUriChar` and grpc-go's escaping is
-///   `InvalidAuthority`, all three checked against `http` 1.5.0 — so punycode
-///   is a real escape hatch and it is still not reachable: no `idna` crate
-///   appears anywhere in this workspace's dependency graph. Adding one to
-///   convert silently would put an authority on the wire that upstream does
-///   not send, and under TLS the same name is refused a layer down regardless,
-///   since an IDN is not a rustls `ServerName` either
-///   (`crates/xray-transport/src/tls.rs:220`). A profile that wants the
-///   A-label can write it, and that already works.
-///
-/// So an IDN gRPC profile runs on xray-core and does not run here. That is a
-/// real parity gap, and it is a property of `http`/`h2`, not of this function;
-/// what this function owes the user is a message that names the address they
-/// wrote instead of a key they did not.
-fn grpc_authority(
-    configured: Option<&str>,
-    security: &StreamSecurity,
-    server: &TargetAddr,
-    port: u16,
-) -> Result<Authority, CoreError> {
-    // The config layer has already collapsed an empty `authority` to `None`,
-    // matching Go's inability to tell one from an absent key.
-    if let Some(configured) = configured {
-        return Authority::try_from(configured)
-            .map_err(|_| CoreError::InvalidGrpcAuthority(configured.to_owned()));
-    }
-
-    let (key, derived) = match configured_tls_server_name(security) {
-        Some(server_name) => (TLS_SERVER_NAME_KEY, server_name.to_owned()),
-        None => match server {
-            TargetAddr::Domain(domain) if !matches!(security, StreamSecurity::Reality(_)) => {
-                (SERVER_ADDRESS_KEY, domain.clone())
-            }
-            _ => (SERVER_ENDPOINT_KEYS, host_and_port(server, port)),
-        },
-    };
-
-    Authority::try_from(derived.as_str()).map_err(|_| CoreError::UnrepresentableGrpcAuthority {
-        key,
-        value: derived,
-    })
-}
-
-/// The `user-agent` one gRPC outbound sends, through Xray's keyword table.
-///
-/// A wrapper over [`resolve_user_agent`] and not much else: what it adds is the
-/// error, and the error is the reason the resolution happens here rather than
-/// at the dial. [`xray_transport::stream::GrpcConfig::user_agent`] has why the
-/// value is refused at all — measured against grpc-go rather than reasoned
-/// about, and the short version is that every value refused here is a value
-/// whose every stream a grpc-go peer resets, so no profile that ran upstream
-/// stops running.
-///
-/// **Only [`CoreError::InvalidGrpcUserAgent`] and no derived-value twin**,
-/// which is where this parts company with [`grpc_authority`]. That chain has
-/// two error variants because three of its four branches produce a value the
-/// user never typed, and blaming `grpcSettings.authority` for the destination
-/// address would send them looking for a key their config does not hold. This
-/// one has no such branch: the three browser keywords resolve through the
-/// masquerade table to printable ASCII and `golang` to the empty string, so
-/// the only arm that can fail is the one that hands back the configured string
-/// verbatim. Naming the key is therefore always right, and the value in the
-/// message is always one they can search their profile for.
-fn grpc_user_agent(configured: Option<&str>) -> Result<HeaderValue, CoreError> {
-    resolve_user_agent(configured)
-        .map_err(|_| CoreError::InvalidGrpcUserAgent(configured.unwrap_or_default().to_owned()))
-}
-
-/// `tlsSettings.serverName`, read from the config the way `dial.go:162` reads
-/// it and not from the connector this outbound was built with.
-///
-/// The distinction has no effect on the resolved authority and every effect on
-/// which key gets blamed for it. `ConnectorConfig::Tls::server_name` is already
-/// the destination domain when the key is absent — `build_vless_tcp_outbound`
-/// substitutes it — where Xray's `tls.ConfigFromStreamSettings` hands
-/// `dial.go:162` the raw proto field, which is empty; the mutation that copies
-/// the domain in happens later, inside the dial closure, on a `*gotls.Config`
-/// the authority chain never sees (`dial.go:136-142`). Reading the connector
-/// therefore answers branch 2 with a value upstream answers branch 3 with,
-/// which is the same string, from a key the user may never have written. The
-/// difference is only observable once that key reaches a message, which is the
-/// last row of `a_derived_authority_is_not_refused_as_the_configured_one`.
-///
-/// The distinction becomes visible for a TLS stream over an IP destination:
-/// the connector carries that IP for certificate-name verification, while
-/// upstream gRPC still sees the raw absent/empty setting and falls through to
-/// `host:port`. Reading this function from the config preserves that split.
-fn configured_tls_server_name(security: &StreamSecurity) -> Option<&str> {
-    match security {
-        StreamSecurity::Tls(tls) => tls
-            .server_name
-            .as_deref()
-            .filter(|server_name| !server_name.is_empty()),
-        StreamSecurity::None | StreamSecurity::Reality(_) => None,
-    }
-}
-
-/// grpc-go's resolver-endpoint fallback, i.e. Go's `net.JoinHostPort` over the
-/// destination — which brackets an IPv6 literal, as `SocketAddr` does.
-///
-/// `to_canonical` is what makes the IPv4-mapped case agree: Go builds the host
-/// from `dest.Address.IP().String()` (`dial.go:181-186`), and `net.IP.String`
-/// writes a 16-byte address whose `To4()` matches as a dotted quad, where
-/// Rust's `Display` would keep `::ffff:`. Both fold exactly the v4-mapped
-/// prefix and nothing else, so the two agree everywhere once this is applied.
-fn host_and_port(server: &TargetAddr, port: u16) -> String {
-    match server {
-        TargetAddr::Domain(domain) => format!("{domain}:{port}"),
-        TargetAddr::Ip(ip) => SocketAddr::new(ip.to_canonical(), port).to_string(),
-    }
-}
-
 #[cfg(test)]
 fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreError> {
     if outbound.stream.network != Network::Tcp
@@ -3220,6 +3235,11 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
         OutboundSettings::Wireguard(_) => {
             WireguardOutbound::new(outbound).map(TcpOutbound::Wireguard)
         }
+        OutboundSettings::Trojan(_) => TrojanOutbound::new(outbound).map(TcpOutbound::Trojan),
+        OutboundSettings::Vmess(_) => VmessOutbound::new(outbound).map(TcpOutbound::Vmess),
+        OutboundSettings::Shadowsocks2022(_) => {
+            Shadowsocks2022Outbound::new(outbound).map(TcpOutbound::Shadowsocks2022)
+        }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
         OutboundSettings::Freedom => {
@@ -3229,7 +3249,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
-            Ok(build_freedom_tcp_outbound(&outbound.stream))
+            build_freedom_tcp_outbound(&outbound.stream)
         }
         OutboundSettings::Vless(_) => build_vless_tcp_outbound(outbound)
             .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
@@ -3242,6 +3262,11 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
         OutboundSettings::Hysteria(_) => HysteriaOutbound::new(outbound).map(UdpOutbound::Hysteria),
         OutboundSettings::Wireguard(_) => {
             WireguardOutbound::new(outbound).map(UdpOutbound::Wireguard)
+        }
+        OutboundSettings::Trojan(_) => TrojanOutbound::new(outbound).map(UdpOutbound::Trojan),
+        OutboundSettings::Vmess(_) => VmessOutbound::new(outbound).map(UdpOutbound::Vmess),
+        OutboundSettings::Shadowsocks2022(_) => {
+            Shadowsocks2022Outbound::new(outbound).map(UdpOutbound::Shadowsocks2022)
         }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
@@ -3309,32 +3334,35 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
         validate_stream_flow(user.flow.as_deref(), &outbound.stream.security)?;
     }
 
-    let transport = build_vless_connector(&outbound.stream.security, &settings.server);
-    let download = build_xhttp_download(outbound)?;
-
-    let addr = match &settings.server {
-        TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),
-        TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
-    };
-
+    let carrier = StreamCarrier::new(
+        &outbound.stream,
+        &settings.server,
+        settings.port,
+        user.encryption.is_none(),
+        carrier::VLESS_PATHS,
+    )?;
     Ok(VlessTcpOutbound {
         payload: Arc::new(VlessTcpOutboundPayload {
-            download,
-            server: Target::new(addr, settings.port, RoutingNetwork::Tcp),
+            carrier,
             user,
             encryption,
-            transport_layer: build_transport_layer(outbound, &transport)?,
-            transport,
-            happy_eyeballs: happy_eyeballs_config(&outbound.stream),
         }),
     })
 }
 
-fn build_freedom_tcp_outbound(stream: &StreamSettings) -> TcpOutbound {
-    match happy_eyeballs_config(stream) {
+fn build_freedom_tcp_outbound(stream: &StreamSettings) -> Result<TcpOutbound, CoreError> {
+    if let Some(fragment) = carrier::fragment_config(stream)? {
+        return Ok(TcpOutbound::FreedomFragment(Box::new(
+            FragmentedFreedomOutbound {
+                fragment,
+                happy_eyeballs: happy_eyeballs_config(stream),
+            },
+        )));
+    }
+    Ok(match happy_eyeballs_config(stream) {
         Some(config) => TcpOutbound::FreedomHappyEyeballs(config),
         None => TcpOutbound::Freedom,
-    }
+    })
 }
 
 fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreError> {
@@ -3543,6 +3571,27 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
     requires_local_resolution: bool,
 ) -> Result<BoxedTransportStream, CoreError> {
     match outbound {
+        TcpOutbound::Trojan(outbound) => {
+            if requires_local_resolution {
+                Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer)).await
+            } else {
+                Box::pin(outbound.open_resolved(target, &[], &[], transport_dialer)).await
+            }
+        }
+        TcpOutbound::Vmess(outbound) => {
+            if requires_local_resolution {
+                Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer)).await
+            } else {
+                Box::pin(outbound.open_resolved(target, &[], &[], transport_dialer)).await
+            }
+        }
+        TcpOutbound::Shadowsocks2022(outbound) => {
+            if requires_local_resolution {
+                Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer)).await
+            } else {
+                Box::pin(outbound.open_resolved(target, &[], &[], transport_dialer)).await
+            }
+        }
         TcpOutbound::Wireguard(outbound) => {
             // Cold protocol setup contains large async state. Keep it out of
             // every TCP task, including long-lived Freedom/VLESS connections.
@@ -3557,13 +3606,16 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
         TcpOutbound::Hysteria(outbound) => {
             Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => {
             let candidates = if requires_local_resolution {
                 resolve_server_candidates(target, destination_resolver).await?
             } else {
                 Vec::new()
             };
-            Ok(transport_dialer
+            Ok(outbound
+                .freedom_dialer(transport_dialer)
                 .connect_resolved(
                     &ConnectorConfig::Tcp,
                     target,
@@ -3608,7 +3660,11 @@ pub async fn open_vless_tcp_stream_with_resolver_and_dialer(
     // directly with candidates supplied by the outer proxy dialer.
     validate_outbound_flow(outbound)?;
     let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
-    let resolved_download = resolve_xhttp_download(outbound, dns_resolver).await?;
+    let resolved_download = outbound
+        .payload
+        .carrier
+        .resolve_download(dns_resolver)
+        .await?;
     open_vless_tcp_stream_with_resolved_server_and_dialer(
         outbound,
         target,
@@ -3628,13 +3684,11 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
 ) -> Result<BoxedTransportStream, CoreError> {
     let flow = validate_outbound_flow(outbound)?;
 
-    let stream = open_vless_carrier(
-        outbound,
-        resolved_server,
-        resolved_download,
-        transport_dialer,
-    )
-    .await?;
+    let stream = outbound
+        .payload
+        .carrier
+        .open(resolved_server, resolved_download, transport_dialer)
+        .await?;
     let mut stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
     let request = VlessRequest {
         user_id: outbound.user().id,
@@ -3710,14 +3764,16 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
     let uses_xudp = uses_vision || should_use_xudp_for_udp_target(target);
 
     let resolved_server = resolve_server_candidates(outbound.server(), dns_resolver).await?;
-    let resolved_download = resolve_xhttp_download(outbound, dns_resolver).await?;
-    let stream = open_vless_carrier(
-        outbound,
-        &resolved_server,
-        &resolved_download,
-        transport_dialer,
-    )
-    .await?;
+    let resolved_download = outbound
+        .payload
+        .carrier
+        .resolve_download(dns_resolver)
+        .await?;
+    let stream = outbound
+        .payload
+        .carrier
+        .open(&resolved_server, &resolved_download, transport_dialer)
+        .await?;
     let mut stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
     let request = VlessRequest {
         user_id: outbound.user().id,
@@ -3855,6 +3911,7 @@ mod tests {
 
     fn direct_selection_freedom(tag: &str) -> OutboundConfig {
         OutboundConfig {
+            mux: None,
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -3862,6 +3919,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -3870,6 +3928,7 @@ mod tests {
 
     fn direct_selection_vless(tag: &str) -> OutboundConfig {
         OutboundConfig {
+            mux: None,
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -3877,6 +3936,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -3894,6 +3954,7 @@ mod tests {
 
     fn dns_selection_outbound(tag: &str, settings: DnsOutboundSettings) -> OutboundConfig {
         OutboundConfig {
+            mux: None,
             tag: Some(tag.to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -3901,6 +3962,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(settings),
@@ -4198,6 +4260,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4238,6 +4301,7 @@ mod tests {
                         alpn: Vec::new(),
                     }),
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 Duration::from_secs(60),
@@ -4273,6 +4337,7 @@ mod tests {
                 alpn: vec!["http/1.1".to_owned()],
             }),
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         };
 
@@ -4305,6 +4370,7 @@ mod tests {
                     alpn: vec!["h2".to_owned()],
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4378,6 +4444,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4414,6 +4481,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(reality.clone()),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings {
                         prioritize_ipv6: configured.prioritize_ipv6,
@@ -4455,6 +4523,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4472,6 +4541,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
                 }),
@@ -4494,6 +4564,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4514,6 +4585,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4968,8 +5040,6 @@ mod tests {
             .expect_lookup("proxy.example", 443);
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
-                download: None,
-                server: domain_tcp_target("proxy.example"),
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -4977,14 +5047,19 @@ mod tests {
                     level: 0,
                 },
                 encryption: None,
-                transport: ConnectorConfig::Tcp,
-                transport_layer: TransportLayer::Raw,
-                happy_eyeballs: Some(HappyEyeballsConfig {
-                    prioritize_ipv6: false,
-                    interleave: 1,
-                    try_delay: Duration::from_secs(30),
-                    max_concurrent: NonZeroUsize::new(2).expect("non-zero test concurrency"),
-                }),
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: domain_tcp_target("proxy.example"),
+                    transport: ConnectorConfig::Tcp,
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: Some(HappyEyeballsConfig {
+                        prioritize_ipv6: false,
+                        interleave: 1,
+                        try_delay: Duration::from_secs(30),
+                        max_concurrent: NonZeroUsize::new(2).expect("non-zero test concurrency"),
+                    }),
+                },
             }),
         };
         let target = Target::new(
@@ -6852,7 +6927,7 @@ mod tests {
     /// (`dial.go:188-191`), so what goes out carries the port — confirmed on
     /// the wire against grpc-go v1.81.0. Under REALITY that fallback is the
     /// default path rather than an edge case, which is why the last row is not
-    /// a curiosity. [`grpc_authority`] has the rest of the reasoning, including
+    /// a curiosity. [`carrier::grpc_authority`] has the rest of the reasoning, including
     /// why the `Host` header's `host_fallback` cannot answer this.
     #[test]
     fn the_grpc_authority_follows_xrays_precedence_chain() {
@@ -7061,7 +7136,7 @@ mod tests {
     /// when it is empty and `encodeAuthority` escapes the endpoint.
     ///
     /// Each row still refuses the outbound, because
-    /// [`super::grpc_authority`] documents why nothing else is reachable, but
+    /// [`super::carrier::grpc_authority`] documents why nothing else is reachable, but
     /// it must not refuse it as the configured key. It also has to survive
     /// `CachedOutboundError`, which panics on any `CoreError` it cannot
     /// represent, and which has to carry the key and the value across rather
@@ -7073,7 +7148,7 @@ mod tests {
     /// key does not hold.
     ///
     /// Row 4 is the row that pins
-    /// [`super::configured_tls_server_name`] to the *config*: it is the only
+    /// [`super::carrier::configured_tls_server_name`] to the *config*: it is the only
     /// input where reading the built connector instead would answer with a
     /// different key. `build_vless_tcp_outbound` fills
     /// `ConnectorConfig::Tls::server_name` from the destination domain when
@@ -7211,7 +7286,7 @@ mod tests {
                 ),
             ),
             (
-                TLS_SERVER_NAME_KEY,
+                "streamSettings.tlsSettings.serverName",
                 grpc_vless(
                     grpc_settings(None),
                     StreamSecurity::Tls(TlsSettings {
@@ -7696,12 +7771,6 @@ mod tests {
     async fn open_vless_tcp_stream_rejects_outbound_with_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
-                download: None,
-                server: Target::new(
-                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                    0,
-                    RoutingNetwork::Tcp,
-                ),
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7709,9 +7778,18 @@ mod tests {
                     level: 0,
                 },
                 encryption: None,
-                transport: ConnectorConfig::Tcp,
-                transport_layer: TransportLayer::Raw,
-                happy_eyeballs: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        0,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Tcp,
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
             }),
         };
         let target = Target::new(
@@ -7729,12 +7807,6 @@ mod tests {
     async fn open_vless_tcp_stream_uses_default_live_reality_transport_for_vision_flow() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
-                download: None,
-                server: Target::new(
-                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                    0,
-                    RoutingNetwork::Tcp,
-                ),
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7742,16 +7814,25 @@ mod tests {
                     level: 0,
                 },
                 encryption: None,
-                transport: ConnectorConfig::Reality(RealityClientConfig {
-                    server_name: "example.com".to_owned(),
-                    fingerprint: "chrome".to_owned(),
-                    public_key: [7; 32],
-                    short_id: vec![1, 2, 3, 4],
-                    spider_x: "/".to_owned(),
-                    mldsa65_verify: None,
-                }),
-                transport_layer: TransportLayer::Raw,
-                happy_eyeballs: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        0,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Reality(RealityClientConfig {
+                        server_name: "example.com".to_owned(),
+                        fingerprint: "chrome".to_owned(),
+                        public_key: [7; 32],
+                        short_id: vec![1, 2, 3, 4],
+                        spider_x: "/".to_owned(),
+                        mldsa65_verify: None,
+                    }),
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
             }),
         };
         let target = Target::new(
@@ -7780,12 +7861,6 @@ mod tests {
         };
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
-                download: None,
-                server: Target::new(
-                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                    443,
-                    RoutingNetwork::Tcp,
-                ),
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7793,9 +7868,18 @@ mod tests {
                     level: 0,
                 },
                 encryption: None,
-                transport: ConnectorConfig::Reality(reality_config.clone()),
-                transport_layer: TransportLayer::Raw,
-                happy_eyeballs: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        443,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Reality(reality_config.clone()),
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
             }),
         };
         let target = Target::new(
@@ -7862,12 +7946,6 @@ mod tests {
     async fn open_vless_udp_stream_rejects_udp443_for_regular_vision_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
-                download: None,
-                server: Target::new(
-                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                    443,
-                    RoutingNetwork::Tcp,
-                ),
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7875,16 +7953,25 @@ mod tests {
                     level: 0,
                 },
                 encryption: None,
-                transport: ConnectorConfig::Reality(RealityClientConfig {
-                    server_name: "example.com".to_owned(),
-                    fingerprint: "chrome".to_owned(),
-                    public_key: [7; 32],
-                    short_id: vec![1, 2, 3, 4],
-                    spider_x: "/".to_owned(),
-                    mldsa65_verify: None,
-                }),
-                transport_layer: TransportLayer::Raw,
-                happy_eyeballs: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        443,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Reality(RealityClientConfig {
+                        server_name: "example.com".to_owned(),
+                        fingerprint: "chrome".to_owned(),
+                        public_key: [7; 32],
+                        short_id: vec![1, 2, 3, 4],
+                        spider_x: "/".to_owned(),
+                        mldsa65_verify: None,
+                    }),
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
             }),
         };
         let target = Target::new(
@@ -7920,12 +8007,6 @@ mod tests {
     async fn open_vless_udp_stream_allows_udp443_flow_and_sends_vision_addons() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
-                download: None,
-                server: Target::new(
-                    RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                    443,
-                    RoutingNetwork::Tcp,
-                ),
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7933,16 +8014,25 @@ mod tests {
                     level: 0,
                 },
                 encryption: None,
-                transport: ConnectorConfig::Reality(RealityClientConfig {
-                    server_name: "example.com".to_owned(),
-                    fingerprint: "chrome".to_owned(),
-                    public_key: [7; 32],
-                    short_id: vec![1, 2, 3, 4],
-                    spider_x: "/".to_owned(),
-                    mldsa65_verify: None,
-                }),
-                transport_layer: TransportLayer::Raw,
-                happy_eyeballs: None,
+                carrier: StreamCarrier {
+                    fragment: None,
+                    download: None,
+                    server: Target::new(
+                        RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                        443,
+                        RoutingNetwork::Tcp,
+                    ),
+                    transport: ConnectorConfig::Reality(RealityClientConfig {
+                        server_name: "example.com".to_owned(),
+                        fingerprint: "chrome".to_owned(),
+                        public_key: [7; 32],
+                        short_id: vec![1, 2, 3, 4],
+                        spider_x: "/".to_owned(),
+                        mldsa65_verify: None,
+                    }),
+                    transport_layer: TransportLayer::Raw,
+                    happy_eyeballs: None,
+                },
             }),
         };
         let target = Target::new(
@@ -8183,5 +8273,88 @@ mod future_layout_tests {
         // a 9.8 KiB future and exceed the 100/1000-flow RSS release budgets.
         assert!(std::mem::size_of_val(&plain) <= 4096);
         assert!(std::mem::size_of_val(&routed) <= 4352);
+    }
+}
+
+#[cfg(test)]
+mod parallel_relay_budget_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn join_sessions_waits_for_admitted_relay_owners() {
+        let config = Arc::new(
+            xray_config::parse_xray_json(r#"{"outbounds":[{"protocol":"freedom"}]}"#)
+                .unwrap()
+                .config,
+        );
+        let router = OutboundRouter::new(config);
+        let factory = router.factory_handle();
+        let lease = factory.parallel_vmess_budget().try_acquire_owned().unwrap();
+        factory.close_sessions();
+        let drain = tokio::spawn(async move {
+            factory.join_sessions().await;
+        });
+        tokio::task::yield_now().await;
+        assert!(!drain.is_finished());
+        drop(lease);
+        tokio::time::timeout(Duration::from_secs(1), drain)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[test]
+    fn admission_is_shared_across_routers_but_isolated_across_cores() {
+        let config = Arc::new(
+            xray_config::parse_xray_json(
+                r#"{"outbounds":[{"protocol":"freedom","tag":"direct"}]}"#,
+            )
+            .unwrap()
+            .config,
+        );
+        let first = OutboundRouter::new(config.clone());
+        let second = OutboundRouter::from_factory(first.factory_handle());
+        let other_core = OutboundRouter::new(config);
+        let mut leases = (0..PARALLEL_VMESS_CONNECTIONS)
+            .map(|_| {
+                first
+                    .factory()
+                    .parallel_vmess_budget()
+                    .try_acquire_owned()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert!(first
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_err());
+        assert!(second
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_err());
+        assert!(other_core
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_ok());
+        drop(leases.pop());
+        let replacement = second
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .unwrap();
+        assert!(first
+            .factory()
+            .parallel_vmess_budget()
+            .try_acquire_owned()
+            .is_err());
+        drop(replacement);
+        drop(leases);
+        assert_eq!(
+            first.factory.parallel_vmess_relays.available_permits(),
+            PARALLEL_VMESS_CONNECTIONS
+        );
     }
 }

@@ -28,6 +28,7 @@ fn runtime_config() -> CoreConfig {
             user_level: None,
         }],
         outbounds: vec![OutboundConfig {
+            mux: None,
             tag: Some("proxy".to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -35,6 +36,7 @@ fn runtime_config() -> CoreConfig {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -104,6 +106,7 @@ async fn core_selector_override_is_available_before_and_during_runtime() {
     let mut config = runtime_config();
     config.outbounds[0].tag = Some("proxy-a".to_owned());
     config.outbounds.push(OutboundConfig {
+        mux: None,
         tag: Some("proxy-b".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -111,6 +114,7 @@ async fn core_selector_override_is_available_before_and_during_runtime() {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,

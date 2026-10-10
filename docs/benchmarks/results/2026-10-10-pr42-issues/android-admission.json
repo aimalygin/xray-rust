@@ -1,0 +1,235 @@
+{
+  "device": "Samsung SM-A145F",
+  "android_api": 35,
+  "kernel": "5.10.236-android13-4-31267806",
+  "scope": "Isolated test VPN/app packages; known 31-byte echo payload; excluded application attempts SO_BINDTODEVICE on the test TUN. No ordinary user application traffic was inspected. Test VPN disconnected after checks.",
+  "cases": {
+    "disabled": [
+      {
+        "protocol": "tcp",
+        "bound": false,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 2,
+          "tcp_echoes": 2,
+          "udp_echoes": 0
+        },
+        "server_after": {
+          "tcp_connections": 3,
+          "tcp_echoes": 3,
+          "udp_echoes": 0
+        }
+      },
+      {
+        "protocol": "udp",
+        "bound": false,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 3,
+          "tcp_echoes": 3,
+          "udp_echoes": 0
+        },
+        "server_after": {
+          "tcp_connections": 3,
+          "tcp_echoes": 3,
+          "udp_echoes": 1
+        }
+      },
+      {
+        "protocol": "tcp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 3,
+          "tcp_echoes": 3,
+          "udp_echoes": 1
+        },
+        "server_after": {
+          "tcp_connections": 4,
+          "tcp_echoes": 4,
+          "udp_echoes": 1
+        }
+      },
+      {
+        "protocol": "udp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 4,
+          "tcp_echoes": 4,
+          "udp_echoes": 1
+        },
+        "server_after": {
+          "tcp_connections": 4,
+          "tcp_echoes": 4,
+          "udp_echoes": 2
+        }
+      },
+      {
+        "protocol": "tcp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "excluded42",
+        "server_before": {
+          "tcp_connections": 4,
+          "tcp_echoes": 4,
+          "udp_echoes": 2
+        },
+        "server_after": {
+          "tcp_connections": 5,
+          "tcp_echoes": 5,
+          "udp_echoes": 2
+        }
+      },
+      {
+        "protocol": "udp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "excluded42",
+        "server_before": {
+          "tcp_connections": 5,
+          "tcp_echoes": 5,
+          "udp_echoes": 2
+        },
+        "server_after": {
+          "tcp_connections": 5,
+          "tcp_echoes": 5,
+          "udp_echoes": 3
+        }
+      }
+    ],
+    "enabled": [
+      {
+        "protocol": "tcp",
+        "bound": false,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 7,
+          "tcp_echoes": 7,
+          "udp_echoes": 7
+        },
+        "server_after": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 7
+        }
+      },
+      {
+        "protocol": "udp",
+        "bound": false,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 7
+        },
+        "server_after": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 8
+        }
+      },
+      {
+        "protocol": "tcp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 104,
+        "echoBytes": 0,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 8
+        },
+        "server_after": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 8
+        }
+      },
+      {
+        "protocol": "udp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 0,
+        "echoBytes": 31,
+        "app": "admission42",
+        "server_before": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 8
+        },
+        "server_after": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 9
+        }
+      },
+      {
+        "protocol": "tcp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 104,
+        "echoBytes": 0,
+        "app": "excluded42",
+        "server_before": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 9
+        },
+        "server_after": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 9
+        }
+      },
+      {
+        "protocol": "udp",
+        "bound": true,
+        "bindErrno": 0,
+        "ioErrno": 110,
+        "echoBytes": 0,
+        "app": "excluded42",
+        "server_before": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 9
+        },
+        "server_after": {
+          "tcp_connections": 8,
+          "tcp_echoes": 8,
+          "udp_echoes": 9
+        }
+      }
+    ]
+  },
+  "limitation": "Android returned INVALID_UID (-1) for included-app bound TCP as well as excluded-app attempts. Strict admission intentionally denies unknown ownership; ordinary included-app TCP/UDP and bound UDP pass.",
+  "fixture_note": "Each probe is force-stopped before launching a new case because reusing its top Activity did not reliably refresh the result file. Only fresh-process, nonce-matched cases enter this table. Raw device logs, serial, UID numbers, nonces and private endpoints are omitted.",
+  "cleanup": {
+    "vpn": "disconnected",
+    "temporary_test_packages": "all three uninstalled successfully",
+    "existing_applications": "unchanged"
+  }
+}

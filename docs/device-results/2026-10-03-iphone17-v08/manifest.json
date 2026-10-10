@@ -1,0 +1,740 @@
+{
+  "date": "2026-10-03",
+  "scope": "Bounded physical iPhone observations; not a schema-4 release acceptance archive",
+  "core_commit": "de33998158e84c03f280f979ba2d4212072e5bc4",
+  "core_tree": "3d628e533f68671721ecf2e6ad786c15ce6f7291",
+  "sdk_commit": "0148543fef8736e01625bc678ca321cc483e1e12",
+  "source_dirty_at_build": false,
+  "device": "iPhone 17 Pro Max / iPhone18,2",
+  "os": "iOS 27.0 (24A437)",
+  "build": {
+    "native_target": "aarch64-apple-ios",
+    "native_profile": "release",
+    "host_app_configuration": "Debug",
+    "native_library_sha256": "94e80251e1e4f867c23339455c5cfcad4cb429aafe3e2739fb5e9b1d0da6ab2d",
+    "device_slice_only_rebuilt": true
+  },
+  "source_hashes": {
+    "Cargo.lock": "74c6160547e56d8973baf857d6c779cb931929c961a388c32a3bdc18adaa2b1c",
+    "scripts/run-v07-apple-protocol-fixture.py": "731bae3cb2cf5fac2897b6017636536beff2389369462aaeb09a922aeff7a43b",
+    "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "7d4697cf2f1c0931e01cb0795d1118cea763ec614cfaae8908ae955d2b9d3f61",
+    "platform/apple/Sources/XrayAppleClient/Debug/XrayDeviceProbeSignals.swift": "2e0d3360b4042380779df22b16d9840c8af32c1c2db4a43f0e193eaa218efc34"
+  },
+  "app_files_sha256": {
+    "geoip.dat": "b71d1999439dde2de2d2b6844a2befa50c50211ff739785c005ca7c230a17d6a",
+    "geosite.dat": "d6787cf3d08b86402640e8c2a7a18c8d64b31944ffa5274d8a6e154c8f3ddc07",
+    "XrayClient": "90b0c79c7487f49ba9cf8faf20bed3603b3450e090602e199d12f319ae22f49b",
+    "XrayClient.debug.dylib": "06f46e890bf381e1b684ca9de3bc61e54fe8b73995492ca5b37a11947d76b029",
+    "__preview.dylib": "82826c429c6b2ad9cfbd8b47badad285dd49769b1c64355336bb447713c28a8f",
+    "embedded.mobileprovision": "262810476c1453fb96c1e8acaf290e487db514e7130c2d95e87beb8fe75a82dc",
+    "Info.plist": "68c916a2ec432856511f3f7688ac755c943ea991e9b23bd0833501641f355336",
+    "PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+    "_CodeSignature/CodeResources": "4a66f0c542407043d8a1f31d0431788de3528bed46dc653a519b1d3437dfc3df",
+    "PlugIns/Tunnel.appex/geoip.dat": "b71d1999439dde2de2d2b6844a2befa50c50211ff739785c005ca7c230a17d6a",
+    "PlugIns/Tunnel.appex/geosite.dat": "d6787cf3d08b86402640e8c2a7a18c8d64b31944ffa5274d8a6e154c8f3ddc07",
+    "PlugIns/Tunnel.appex/__preview.dylib": "d666c0529a641b5a58c34e076ad0e9647dc5eeba83de5b3f6a43f871f5a89c86",
+    "PlugIns/Tunnel.appex/Tunnel": "a5b5336868717edc2cf41c8f52e961edce61f391992069e63421c89b765305b5",
+    "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "0ef2f88486eae9e3ecaa4a02637af63141f4a6e320b2d1fa6092867313ff8123",
+    "PlugIns/Tunnel.appex/embedded.mobileprovision": "18902e8cc608d8a88c2a536018f4171ccaa156c863dbf7b00b8856e65c7a2dfc",
+    "PlugIns/Tunnel.appex/Info.plist": "aa666ac057d3b26c2ac774464c97314291d55e6182251176a86d1a33b05c117b",
+    "PlugIns/Tunnel.appex/_CodeSignature/CodeResources": "60a1dc17b348189b6c76d73554e8a3b7c81ee9cf6820ad71003ed4aad4066d64"
+  },
+  "reference": {
+    "revision": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "lan_binary_sha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+    "lan_clean_vcs_verified": true,
+    "vps_binary_sha256": "64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d",
+    "vps_reported_version": "26.7.28 / 5ca6f4b / Go 1.26.5 linux/amd64",
+    "vps_clean_vcs_verified": false
+  },
+  "explicit_cipher_case_order": [
+    [
+      "shadowsocks2022",
+      "2022-blake3-aes-128-gcm"
+    ],
+    [
+      "shadowsocks2022",
+      "2022-blake3-aes-256-gcm"
+    ],
+    [
+      "vmess",
+      "aes-128-gcm"
+    ],
+    [
+      "vmess",
+      "chacha20-poly1305"
+    ]
+  ],
+  "runs": {
+    "lan-smoke": {
+      "scope": "LAN; Trojan, SS2022 ChaCha, VMess auto; three cycles each",
+      "result": "passed",
+      "start": "2026-10-03T17:11:58Z",
+      "end": "2026-10-03T17:12:43Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "35898373984a2e38f04dd7ee15ce40392262e876c44c5bc81bb885e30af6189b",
+      "console_sha256": "dff74f608a2c41c6450e9432570e5ff6b75fe00aa95a5934bd93f0f43628c712",
+      "event_file": "lan-smoke-events.jsonl",
+      "event_sha256": "f80a7a37cea3cdaaed59641fb0b9e2871cb58dcede71894df0f87a53668a12bf",
+      "counts": {
+        "abi": 1,
+        "import": 3,
+        "connected": 9,
+        "tcp-start": 54,
+        "tcp": 54,
+        "udp-start": 36,
+        "udp": 36,
+        "dns-anchor": 18,
+        "network-observer": 27,
+        "sample": 27,
+        "connection-close-request": 9,
+        "connection-close-verified": 9,
+        "traffic-after-close": 9,
+        "disconnected": 9,
+        "complete": 1
+      },
+      "recoveries": [],
+      "locks": []
+    },
+    "lan-lock-wake": {
+      "scope": "LAN; Trojan, SS2022 ChaCha, VMess auto; one lock each",
+      "result": "passed",
+      "start": "2026-10-03T17:13:58Z",
+      "end": "2026-10-03T17:16:44Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "b008d35153da87dcd6237ee0902650166f873708b981c1b3ace75b464a7aa9db",
+      "console_sha256": "56a2517be6ccf555854df88b52e3bf8cd603b304a56e9cba3ba7bc71f176766f",
+      "event_file": "lan-lock-wake-events.jsonl",
+      "event_sha256": "06f9e01b1b661770798840f5e17341525fb2ed946a0d7087ac06c56f280d9f66",
+      "counts": {
+        "abi": 1,
+        "import": 3,
+        "access-network": 3,
+        "system-path": 36,
+        "carrier-path-detail": 7,
+        "app-active": 8,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "transition-recovered": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "action-required": 3,
+        "protected-data-unavailable": 3,
+        "app-background": 3,
+        "protected-data-available": 3,
+        "lock-interval": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "recoveries": [
+        {
+          "activeRecoverySeconds": 3.934873083344428,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 7.412088999990374,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:14:12Z"
+        },
+        {
+          "activeRecoverySeconds": 0.938628375006374,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 2.026908708328847,
+          "stage": "after-unlock",
+          "time": "2026-10-03T17:14:55Z"
+        },
+        {
+          "activeRecoverySeconds": 2.8305485416494776,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 6.17520929168677,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:15:04Z"
+        },
+        {
+          "activeRecoverySeconds": 0.7896865416842047,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 1.864026166673284,
+          "stage": "after-unlock",
+          "time": "2026-10-03T17:15:54Z"
+        },
+        {
+          "activeRecoverySeconds": 0.8874160416598897,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.171517124981619,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:16:02Z"
+        },
+        {
+          "activeRecoverySeconds": 0.7693870833318215,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 1.8583530416653957,
+          "stage": "after-unlock",
+          "time": "2026-10-03T17:16:41Z"
+        }
+      ],
+      "locks": [
+        {
+          "event": "lock-interval",
+          "protocol": "trojan",
+          "seconds": 35.75474620831665,
+          "time": "2026-10-03T17:14:54Z"
+        },
+        {
+          "event": "lock-interval",
+          "protocol": "shadowsocks2022",
+          "seconds": 42.78275625000242,
+          "time": "2026-10-03T17:15:54Z"
+        },
+        {
+          "event": "lock-interval",
+          "protocol": "vmess",
+          "seconds": 34.70606250001583,
+          "time": "2026-10-03T17:16:40Z"
+        }
+      ]
+    },
+    "lan-ciphers": {
+      "scope": "LAN; SS2022 AES128, SS2022 AES256, VMess AES128, VMess ChaCha; three cycles each",
+      "result": "passed",
+      "start": "2026-10-03T17:17:43Z",
+      "end": "2026-10-03T17:18:43Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "40379fec39822d4430f82deccece2705b158cdba5a5075c15b4693cbdf5fbb14",
+      "console_sha256": "e61b12f90c26987af3819099f8e34e116c1c84566480d1791936f89ddd6a86fc",
+      "event_file": "lan-ciphers-events.jsonl",
+      "event_sha256": "3f8ff9ddd0d64c7d7fba9bec6fb8a4d2078e4e263032ffad9baf46e71fa754fd",
+      "counts": {
+        "abi": 1,
+        "import": 4,
+        "connected": 12,
+        "tcp-start": 72,
+        "tcp": 72,
+        "udp-start": 48,
+        "udp": 48,
+        "dns-anchor": 24,
+        "network-observer": 36,
+        "sample": 36,
+        "connection-close-request": 12,
+        "connection-close-verified": 12,
+        "traffic-after-close": 12,
+        "disconnected": 12,
+        "complete": 1
+      },
+      "recoveries": [],
+      "locks": []
+    },
+    "trojan-transition-timeout": {
+      "scope": "VPS original; cellular was not observed before the 180-second operator timeout",
+      "result": "failed",
+      "start": "2026-10-03T17:26:51Z",
+      "end": "2026-10-03T17:30:01Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "01010997165742a7607f3a8ca5aadb40ca8396fe8d62412f4bad975f6b0f1695",
+      "console_sha256": "fabe07c6a9025f3f78e66a106c3d1ba11a134f5c7fdbdb8269f54f53384f0930",
+      "event_file": "trojan-transition-timeout-events.jsonl",
+      "event_sha256": "320240f71b96bb3b0c5dfff70ee058109d1c4be110b632bc8c7152d988dce93c",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "access-network": 1,
+        "system-path": 37,
+        "carrier-path-detail": 3,
+        "app-active": 1,
+        "connected": 1,
+        "tcp-start": 3,
+        "tcp": 3,
+        "udp-start": 2,
+        "udp": 2,
+        "dns-anchor": 1,
+        "transition-recovered": 1,
+        "network-observer": 2,
+        "sample": 2,
+        "action-required": 1,
+        "failure": 1,
+        "complete": 1
+      },
+      "recoveries": [
+        {
+          "activeRecoverySeconds": 4.663980500015896,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 8.022839874989586,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:27:00Z"
+        }
+      ],
+      "locks": []
+    },
+    "trojan-transitions": {
+      "scope": "VPS original; complete transition sequence",
+      "result": "passed",
+      "start": "2026-10-03T17:34:29Z",
+      "end": "2026-10-03T17:38:28Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "9ba2d682c16d9ab20d79c6c1b98b08ceac24bc8042c2db041923cb0722c1a089",
+      "console_sha256": "8075accad0f5a00aed6ce64cd43285962e5a2aeee5f1f5f2df801da207ef9b6d",
+      "event_file": "trojan-transitions-events.jsonl",
+      "event_sha256": "f2557bbf023188f90a034003ef0e17934e8a9c74b6d6f7ce725bfe77f051f0e5",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "access-network": 4,
+        "system-path": 61,
+        "carrier-path-detail": 8,
+        "app-active": 6,
+        "connected": 1,
+        "tcp-start": 12,
+        "tcp": 12,
+        "udp-start": 8,
+        "udp": 8,
+        "dns-anchor": 4,
+        "transition-recovered": 4,
+        "network-observer": 5,
+        "sample": 5,
+        "action-required": 3,
+        "protected-data-unavailable": 1,
+        "app-background": 1,
+        "protected-data-available": 1,
+        "lock-interval": 1,
+        "connection-close-request": 1,
+        "connection-close-verified": 1,
+        "disconnected": 1,
+        "complete": 1
+      },
+      "recoveries": [
+        {
+          "activeRecoverySeconds": 5.215970708319219,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 8.821709750016453,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:35:07Z"
+        },
+        {
+          "activeRecoverySeconds": 4.90779229166219,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 5.002285416645464,
+          "stage": "cellular",
+          "time": "2026-10-03T17:36:43Z"
+        },
+        {
+          "activeRecoverySeconds": 4.40205900001456,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.570478458335856,
+          "stage": "wifi",
+          "time": "2026-10-03T17:37:28Z"
+        },
+        {
+          "activeRecoverySeconds": 4.24043974999222,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 5.369029041641625,
+          "stage": "after-unlock",
+          "time": "2026-10-03T17:38:25Z"
+        }
+      ],
+      "locks": [
+        {
+          "event": "lock-interval",
+          "protocol": "trojan",
+          "seconds": 45.93187183333794,
+          "time": "2026-10-03T17:38:21Z"
+        }
+      ]
+    },
+    "ss2022-baseline-failure": {
+      "scope": "VPS original; repeated IPv6 UDP timeout before any transition",
+      "result": "failed",
+      "start": "2026-10-03T17:39:34Z",
+      "end": "2026-10-03T17:40:23Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "cee4d611c85688c1e80373269019d3b88ad9efdb1d1f320cfe386b1121bbf2f3",
+      "console_sha256": "da947e98b0c3c11f99fe97b55dc1b4e025aa5927c7d9ae12b1f964af415eb09d",
+      "event_file": "ss2022-baseline-failure-events.jsonl",
+      "event_sha256": "ba71d95aa5df2c1e43db10dbbe6c37a344cdae1e939344c504e7470e274715f4",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "access-network": 1,
+        "system-path": 8,
+        "carrier-path-detail": 1,
+        "app-active": 1,
+        "connected": 1,
+        "tcp-start": 12,
+        "tcp": 12,
+        "udp-start": 8,
+        "udp": 4,
+        "udp-failed": 4,
+        "recovery-retry": 3,
+        "failure": 1,
+        "network-observer": 1,
+        "sample": 1,
+        "complete": 1
+      },
+      "recoveries": [],
+      "locks": []
+    },
+    "vmess-transitions": {
+      "scope": "VPS original; complete transition sequence, security auto",
+      "result": "passed",
+      "start": "2026-10-03T17:41:46Z",
+      "end": "2026-10-03T17:43:51Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "13a8e29ddf63bc153aeb527f14035d068889a7bd4351731b930f18e16f50164a",
+      "console_sha256": "17205b9f11e16a6895e7ce6667641cbe9ddc03bd641da263aede36f673b34dcd",
+      "event_file": "vmess-transitions-events.jsonl",
+      "event_sha256": "67a1f3cace5a918b1f61df8c4967c0f0fac1f5b969a2b7ec1284cd4e4e2e2ef6",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "access-network": 3,
+        "system-path": 41,
+        "carrier-path-detail": 7,
+        "app-active": 5,
+        "connected": 1,
+        "tcp-start": 12,
+        "tcp": 12,
+        "udp-start": 8,
+        "udp": 8,
+        "dns-anchor": 4,
+        "transition-recovered": 4,
+        "network-observer": 5,
+        "sample": 5,
+        "action-required": 3,
+        "protected-data-unavailable": 1,
+        "app-background": 1,
+        "protected-data-available": 1,
+        "lock-interval": 1,
+        "connection-close-request": 1,
+        "connection-close-verified": 1,
+        "disconnected": 1,
+        "complete": 1
+      },
+      "recoveries": [
+        {
+          "activeRecoverySeconds": 3.7092650000122376,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 7.094913125009043,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:41:53Z"
+        },
+        {
+          "activeRecoverySeconds": 3.943563291657483,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.02661737499875,
+          "stage": "cellular",
+          "time": "2026-10-03T17:42:05Z"
+        },
+        {
+          "activeRecoverySeconds": 3.339590624993434,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.4219371666549705,
+          "stage": "wifi",
+          "time": "2026-10-03T17:42:23Z"
+        },
+        {
+          "activeRecoverySeconds": 3.465539833327057,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.542858999979217,
+          "stage": "after-unlock",
+          "time": "2026-10-03T17:43:48Z"
+        }
+      ],
+      "locks": [
+        {
+          "event": "lock-interval",
+          "protocol": "vmess",
+          "seconds": 36.38041545834858,
+          "time": "2026-10-03T17:43:45Z"
+        }
+      ]
+    },
+    "ss2022-fragmentation-smoke": {
+      "scope": "VPS diagnostic relay, fixed IP_MTU_DISCOVER=0; three cycles",
+      "result": "passed",
+      "start": "2026-10-03T17:49:58Z",
+      "end": "2026-10-03T17:50:31Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "dcc45147c1e9a40caecacf82fedffb9a209de6c64113f0ffe85f5a846467ab46",
+      "console_sha256": "781c4859915c1b13832766d722f057b53eb40d1f09db2d5d2570c7fe0f307afe",
+      "event_file": "ss2022-fragmentation-smoke-events.jsonl",
+      "event_sha256": "6e2af51bbff4fa5b221aa6e6888272a6323101359770a8162e7b830e2dc5d756",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "recoveries": [],
+      "locks": []
+    },
+    "ss2022-fragmentation-transitions": {
+      "scope": "VPS diagnostic relay, IP_MTU_DISCOVER=0; complete transition sequence",
+      "result": "passed",
+      "start": "2026-10-03T17:53:31Z",
+      "end": "2026-10-03T17:55:28Z",
+      "console_device_equal": true,
+      "source_device_json_sha256": "5b9c098763a11138e4cebdc1c64ea10369a9d14e67c656991d89093a086a2e8a",
+      "console_sha256": "7e5b44d6fd34d23f09910919463cf1db0ab54078c1a37b9876e7d7a9627d0bc5",
+      "event_file": "ss2022-fragmentation-transitions-events.jsonl",
+      "event_sha256": "39dd634b8c8fed548bab8a5230ed15c29f769275ffe53af107bd037fdfc191e1",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "access-network": 3,
+        "system-path": 32,
+        "carrier-path-detail": 9,
+        "app-active": 5,
+        "connected": 1,
+        "tcp-start": 12,
+        "tcp": 12,
+        "udp-start": 8,
+        "udp": 8,
+        "dns-anchor": 4,
+        "transition-recovered": 4,
+        "network-observer": 5,
+        "sample": 5,
+        "action-required": 3,
+        "protected-data-unavailable": 1,
+        "app-background": 1,
+        "protected-data-available": 1,
+        "lock-interval": 1,
+        "connection-close-request": 1,
+        "connection-close-verified": 1,
+        "disconnected": 1,
+        "complete": 1
+      },
+      "recoveries": [
+        {
+          "activeRecoverySeconds": 3.996455166663509,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 7.352396083326312,
+          "stage": "wifi-baseline",
+          "time": "2026-10-03T17:53:38Z"
+        },
+        {
+          "activeRecoverySeconds": 3.5350049166590907,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.5760988333204295,
+          "stage": "cellular",
+          "time": "2026-10-03T17:54:07Z"
+        },
+        {
+          "activeRecoverySeconds": 3.2771400833444204,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.3594312083150726,
+          "stage": "wifi",
+          "time": "2026-10-03T17:54:24Z"
+        },
+        {
+          "activeRecoverySeconds": 3.430509041674668,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.3325735416729,
+          "stage": "after-unlock",
+          "time": "2026-10-03T17:55:25Z"
+        }
+      ],
+      "locks": [
+        {
+          "event": "lock-interval",
+          "protocol": "shadowsocks2022",
+          "seconds": 47.79168125000433,
+          "time": "2026-10-03T17:55:21Z"
+        }
+      ]
+    }
+  },
+  "controls": {
+    "ss2022-go-aba-allow-after.jsonl": {
+      "sha256": "67aac028f9213589548108eb73501e2918d34cc885926b573d93a0ca64866faa",
+      "samples": 40,
+      "passed": 36
+    },
+    "ss2022-go-aba-allow-before.jsonl": {
+      "sha256": "bfaaa19230af4fd35e06b2d5581b01b8bae64337763fa964554f2f9dd6687819",
+      "samples": 40,
+      "passed": 34
+    },
+    "ss2022-go-aba-default.jsonl": {
+      "sha256": "5ce3d5d8ebfec365865c666d6e37f6643ab8087886dc3d60a56a00d90be74b4f",
+      "samples": 40,
+      "passed": 34
+    },
+    "ss2022-go-control.jsonl": {
+      "sha256": "c0bc8b551b44350fe7524063b5994f57ef95a5274dd1e4c8b4a0747c5dc17d54",
+      "samples": 8,
+      "passed": 5
+    },
+    "ss2022-go-dffree-control.jsonl": {
+      "sha256": "550bb6cfd10ddd531be6875e089485498a6e34fdec68513dbd253db72bad05f7",
+      "samples": 40,
+      "passed": 40
+    },
+    "ss2022-go-size-control.jsonl": {
+      "sha256": "c9642beabd5e411f9fbb58901e60065a4185f3b9dbca8abe118f63ecd2a6c40d",
+      "samples": 40,
+      "passed": 32
+    }
+  },
+  "cleanup": {
+    "time": "2026-10-03T17:57:11.222249+00:00",
+    "services": {
+      "xray-xhttp-device-test.service": {
+        "MainPID": "3368168",
+        "ActiveState": "active"
+      },
+      "xray-apple-device-probe-server.service": {
+        "MainPID": "3368170",
+        "ActiveState": "active"
+      },
+      "xray-xhttp-memory-probe.service": {
+        "MainPID": "3333378",
+        "ActiveState": "active"
+      },
+      "x-ui.service": {
+        "MainPID": "3332699",
+        "ActiveState": "active"
+      }
+    },
+    "temporary_units_inactive": true,
+    "private_remote_directory_removed": true,
+    "loopback_and_production_pids_unchanged": true,
+    "device_input_fixture_absent": true,
+    "application_relaunched_without_probe": true,
+    "device_document_listing_sha256": "5d1daf2538677e51082cd8d5f6bbc6df3215adf5b70ff1841659236128c70a16",
+    "local_ephemeral_profiles_removed": true,
+    "ssh_credential_helpers_removed": true
+  },
+  "passed_run_totals": {
+    "abi": 7,
+    "import": 14,
+    "connected": 30,
+    "tcp-start": 198,
+    "tcp": 198,
+    "udp-start": 132,
+    "udp": 132,
+    "dns-anchor": 66,
+    "network-observer": 96,
+    "sample": 96,
+    "connection-close-request": 30,
+    "connection-close-verified": 30,
+    "traffic-after-close": 24,
+    "disconnected": 30,
+    "complete": 7,
+    "access-network": 13,
+    "system-path": 170,
+    "carrier-path-detail": 31,
+    "app-active": 24,
+    "transition-recovered": 18,
+    "action-required": 12,
+    "protected-data-unavailable": 6,
+    "app-background": 6,
+    "protected-data-available": 6,
+    "lock-interval": 6
+  },
+  "sampled_memory": {
+    "trojan": {
+      "samples": 17,
+      "max_rss_bytes": 36356096,
+      "max_physical_footprint_bytes": 5113528,
+      "dropped_packets_and_tun_loop_exits_zero": true
+    },
+    "shadowsocks2022": {
+      "samples": 44,
+      "max_rss_bytes": 30146560,
+      "max_physical_footprint_bytes": 4703904,
+      "dropped_packets_and_tun_loop_exits_zero": true
+    },
+    "vmess": {
+      "samples": 35,
+      "max_rss_bytes": 33177600,
+      "max_physical_footprint_bytes": 5375672,
+      "dropped_packets_and_tun_loop_exits_zero": true
+    }
+  },
+  "supporting_files_sha256": {
+    "ss2022-capture-metadata.json": "7f9f228c33bbfde824d237df594bc4775a91097acb29cbd0ad84db55c894ef4e",
+    "ss2022-udp-control.go": "bf15ede53cbebe1eaefbc9f5c69a6b432bcc81dc3456c012efa66f455638ccd1",
+    "fixture-dffree.py": "82979ff581e8f57104f4826dc46e4107c9ca4394c447d18e1c81001e48ce35ce",
+    "run-cipher-fixture.py": "bd95e47ed458963baa42ed16f89cac8e06509f64cc402a2c8599b9899e225b19"
+  },
+  "private_header_capture_sha256": "eac9c0b83cc78b26319121833214a58150af771644b55dd93a996099a9f83011",
+  "limitations": [
+    "Transitions use fresh flows, not established-session continuity",
+    "Sparse memory samples, not continuous peaks or CPU/energy/throughput acceptance",
+    "WAN SS2022 transitions require the explicit diagnostic fragmentation relay; original failure remains failed",
+    "Larger Go UDP controls retain additional/intermittent network loss even with fragmentation enabled",
+    "WAN ciphers: SS2022 ChaCha and VMess auto; explicit AES/ChaCha variants tested on LAN",
+    "No Android hardware results or complete schema-4 archive",
+    "Only iOS device XCFramework slice rebuilt"
+  ]
+}

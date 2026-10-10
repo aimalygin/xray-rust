@@ -37,6 +37,42 @@ long-term supported release series.
   for a 60-second probe timeout. Swift rejects embedded NUL before the C bridge.
   The probe uses bit 22, reserving ABI 1.8 and bits 19–21 for v0.8 clients.
 
+## 0.8.0-rc.1 - 2026-10-03
+
+Candidate preparation only; no tag or package has been published. Device and
+distribution acceptance remain open in the [release checklist](docs/v08-release-readiness.md).
+
+- Add Trojan, Shadowsocks 2022 and VMess AEAD client outbounds for SOCKS,
+  HTTP, TUN and routed DNS, with shared protected carriers and bounded Mux/XUDP.
+  SS2022 supports all three methods and AES identity chains; VMess supports
+  AES/ChaCha/auto and authenticated-length/termination options. Legacy
+  Shadowsocks AEAD-2017 and nonzero VMess alterId remain excluded.
+- Add shared profile imports, capability bits and Swift/Kotlin integration
+  through additive C ABI 1.8. Retain Xray-core v26.7.28 as the compatibility
+  reference and document transport, nonce, session and recovery limits.
+- Add independent-server and carrier matrices, wire oracles, fuzz coverage
+  and a separate v0.8 release-evidence gate. Physical Apple acceptance is
+  deferred by the owner; this development work is not a published release.
+- Reduce VMess record I/O and crypto overhead with bounded batching and
+  read-ahead, preserving authenticated delivery, plaintext erasure and UDP
+  boundaries. Admit at most two sustained raw-TCP ChaCha duplex relays to an
+  additional task per core; AES retains the combined relay. Record the CPU,
+  throughput, memory and latency tradeoffs against pinned Xray and sing-box.
+- Wait for inbound owners and admitted VMess relay children during Core.stop.
+- Expose existing Hysteria/WireGuard rebind through Android adapters and add
+  configurable Hysteria stream budgets through C ABI 1.10. Defaults remain 64 TCP/32 UDP streams
+  per session; host-selected limits remain bounded and do not add QUIC sessions.
+- Add opt-in TUN flow admission through C ABI 1.11 and Swift/Kotlin callbacks,
+  including an Android 10+ UID allowlist helper. Admission runs before upstream
+  TCP/UDP/DNS handling with bounded workers/queues and an explicit timeout
+  policy. Unknown Android owners are denied by the strict helper.
+- Support bounded Hysteria Salamander and automatic port hopping with protected
+  socket replacement, retaining the authenticated session and stream leases.
+- Support first-ClientHello fragmentation for TCP TLS/REALITY in FinalMask and
+  dedicated freedom `dialerProxy` profiles. Preserve handshake authentication
+  and Vision direct mode; delay/count/memory bounds and unsupported combinations
+  fail explicitly. UDP noise and Linux TPROXY remain deferred.
+
 ## 0.7.0 - 2026-09-27
 
 Stable source release. Canonical SDK packages and their publication status are

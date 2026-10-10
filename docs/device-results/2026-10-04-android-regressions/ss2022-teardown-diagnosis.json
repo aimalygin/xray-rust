@@ -1,0 +1,286 @@
+{
+  "classification": "peer-reproduced-server-side-teardown-limit",
+  "referenceCommit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "referenceVersion": "v26.7.28",
+  "referenceBinarySha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+  "goControls": [
+    {
+      "hostTime": 1791168423.9938319,
+      "kind": "ss2022-go-control",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "id": 7001,
+      "client": "Xray-core v26.7.28",
+      "opened": {
+        "backend": "hold-open",
+        "id": 7001,
+        "time": 1791168403.9690309
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 7001,
+        "reason": "TimeoutError",
+        "time": 1791168423.9718888
+      },
+      "socksCloseTime": 1791168403.9983082,
+      "processStopTime": 1791168407.009225,
+      "processExitTime": 1791168407.014098,
+      "processExitCode": 0,
+      "backendBeforeClientExit": [
+        {
+          "backend": "hold-open",
+          "id": 7001,
+          "time": 1791168403.9690309
+        }
+      ],
+      "remoteCloseAfterSocksSeconds": 19.973580598831177
+    },
+    {
+      "hostTime": 1791168444.139946,
+      "kind": "ss2022-go-control",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "id": 7002,
+      "client": "Xray-core v26.7.28",
+      "opened": {
+        "backend": "hold-open",
+        "id": 7002,
+        "time": 1791168424.1184099
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 7002,
+        "reason": "TimeoutError",
+        "time": 1791168444.119234
+      },
+      "socksCloseTime": 1791168424.1569479,
+      "processStopTime": 1791168427.167254,
+      "processExitTime": 1791168427.168841,
+      "processExitCode": 0,
+      "backendBeforeClientExit": [
+        {
+          "backend": "hold-open",
+          "id": 7002,
+          "time": 1791168424.1184099
+        }
+      ],
+      "remoteCloseAfterSocksSeconds": 19.962286233901978
+    },
+    {
+      "hostTime": 1791168464.2728992,
+      "kind": "ss2022-go-control",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "id": 7003,
+      "client": "Xray-core v26.7.28",
+      "opened": {
+        "backend": "hold-open",
+        "id": 7003,
+        "time": 1791168444.257632
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 7003,
+        "reason": "TimeoutError",
+        "time": 1791168464.26021
+      },
+      "socksCloseTime": 1791168444.289523,
+      "processStopTime": 1791168447.2950678,
+      "processExitTime": 1791168447.29971,
+      "processExitCode": 0,
+      "backendBeforeClientExit": [
+        {
+          "backend": "hold-open",
+          "id": 7003,
+          "time": 1791168444.257632
+        }
+      ],
+      "remoteCloseAfterSocksSeconds": 19.9706871509552
+    }
+  ],
+  "sourceObservations": [
+    {
+      "path": "common/singbridge/pipe.go",
+      "sha256": "e79c9921fbd68321fae5940f59aa1f27e5392c68a7e79979825e804cb6aafe9a",
+      "symbols": [
+        "CopyConn",
+        "PipeConnWrapper.Close"
+      ],
+      "notes": "SS2022 inbound calls CopyConn; the wrapper Close returns nil without closing its pipe and uses an inactivity timer. A candidate explanation, not a complete root-cause proof."
+    },
+    {
+      "path": "proxy/shadowsocks_2022/inbound.go",
+      "sha256": "e9cf94394b1ae188b157dc77ac277e3e7a0259ab73a13735baeff0c197a53c26",
+      "symbol": "NewConnection",
+      "notes": "Forwards accepted SS2022 streams through singbridge.CopyConn."
+    }
+  ],
+  "interpretation": "All three pinned Go-to-Go controls retain the held backend HTTP connection past local SOCKS close and client process exit, until the twenty-second fixture timeout. This reproduces the remote EOF symptom without the Rust core or Android adapter. It does not substitute for Android Go-client comparisons, establish every server implementation behavior, or reopen the deferred WAN UDP-loss investigation.",
+  "localControls": [
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "mode": "close-connections",
+      "localErrorAfterRequestSeconds": 0.25374293327331543,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "localErrorAfterRequestSeconds": 0.2573738098144531,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "mode": "close-connections",
+      "localErrorAfterRequestSeconds": 0.24354124069213867,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "localErrorAfterRequestSeconds": 0.2671341896057129,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "mode": "close-connections",
+      "localErrorAfterRequestSeconds": 0.2258620262145996,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "localErrorAfterRequestSeconds": 0.26609206199645996,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "mode": "close-connections",
+      "localErrorAfterRequestSeconds": 0.32514309883117676,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "localErrorAfterRequestSeconds": 0.24412202835083008,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "mode": "close-connections",
+      "localErrorAfterRequestSeconds": 0.25459909439086914,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "localErrorAfterRequestSeconds": 0.2509641647338867,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "mode": "close-connections",
+      "localErrorAfterRequestSeconds": 0.3104691505432129,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "localErrorAfterRequestSeconds": 0.35045909881591797,
+      "remoteCloseReason": "TimeoutError",
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      }
+    }
+  ]
+}

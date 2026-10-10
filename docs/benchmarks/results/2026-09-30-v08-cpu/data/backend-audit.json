@@ -1,0 +1,61 @@
+{
+  "sources": {
+    "aes-0.8.4/src/lib.rs": "8904ed0f1da5d3c6ca6cfb61add4a957054a9f95ce573c3ab198b59ba9ab06cd",
+    "polyval-0.6.2/src/backend.rs": "594507fd60dc377320f17654c3be74a1ed5b47ef2240821a65b7f9ef2abe6eb1",
+    "chacha20-0.9.1/src/backends.rs": "497002020de5081a68736e9a86c73d68dcfe66ae77354f42e6041256bcd8ca68",
+    "poly1305-0.8.0/src/backend.rs": "f3fea20ab26a6e14d7e5654a117b7e5c408610568a81982589f16ad3651511ea",
+    "zeroize-1.8.2/src/lib.rs": "addb5d347242c21145f72b7e97ddfb4ac81e1b7f924048b547e11c2ff532537f",
+    "aws-lc-rs-1.17.0/src/ptr.rs": "710057f68afcc779c3be6d8335bd5a00d4f5450abe05598af39c1ac59bc0e5b8",
+    "aws-lc-sys-0.41.0/aws-lc/crypto/mem.c": "88651b6d0b7e135980f97408815e2d357b2c39eabb563e241e795792d60fc3a1"
+  },
+  "rustflags": {
+    "target/v08-comparison-driver/release/.fingerprint/chacha20-f39999b0e55b4489/lib-chacha20.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/polyval-ad4041ff01ebbfe7/lib-polyval.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/poly1305-c12038b89e556c61/lib-poly1305.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/aes-gcm-51132650d7b2dfcf/lib-aes_gcm.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/aws-lc-rs-c2206faafeff4b55/lib-aws_lc_rs.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/chacha20-5d859b7e5cbe66d9/lib-chacha20.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/aes-8133eddb987eb6d8/lib-aes.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/poly1305-2795f5bd54b04963/lib-poly1305.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/aes-gcm-e72e596137b8e3da/lib-aes_gcm.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/chacha20-bca36ec2d4461b7a/lib-chacha20.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/polyval-e3b7cdc363ce68f7/lib-polyval.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/aws-lc-rs-cb57110583c3d34b/lib-aws_lc_rs.json": [
+      "-Dwarnings"
+    ],
+    "target/v08-comparison-driver/release/.fingerprint/aes-556c68e839e3083a/lib-aes.json": [
+      "-Dwarnings"
+    ]
+  },
+  "findings": {
+    "aes_0_8_4": "ARMv8 backend gated on target_arch=aarch64 AND aes_armv8 cfg; absent here, constant-time fixslicing software selected",
+    "polyval_0_6_2": "ARM PMULL gated on polyval_armv8 cfg; absent here, software selected",
+    "chacha20_0_9_1": "ARM NEON gated on chacha20_force_neon cfg; absent here, software selected",
+    "poly1305_0_8_0": "Only x86 AVX2 acceleration; ARM portable backend",
+    "zeroize_vec_1_8_2": "Zeroizes initialized elements individually, clears length, then wipes entire allocation; repeated calls also wipe empty retained capacity",
+    "aws_lc_rs_1_17_0": "Existing workspace provider; native cipher dispatch, EVP_AEAD_CTX freed through OPENSSL_free; default allocator cleanses before free",
+    "vmess_auto": "Detects hardware AES, but previous implementation selected a software backend despite that detection; now shared accelerated provider"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "socket-option-before": {
+    "after": 1,
+    "before": 1,
+    "fd": 7,
+    "port": 53053,
+    "testPID": 3379529
+  },
+  "socket-option-dont": {
+    "after": 0,
+    "before": 1,
+    "fd": 7,
+    "port": 53053,
+    "testPID": 3379529
+  },
+  "socket-option-dont-again": {
+    "after": 0,
+    "before": 1,
+    "fd": 7,
+    "port": 53053,
+    "testPID": 3379529
+  },
+  "socket-option-want-again": {
+    "after": 1,
+    "before": 0,
+    "fd": 7,
+    "port": 53053,
+    "testPID": 3379529
+  },
+  "transitions-socket-option": {
+    "after": 0,
+    "before": 1,
+    "fd": 7,
+    "port": 53053,
+    "testPID": 3380287
+  }
+}

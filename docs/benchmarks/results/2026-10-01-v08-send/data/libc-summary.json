@@ -1,0 +1,3986 @@
+[
+  {
+    "case": "vmess-aes128-socks-upload-1",
+    "metrics": {
+      "arc4random_buf_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "deduplicated_write_bytes": {
+        "max": 270159848,
+        "median": 270157419,
+        "min": 270154849,
+        "samples": [
+          270154849,
+          270157419,
+          270159848
+        ]
+      },
+      "deduplicated_write_calls": {
+        "max": 34835,
+        "median": 34831,
+        "min": 34828,
+        "samples": [
+          34831,
+          34828,
+          34835
+        ]
+      },
+      "getentropy_calls": {
+        "max": 34300,
+        "median": 34297,
+        "min": 34269,
+        "samples": [
+          34297,
+          34269,
+          34300
+        ]
+      },
+      "getentropy_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_requested": {
+        "max": 1097513,
+        "median": 1095077,
+        "min": 1092531,
+        "samples": [
+          1092531,
+          1095077,
+          1097513
+        ]
+      },
+      "getentropy_returned": {
+        "max": 1097513,
+        "median": 1095077,
+        "min": 1092531,
+        "samples": [
+          1092531,
+          1095077,
+          1097513
+        ]
+      },
+      "getentropy_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_calls": {
+        "max": 17842,
+        "median": 17619,
+        "min": 17614,
+        "samples": [
+          17842,
+          17614,
+          17619
+        ]
+      },
+      "kevent_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_returned": {
+        "max": 18380,
+        "median": 18147,
+        "min": 18122,
+        "samples": [
+          18380,
+          18147,
+          18122
+        ]
+      },
+      "kevent_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_zero": {
+        "max": 1,
+        "median": 1,
+        "min": 0,
+        "samples": [
+          1,
+          0,
+          1
+        ]
+      },
+      "mean_write_bytes": {
+        "max": 7756.90303778569,
+        "median": 7756.161149550688,
+        "min": 7755.414037605856,
+        "samples": [
+          7756.161149550688,
+          7756.90303778569,
+          7755.414037605856
+        ]
+      },
+      "read_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_calls": {
+        "max": 2067,
+        "median": 2065,
+        "min": 2065,
+        "samples": [
+          2065,
+          2065,
+          2067
+        ]
+      },
+      "recv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_requested": {
+        "max": 268964241,
+        "median": 268832953,
+        "min": 268701945,
+        "samples": [
+          268701945,
+          268832953,
+          268964241
+        ]
+      },
+      "recv_returned": {
+        "max": 268435694,
+        "median": 268435689,
+        "min": 268435591,
+        "samples": [
+          268435694,
+          268435591,
+          268435689
+        ]
+      },
+      "recv_would_block": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "samples": [
+          2,
+          2,
+          2
+        ]
+      },
+      "recv_zero": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "samples": [
+          1,
+          1,
+          1
+        ]
+      },
+      "recvfrom_calls": {
+        "max": 2067,
+        "median": 2065,
+        "min": 2065,
+        "samples": [
+          2065,
+          2065,
+          2067
+        ]
+      },
+      "recvfrom_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvfrom_requested": {
+        "max": 268964241,
+        "median": 268832953,
+        "min": 268701945,
+        "samples": [
+          268701945,
+          268832953,
+          268964241
+        ]
+      },
+      "recvfrom_returned": {
+        "max": 268435694,
+        "median": 268435689,
+        "min": 268435591,
+        "samples": [
+          268435694,
+          268435591,
+          268435689
+        ]
+      },
+      "recvfrom_would_block": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "samples": [
+          2,
+          2,
+          2
+        ]
+      },
+      "recvfrom_zero": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "samples": [
+          1,
+          1,
+          1
+        ]
+      },
+      "recvmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_calls": {
+        "max": 34835,
+        "median": 34831,
+        "min": 34828,
+        "samples": [
+          34831,
+          34828,
+          34835
+        ]
+      },
+      "send_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_requested": {
+        "max": 270198262,
+        "median": 270172527,
+        "min": 270157419,
+        "samples": [
+          270172527,
+          270157419,
+          270198262
+        ]
+      },
+      "send_returned": {
+        "max": 270159848,
+        "median": 270157419,
+        "min": 270154849,
+        "samples": [
+          270154849,
+          270157419,
+          270159848
+        ]
+      },
+      "send_would_block": {
+        "max": 1,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          1
+        ]
+      },
+      "send_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_calls": {
+        "max": 34835,
+        "median": 34831,
+        "min": 34828,
+        "samples": [
+          34831,
+          34828,
+          34835
+        ]
+      },
+      "sendto_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_requested": {
+        "max": 270198262,
+        "median": 270172527,
+        "min": 270157419,
+        "samples": [
+          270172527,
+          270157419,
+          270198262
+        ]
+      },
+      "sendto_returned": {
+        "max": 270159848,
+        "median": 270157419,
+        "min": 270154849,
+        "samples": [
+          270154849,
+          270157419,
+          270159848
+        ]
+      },
+      "sendto_would_block": {
+        "max": 1,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          1
+        ]
+      },
+      "sendto_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "version": "baseline"
+  },
+  {
+    "case": "vmess-aes128-socks-upload-1",
+    "metrics": {
+      "arc4random_buf_calls": {
+        "max": 34314,
+        "median": 34278,
+        "min": 34261,
+        "samples": [
+          34314,
+          34278,
+          34261
+        ]
+      },
+      "arc4random_buf_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_requested": {
+        "max": 1096969,
+        "median": 1094637,
+        "min": 1093074,
+        "samples": [
+          1094637,
+          1093074,
+          1096969
+        ]
+      },
+      "arc4random_buf_returned": {
+        "max": 1096969,
+        "median": 1094637,
+        "min": 1093074,
+        "samples": [
+          1094637,
+          1093074,
+          1096969
+        ]
+      },
+      "arc4random_buf_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "deduplicated_write_bytes": {
+        "max": 270159322,
+        "median": 270157013,
+        "min": 270155466,
+        "samples": [
+          270157013,
+          270155466,
+          270159322
+        ]
+      },
+      "deduplicated_write_calls": {
+        "max": 18452,
+        "median": 18447,
+        "min": 18447,
+        "samples": [
+          18447,
+          18452,
+          18447
+        ]
+      },
+      "getentropy_calls": {
+        "max": 4,
+        "median": 4,
+        "min": 4,
+        "samples": [
+          4,
+          4,
+          4
+        ]
+      },
+      "getentropy_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_requested": {
+        "max": 60,
+        "median": 60,
+        "min": 60,
+        "samples": [
+          60,
+          60,
+          60
+        ]
+      },
+      "getentropy_returned": {
+        "max": 60,
+        "median": 60,
+        "min": 60,
+        "samples": [
+          60,
+          60,
+          60
+        ]
+      },
+      "getentropy_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_calls": {
+        "max": 10760,
+        "median": 10701,
+        "min": 10626,
+        "samples": [
+          10701,
+          10760,
+          10626
+        ]
+      },
+      "kevent_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_returned": {
+        "max": 11167,
+        "median": 11123,
+        "min": 11061,
+        "samples": [
+          11123,
+          11167,
+          11061
+        ]
+      },
+      "kevent_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_zero": {
+        "max": 2,
+        "median": 1,
+        "min": 1,
+        "samples": [
+          1,
+          2,
+          1
+        ]
+      },
+      "mean_write_bytes": {
+        "max": 14645.1630075351,
+        "median": 14645.037838130862,
+        "min": 14640.985584218513,
+        "samples": [
+          14645.037838130862,
+          14640.985584218513,
+          14645.1630075351
+        ]
+      },
+      "read_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_calls": {
+        "max": 2069,
+        "median": 2067,
+        "min": 2065,
+        "samples": [
+          2065,
+          2069,
+          2067
+        ]
+      },
+      "recv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_requested": {
+        "max": 269226228,
+        "median": 268964241,
+        "min": 268702097,
+        "samples": [
+          268702097,
+          269226228,
+          268964241
+        ]
+      },
+      "recv_returned": {
+        "max": 268435688,
+        "median": 268435645,
+        "min": 268435645,
+        "samples": [
+          268435688,
+          268435645,
+          268435645
+        ]
+      },
+      "recv_would_block": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "samples": [
+          2,
+          2,
+          2
+        ]
+      },
+      "recv_zero": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "samples": [
+          1,
+          1,
+          1
+        ]
+      },
+      "recvfrom_calls": {
+        "max": 2069,
+        "median": 2067,
+        "min": 2065,
+        "samples": [
+          2065,
+          2069,
+          2067
+        ]
+      },
+      "recvfrom_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvfrom_requested": {
+        "max": 269226228,
+        "median": 268964241,
+        "min": 268702097,
+        "samples": [
+          268702097,
+          269226228,
+          268964241
+        ]
+      },
+      "recvfrom_returned": {
+        "max": 268435688,
+        "median": 268435645,
+        "min": 268435645,
+        "samples": [
+          268435688,
+          268435645,
+          268435645
+        ]
+      },
+      "recvfrom_would_block": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "samples": [
+          2,
+          2,
+          2
+        ]
+      },
+      "recvfrom_zero": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "samples": [
+          1,
+          1,
+          1
+        ]
+      },
+      "recvmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_calls": {
+        "max": 18452,
+        "median": 18447,
+        "min": 18447,
+        "samples": [
+          18447,
+          18452,
+          18447
+        ]
+      },
+      "send_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_requested": {
+        "max": 270172790,
+        "median": 270172429,
+        "min": 270167219,
+        "samples": [
+          270167219,
+          270172429,
+          270172790
+        ]
+      },
+      "send_returned": {
+        "max": 270159322,
+        "median": 270157013,
+        "min": 270155466,
+        "samples": [
+          270157013,
+          270155466,
+          270159322
+        ]
+      },
+      "send_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_calls": {
+        "max": 18452,
+        "median": 18447,
+        "min": 18447,
+        "samples": [
+          18447,
+          18452,
+          18447
+        ]
+      },
+      "sendto_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_requested": {
+        "max": 270172790,
+        "median": 270172429,
+        "min": 270167219,
+        "samples": [
+          270167219,
+          270172429,
+          270172790
+        ]
+      },
+      "sendto_returned": {
+        "max": 270159322,
+        "median": 270157013,
+        "min": 270155466,
+        "samples": [
+          270157013,
+          270155466,
+          270159322
+        ]
+      },
+      "sendto_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "version": "pair"
+  },
+  {
+    "case": "vmess-aes128-socks-upload-8",
+    "metrics": {
+      "arc4random_buf_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "deduplicated_write_bytes": {
+        "max": 2161278965,
+        "median": 2161274014,
+        "min": 2161269936,
+        "samples": [
+          2161269936,
+          2161278965,
+          2161274014
+        ]
+      },
+      "deduplicated_write_calls": {
+        "max": 278682,
+        "median": 278646,
+        "min": 278637,
+        "samples": [
+          278646,
+          278682,
+          278637
+        ]
+      },
+      "getentropy_calls": {
+        "max": 274241,
+        "median": 274238,
+        "min": 274163,
+        "samples": [
+          274241,
+          274163,
+          274238
+        ]
+      },
+      "getentropy_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_requested": {
+        "max": 8780383,
+        "median": 8775431,
+        "min": 8771452,
+        "samples": [
+          8771452,
+          8780383,
+          8775431
+        ]
+      },
+      "getentropy_returned": {
+        "max": 8780383,
+        "median": 8775431,
+        "min": 8771452,
+        "samples": [
+          8771452,
+          8780383,
+          8775431
+        ]
+      },
+      "getentropy_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_calls": {
+        "max": 1722,
+        "median": 714,
+        "min": 607,
+        "samples": [
+          607,
+          1722,
+          714
+        ]
+      },
+      "kevent_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_returned": {
+        "max": 5244,
+        "median": 4061,
+        "min": 4046,
+        "samples": [
+          4046,
+          5244,
+          4061
+        ]
+      },
+      "kevent_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_zero": {
+        "max": 3,
+        "median": 2,
+        "min": 1,
+        "samples": [
+          3,
+          2,
+          1
+        ]
+      },
+      "mean_write_bytes": {
+        "max": 7756.593754598277,
+        "median": 7756.328588962339,
+        "min": 7755.3590292878625,
+        "samples": [
+          7756.328588962339,
+          7755.3590292878625,
+          7756.593754598277
+        ]
+      },
+      "read_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_calls": {
+        "max": 16534,
+        "median": 16524,
+        "min": 16523,
+        "samples": [
+          16524,
+          16534,
+          16523
+        ]
+      },
+      "recv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_requested": {
+        "max": 2151319806,
+        "median": 2150401860,
+        "min": 2150270992,
+        "samples": [
+          2150270992,
+          2151319806,
+          2150401860
+        ]
+      },
+      "recv_returned": {
+        "max": 2147485394,
+        "median": 2147485308,
+        "min": 2147485166,
+        "samples": [
+          2147485308,
+          2147485394,
+          2147485166
+        ]
+      },
+      "recv_would_block": {
+        "max": 16,
+        "median": 16,
+        "min": 16,
+        "samples": [
+          16,
+          16,
+          16
+        ]
+      },
+      "recv_zero": {
+        "max": 8,
+        "median": 8,
+        "min": 8,
+        "samples": [
+          8,
+          8,
+          8
+        ]
+      },
+      "recvfrom_calls": {
+        "max": 16534,
+        "median": 16524,
+        "min": 16523,
+        "samples": [
+          16524,
+          16534,
+          16523
+        ]
+      },
+      "recvfrom_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvfrom_requested": {
+        "max": 2151319806,
+        "median": 2150401860,
+        "min": 2150270992,
+        "samples": [
+          2150270992,
+          2151319806,
+          2150401860
+        ]
+      },
+      "recvfrom_returned": {
+        "max": 2147485394,
+        "median": 2147485308,
+        "min": 2147485166,
+        "samples": [
+          2147485308,
+          2147485394,
+          2147485166
+        ]
+      },
+      "recvfrom_would_block": {
+        "max": 16,
+        "median": 16,
+        "min": 16,
+        "samples": [
+          16,
+          16,
+          16
+        ]
+      },
+      "recvfrom_zero": {
+        "max": 8,
+        "median": 8,
+        "min": 8,
+        "samples": [
+          8,
+          8,
+          8
+        ]
+      },
+      "recvmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_calls": {
+        "max": 278682,
+        "median": 278646,
+        "min": 278637,
+        "samples": [
+          278646,
+          278682,
+          278637
+        ]
+      },
+      "send_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_requested": {
+        "max": 2161586589,
+        "median": 2161422417,
+        "min": 2161366794,
+        "samples": [
+          2161422417,
+          2161586589,
+          2161366794
+        ]
+      },
+      "send_returned": {
+        "max": 2161278965,
+        "median": 2161274014,
+        "min": 2161269936,
+        "samples": [
+          2161269936,
+          2161278965,
+          2161274014
+        ]
+      },
+      "send_would_block": {
+        "max": 18,
+        "median": 5,
+        "min": 5,
+        "samples": [
+          5,
+          18,
+          5
+        ]
+      },
+      "send_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_calls": {
+        "max": 278682,
+        "median": 278646,
+        "min": 278637,
+        "samples": [
+          278646,
+          278682,
+          278637
+        ]
+      },
+      "sendto_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_requested": {
+        "max": 2161586589,
+        "median": 2161422417,
+        "min": 2161366794,
+        "samples": [
+          2161422417,
+          2161586589,
+          2161366794
+        ]
+      },
+      "sendto_returned": {
+        "max": 2161278965,
+        "median": 2161274014,
+        "min": 2161269936,
+        "samples": [
+          2161269936,
+          2161278965,
+          2161274014
+        ]
+      },
+      "sendto_would_block": {
+        "max": 18,
+        "median": 5,
+        "min": 5,
+        "samples": [
+          5,
+          18,
+          5
+        ]
+      },
+      "sendto_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "version": "baseline"
+  },
+  {
+    "case": "vmess-aes128-socks-upload-8",
+    "metrics": {
+      "arc4random_buf_calls": {
+        "max": 274386,
+        "median": 274282,
+        "min": 274086,
+        "samples": [
+          274386,
+          274086,
+          274282
+        ]
+      },
+      "arc4random_buf_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_requested": {
+        "max": 8791685,
+        "median": 8782367,
+        "min": 8752949,
+        "samples": [
+          8782367,
+          8752949,
+          8791685
+        ]
+      },
+      "arc4random_buf_returned": {
+        "max": 8791685,
+        "median": 8782367,
+        "min": 8752949,
+        "samples": [
+          8782367,
+          8752949,
+          8791685
+        ]
+      },
+      "arc4random_buf_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "arc4random_buf_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "deduplicated_write_bytes": {
+        "max": 2161290588,
+        "median": 2161281451,
+        "min": 2161251990,
+        "samples": [
+          2161281451,
+          2161251990,
+          2161290588
+        ]
+      },
+      "deduplicated_write_calls": {
+        "max": 147658,
+        "median": 147627,
+        "min": 147617,
+        "samples": [
+          147627,
+          147617,
+          147658
+        ]
+      },
+      "getentropy_calls": {
+        "max": 33,
+        "median": 33,
+        "min": 33,
+        "samples": [
+          33,
+          33,
+          33
+        ]
+      },
+      "getentropy_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_requested": {
+        "max": 512,
+        "median": 512,
+        "min": 512,
+        "samples": [
+          512,
+          512,
+          512
+        ]
+      },
+      "getentropy_returned": {
+        "max": 512,
+        "median": 512,
+        "min": 512,
+        "samples": [
+          512,
+          512,
+          512
+        ]
+      },
+      "getentropy_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "getentropy_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent64_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_calls": {
+        "max": 1125,
+        "median": 572,
+        "min": 518,
+        "samples": [
+          518,
+          1125,
+          572
+        ]
+      },
+      "kevent_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_returned": {
+        "max": 3430,
+        "median": 2994,
+        "min": 2841,
+        "samples": [
+          2841,
+          3430,
+          2994
+        ]
+      },
+      "kevent_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "kevent_zero": {
+        "max": 3,
+        "median": 2,
+        "min": 1,
+        "samples": [
+          3,
+          1,
+          2
+        ]
+      },
+      "mean_write_bytes": {
+        "max": 14640.942371136116,
+        "median": 14640.150182554682,
+        "min": 14637.138441533814,
+        "samples": [
+          14640.150182554682,
+          14640.942371136116,
+          14637.138441533814
+        ]
+      },
+      "read_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "read_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "readv_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_calls": {
+        "max": 16538,
+        "median": 16524,
+        "min": 16524,
+        "samples": [
+          16524,
+          16524,
+          16538
+        ]
+      },
+      "recv_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recv_requested": {
+        "max": 2152368237,
+        "median": 2150402185,
+        "min": 2150009014,
+        "samples": [
+          2150009014,
+          2150402185,
+          2152368237
+        ]
+      },
+      "recv_returned": {
+        "max": 2147485317,
+        "median": 2147485296,
+        "min": 2147485272,
+        "samples": [
+          2147485317,
+          2147485296,
+          2147485272
+        ]
+      },
+      "recv_would_block": {
+        "max": 16,
+        "median": 16,
+        "min": 16,
+        "samples": [
+          16,
+          16,
+          16
+        ]
+      },
+      "recv_zero": {
+        "max": 8,
+        "median": 8,
+        "min": 8,
+        "samples": [
+          8,
+          8,
+          8
+        ]
+      },
+      "recvfrom_calls": {
+        "max": 16538,
+        "median": 16524,
+        "min": 16524,
+        "samples": [
+          16524,
+          16524,
+          16538
+        ]
+      },
+      "recvfrom_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvfrom_requested": {
+        "max": 2152368237,
+        "median": 2150402185,
+        "min": 2150009014,
+        "samples": [
+          2150009014,
+          2150402185,
+          2152368237
+        ]
+      },
+      "recvfrom_returned": {
+        "max": 2147485317,
+        "median": 2147485296,
+        "min": 2147485272,
+        "samples": [
+          2147485317,
+          2147485296,
+          2147485272
+        ]
+      },
+      "recvfrom_would_block": {
+        "max": 16,
+        "median": 16,
+        "min": 16,
+        "samples": [
+          16,
+          16,
+          16
+        ]
+      },
+      "recvfrom_zero": {
+        "max": 8,
+        "median": 8,
+        "min": 8,
+        "samples": [
+          8,
+          8,
+          8
+        ]
+      },
+      "recvmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "recvmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_calls": {
+        "max": 147658,
+        "median": 147627,
+        "min": 147617,
+        "samples": [
+          147627,
+          147617,
+          147658
+        ]
+      },
+      "send_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "send_requested": {
+        "max": 2161897158,
+        "median": 2161850400,
+        "min": 2161730517,
+        "samples": [
+          2161897158,
+          2161730517,
+          2161850400
+        ]
+      },
+      "send_returned": {
+        "max": 2161290588,
+        "median": 2161281451,
+        "min": 2161251990,
+        "samples": [
+          2161281451,
+          2161251990,
+          2161290588
+        ]
+      },
+      "send_would_block": {
+        "max": 9,
+        "median": 8,
+        "min": 4,
+        "samples": [
+          8,
+          9,
+          4
+        ]
+      },
+      "send_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendmsg_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_calls": {
+        "max": 147658,
+        "median": 147627,
+        "min": 147617,
+        "samples": [
+          147627,
+          147617,
+          147658
+        ]
+      },
+      "sendto_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "sendto_requested": {
+        "max": 2161897158,
+        "median": 2161850400,
+        "min": 2161730517,
+        "samples": [
+          2161897158,
+          2161730517,
+          2161850400
+        ]
+      },
+      "sendto_returned": {
+        "max": 2161290588,
+        "median": 2161281451,
+        "min": 2161251990,
+        "samples": [
+          2161281451,
+          2161251990,
+          2161290588
+        ]
+      },
+      "sendto_would_block": {
+        "max": 9,
+        "median": 8,
+        "min": 4,
+        "samples": [
+          8,
+          9,
+          4
+        ]
+      },
+      "sendto_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "write_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_iov_count_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_calls": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_errors": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_requested": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_requested_segments_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_returned": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_would_block": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      },
+      "writev_zero": {
+        "max": 0,
+        "median": 0,
+        "min": 0,
+        "samples": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "version": "pair"
+  }
+]

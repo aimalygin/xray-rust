@@ -1,0 +1,27 @@
+{
+  "all_rss": {
+    "mac_point": 139,
+    "strict_point": 139,
+    "total": 139
+  },
+  "ss2022_vmess_bulk_cpu_ms": {
+    "mac_point": 56,
+    "strict_point": 55,
+    "total": 72
+  },
+  "ss2022_vmess_bulk_throughput_mib_s": {
+    "mac_point": 26,
+    "strict_point": 22,
+    "total": 72
+  },
+  "trojan_bulk_cpu_ms": {
+    "mac_point": 12,
+    "strict_point": 12,
+    "total": 12
+  },
+  "trojan_bulk_throughput_mib_s": {
+    "mac_point": 12,
+    "strict_point": 10,
+    "total": 12
+  }
+}

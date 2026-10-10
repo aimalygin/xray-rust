@@ -45,7 +45,7 @@
       "semantics": "Requires address, port 1..65535 and explicit XHTTP method/network. A separate bounded stream is parsed with paths remapped to downloadSettings; recursive downloads, stream-one and chaining are unsupported."
     }
   ],
-  "coreVersion": "0.7.0",
+  "coreVersion": "0.8.0-rc.1",
   "documentation": "docs/config-tooling.md",
   "examples": {
     "dns-routing": {
@@ -150,6 +150,40 @@
         }
       ]
     },
+    "shadowsocks2022": {
+      "dns": {
+        "fakeIp": {
+          "enabled": true,
+          "ipv4Pool": "198.19.0.0/16",
+          "poolSize": 32768,
+          "ttl": 60
+        },
+        "queryStrategy": "UseIPv4"
+      },
+      "inbounds": [
+        {
+          "protocol": "tun",
+          "settings": {},
+          "tag": "tun-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "shadowsocks",
+          "settings": {
+            "address": "ss2022.example",
+            "method": "2022-blake3-aes-128-gcm",
+            "password": "AQEBAQEBAQEBAQEBAQEBAQ==",
+            "port": 443
+          },
+          "tag": "proxy"
+        }
+      ],
+      "routing": {
+        "domainStrategy": "AsIs",
+        "rules": []
+      }
+    },
     "socks-direct": {
       "inbounds": [
         {
@@ -169,6 +203,46 @@
           "tag": "direct"
         }
       ]
+    },
+    "trojan": {
+      "dns": {
+        "fakeIp": {
+          "enabled": true,
+          "ipv4Pool": "198.19.0.0/16",
+          "poolSize": 32768,
+          "ttl": 60
+        },
+        "queryStrategy": "UseIPv4"
+      },
+      "inbounds": [
+        {
+          "protocol": "tun",
+          "settings": {},
+          "tag": "tun-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "trojan",
+          "settings": {
+            "address": "trojan.example",
+            "password": "synthetic-example-trojan-password",
+            "port": 443
+          },
+          "streamSettings": {
+            "network": "raw",
+            "security": "tls",
+            "tlsSettings": {
+              "serverName": "trojan.example"
+            }
+          },
+          "tag": "proxy"
+        }
+      ],
+      "routing": {
+        "domainStrategy": "AsIs",
+        "rules": []
+      }
     },
     "vless-tls": {
       "inbounds": [
@@ -211,6 +285,40 @@
           "tag": "proxy"
         }
       ]
+    },
+    "vmess": {
+      "dns": {
+        "fakeIp": {
+          "enabled": true,
+          "ipv4Pool": "198.19.0.0/16",
+          "poolSize": 32768,
+          "ttl": 60
+        },
+        "queryStrategy": "UseIPv4"
+      },
+      "inbounds": [
+        {
+          "protocol": "tun",
+          "settings": {},
+          "tag": "tun-in"
+        }
+      ],
+      "outbounds": [
+        {
+          "protocol": "vmess",
+          "settings": {
+            "address": "vmess.example",
+            "id": "00112233-4455-6677-8899-aabbccddeeff",
+            "port": 443,
+            "security": "auto"
+          },
+          "tag": "proxy"
+        }
+      ],
+      "routing": {
+        "domainStrategy": "AsIs",
+        "rules": []
+      }
     },
     "wireguard": {
       "inbounds": [
@@ -525,13 +633,66 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "tcp and udp masks accept only null or empty arrays; nonempty masks are unsupported."
+      "notes": "TCP supports one tlshello fragment mask. Hysteria supports one Salamander udp mask; other nonempty masks fail closed."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[] (Hysteria)",
+      "fields": [
+        "type",
+        "settings"
+      ],
+      "id": "FINALMASK_ENTRY",
+      "notes": "Only a single salamander mask is supported; type is case-insensitive."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings (salamander)",
+      "fields": [
+        "password",
+        "packetSize"
+      ],
+      "id": "SALAMANDER",
+      "notes": "Password is 4..=4096 UTF-8 bytes. packetSize must be absent, null or zero; Gecko is unsupported."
     },
     {
       "context": "$.outbounds[].settings (freedom)",
-      "fields": [],
+      "fields": [
+        "fragment"
+      ],
       "id": "FREEDOM_SETTINGS",
-      "notes": "Only an empty settings object is supported."
+      "notes": "Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."
+    },
+    {
+      "context": "streamSettings.finalmask.tcp[]",
+      "fields": [
+        "type",
+        "settings"
+      ],
+      "id": "TCP_MASK_ENTRY",
+      "notes": "Exactly one fragment mask; type is case-insensitive."
+    },
+    {
+      "context": "streamSettings.finalmask.tcp[].settings (fragment)",
+      "fields": [
+        "packets",
+        "length",
+        "delay",
+        "lengths",
+        "delays",
+        "maxSplit"
+      ],
+      "id": "TCP_FRAGMENT",
+      "notes": "Only packets=tlshello. Positive lengths 1..16384, delays 0..1000 ms, up to 16 sequence entries, maxSplit 0..4096; actual plans cap at 4096 records and 10 seconds."
+    },
+    {
+      "context": "$.outbounds[].settings.fragment (freedom)",
+      "fields": [
+        "packets",
+        "length",
+        "interval",
+        "maxSplit"
+      ],
+      "id": "FREEDOM_FRAGMENT",
+      "notes": "Legacy tlshello spelling. Same runtime bounds as FinalMask; interval is the delay range."
     },
     {
       "context": "streamSettings.grpcSettings",
@@ -621,10 +782,12 @@
       "context": "$.outbounds[].mux",
       "fields": [
         "enabled",
-        "concurrency"
+        "concurrency",
+        "xudpConcurrency",
+        "xudpProxyUDP443"
       ],
       "id": "MUX",
-      "notes": "enabled must be absent or false. concurrency is checked as u32 but does not enable mux."
+      "notes": "Enabled Mux supports Trojan, Shadowsocks 2022 and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool has four parents and 128 lifetime children per parent."
     },
     {
       "context": "$.observatory",
@@ -649,7 +812,7 @@
         "sendThrough"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom, blackhole, dns, vless, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",
@@ -791,7 +954,8 @@
     {
       "context": "streamSettings.sockopt",
       "fields": [
-        "happyEyeballs"
+        "happyEyeballs",
+        "dialerProxy"
       ],
       "id": "SOCKOPT",
       "notes": "Value types, bounds and activation rules are enforced by the executable parser."
@@ -897,6 +1061,99 @@
       ],
       "id": "UDP_HOP",
       "notes": "The parser models numeric and comma/range ports, but core carrier compilation rejects nonempty hopping. Empty/default ports are the supported runtime subset."
+    },
+    {
+      "context": "$.outbounds[].settings (shadowsocks)",
+      "fields": [
+        "address",
+        "port",
+        "password",
+        "level",
+        "email",
+        "method",
+        "servers"
+      ],
+      "id": "SHADOWSOCKS",
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. SS2022 only: three blake3 methods; base64 PSKs, at most 8192 encoded bytes and 8 AES identity keys. ChaCha requires one key. Oversized keys normalize like the pinned peer."
+    },
+    {
+      "context": "$.outbounds[].settings.servers[0] (shadowsocks)",
+      "fields": [
+        "address",
+        "port",
+        "password",
+        "level",
+        "email",
+        "method"
+      ],
+      "id": "SHADOWSOCKS_SERVER",
+      "notes": "Nonempty address, nonzero port, level 0..255. Email is type-checked and ignored. TCP uses streamSettings; UDP is native encrypted datagrams, matching the pinned wrapper."
+    },
+    {
+      "context": "$.outbounds[].settings (vmess)",
+      "fields": [
+        "address",
+        "port",
+        "id",
+        "security",
+        "experiments",
+        "alterId",
+        "level",
+        "email",
+        "vnext"
+      ],
+      "id": "VMESS",
+      "notes": "AEAD only, exactly one flattened server/user or one vnext entry with one user. auto/aes-128-gcm/chacha20-poly1305; nonzero alterId rejected."
+    },
+    {
+      "context": "$.outbounds[].settings.vnext[0] (vmess)",
+      "fields": [
+        "address",
+        "port",
+        "users"
+      ],
+      "id": "VMESS_SERVER",
+      "notes": "Nonempty address, nonzero port and exactly one user."
+    },
+    {
+      "context": "$.outbounds[].settings.vnext[0].users[0] (vmess)",
+      "fields": [
+        "id",
+        "security",
+        "experiments",
+        "alterId",
+        "level",
+        "email"
+      ],
+      "id": "VMESS_USER",
+      "notes": "UUID, supported AEAD body cipher, zero/absent alterId; experiments accepts AuthenticatedLength and NoTerminationSignal, separated by |. Credentials are redacted."
+    },
+    {
+      "context": "$.outbounds[].settings (trojan)",
+      "fields": [
+        "address",
+        "port",
+        "password",
+        "level",
+        "email",
+        "flow",
+        "servers"
+      ],
+      "id": "TROJAN",
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. Password 1..4096 UTF-8 bytes. Empty/absent flow only. Verified TLS/REALITY required except private/test plaintext endpoints."
+    },
+    {
+      "context": "$.outbounds[].settings.servers[0] (trojan)",
+      "fields": [
+        "address",
+        "port",
+        "password",
+        "level",
+        "email",
+        "flow"
+      ],
+      "id": "TROJAN_SERVER",
+      "notes": "Nonempty address, nonzero port, level 0..255. Email is type-checked and ignored. Same security policy as flattened settings."
     },
     {
       "context": "$.outbounds[].settings (vless)",

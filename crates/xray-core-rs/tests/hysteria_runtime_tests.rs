@@ -9,6 +9,59 @@ use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram}
 use xray_routing::{Network, Target, TargetAddr};
 
 #[tokio::test]
+#[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
+async fn parsed_salamander_hop_profile_reaches_shared_core_carrier() {
+    use std::{sync::Arc, time::Duration};
+    use xray_core_rs::Core;
+    use xray_transport::TransportDialer;
+    timeout(Duration::from_secs(20), async {
+        let server = ReferenceServer::start_with_carrier(true, true).await;
+        let (tcp_addr, _tcp) = tcp_echo().await;
+        let (udp_addr, _udp) = udp_echo().await;
+        let mut profile = profile(server.address);
+        let unused = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        profile["outbounds"][0]["settings"]["port"] = serde_json::json!(unused.local_addr().unwrap().port());
+        profile["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({
+            "udp":[{"type":"salamander","settings":{"password":support::server::SALAMANDER_PASSWORD}}],
+            "quicParams":{"udpHop":{"ports":server.address.port(),"interval":5}}
+        });
+        let parsed = xray_config::parse_xray_json(&profile.to_string()).unwrap();
+        let protector = Arc::new(Protector::default());
+        let resolver = Arc::new(Bootstrap::default());
+        let dialer = Arc::new(TransportDialer::with_tls_connector(server.connector.clone()).with_socket_protector(protector.clone()));
+        let mut core = Core::with_runtime_dependencies_and_tun_options(parsed.config, resolver.clone(), dialer, Default::default()).unwrap();
+        core.start().await.unwrap();
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut tcp, _) = socks(socks_addr, 1, "127.0.0.1", tcp_addr.port()).await;
+        echo(&mut tcp, b"parsed Salamander before hop").await;
+        let (_control, relay) = socks(socks_addr, 3, "0.0.0.0", 0).await;
+        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let target = Target::new(TargetAddr::Ip(udp_addr.ip()), udp_addr.port(), Network::Udp);
+        let request = encode_socks5_udp_datagram(&target, b"same UDP after hop").unwrap();
+        for phase in 0..2 {
+            if phase == 1 {
+                timeout(Duration::from_secs(7), async {
+                    while protector.0.load(Ordering::SeqCst) < 2 {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }).await.unwrap();
+                echo(&mut tcp, b"same parsed core TCP after hop").await;
+            }
+            udp.send_to(&request, relay).await.unwrap();
+            let mut bytes = [0; 8192];
+            let n = timeout(DEADLINE, udp.recv(&mut bytes)).await.unwrap().unwrap();
+            let reply = parse_socks5_udp_datagram(&bytes[..n]).unwrap();
+            assert_eq!(reply.target, target);
+            assert_eq!(reply.payload.as_ref(), b"same UDP after hop");
+        }
+        assert_eq!(resolver.0.load(Ordering::SeqCst), 1, "hopping preserves the session owner");
+        assert_eq!(core.rebind_hysteria(), 1);
+        core.stop().await.unwrap();
+        assert_eq!(core.rebind_hysteria(), 0);
+    }).await.unwrap();
+}
+
+#[tokio::test]
 #[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
     timeout(DEADLINE, async {

@@ -3263,8 +3263,17 @@ async fn open_raw_dns_tcp_candidate(
         TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
             effective_policy_for_level(&context.config, Some(0)).handshake
         }
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-            context.inbound_policy.handshake
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => context.inbound_policy.handshake,
+        TcpOutbound::Trojan(outbound) => {
+            effective_policy_for_level(&context.config, Some(outbound.level())).handshake
+        }
+        TcpOutbound::Vmess(outbound) => {
+            effective_policy_for_level(&context.config, Some(outbound.level())).handshake
+        }
+        TcpOutbound::Shadowsocks2022(outbound) => {
+            effective_policy_for_level(&context.config, Some(outbound.level())).handshake
         }
         TcpOutbound::Vless(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake
@@ -3505,7 +3514,10 @@ async fn proxy_udp_payload(
                 };
                 let outbound_timeout = match &outbound {
                     UdpOutbound::Freedom => DNS_PROXY_FREEDOM_ATTEMPT_TIMEOUT,
-                    UdpOutbound::Vless(_)
+                    UdpOutbound::Trojan(_)
+                    | UdpOutbound::Vmess(_)
+                    | UdpOutbound::Shadowsocks2022(_)
+                    | UdpOutbound::Vless(_)
                     | UdpOutbound::Hysteria(_)
                     | UdpOutbound::Wireguard(_) => DNS_PROXY_VLESS_ATTEMPT_TIMEOUT,
                 };
@@ -3925,7 +3937,11 @@ async fn exchange_udp_candidate(
     failure_phase: &mut DnsUdpFailurePhase,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let response = match outbound {
-        outbound @ (UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_)) => {
+        outbound @ (UdpOutbound::Trojan(_)
+        | UdpOutbound::Vmess(_)
+        | UdpOutbound::Shadowsocks2022(_)
+        | UdpOutbound::Hysteria(_)
+        | UdpOutbound::Wireguard(_)) => {
             if upstream
                 .socket_addr()
                 .is_some_and(socket_addr_has_nonzero_scope)
@@ -3942,6 +3958,7 @@ async fn exchange_udp_candidate(
                 context.bootstrap_dns_resolver(),
                 context.bootstrap_dns_resolver(),
                 &context.transport_dialer,
+                [0; 8],
             )
             .await?;
             context.tun.record_udp_remote_open(false);

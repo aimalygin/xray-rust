@@ -78,6 +78,8 @@ mod process_metrics;
 #[cfg(unix)]
 pub mod protocol_bench;
 mod stream_transport;
+#[cfg(unix)]
+pub mod tun_admission;
 
 use process_metrics::current_peak_rss_kib;
 
@@ -5710,16 +5712,7 @@ where
             action: "binding DNS proxy UDP fixture".to_owned(),
             source,
         })?;
-    let addr = udp.local_addr().map_err(|source| BenchError::Io {
-        action: "reading DNS proxy UDP fixture address".to_owned(),
-        source,
-    })?;
-    let tcp = TcpListener::bind(addr)
-        .await
-        .map_err(|source| BenchError::Io {
-            action: "binding DNS proxy TCP fixture".to_owned(),
-            source,
-        })?;
+    let (addr, udp, tcp) = bind_dns_proxy_socket_pair(udp).await?;
 
     let udp_observer = observer.clone();
     let udp_task = tokio::spawn(async move {
@@ -5762,6 +5755,41 @@ where
         connections.abort_all();
     });
     Ok((addr, vec![udp_task, tcp_task]))
+}
+
+// UDP and TCP have independent port namespaces. An ephemeral UDP port can
+// already be occupied by a TCP listener (or its accepted connections). Retain
+// both sockets only after both binds succeed; never reuse or steal a listener.
+#[cfg(unix)]
+async fn bind_dns_proxy_socket_pair(
+    mut udp: UdpSocket,
+) -> Result<(SocketAddr, UdpSocket, TcpListener), BenchError> {
+    let mut collisions = 0;
+    loop {
+        let addr = udp.local_addr().map_err(|source| BenchError::Io {
+            action: "reading DNS proxy UDP fixture address".to_owned(),
+            source,
+        })?;
+        match TcpListener::bind(addr).await {
+            Ok(tcp) => return Ok((addr, udp, tcp)),
+            Err(source) if source.kind() == io::ErrorKind::AddrInUse && collisions < 31 => {
+                collisions += 1;
+                drop(udp);
+                udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                    .await
+                    .map_err(|source| BenchError::Io {
+                        action: "rebinding DNS proxy UDP fixture after TCP collision".to_owned(),
+                        source,
+                    })?;
+            }
+            Err(source) => {
+                return Err(BenchError::Io {
+                    action: "binding DNS proxy TCP fixture".to_owned(),
+                    source,
+                });
+            }
+        }
+    }
 }
 
 #[cfg(all(unix, test))]
@@ -8629,6 +8657,7 @@ fn measure_dns_outbound_policy(
 
 fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
     let direct = OutboundConfig {
+        mux: None,
         tag: Some("direct".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -8636,11 +8665,13 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
     };
     let dns = OutboundConfig {
+        mux: None,
         tag: Some("dns-out".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -8648,6 +8679,7 @@ fn dns_outbound_selector_probe_config(rule_count: usize) -> CoreConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Dns(DnsOutboundSettings::default()),
@@ -9133,6 +9165,7 @@ fn phase2_probe_metric(operations: usize, elapsed: Duration) -> Phase2ProbeMetri
 
 fn phase2_probe_outbound(tag: String, proxy_tag: Option<String>) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag),
         proxy_settings: proxy_tag.map(|tag| OutboundProxySettings {
             tag,
@@ -9143,6 +9176,7 @@ fn phase2_probe_outbound(tag: String, proxy_tag: Option<String>) -> OutboundConf
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -10564,6 +10598,7 @@ fn route_probe_config(
     let selected_tag = format!("out-{}", outbound_count - 1);
     let outbounds = (0..outbound_count)
         .map(|index| OutboundConfig {
+            mux: None,
             tag: Some(format!("out-{index}")),
             proxy_settings: None,
             stream: StreamSettings {
@@ -10571,6 +10606,7 @@ fn route_probe_config(
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -13116,6 +13152,25 @@ mod tests {
             };
             tokio::try_join!(inbound_loop, outbound_loop).map(|_| ())
         }))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dns_proxy_fixture_retries_a_port_occupied_only_in_tcp_namespace() {
+        let udp = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let (occupied, udp, held_tcp) = bind_dns_proxy_socket_pair(udp).await.unwrap();
+        // Keep the TCP listener alive: the first bind in this second call must
+        // collide, while the UDP socket itself remains valid and exclusive.
+        let (selected, udp, tcp) = bind_dns_proxy_socket_pair(udp).await.unwrap();
+        assert_ne!(selected, occupied);
+        assert_eq!(udp.local_addr().unwrap(), selected);
+        assert_eq!(tcp.local_addr().unwrap(), selected);
+        assert_eq!(held_tcp.local_addr().unwrap(), occupied);
+        let _client = TcpStream::connect(occupied).await.unwrap();
+        timeout(Duration::from_secs(1), held_tcp.accept())
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[cfg(unix)]

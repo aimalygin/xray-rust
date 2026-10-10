@@ -1,0 +1,723 @@
+{
+  "inventoryVersion": 1,
+  "reviewedOn": "2026-10-04",
+  "purpose": "Collection inventory, not a schema-4 acceptance manifest",
+  "readyForSchema4": false,
+  "candidate": {
+    "revision": "0d788564d85505ba0e2778320a561bc3d6500346",
+    "tree": "f71235a8b17a5e5e88809ada36ce4efc19f29b00",
+    "androidAdapterChanged": true,
+    "exactNewPinNativeDeviceBuildCollected": false,
+    "description": "SDK development source pin; existing native/JNI device binary retains the nativeBaseline identity"
+  },
+  "ownerDecision": {
+    "instruction": "\u0434\u0430\u0432\u0430\u0439 \u0442\u043e\u0433\u0434\u0430 \u043f\u043e\u043a\u0430 \u043e\u0441\u0442\u0430\u0432\u0438\u043c \u044d\u0442\u043e \u0442\u0430\u043a \u0438 \u0431\u0443\u0434\u0435\u043c \u0434\u0432\u0438\u0433\u0430\u0442\u044c\u0441\u044f \u0434\u0430\u043b\u044c\u0448\u0435",
+    "scope": "Further investigation of remaining SS2022 UDP losses",
+    "status": "deferred",
+    "failedVerdictsChanged": false,
+    "releaseAuthorized": false
+  },
+  "policySources": [
+    {
+      "path": "scripts/check-v08-release-evidence.py",
+      "sha256": "db87a7ed20516fd16d650f35bb51e6aa3b901e2621d87509552a4d97f16d8a35"
+    },
+    {
+      "path": "scripts/check-v06-release-evidence.py",
+      "sha256": "e92b7b138079321a1f0b58d325fac7f2ac4b9a2ec197dca3aae40e3fcf9a5d18"
+    }
+  ],
+  "ci": [
+    {
+      "repository": "aimalygin/xray-rust",
+      "revision": "3c7b1628544dc64ffc6f1284169c5bf6ac136c48",
+      "run": 37253541471,
+      "result": "success",
+      "scope": "ordinary CI before regression-report changes; optional/full release jobs skipped"
+    },
+    {
+      "repository": "aimalygin/xray-rust-mobile",
+      "revision": "90355c5f4d11bed53dfe4748a262521044a87407",
+      "run": 37253545430,
+      "result": "success",
+      "scope": "Apple, Android, metadata and secrets before regression-report changes"
+    }
+  ],
+  "supportingReports": [
+    {
+      "id": "iphone-protocols",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-03-iphone17-v08/README.md",
+          "sha256": "d9c27aa7e775b57dbe5c45e90814e11df6626a5b1b881c531c6e95e8d6f22023"
+        },
+        {
+          "path": "docs/device-results/2026-10-03-iphone17-v08/manifest.json",
+          "sha256": "b438abafc2739cd6fcece366c3f1f256bd8a2fdf7cea39a13f7d4f7184ac5ce2"
+        }
+      ]
+    },
+    {
+      "id": "iphone-lifecycle",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-lifecycle-resources/README.md",
+          "sha256": "c8d188d8801838fa55ca54ad997f6dbd9596beb5e8a3edaa075e4aef9a88e6a3"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-lifecycle-resources/manifest.json",
+          "sha256": "47ad11fa6ff7663c9fba04448766cb6f6296afef00cfe85fec5ef563a646d217"
+        }
+      ]
+    },
+    {
+      "id": "legacy-baseline",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-wg-baseline/README.md",
+          "sha256": "afb5d8c7c8537b7278fea60c7d5d81bb75ff31afc83e96bd24a56827998875b5"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-wg-baseline/manifest.json",
+          "sha256": "e1739343815ad9771829d4e41912e3db2de1264442fdd7d90b17a466b61620c7"
+        }
+      ]
+    },
+    {
+      "id": "ss2022-df",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-ss2022-mtu/README.md",
+          "sha256": "cefbe8250dc0f9ee3f00b49156a8549ac64a75f82c5f27141c0da1347c164df5"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-ss2022-mtu/manifest.json",
+          "sha256": "fee9d21e22823169453c99eec55c8d2e174c4c2068ea41d9b6ff121eec831405"
+        }
+      ]
+    },
+    {
+      "id": "reliability-deployment",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-reliability-deployment/README.md",
+          "sha256": "3b20b9b545c11c2e20f45936730775c887c6c9cb69b78989465426a6296a4a75"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-iphone17-reliability-deployment/manifest.json",
+          "sha256": "4f418ca478dfd3b43ac4b71cfd48b564be810626015012ab510d678c248c6218"
+        }
+      ]
+    },
+    {
+      "id": "android-lan-baseline",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-android-v08/README.md",
+          "sha256": "8e2a3dcc4e157f3606131efcf595119d8f276aceece3c1be6c191bc726250157"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-android-v08/manifest.json",
+          "sha256": "24a82c5debc31960206359497c5abf788d759148176cef8f599233b3ac96a399"
+        }
+      ]
+    },
+    {
+      "id": "android-readiness-wait",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-android-v08/packet-pump-fix/README.md",
+          "sha256": "f77f092d61f153eea64f694072de2054cee3efee16f83644c882c027053bb53b"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-android-v08/packet-pump-fix/manifest.json",
+          "sha256": "69e3f33b3cc992bddd90e5e61342af5816e26d6614721a4e6ae476cff1a1779e"
+        }
+      ]
+    },
+    {
+      "id": "android-active-regression",
+      "artifacts": [
+        {
+          "path": "docs/device-results/2026-10-04-android-regressions/README.md",
+          "sha256": "e81169c1da47294fa7fa38cb888986c77a234c8a1f116008c0d06bdd9100ef1c"
+        },
+        {
+          "path": "docs/device-results/2026-10-04-android-regressions/manifest.json",
+          "sha256": "6ffffbdaed405aecb62f5081d5b3ecf5b91153961606a8aa70ef5a2e4c692703"
+        }
+      ]
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "apple",
+      "physicalRequired": true,
+      "connectedAtReview": null,
+      "scenarios": [
+        {
+          "id": "cancellation",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "supporting-evidence-needs-review",
+          "supportingReports": [
+            "iphone-protocols",
+            "iphone-lifecycle"
+          ]
+        },
+        {
+          "id": "host-adapter-projection",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        },
+        {
+          "id": "ip-on-demand",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        },
+        {
+          "id": "legacy-regression",
+          "requiredTransitions": [
+            "hysteria2",
+            "vless-reality",
+            "wireguard",
+            "xhttp-h1",
+            "xhttp-h2",
+            "xhttp-h3"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "supporting-evidence-needs-review",
+          "supportingReports": [
+            "iphone-lifecycle",
+            "legacy-baseline",
+            "reliability-deployment"
+          ]
+        },
+        {
+          "id": "profile-import",
+          "requiredTransitions": [
+            "invalid-input-redaction",
+            "shadowsocks2022-link",
+            "trojan-link",
+            "vmess-link"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "supporting-evidence-needs-review",
+          "supportingReports": [
+            "iphone-protocols",
+            "iphone-lifecycle"
+          ]
+        },
+        {
+          "id": "shadowsocks2022",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop",
+            "wifi-cellular-wifi"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "supporting-evidence-needs-review",
+          "supportingReports": [
+            "iphone-protocols",
+            "iphone-lifecycle",
+            "ss2022-df",
+            "reliability-deployment"
+          ]
+        },
+        {
+          "id": "trojan",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop",
+            "wifi-cellular-wifi"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "supporting-evidence-needs-review",
+          "supportingReports": [
+            "iphone-protocols",
+            "iphone-lifecycle"
+          ]
+        },
+        {
+          "id": "vless-encryption",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        },
+        {
+          "id": "vmess",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "lock-wake",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop",
+            "wifi-cellular-wifi"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "supporting-evidence-needs-review",
+          "supportingReports": [
+            "iphone-protocols",
+            "iphone-lifecycle"
+          ]
+        },
+        {
+          "id": "xhttp-download-session",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "physicalRequired": true,
+      "connectedAtReview": true,
+      "scenarios": [
+        {
+          "id": "cancellation",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ]
+        },
+        {
+          "id": "host-adapter-projection",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        },
+        {
+          "id": "ip-on-demand",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        },
+        {
+          "id": "legacy-regression",
+          "requiredTransitions": [
+            "hysteria2",
+            "vless-reality",
+            "wireguard",
+            "xhttp-h1",
+            "xhttp-h2",
+            "xhttp-h3"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-active-regression"
+          ]
+        },
+        {
+          "id": "profile-import",
+          "requiredTransitions": [
+            "invalid-input-redaction",
+            "shadowsocks2022-link",
+            "trojan-link",
+            "vmess-link"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait"
+          ]
+        },
+        {
+          "id": "shadowsocks2022-file-descriptor",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
+          ]
+        },
+        {
+          "id": "shadowsocks2022-packet-pump",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
+          ]
+        },
+        {
+          "id": "trojan-file-descriptor",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
+          ]
+        },
+        {
+          "id": "trojan-packet-pump",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
+          ]
+        },
+        {
+          "id": "vless-encryption",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        },
+        {
+          "id": "vmess-file-descriptor",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
+          ]
+        },
+        {
+          "id": "vmess-packet-pump",
+          "requiredTransitions": [
+            "cancel-active-flow",
+            "domain-destination",
+            "ipv4-tcp",
+            "ipv4-udp",
+            "ipv6-tcp",
+            "ipv6-udp",
+            "reconnect",
+            "resource-recovery",
+            "routed-dns",
+            "start-stop"
+          ],
+          "nonemptyTransitionsRequired": true,
+          "state": "partial-physical-evidence-needs-review",
+          "supportingReports": [
+            "android-lan-baseline",
+            "android-readiness-wait",
+            "android-active-regression"
+          ],
+          "ownerSkippedTransitions": [
+            "lock-wake",
+            "wifi-cellular-wifi"
+          ]
+        },
+        {
+          "id": "xhttp-download-session",
+          "requiredTransitions": [],
+          "nonemptyTransitionsRequired": true,
+          "state": "not-collected-for-acceptance",
+          "supportingReports": []
+        }
+      ],
+      "hardware": {
+        "model": "SM-A145F",
+        "osVersion": "Android 15",
+        "apiLevel": 35,
+        "abi": "arm64-v8a"
+      },
+      "preparation": "Physical baseline and corrected-adapter LAN matrices complete with separate identities; network/lock owner-skipped, not tested; active-flow/shared and exact-new-pin acceptance remain open",
+      "boundedFollowup": {
+        "functionalCases": 14,
+        "http": 182,
+        "udp": 182,
+        "stressHttpPassed": 5760,
+        "stressUdpPassed": 11518,
+        "stressUdpFailed": 2,
+        "resourceRowsPassed": 12,
+        "releaseAcceptanceComplete": false
+      }
+    }
+  ],
+  "performance": {
+    "profile": "release",
+    "cleanRequired": true,
+    "minimumSamplesPerMeasurement": 5,
+    "artifacts": [
+      "benchmark-raw",
+      "build-manifest",
+      "known-limitations",
+      "protocol-comparisons"
+    ],
+    "measurements": [
+      {
+        "id": "ip-on-demand-latency",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "process-throughput",
+        "comparison": "at-least",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "shadowsocks2022-latency",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "shadowsocks2022-memory",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "shadowsocks2022-throughput",
+        "comparison": "at-least",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "trojan-latency",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "trojan-memory",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "trojan-throughput",
+        "comparison": "at-least",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "vless-encryption-throughput",
+        "comparison": "at-least",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "vmess-latency",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "vmess-memory",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "vmess-throughput",
+        "comparison": "at-least",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      },
+      {
+        "id": "xhttp-memory",
+        "comparison": "at-most",
+        "state": "exact-candidate-samples-and-threshold-not-assembled",
+        "threshold": null,
+        "unit": null,
+        "samples": []
+      }
+    ],
+    "cpuAndMemory": "Retain both in raw/resource reports; no new calibrated samples are claimed"
+  },
+  "deviceArtifactKinds": [
+    "resource-profile",
+    "sanitized-log",
+    "transition-timeline"
+  ],
+  "openWork": [
+    "Android active-flow and shared/legacy scenarios; retain network/lock owner skips and small-UDP stress failures",
+    "Reassess exact-candidate qualification after Android adapter source pin change",
+    "Apple shared-scenario coverage and per-run transition/resource mapping",
+    "Unresolved separate WireGuard/Trojan failures",
+    "Calibrated exact-candidate samples and frozen thresholds",
+    "Complete hashed schema-4 ZIP and validator run",
+    "Canonical distribution artifacts and clean consumers after release decision"
+  ],
+  "nativeBaseline": {
+    "revision": "de33998158e84c03f280f979ba2d4212072e5bc4",
+    "tree": "3d628e533f68671721ecf2e6ad786c15ce6f7291",
+    "nativeInputsChanged": false
+  },
+  "androidOwnerDecision": {
+    "decidedOn": "2026-10-04",
+    "instruction": "\u0434\u043b\u044f android \u043f\u0440\u043e\u043f\u0443\u0441\u043a\u0430\u0435\u043c",
+    "selectedContext": "\u0414\u0430\u043b\u044c\u0448\u0435 \u2014 Wi-Fi \u2194 \u043c\u043e\u0431\u0438\u043b\u044c\u043d\u0430\u044f \u0441\u0435\u0442\u044c \u0438 \u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u043a\u0430 \u044d\u043a\u0440\u0430\u043d\u0430; \u0434\u043b\u044f \u043f\u0435\u0440\u0435\u0445\u043e\u0434\u043e\u0432 \u043d\u0443\u0436\u043d\u0430 \u0440\u0430\u0431\u043e\u0442\u0430\u044e\u0449\u0430\u044f SIM.",
+    "release": "0.8",
+    "platform": "android",
+    "paths": [
+      "file-descriptor",
+      "packet-pump"
+    ],
+    "transitions": [
+      "lock-wake",
+      "wifi-cellular-wifi"
+    ],
+    "status": "owner-skipped-not-tested",
+    "policyEffect": "Excluded only from v0.8 Android required transitions; preserve in final known-limitations artifact",
+    "appleRequirementsChanged": false,
+    "failedVerdictsChanged": false,
+    "releaseAuthorized": false
+  },
+  "androidActiveRegressionFindings": {
+    "report": "android-active-regression",
+    "tcpCasesMeetingAllPrimaryCriteria": 18,
+    "tcpCasesTotal": 26,
+    "udpCasesMeetingAllPrimaryCriteria": 25,
+    "udpCasesTotal": 26,
+    "wireguard": "Ordinary address/DNS traffic and per-flow cancellation pass; whole-VPN remote EOF is intermittent. Four paired local stop/recovery controls pass, and close-before-stop delivers EOF; original failures and the incomplete unexpected-EOF control are retained.",
+    "shadowsocks2022": "Six primary remote-EOF criteria fail; twelve supplemental local cancel/recovery controls pass. All three pinned Go-client/Go-server controls reproduce backend retention after client exit. This is distinct from deferred WAN UDP-loss work.",
+    "trojan": "One PacketPump post-disconnect UDP recovery times out after backend response submission. Four fresh-fixture repeats are preserved separately; they do not erase the first failure or establish its cause.",
+    "runtimeChanged": false,
+    "failedVerdictsChanged": false,
+    "releaseAcceptanceComplete": false
+  }
+}

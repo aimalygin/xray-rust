@@ -72,6 +72,13 @@ passed through `VpnService.protect(fd)` before use. With
 TCP candidate before connect; cancelled and losing candidates are not detached.
 This prevents proxy sockets from being routed back into the VPN.
 
+PacketPump waits up to 250 ms for TUN readability after a zero-byte
+nonblocking read. This avoids the Android `EAGAIN` busy loop while preserving
+MTU-sized buffers and bounded worker teardown. `EINTR` retries respect the
+active/interrupted checks; terminal poll errors use the existing fatal path.
+FileDescriptor remains the default path. See the separately identified
+[physical Android baseline and follow-up](../../docs/device-results/2026-10-04-android-v08/README.md).
+
 ## VLESS share-link import
 
 Development v0.7 additionally provides
@@ -206,6 +213,32 @@ Freedom/WireGuard split routes remain valid. Configuring a `dns.servers`
 upstream permits domain routes through these protocols. The preflight never inserts or substitutes a public
 DNS server.
 
+### Network changes and Hysteria limits
+
+`XrayCore.rebindHysteria()` (ABI >=1.7) and `rebindWireGuard()` (ABI >=1.6)
+request fresh protected carrier sockets while retaining live inner flows and
+current endpoints. Each returns accepted/coalesced requests, not completed
+path validation or handshakes. Idle outbounds return zero without connecting.
+
+The host should observe usable **underlying** networks with `ConnectivityManager`
+(exclude the VPN transport), finish its network selection/update first, coalesce
+duplicate notifications, then call the methods on its serial VPN control worker.
+Do not rebind solely because `onLost` fired when no usable replacement exists.
+Unregister the network callback and fence queued work before closing the core;
+callbacks racing close receive a closed-core error. Socket protection remains
+mandatory. The core does not call `bindProcessToNetwork` or select a `Network`
+for the host. A request alone does not prove Wi-Fi/cellular or NAT64 recovery;
+endpoint re-resolution may require rebuilding the prepared config/core.
+
+To increase Hysteria concurrency, pass
+`hysteriaStreamLimits = XrayHysteriaStreamLimits(maxTcpStreams = 128, maxUdpSessions = 64)`
+to `XrayCore.create`. This requires ABI 1.10 plus `HysteriaStreamLimits` capability.
+The defaults remain 64/32; bounds are 1..256 and 1..128. Limits are shared by
+all inbounds using one outbound. TUN admission limits remain separate: choose
+an appropriate runtime profile for large simultaneous connection bursts.
+Higher concurrency can consume more memory; per-flow queues and the Xray wire
+format do not change. Recreate the core to change limits.
+
 ## Host application responsibilities
 
 A host app must:
@@ -234,8 +267,17 @@ platform/android/gradlew -p platform/android \
   :devicehost:assembleDebug :deviceprobe:assembleDebug
 ```
 
+For a separate physical campaign, append
+`-PdeviceGateApplicationIdSuffix=.v08` to the debug build. Both application IDs
+then end in `.v08`, with separate UIDs, Keystore entries and profile storage;
+component class names retain their original namespaces. Omit the property for
+the original IDs. Supply `XRAY_FFI_ANDROID_DIR` from the verified candidate build.
+An arm64-only device rehearsal can use `-Pandroid.injected.build.abi=arm64-v8a`;
+it does not qualify the other release ABIs.
+
 `devicehost` is a minimal `VpnService` owner. It imports the supported VLESS
-share-link subset, immediately converts it to core JSON, encrypts that JSON with
+share-link subset and Trojan, SS2022, VMess and Hysteria2 links through their
+existing SDK importers, immediately converts them to core JSON, encrypts that JSON with
 an Android Keystore AES-GCM key, and stores the ciphertext under the app's
 no-backup directory. Backup and device-to-device transfer are disabled. The
 profile input and clipboard are cleared after import, and structured
@@ -244,6 +286,23 @@ counts, TUN counters, and sanitized error classes. The app can connect,
 disconnect, cancel an asynchronous start from the same service command, close
 one inventory snapshot through the public connection-management API, and reset
 campaign counters while stopped.
+
+The two connect buttons select FileDescriptor or PacketPump. The selected path
+is retained through VPN-consent activity recreation and recorded as `tunBackend`
+in lifecycle/resource logs. Automation `connect` and `rapid-stop` commands accept
+the string extra `tun-backend` with exactly `file-descriptor` or `packet-pump`;
+omission preserves the original FileDescriptor default, and unknown values are
+rejected. Switching paths requires a separate stopped/started test cycle. A
+compile/unit-test pass for this harness does not establish device-path coverage.
+Resource samples include all process threads from `/proc/self/status`, resident
+memory, dropped TUN packets, cumulative process CPU milliseconds and monotonic
+elapsed time. CPU deltas must be compared within one process lifetime.
+For controlled resource loads, automation can add the boolean extra
+`probe-only=true`. Only the matching `deviceprobe` application ID is then
+included in the VPN, keeping other apps out of the measured workload. Interface
+addresses, routes and MTU match the SDK default. Missing probe packages fail
+closed. The running status and resource samples identify this scope. Normal
+connect buttons restore the full VPN scope; keep both scopes distinct in reports.
 
 `deviceprobe` has a separate UID, so its traffic traverses `devicehost`'s TUN
 instead of being excluded with the VPN owner. Its ordinary loop drives an HTTP
@@ -254,7 +313,10 @@ bounded stress action defaults to 240 HTTP attempts, 480 UDP attempts, and 32
 workers. Either protocol count may be zero for a transport-specific rehearsal,
 but a cycle must contain at least one attempt. Attempts and concurrency are
 validated against hard upper bounds, a second stress request is rejected while
-one is active, and logs expose only aggregate counts and elapsed time.
+one is active. Logs expose counts, elapsed time and sanitized failure classes;
+they never include failed URLs or remote addresses. A failed UDP query also
+records its SHA-256 prefix and local source port to correlate the synthetic
+request with the controlled backend without logging payloads.
 
 Both activities accept test-automation commands through the string extra
 `command`. Host commands are `connect`, `disconnect`, `rapid-stop`,
@@ -277,9 +339,32 @@ not a general application import API. Canonical parsing remains fail-closed;
 do not use `allowInsecure` for a device rehearsal.
 
 These applications produce diagnostic rehearsal telemetry. They do not create
-the checksum-authenticated six-hour report required by the release-evidence
-validator, replace Perfetto, or waive the full scenario matrix in
+the checksum-authenticated report required by the release-evidence validator,
+replace Perfetto, or waive the full scenario matrix in
 [mobile testing](../../docs/mobile-testing.md).
+The current v0.8 gate has no fixed soak duration; retain actual durations,
+independently verified recovery and resource limits. In particular, the host's
+placeholder `unrecoveredTransitions` telemetry field is not a measured verdict.
+See [v0.8 evidence assembly](../../docs/v08-release-evidence.md).
+
+For the new protocols, `scripts/run-v08-android-protocol-fixture.py --protocol
+v08` uses the same pinned Xray-core and private cleanup rules as the Apple
+fixture. It provides HTTP `/v08-probe` (204), the nonce-checked UDP oracle and
+routed DNS on synthetic IPv4/IPv6 destinations. The private envelope includes
+Trojan, all three SS2022 ciphers, and VMess auto/AES/ChaCha. HTTP success is an
+availability check, not byte-integrity or throughput evidence. Explicitly set
+both probe endpoints to this fixture before starting the probe app.
+
+For legacy regression, select `--suite legacy` (VLESS/REALITY and XHTTP
+H1/H2/H3) or `--suite v07` (WireGuard and Hysteria2). These suites require
+dynamically allocated ports. `/v08-hold/NUMBER` withholds an HTTP response for
+up to twenty seconds and records peer EOF separately from the fixture timeout.
+`--udp-delay-seconds 3` submits the same nonce-checked UDP response after three
+seconds, so an active receive can be cancelled before the response. Run a
+no-cancellation control and fresh traffic after cancellation; an intentional
+timeout alone is not proof of working teardown or recovery. The
+[physical regression report](../../docs/device-results/2026-10-04-android-regressions/README.md)
+preserves separate local, remote-close and recovery verdicts and replay scripts.
 
 ## Geodata
 
@@ -315,3 +400,37 @@ matrix and on-device checklist.
 - The adapter is a reference integration, not a production VPN product.
 - Device behavior and performance must be verified with the consuming
   application's release configuration and supported Android versions.
+
+## Per-app TUN enforcement (Android 10+)
+
+ABI 1.11 and `TunAdmission` add an optional check before new TCP/UDP flows open
+outbound connections, including DNS/FakeDNS. Pass `XrayTunAdmissionOptions` to
+`XrayCore.create`, or override `XrayVpnService.tunAdmissionOptions()`. Keep the
+normal `VpnService.Builder` app list too. For an active VPN, the supplied
+`XrayAndroidUidAdmission(connectivityManager, allowedUids)` calls Android's
+[`getConnectionOwnerUid`](https://developer.android.com/reference/android/net/ConnectivityManager#getConnectionOwnerUid(int,%20java.net.InetSocketAddress,%20java.net.InetSocketAddress)) with the original application tuple. It denies unknown
+owners and lookup errors by default, and handles packages sharing a UID as one
+identity. Android versions below 10 cannot provide this enforcement; the helper
+rejects construction rather than claiming protection.
+
+The callback runs on up to four native host workers, never on the packet loop.
+It may run concurrently and must not call core lifecycle methods. The default
+100 ms timeout denies; `failOpen` is explicit. Java exceptions deny even when
+fail-open is selected. Timeout and core close do not interrupt a blocked host
+callback; JNI retains its object until the call returns. Use the bounded native
+fd backend normally: no packet-mode JNI filtering is needed. See the
+[C ABI ownership and resource bounds](../../docs/ffi.md#optional-tun-flow-admission-abi-111).
+
+Device Gate accepts `--ez probe-only true --ez tun-admission true`. The matching
+Device Probe package is the allowed UID. Its `AdmissionProbeActivity` performs a
+bounded TCP/UDP echo probe; `bind-device=tun0` uses `SO_BINDTODEVICE`. Install a
+second probe under a different application suffix to test an excluded UID and
+compare filter-off/filter-on runs. Results are written to the probe's private
+`files/admission-result.json`; Device Gate samples record allow/deny counters.
+
+On the tested Samsung SM-A145F (API 35, Linux 5.10), Android also returned
+`INVALID_UID` for an included app's TCP socket explicitly bound to `tun0`.
+Strict admission consequently rejects that socket too; ordinary included-app
+TCP/UDP and its bound UDP traffic passed. Unknown owners cannot safely be
+classified as included, so do not enable `allowUnknownUid` to hide this result.
+The hook is opt-in and does not change hosts that leave it disabled.

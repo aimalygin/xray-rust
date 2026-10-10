@@ -68,6 +68,9 @@ use xray_transport::{
 };
 use xray_tun::{TunEndpoint, TunError, TunStats};
 
+#[path = "runtime_data_path_tests/tun_admission.rs"]
+mod tun_admission;
+
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
 
@@ -97,6 +100,10 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         TcpOutbound::Vless(outbound) => Ok(*outbound),
         TcpOutbound::Freedom
         | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_)
+        | TcpOutbound::Trojan(_)
+        | TcpOutbound::Vmess(_)
+        | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
         | TcpOutbound::Wireguard(_)
         | TcpOutbound::Chained { .. } => Err(CoreError::NoSupportedOutbound),
@@ -105,6 +112,7 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
 
 fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some("proxy".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -112,6 +120,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
             transport: StreamTransport::Raw,
             security,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -129,6 +138,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
 
 fn freedom_outbound() -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some("direct".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -136,6 +146,7 @@ fn freedom_outbound() -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -144,6 +155,7 @@ fn freedom_outbound() -> OutboundConfig {
 
 fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some("dns-out".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -151,6 +163,7 @@ fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Dns(settings),
@@ -11800,6 +11813,72 @@ mod hysteria_support;
 
 #[tokio::test]
 #[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
+async fn hysteria_runtime_tun_raised_budget_keeps_96_tcp_flows_on_one_session() {
+    timeout(Duration::from_secs(30), async {
+        const FLOWS: usize = 96;
+        let server = hysteria_support::ReferenceServer::start().await;
+        let (target, _echo) = hysteria_support::tcp_echo().await;
+        let (mut core, protector, bootstrap, _) = hysteria_support::core_with_options(
+            &server,
+            TunRuntimeOptions {
+                hysteria_stream_limits: xray_core_rs::HysteriaStreamLimits::new(128, 64).unwrap(),
+                profile: TunRuntimeProfile::MobilePlus,
+                ..Default::default()
+            },
+        );
+        core.start().await.unwrap();
+        let mut clients = TunTcpMultiClient::new(FLOWS);
+        clients.connect_all(target);
+        pump_multi_tun_until(&mut clients, core.tun(), TunTcpMultiClient::all_may_send).await;
+        for i in 0..FLOWS {
+            clients.send_payload(i, &[i as u8; 32]);
+        }
+        let mut replies = vec![Vec::new(); FLOWS];
+        pump_multi_tun_until(&mut clients, core.tun(), |clients| {
+            for (i, reply) in replies.iter_mut().enumerate() {
+                reply.extend(clients.recv_available(i));
+            }
+            replies.iter().all(|reply| reply.len() == 32)
+        })
+        .await;
+        for (i, reply) in replies.iter().enumerate() {
+            assert_eq!(reply, &[i as u8; 32]);
+        }
+        assert_eq!(core.connection_snapshot().connections.len(), FLOWS);
+        assert_eq!(
+            protector.0.load(Ordering::SeqCst),
+            1,
+            "one shared QUIC carrier"
+        );
+        assert_eq!(bootstrap.0.load(Ordering::SeqCst), 1);
+        assert_eq!(core.rebind_hysteria(), 1);
+        while protector.0.load(Ordering::SeqCst) < 2 {
+            tokio::task::yield_now().await;
+        }
+        for i in 0..FLOWS {
+            clients.send_payload(i, &[255 - i as u8; 32]);
+        }
+        let mut replies = vec![Vec::new(); FLOWS];
+        pump_multi_tun_until(&mut clients, core.tun(), |clients| {
+            for (i, reply) in replies.iter_mut().enumerate() {
+                reply.extend(clients.recv_available(i));
+            }
+            replies.iter().all(|reply| reply.len() == 32)
+        })
+        .await;
+        for (i, reply) in replies.iter().enumerate() {
+            assert_eq!(reply, &[255 - i as u8; 32]);
+        }
+        core.stop().await.unwrap();
+        assert_eq!(core.rebind_hysteria(), 0);
+        wait_for_empty_connection_snapshot(&core).await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_tun_tcp_udp_and_host_close() {
     timeout(hysteria_support::DEADLINE, async {
         let server = hysteria_support::ReferenceServer::start().await;
@@ -12036,5 +12115,31 @@ async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
         assert!(upstream_probe.snapshot().len() >= 2);
         managed.stop().await.unwrap();
         upstream.stop().await;
+    }).await.unwrap();
+}
+
+#[path = "trojan_runtime/tun_tests.rs"]
+mod trojan_tun_tests;
+
+#[tokio::test]
+async fn socks_freedom_fragment_flushes_first_record_and_leaves_later_writes_unchanged() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_task) = spawn_echo_server().await;
+        let mut config = runtime_config_with_freedom_outbound();
+        let parsed = xray_config::parse_xray_json(r#"{"outbounds":[{"protocol":"freedom","settings":{"fragment":{"packets":"tlshello","length":2,"interval":0}}}]}"#).unwrap();
+        config.outbounds[0].stream.tcp_fragment = parsed.config.outbounds[0].stream.tcp_fragment.clone();
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+        let mut client = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap()).await.unwrap();
+        socks5_connect(&mut client, echo_addr).await;
+        let record = [22,3,1,0,4,1,2,3,4];
+        client.write_all(&record).await.unwrap();
+        let mut fragmented = [0;14];
+        client.read_exact(&mut fragmented).await.unwrap();
+        assert_eq!(fragmented, [22,3,1,0,2,1,2,22,3,1,0,2,3,4]);
+        client.write_all(&record).await.unwrap();
+        let mut later = [0;9];client.read_exact(&mut later).await.unwrap();
+        assert_eq!(later, record);
+        drop(client);core.stop().await.unwrap();echo_task.await.unwrap();
     }).await.unwrap();
 }

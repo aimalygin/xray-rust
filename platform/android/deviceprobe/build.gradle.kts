@@ -6,6 +6,8 @@ plugins {
 android {
     namespace = "org.xrayrust.deviceprobe"
     compileSdk = 35
+    ndkVersion = "26.3.11579264"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
 
     defaultConfig {
         applicationId = "org.xrayrust.deviceprobe"
@@ -13,6 +15,18 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.5.0-device-gate"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            // Isolate physical campaigns from an existing device profile store.
+            providers.gradleProperty("deviceGateApplicationIdSuffix").orNull?.let { suffix ->
+                require(Regex("\\.[a-z][a-z0-9_]*").matches(suffix)) {
+                    "deviceGateApplicationIdSuffix must be one lowercase package component"
+                }
+                applicationIdSuffix = suffix
+            }
+        }
     }
 
     compileOptions {

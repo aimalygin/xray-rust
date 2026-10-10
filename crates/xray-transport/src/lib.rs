@@ -19,6 +19,8 @@ use std::os::windows::io::AsRawSocket;
 mod connected_quic;
 
 mod dialer;
+mod fragment;
+pub use fragment::TcpFragmentConfig;
 mod dns;
 mod happy_eyeballs;
 pub mod hysteria;
@@ -47,9 +49,7 @@ pub use dns::{
     NameServerTransport, SystemDnsResolver,
 };
 pub use happy_eyeballs::{connect_tcp_happy_eyeballs, HappyEyeballsConfig};
-pub(crate) use penetrating_tls::{
-    CapturedStream, CapturedTcpStream, PenetratingTlsStream, ServerReadLog,
-};
+pub(crate) use penetrating_tls::{CapturedStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,
@@ -180,11 +180,29 @@ pub enum TransportError {
     RealityTlsCompletionUnsupported,
 }
 
+pub type ParallelRead = Box<dyn AsyncRead + Send + Unpin>;
+pub type ParallelWrite = Box<dyn AsyncWrite + Send + Unpin>;
+
 pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
+    /// Consume the underlying carrier without a codec-wide lock. Raw TCP
+    /// overrides the generic split with Tokio's independent owned halves.
+    fn into_io_halves(self: Box<Self>) -> (ParallelRead, ParallelWrite)
+    where
+        Self: 'static,
+    {
+        let (read, write) = tokio::io::split(self);
+        (Box::new(read), Box::new(write))
+    }
+
     /// Notify the transport that no consumer will ever switch this stream
     /// into Vision direct mode, so any record-boundary read alignment kept
     /// for a lossless direct-mode unwrap can be dropped. Default: no-op.
     fn release_record_alignment(&mut self) {}
+
+    /// Consuming capability for independently owned protocol directions.
+    fn take_parallel_halves(&mut self) -> Option<(ParallelRead, ParallelWrite)> {
+        None
+    }
 
     fn poll_read_direct(
         self: Pin<&mut Self>,
@@ -208,6 +226,11 @@ pub trait TransportStream: AsyncRead + AsyncWrite + Send + Unpin {
 }
 
 impl TransportStream for TcpStream {
+    fn into_io_halves(self: Box<Self>) -> (ParallelRead, ParallelWrite) {
+        let (read, write) = (*self).into_split();
+        (Box::new(read), Box::new(write))
+    }
+
     fn poll_read_direct(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -345,6 +368,17 @@ pub trait PreparedRealityTlsConnection: Send {
         self: Box<Self>,
         tcp_stream: TcpStream,
     ) -> Result<BoxedTransportStream, TransportError>;
+
+    /// Optional one-shot record transform. Legacy engines fail explicitly.
+    async fn complete_fragmented(
+        self: Box<Self>,
+        _tcp_stream: TcpStream,
+        _fragment: Arc<TcpFragmentConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        Err(TransportError::UnsupportedConnectorConfig(
+            "REALITY tlshello fragmentation",
+        ))
+    }
 }
 
 #[async_trait]

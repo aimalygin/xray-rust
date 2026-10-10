@@ -117,7 +117,7 @@ class V07ReleaseEvidenceTests(unittest.TestCase):
         for value, expected in [("0.6.1","v06"),("v0.6.1-rc.1","v06"),("0.7.0-rc.1","v07"),("v0.7.0","v07")]:
             result=subprocess.run(["bash",str(ROOT/"scripts/release-evidence-profile.sh"),value],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),expected)
-        for value in ["", "0.7.no", "0.7.0-rc.0", "0.7.0-rc.01", "0.8.0", "v0.70.0", "0.7.0/../../x"]:
+        for value in ["", "0.7.no", "0.7.0-rc.0", "0.7.0-rc.01", "0.9.0", "v0.70.0", "0.7.0/../../x"]:
             with self.subTest(version=value):
                 result=subprocess.run(["bash",str(ROOT/"scripts/release-evidence-profile.sh"),value],capture_output=True,text=True)
                 self.assertNotEqual(result.returncode,0)

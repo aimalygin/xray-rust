@@ -1,6 +1,14 @@
 #[tokio::main]
 async fn main() {
     #[cfg(unix)]
+    if std::env::args().nth(1).as_deref() == Some("tun-admission") {
+        if let Err(error) = xray_bench::tun_admission::run().await {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    #[cfg(unix)]
     if std::env::args().nth(1).as_deref() == Some("protocol-run") {
         let result = xray_bench::protocol_bench::run(std::env::args().skip(2).collect()).await;
         if let Err(error) = result {

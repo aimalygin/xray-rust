@@ -25,6 +25,7 @@ pub(super) async fn bridge(
                 context.dns_resolver.as_ref(),
                 context.bootstrap_dns_resolver(),
                 &context.transport_dialer,
+                udp_flow_global_id(key),
             )
             .await
             .inspect_err(|_| context.tun.record_udp_open_error())?;

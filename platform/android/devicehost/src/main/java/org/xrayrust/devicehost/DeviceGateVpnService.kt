@@ -5,6 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import org.xrayrust.mobile.XrayAndroidUidAdmission
+import org.xrayrust.mobile.XrayTunAdmissionOptions
+import org.xrayrust.mobile.XrayTunFlowAdmission
+import java.util.concurrent.atomic.AtomicInteger
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
@@ -24,6 +29,11 @@ class DeviceGateVpnService : XrayVpnService() {
         Thread(runnable, "xray-android-device-sampler").apply { isDaemon = true }
     }
     @Volatile private var lastStats = ZeroStats
+    @Volatile private var selectedBackend = XrayTunBackend.FileDescriptor
+    @Volatile private var probeOnly = false
+    @Volatile private var admissionEnabled = false
+    private val admissionAllowed = AtomicInteger()
+    private val admissionDenied = AtomicInteger()
 
     override fun onCreate() {
         super.onCreate()
@@ -38,12 +48,12 @@ class DeviceGateVpnService : XrayVpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startFromStoredProfile()
+            ACTION_START -> startFromStoredProfile(intent)
             ACTION_STOP -> stopAndFinish()
             ACTION_RESET_COUNTERS -> resetCounters()
             ACTION_CLOSE_CONNECTIONS -> closeConnections()
             ACTION_RAPID_STOP -> {
-                startFromStoredProfile()
+                startFromStoredProfile(intent)
                 stopAndFinish()
             }
             else -> {
@@ -66,10 +76,15 @@ class DeviceGateVpnService : XrayVpnService() {
         DeviceGateStatus.write(
             this,
             state = "running",
+            detail = if (probeOnly) "probe-only" else "",
             runtimeGeneration = generation,
         )
         updateNotification("VPN connected")
-        Log.i(LOG_TAG, "XRAY_ANDROID_LIFECYCLE state=running generation=$generation")
+        Log.i(
+            LOG_TAG,
+            "XRAY_ANDROID_LIFECYCLE state=running generation=$generation " +
+                "tunBackend=${DeviceGateOptions.backendName(selectedBackend)}",
+        )
         emitSample()
     }
 
@@ -108,7 +123,22 @@ class DeviceGateVpnService : XrayVpnService() {
         super.onDestroy()
     }
 
-    private fun startFromStoredProfile() {
+    private fun startFromStoredProfile(intent: Intent) {
+        if (xrayVpnRuntimeSnapshot().running) {
+            Log.w(LOG_TAG, "XRAY_ANDROID_LIFECYCLE state=start-rejected reason=already-running")
+            return
+        }
+        val backend = try {
+            DeviceGateOptions.backend(intent.getStringExtra(DeviceGateOptions.EXTRA_TUN_BACKEND))
+        } catch (error: IllegalArgumentException) {
+            onXrayTunnelStartFailed(error)
+            return
+        }
+        selectedBackend = backend
+        probeOnly = intent.getBooleanExtra("probe-only", false)
+        admissionEnabled = intent.getBooleanExtra("tun-admission", false)
+        admissionAllowed.set(0)
+        admissionDenied.set(0)
         startForeground(NOTIFICATION_ID, notification("VPN starting"))
         DeviceGateStatus.write(this, state = "starting")
         val configJson = try {
@@ -138,7 +168,7 @@ class DeviceGateVpnService : XrayVpnService() {
         try {
             startXrayTunnel(
                 configJson = configJson,
-                tunBackend = XrayTunBackend.FileDescriptor,
+                tunBackend = backend,
                 tunRuntimeProfile = XrayTunRuntimeProfile.MobilePlus,
             )
         } catch (error: Throwable) {
@@ -202,12 +232,24 @@ class DeviceGateVpnService : XrayVpnService() {
         val status = DeviceGateStatus.read(this)
         val stats = runtime.tunStats ?: lastStats
         val sample = JSONObject()
+            .put("tunBackend", DeviceGateOptions.backendName(selectedBackend))
+            .put("probeOnly", probeOnly)
+            .put("admissionEnabled", admissionEnabled)
+            .put("admissionAllowed", admissionAllowed.get())
+            .put("admissionDenied", admissionDenied.get())
+            .put("runtimeRunning", runtime.running)
             .put("runtimeGeneration", status.runtimeGeneration)
             .put("residentMemoryBytes", residentMemoryBytes())
-            .put("threadCount", Thread.getAllStackTraces().size)
+            .put("threadCount", processThreadCount())
+            .put("processCpuMillis", android.os.Process.getElapsedCpuTime())
+            .put("elapsedRealtimeMillis", android.os.SystemClock.elapsedRealtime())
             .put("activeConnections", runtime.activeConnections)
             .put("tunInboundPackets", stats.inboundPackets)
             .put("tunOutboundPackets", stats.outboundPackets)
+            .put("tunDroppedPackets", stats.droppedPackets)
+            .put("udpRemoteOpenEvents", stats.udpRemoteOpenEvents)
+            .put("udpRemoteWrittenBytes", stats.udpRemoteWrittenBytes)
+            .put("udpRemoteReadBytes", stats.udpRemoteReadBytes)
             .put("fatalTunErrors", status.fatalTunErrors)
             .put("unrecoveredTransitions", 0)
         Log.i(LOG_TAG, "XRAY_ANDROID_SAMPLE $sample")
@@ -221,6 +263,48 @@ class DeviceGateVpnService : XrayVpnService() {
             .toLong()
         residentPages * Os.sysconf(OsConstants._SC_PAGESIZE)
     }.getOrDefault(0L)
+
+    private fun processThreadCount(): Int = runCatching {
+        File("/proc/self/status").useLines { lines ->
+            lines.first { it.startsWith("Threads:") }.substringAfter(':').trim().toInt()
+        }
+    }.getOrDefault(0)
+
+    override fun tunAdmissionOptions(): XrayTunAdmissionOptions? {
+        if (!admissionEnabled) return null
+        if (Build.VERSION.SDK_INT < 29) throw UnsupportedOperationException("UID admission requires Android 10+")
+        check(probeOnly) { "Device admission test requires probe-only mode" }
+        val probePackage = packageName.replace("org.xrayrust.devicehost", "org.xrayrust.deviceprobe")
+        val uid = packageManager.getApplicationInfo(probePackage, 0).uid
+        val connectivity = getSystemService(ConnectivityManager::class.java)
+        val policy = XrayAndroidUidAdmission(connectivity, setOf(uid))
+        return XrayTunAdmissionOptions(XrayTunFlowAdmission { flow ->
+            val allowed = policy.admit(flow)
+            if (allowed) admissionAllowed.incrementAndGet() else {
+                admissionDenied.incrementAndGet()
+                // Diagnostic only; never change the original denial on a retry.
+                val retryUid = runCatching {
+                    connectivity.getConnectionOwnerUid(flow.protocol, flow.source, flow.destination)
+                }.getOrDefault(-2)
+                Log.i(LOG_TAG, "XRAY_ADMISSION_DENIED protocol=${flow.protocol} retryOwnerUid=$retryUid expectedUid=$uid")
+            }
+            allowed
+        }, timeoutMs = 500)
+    }
+
+    override fun buildTunnel(): Builder {
+        if (!probeOnly) return super.buildTunnel()
+        // Same interface as the SDK default, with only the separate probe UID.
+        // Fail closed if this campaign's matching probe package is absent.
+        return Builder()
+            .setSession("xray-rust-device-probe")
+            .setMtu(1_500)
+            .addAddress("10.7.0.1", 32)
+            .addRoute("0.0.0.0", 0)
+            .addAddress("fd00:7872::1", 128)
+            .addRoute("::", 0)
+            .addAllowedApplication(packageName.replace("org.xrayrust.devicehost", "org.xrayrust.deviceprobe"))
+    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

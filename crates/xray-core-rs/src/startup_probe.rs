@@ -793,6 +793,7 @@ mod https_tests {
                 user_level: None,
             }],
             outbounds: vec![OutboundConfig {
+                mux: None,
                 tag: Some("direct".to_owned()),
                 proxy_settings: None,
                 stream: StreamSettings {
@@ -800,6 +801,7 @@ mod https_tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,

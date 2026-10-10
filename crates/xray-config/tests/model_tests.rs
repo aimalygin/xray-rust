@@ -29,6 +29,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
     let short_id = RealityShortId::try_from_slice(&[2, 3, 4, 5]).unwrap();
 
     let outbound = OutboundConfig {
+        mux: None,
         tag: Some("proxy".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -43,6 +44,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 mldsa65_verify: None,
             }),
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -88,6 +90,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
             user_level: None,
         }],
         outbounds: vec![OutboundConfig {
+            mux: None,
             tag: Some("proxy".to_owned()),
             proxy_settings: None,
             stream: StreamSettings {
@@ -102,6 +105,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     mldsa65_verify: None,
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -146,6 +150,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
 #[test]
 fn normalized_model_can_represent_freedom_outbound() {
     let outbound = OutboundConfig {
+        mux: None,
         tag: Some("direct".to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -153,6 +158,7 @@ fn normalized_model_can_represent_freedom_outbound() {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -255,6 +261,7 @@ fn normalized_model_uses_xray_happy_eyeballs_defaults() {
         transport: StreamTransport::Raw,
         security: StreamSecurity::None,
         quic_params: None,
+        tcp_fragment: None,
         socket_options: Some(SocketOptions {
             happy_eyeballs: Some(HappyEyeballsSettings::default()),
         }),

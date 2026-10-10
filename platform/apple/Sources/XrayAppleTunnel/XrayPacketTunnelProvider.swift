@@ -1311,12 +1311,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     // schema; credentials and inner WireGuard addresses never enter DNS lookup.
     private static func outboundBootstrapAddresses(_ outbound: [String: Any]) throws -> [String] {
         let protocolName = (outbound["protocol"] as? String)?.lowercased()
-        guard ["vless", "hysteria", "wireguard"].contains(protocolName) else { return [] }
+        guard ["vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard"].contains(protocolName) else { return [] }
         guard let settings = outbound["settings"] as? [String: Any] else {
             throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
         }
         switch protocolName {
-        case "vless":
+        case "vless", "vmess":
+            if protocolName == "vmess", let address = settings["address"] as? String { return [address] }
             guard let servers = settings["vnext"] as? [[String: Any]] else {
                 throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
             }
@@ -1326,6 +1327,13 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 return address
             }
+        case "trojan", "shadowsocks":
+            if let address = settings["address"] as? String { return [address] }
+            guard let servers = settings["servers"] as? [[String: Any]], servers.count == 1,
+                  let address = servers[0]["address"] as? String else {
+                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+            }
+            return [address]
         case "hysteria":
             guard let address = settings["address"] as? String else {
                 throw XrayPacketTunnelProviderError.outboundServerResolutionFailed

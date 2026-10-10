@@ -73,6 +73,17 @@ pub trait RealityTlsSession: Send {
         prepared: RealityPreparedHandshake,
         mldsa65_verify: Option<Vec<u8>>,
     ) -> Result<BoxedTransportStream, TransportError>;
+    async fn complete_fragmented(
+        self: Box<Self>,
+        _tcp_stream: TcpStream,
+        _prepared: RealityPreparedHandshake,
+        _mldsa65_verify: Option<Vec<u8>>,
+        _fragment: std::sync::Arc<crate::TcpFragmentConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        Err(TransportError::UnsupportedConnectorConfig(
+            "REALITY tlshello fragmentation",
+        ))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

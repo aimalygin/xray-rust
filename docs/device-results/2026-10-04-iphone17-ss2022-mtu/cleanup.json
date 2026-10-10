@@ -1,0 +1,10 @@
+{
+  "allTemporaryUnitsInactive": true,
+  "localEphemeralProfilesAndSSHHelpersRemoved": true,
+  "originalServicesRestored": true,
+  "phoneInputAbsent": true,
+  "phoneNormalAppRestored": true,
+  "probeCleanupCompleted": true,
+  "productionAndLoopbackPIDsUnchanged": true,
+  "remotePrivateDirectoryRemoved": true
+}

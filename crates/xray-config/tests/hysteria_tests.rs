@@ -137,3 +137,52 @@ fn hysteria2_omitted_alpn_and_empty_fingerprint_use_h3_without_shaping() {
         .remove("settings");
     assert!(parse_xray_json(&config.to_string()).is_err());
 }
+
+#[test]
+fn hysteria_salamander_hopping_and_fail_closed_masks() {
+    let mut config = example();
+    config["outbounds"][0]["streamSettings"]["finalmask"] = json!({
+        "udp":[{"type":"salamander","settings":{"password":"synthetic-secret"}}],
+        "quicParams":{"udpHop":{"ports":"8443,9000-9002", "interval":"5-8"}}
+    });
+    let parsed = parse_xray_json(&config.to_string()).unwrap();
+    let stream = &parsed.config.outbounds[0].stream;
+    let StreamTransport::Hysteria(settings) = &stream.transport else {
+        panic!()
+    };
+    assert_eq!(
+        settings.salamander_password.as_deref().unwrap().as_str(),
+        "synthetic-secret"
+    );
+    assert!(!format!("{stream:?}").contains("synthetic-secret"));
+    assert_eq!(
+        stream.quic_params.as_ref().unwrap().udp_hop.ports,
+        [8443, 9000, 9001, 9002]
+    );
+    for mask in [
+        json!([{"type":"salamander","settings":{"password":"abc"}}]),
+        json!([{"type":"salamander","settings":{"password":"synthetic-secret", "packetSize":512}}]),
+        json!([{"type":"salamander","settings":{"password":"synthetic-secret", "unknown":true}}]),
+        json!([{"type":"noise","settings":{}}]),
+        json!([{"type":"salamander","settings":{"password":"synthetic-secret"}}, {"type":"salamander","settings":{"password":"synthetic-secret"}}]),
+        json!({"type":"salamander"}),
+    ] {
+        let mut invalid = config.clone();
+        invalid["outbounds"][0]["streamSettings"]["finalmask"]["udp"] = mask;
+        let error = parse_xray_json(&invalid.to_string()).unwrap_err();
+        assert!(!format!("{error:?}").contains("synthetic-secret"));
+    }
+    for quic in [
+        json!({"debug":false}),
+        json!({"congestion":"bbr"}),
+        json!({"udpHop":{"ports":"1-65535,1"}}),
+        json!({"udpHop":{"ports":443,"interval":4}}),
+    ] {
+        let mut invalid = config.clone();
+        invalid["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"] = quic;
+        assert!(parse_xray_json(&invalid.to_string()).is_err());
+    }
+    config["outbounds"][0]["streamSettings"]["method"] = json!("HYSTERIA");
+    config["outbounds"][0]["streamSettings"]["network"] = json!("raw");
+    assert!(parse_xray_json(&config.to_string()).is_ok());
+}

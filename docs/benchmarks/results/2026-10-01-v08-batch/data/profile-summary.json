@@ -1,0 +1,35 @@
+{
+  "scope": "Diagnostic wall samples with per-thread waits; only top-of-stack entries reported by sample (>=5 per trace). Counts are not CPU percentages and do not prove causality. Instrumented timings excluded.",
+  "groups": {
+    "vmess-aes128-socks-full-duplex": {
+      "__psynch_cvwait": 3912,
+      "kevent": 2520,
+      "__sendto": 517,
+      "__recvfrom": 218,
+      "getentropy": 135,
+      "aws_lc_0_41_0_aesv8_gcm_8x_enc_128": 106,
+      "aws_lc_0_41_0_aesv8_gcm_8x_dec_128": 102,
+      "xray_proxy::erase::erase::h5c10093a8daebcc6": 41,
+      "_platform_memmove": 57,
+      "xray_core_rs::policy::copy_bidirectional_with_idle_timeout_and_traffic::_$u7b$$u7b$closure$u7d$$u7d$::h2b4981d7a2e53920": 6
+    },
+    "vmess-aes128-socks-upload": {
+      "__psynch_cvwait": 4587,
+      "kevent": 2577,
+      "__sendto": 321,
+      "getentropy": 126,
+      "aws_lc_0_41_0_aesv8_gcm_8x_enc_128": 88,
+      "__recvfrom": 60,
+      "_platform_memmove": 23
+    },
+    "vmess-aes128-socks-download": {
+      "__psynch_cvwait": 4655,
+      "kevent": 2584,
+      "__sendto": 223,
+      "__recvfrom": 154,
+      "aws_lc_0_41_0_aesv8_gcm_8x_dec_128": 93,
+      "xray_proxy::erase::erase::h5c10093a8daebcc6": 56,
+      "_platform_memmove": 24
+    }
+  }
+}

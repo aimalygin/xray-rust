@@ -11,8 +11,22 @@ android {
         applicationId = "org.xrayrust.devicehost"
         minSdk = 24
         targetSdk = 35
+        manifestPlaceholders["deviceProbePackage"] = "org.xrayrust.deviceprobe"
         versionCode = 1
         versionName = "0.5.0-device-gate"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            // Isolate physical campaigns from an existing device profile store.
+            providers.gradleProperty("deviceGateApplicationIdSuffix").orNull?.let { suffix ->
+                require(Regex("\\.[a-z][a-z0-9_]*").matches(suffix)) {
+                    "deviceGateApplicationIdSuffix must be one lowercase package component"
+                }
+                applicationIdSuffix = suffix
+                manifestPlaceholders["deviceProbePackage"] = "org.xrayrust.deviceprobe$suffix"
+            }
+        }
     }
 
     compileOptions {
