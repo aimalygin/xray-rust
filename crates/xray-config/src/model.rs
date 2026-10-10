@@ -649,12 +649,15 @@ pub struct HysteriaOutboundSettings {
 #[derive(Clone, PartialEq, Eq)]
 pub struct HysteriaSettings {
     pub auth: zeroize::Zeroizing<String>,
+    /// The single supported `finalmask.udp` mask, consumed by this carrier.
+    pub salamander_password: Option<zeroize::Zeroizing<String>>,
 }
 
 impl fmt::Debug for HysteriaSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("HysteriaSettings")
             .field("auth", &"<redacted>")
+            .field("salamander", &self.salamander_password.is_some())
             .finish()
     }
 }

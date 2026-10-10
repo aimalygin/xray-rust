@@ -10,6 +10,44 @@ documents the generated [machine-readable contract](config-contract.json),
 canonical examples, geodata lookup and the boundary between parser acceptance
 and later runtime validation.
 
+## v0.8 Hysteria carrier additions
+
+Hysteria accepts one Salamander mask and the `udpHop` QUIC override in the
+pinned Xray-core v26.7.28 spelling:
+
+```json
+"finalmask": {
+  "udp": [{"type": "salamander", "settings": {"password": "synthetic-example-password"}}],
+  "quicParams": {"udpHop": {"ports": "443,8443-8445", "interval": "5-10"}}
+}
+```
+
+Both settings are optional and can be used separately. Passwords contain
+4..4096 UTF-8 bytes and remain redacted/zeroized in typed configuration.
+`packetSize` must be absent, null or zero: Gecko is a different wire protocol
+and is unsupported. Only one mask is supported; unknown mask fields fail.
+Port lists preserve order and duplicate weights, with at most 65535 expanded
+entries. Each interval bound defaults from zero to 30 seconds; enabled hopping
+requires ordered bounds of at least five seconds. The first packet already uses
+a randomly selected configured port. Server ports must reach the same QUIC
+server (for example through server-side port redirects).
+
+Each hop binds and protects a fresh socket while retaining the authenticated
+QUIC session and its TCP/UDP leases. Quinn retains at most one previous socket
+until an authenticated packet arrives on the new path. A scheduled hop whose
+bind/protection fails keeps the old protected path; a failed host-requested
+network rebind closes the stale session. Stop/free aborts the timer. Salamander
+reserves its eight-byte salt in MTU discovery and handles receive GRO segments
+individually. Its bounded receive scratch is 64 KiB per live carrier; send
+scratch is reused. Profiles without either option use the existing UDP path.
+All other explicit Hysteria `quicParams` fields, Brutal, bandwidth overrides,
+QUIC v2 and socket overrides remain unsupported. XHTTP H3 hopping is unchanged.
+
+The transport tests exercise TCP, inner TLS, fragmented UDP, automatic hopping,
+manual rebind and rejected socket protection against pinned Xray-core and
+independent official Hysteria v2.12.2. This is client carrier support, not a
+change to the congestion-control parity or published v0.7 artifacts.
+
 ## v0.8 development client protocols
 
 The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.

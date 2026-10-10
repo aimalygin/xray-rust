@@ -3025,6 +3025,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "base64",
+ "blake2",
  "bytes",
  "futures-util",
  "ghash",

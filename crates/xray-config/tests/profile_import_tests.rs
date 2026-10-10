@@ -5,6 +5,60 @@ use xray_config::profile_import::{
 
 const WG: &str = include_str!("../../../tests/fixtures/profile-import/wireguard.conf");
 const HY: &str = include_str!("../../../tests/fixtures/profile-import/hysteria2.txt");
+
+#[test]
+fn hysteria_imports_salamander_and_bounded_port_lists_without_dropping_options() {
+    for authority in ["server.example:443", "[2001:db8::1]:443"] {
+        let text = format!("hy2://auth@{authority}?obfs=Salamander&obfs-password=test%2Bpass&mport=443%2C8443-8445");
+        let imported = import_profile(ProfileFormat::Hysteria2, &text, None, &[]).unwrap();
+        let config: serde_json::Value = serde_json::from_str(&imported.config_json).unwrap();
+        let mask = &config["outbounds"][0]["streamSettings"]["finalmask"];
+        assert_eq!(mask["udp"][0]["settings"]["password"], "test+pass");
+        assert_eq!(mask["quicParams"]["udpHop"]["ports"], "443,8443-8445");
+        assert!(!format!("{imported:?}").contains("test+pass"));
+    }
+    for authority in ["server.example:443-445", "[2001:db8::1]:443-445"] {
+        let imported = import_profile(
+            ProfileFormat::Hysteria2,
+            &format!("hy2://auth@{authority}"),
+            None,
+            &[],
+        )
+        .unwrap();
+        let config: serde_json::Value = serde_json::from_str(&imported.config_json).unwrap();
+        assert_eq!(config["outbounds"][0]["settings"]["port"], 443);
+        assert_eq!(
+            config["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"]["udpHop"]["ports"],
+            "443-445"
+        );
+    }
+    for suffix in [
+        "?obfs=salamander",
+        "?obfs-password=secret",
+        "?obfs=gecko&obfs-password=secret",
+        "?obfs=salamander&obfs-password=abc",
+        "?mport=0",
+        "?mport=1-65535,1",
+        "?mport=443&mport=8443",
+        "?obfs=salamander&obfs=salamander&obfs-password=secret",
+    ] {
+        let err = import_profile(
+            ProfileFormat::Hysteria2,
+            &format!("hy2://auth@server.example{suffix}"),
+            None,
+            &[],
+        )
+        .unwrap_err();
+        assert!(!format!("{err:?}").contains("secret"));
+    }
+    assert!(import_profile(
+        ProfileFormat::Hysteria2,
+        "hy2://auth@server.example:443-444?mport=8443",
+        None,
+        &[]
+    )
+    .is_err());
+}
 fn config(format: ProfileFormat, text: &str) -> Value {
     serde_json::from_str(&import_profile(format, text, None, &[]).unwrap().config_json).unwrap()
 }
@@ -63,7 +117,7 @@ fn hysteria_rejects_unsupported_or_ambiguous_links_with_redacted_errors() {
         "hy2://secret@server.example?upmbps=10",
         "hy2://secret@server.example?sni=x&s%6ei=y",
         "hy2://secret@server.example?insecure=0&insecure=0",
-        "hy2://secret@server.example:443,444",
+        "hy2://secret@server.example:443,0",
         "hy2://secret@server.example/path",
         "hy2://secret@server.example?auth=other",
         "hy2://secret%@server.example",

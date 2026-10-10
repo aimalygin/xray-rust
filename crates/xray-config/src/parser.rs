@@ -2079,7 +2079,7 @@ fn parse_quic_bandwidth(value: &str) -> Result<u64, String> {
 
 /// Dedicated `PortList` parser for UDP hopping. Unlike routing selectors,
 /// order and duplicates are wire/runtime significant and must be preserved.
-fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
+pub(crate) fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
     let mut ports = Vec::new();
     for token in value
         .split(',')
@@ -2099,6 +2099,9 @@ fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
         };
         if from > to {
             return Err(format!("udpHop port range is reversed: {from}-{to}"));
+        }
+        if ports.len() + usize::from(to - from) + 1 > 65_535 {
+            return Err("udpHop supports at most 65535 expanded ports".into());
         }
         ports.extend(from..=to);
     }

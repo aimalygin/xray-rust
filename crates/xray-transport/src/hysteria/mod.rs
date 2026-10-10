@@ -1,10 +1,12 @@
 //! Authenticated Hysteria 2 client sessions over protected QUIC sockets.
 //! The core parser/SDK do not advertise this outbound until runtime integration.
 
+pub(crate) mod carrier;
 mod client;
 mod tcp;
 mod udp;
 
+pub use carrier::HysteriaCarrierConfig;
 pub use client::{HysteriaClient, HysteriaConfig, HysteriaError, HysteriaLimits};
 pub use tcp::HysteriaTcpStream;
 pub use udp::{HysteriaDatagram, HysteriaUdpSession};

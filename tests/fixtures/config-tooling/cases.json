@@ -1428,6 +1428,22 @@
               "hysteriaSettings": {
                 "version": 2,
                 "auth": "synthetic-example-auth"
+              },
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "salamander",
+                    "settings": {
+                      "password": "synthetic-contract-password"
+                    }
+                  }
+                ],
+                "quicParams": {
+                  "udpHop": {
+                    "ports": "443,8443-8445",
+                    "interval": "5-10"
+                  }
+                }
               }
             }
           }
@@ -1435,7 +1451,9 @@
       },
       "objects": {
         "HYSTERIA": "/outbounds/0/settings",
-        "HYSTERIA_TRANSPORT": "/outbounds/0/streamSettings/hysteriaSettings"
+        "HYSTERIA_TRANSPORT": "/outbounds/0/streamSettings/hysteriaSettings",
+        "FINALMASK_ENTRY": "/outbounds/0/streamSettings/finalmask/udp/0",
+        "SALAMANDER": "/outbounds/0/streamSettings/finalmask/udp/0/settings"
       }
     },
     {

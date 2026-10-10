@@ -633,7 +633,25 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "tcp and udp masks accept only null or empty arrays; nonempty masks are unsupported."
+      "notes": "tcp masks accept only null or empty arrays. Hysteria supports one Salamander udp mask; other nonempty masks fail closed."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[] (Hysteria)",
+      "fields": [
+        "type",
+        "settings"
+      ],
+      "id": "FINALMASK_ENTRY",
+      "notes": "Only a single salamander mask is supported; type is case-insensitive."
+    },
+    {
+      "context": "streamSettings.finalmask.udp[].settings (salamander)",
+      "fields": [
+        "password",
+        "packetSize"
+      ],
+      "id": "SALAMANDER",
+      "notes": "Password is 4..=4096 UTF-8 bytes. packetSize must be absent, null or zero; Gecko is unsupported."
     },
     {
       "context": "$.outbounds[].settings (freedom)",

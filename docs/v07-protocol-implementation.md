@@ -1,5 +1,9 @@
 # v0.7 Hysteria 2 and WireGuard implementation
 
+Historical v0.7 implementation record. The v0.8 development branch adds
+[Salamander, UDP hopping and matching imports](config-compatibility.md#v08-hysteria-carrier-additions);
+references to their absence below describe the original increments.
+
 Started on 2026-09-08. The owner selected both client protocols for v0.7 and
 explicitly retained Xray-core **v26.7.28**, commit
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Go remains 1.26.5 in the oracle

@@ -15,13 +15,13 @@ use xray_routing::{Network, Target, TargetAddr};
 use xray_transport::hysteria::HysteriaClient;
 use xray_transport::{SocketHandle, SocketProtector};
 
-struct Relay {
-    address: SocketAddr,
+pub(super) struct Relay {
+    pub(super) address: SocketAddr,
     blocked: Arc<AtomicU16>,
     _driver: Task,
 }
 impl Relay {
-    async fn start(server: SocketAddr) -> Self {
+    pub(super) async fn start(server: SocketAddr) -> Self {
         let front = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
         let address = front.local_addr().unwrap();
         let blocked = Arc::new(AtomicU16::new(0));
@@ -35,7 +35,7 @@ impl Relay {
                     continue;
                 }
                 if !paths.contains_key(&client) {
-                    assert!(paths.len() < 3, "bounded synthetic path count");
+                    assert!(paths.len() < 16, "bounded synthetic path count");
                     let upstream =
                         Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
                     upstream.connect(server).await.unwrap();
