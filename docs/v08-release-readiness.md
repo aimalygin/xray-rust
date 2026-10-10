@@ -10,6 +10,16 @@ records the updated draft's ABI 1.9, green ordinary PR CI, pinned/independent
 interop and paired host performance checks. Its binary identities are separate
 from the earlier device candidates below; release acceptance remains incomplete.
 
+The [2026-10-10 issue follow-ups](benchmarks/results/2026-10-10-pr42-issues/README.md)
+advance the draft to ABI 1.11 with opt-in TUN admission, Hysteria host stream
+budgets/rebind, Salamander/port hopping and bounded TLS ClientHello fragmentation.
+The report separates each source/binary and the physical Android UID checks.
+UDP noise and Linux TPROXY remain deferred. These additions require a new exact
+release candidate and SDK pin. Rare Hysteria UDP timeouts remain recorded; a
+sequence diagnostic reproduces a missing echo on the original baseline too,
+without establishing the exact downstream cause. The older device results below are not evidence
+for the new binary. The existing release gates and accepted deferrals remain.
+
 ## Reviewed source and evidence
 
 The code review covers core `1185511dc5ed3425ba4839b4ebe38d31a89c1263` and SDK

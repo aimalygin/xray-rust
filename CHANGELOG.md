@@ -59,6 +59,19 @@ distribution acceptance remain open in the [release checklist](docs/v08-release-
   additional task per core; AES retains the combined relay. Record the CPU,
   throughput, memory and latency tradeoffs against pinned Xray and sing-box.
 - Wait for inbound owners and admitted VMess relay children during Core.stop.
+- Expose existing Hysteria/WireGuard rebind through Android adapters and add
+  configurable Hysteria stream budgets through C ABI 1.10. Defaults remain 64 TCP/32 UDP streams
+  per session; host-selected limits remain bounded and do not add QUIC sessions.
+- Add opt-in TUN flow admission through C ABI 1.11 and Swift/Kotlin callbacks,
+  including an Android 10+ UID allowlist helper. Admission runs before upstream
+  TCP/UDP/DNS handling with bounded workers/queues and an explicit timeout
+  policy. Unknown Android owners are denied by the strict helper.
+- Support bounded Hysteria Salamander and automatic port hopping with protected
+  socket replacement, retaining the authenticated session and stream leases.
+- Support first-ClientHello fragmentation for TCP TLS/REALITY in FinalMask and
+  dedicated freedom `dialerProxy` profiles. Preserve handshake authentication
+  and Vision direct mode; delay/count/memory bounds and unsupported combinations
+  fail explicitly. UDP noise and Linux TPROXY remain deferred.
 
 ## 0.7.0 - 2026-09-27
 

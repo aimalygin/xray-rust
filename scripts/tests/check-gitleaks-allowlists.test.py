@@ -24,6 +24,39 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_pr42_issue_binary_digests_are_narrow(self):
+        base = "docs/benchmarks/results/2026-10-10-pr42-issues/"
+        archive_path = base + "measurements.tar.gz"
+        index = json.loads((ROOT / base / "evidence-index.json").read_text())
+        self.assertEqual(hashlib.sha256((ROOT / archive_path).read_bytes()).hexdigest(),
+                         index["archive_sha256"])
+        reviewed = {}
+        with tarfile.open(ROOT / archive_path) as archive:
+            for member in archive.getmembers():
+                if not member.isfile():
+                    continue
+                data = archive.extractfile(member).read()
+                self.assertEqual(hashlib.sha256(data).hexdigest(),
+                                 index["members"][member.name]["sha256"])
+                if member.name.endswith("/manifest.json"):
+                    manifest = json.loads(data)
+                    binaries = {name: digest for name, digest in manifest.get("file_hashes", {}).items()
+                                if Path(name).name in ("xray-rust", "xray-bench", "xray-core")}
+                    if binaries:
+                        reviewed[archive_path + "!" + member.name] = json.dumps(binaries)
+        self.assertGreaterEqual(len(reviewed), 15)
+        self.assertEqual(self.scan(reviewed), set())
+        path = next(iter(reviewed))
+        digest = next(iter(json.loads(reviewed[path]).values()))
+        unrelated = archive_path + "!unreviewed/manifest.json"
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({path: json.dumps({"xray": other}),
+                                   unrelated: json.dumps({"xray": digest})}),
+                         {(name, "jfrog-identity-token") for name in (path, unrelated)})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({path: json.dumps({"api_key": synthetic})}),
+                         {(path, "generic-api-key")})
+
     def test_iphone_v08_executable_digest_exceptions_are_narrow(self):
         path = "docs/device-results/2026-10-03-iphone17-v08/manifest.json"
         manifest = json.loads((ROOT / path).read_text())
