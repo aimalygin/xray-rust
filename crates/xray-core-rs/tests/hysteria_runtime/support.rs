@@ -59,6 +59,13 @@ impl DnsResolver for Bootstrap {
 pub fn core(
     server: &ReferenceServer,
 ) -> (Core, Arc<Protector>, Arc<Bootstrap>, Arc<TransportDialer>) {
+    core_with_options(server, xray_core_rs::TunRuntimeOptions::default())
+}
+
+pub fn core_with_options(
+    server: &ReferenceServer,
+    options: xray_core_rs::TunRuntimeOptions,
+) -> (Core, Arc<Protector>, Arc<Bootstrap>, Arc<TransportDialer>) {
     let protector = Arc::new(Protector::default());
     let bootstrap = Arc::new(Bootstrap::default());
     let dialer = Arc::new(
@@ -69,7 +76,13 @@ pub fn core(
         .unwrap()
         .config;
     (
-        Core::with_runtime_dependencies(config, bootstrap.clone(), dialer.clone()).unwrap(),
+        Core::with_runtime_dependencies_and_tun_options(
+            config,
+            bootstrap.clone(),
+            dialer.clone(),
+            options,
+        )
+        .unwrap(),
         protector,
         bootstrap,
         dialer,

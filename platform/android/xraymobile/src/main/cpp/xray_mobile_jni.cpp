@@ -739,6 +739,45 @@ Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection(
   check_status(env, status, error);
 } XRAY_JNI_CATCH_VOID(env)
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeRebindHysteria(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return 0;
+  uint64_t accepted = 0;
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_rebind_hysteria(native->core, &accepted, &error);
+  check_status(env, status, error);
+  return static_cast<jlong>(accepted);
+} XRAY_JNI_CATCH_RETURN(env, 0)
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeRebindWireGuard(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return 0;
+  uint64_t accepted = 0;
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_rebind_wireguard(native->core, &accepted, &error);
+  check_status(env, status, error);
+  return static_cast<jlong>(accepted);
+} XRAY_JNI_CATCH_RETURN(env, 0)
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetHysteriaStreamLimits(
+    JNIEnv *env, jobject, jlong handle, jint tcp, jint udp) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return;
+  if (tcp < 1 || tcp > 256 || udp < 1 || udp > 128) {
+    throw_illegal_argument(env, "Hysteria limits require TCP 1..256 and UDP 1..128");
+    return;
+  }
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_set_hysteria_stream_limits(
+      native->core, static_cast<uint32_t>(tcp), static_cast<uint32_t>(udp), &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
 // Blocks for at most timeout_ms. The Kotlin caller holds the data-path read
 // lock. Lifecycle calls cancel probes, then drain readers before freeing.
 extern "C" JNIEXPORT jlongArray JNICALL

@@ -28,7 +28,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 9;
+pub const XRAY_FFI_ABI_MINOR: u32 = 10;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -54,6 +54,7 @@ pub const XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND: u64 = 1 << 19;
 pub const XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND: u64 = 1 << 20;
 pub const XRAY_FFI_CAPABILITY_VMESS_OUTBOUND: u64 = 1 << 21;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE: u64 = 1 << 22;
+pub const XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS: u64 = 1 << 23;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -77,7 +78,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND
     | XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
     | XRAY_FFI_CAPABILITY_VMESS_OUTBOUND
-    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
+    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE
+    | XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2187,6 +2189,53 @@ unsafe fn xray_core_set_tun_collect_tcp_timings_inner(
     XrayStatus::Ok
 }
 
+/// Sets per-outbound Hysteria concurrency before config load (ABI 1.10).
+/// TCP must be 1..=256 and UDP 1..=128. Defaults remain 64/32. Rejection
+/// preserves previous settings; no sockets or sessions are created here.
+///
+/// # Safety
+/// `handle` must be null or a live handle. This lifecycle call must not race
+/// other handle calls. `error`, when non-null, must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_hysteria_stream_limits(
+    handle: *mut XrayCoreHandle,
+    max_tcp_streams: u32,
+    max_udp_sessions: u32,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let Some(handle) = handle.as_mut() else {
+                set_error(error, XrayStatus::NullArgument, "core handle is null");
+                return XrayStatus::NullArgument;
+            };
+            let limits =
+                match xray_core_rs::HysteriaStreamLimits::new(max_tcp_streams, max_udp_sessions) {
+                    Ok(limits) => limits,
+                    Err(_) => {
+                        set_error(
+                            error,
+                            XrayStatus::InvalidArgument,
+                            "Hysteria limits require TCP 1..256 and UDP 1..128",
+                        );
+                        return XrayStatus::InvalidArgument;
+                    }
+                };
+            if handle.core.is_some() {
+                set_error(
+                    error,
+                    XrayStatus::RuntimeError,
+                    "Hysteria stream limits must be set before config load",
+                );
+                return XrayStatus::RuntimeError;
+            }
+            handle.tun_runtime_options.hysteria_stream_limits = limits;
+            XrayStatus::Ok
+        })
+    }
+}
+
 /// Selects the TUN runtime performance profile.
 ///
 /// # Safety
@@ -4223,6 +4272,52 @@ mod tests {
         xray_core_routing_policy_snapshot_json, xray_core_set_dns_bootstrap_mode, DnsBootstrapMode,
         OutStrArgs, OutStrBuf, XrayCoreHandle, XrayDnsBootstrapMode, XrayError, XrayStatus,
     };
+
+    #[test]
+    fn hysteria_limits_are_validated_atomically_and_frozen_at_config_load() {
+        use super::xray_core_set_hysteria_stream_limits as set;
+        unsafe {
+            let mut error = ptr::null_mut();
+            assert_eq!(
+                set(ptr::null_mut(), 64, 32, &mut error),
+                XrayStatus::NullArgument
+            );
+            free_error(error);
+            error = ptr::null_mut();
+            let handle = xray_core_new(&mut error);
+            assert!(!handle.is_null());
+            assert_eq!(
+                (*handle).tun_runtime_options.hysteria_stream_limits,
+                xray_core_rs::HysteriaStreamLimits::new(64, 32).unwrap()
+            );
+            assert_eq!(set(handle, 256, 128, &mut error), XrayStatus::Ok);
+            let selected = (*handle).tun_runtime_options.hysteria_stream_limits;
+            for (tcp, udp) in [(0, 32), (257, 32), (64, 0), (64, 129), (u32::MAX, 32)] {
+                assert_eq!(
+                    set(handle, tcp, udp, &mut error),
+                    XrayStatus::InvalidArgument
+                );
+                assert_eq!(
+                    (*handle).tun_runtime_options.hysteria_stream_limits,
+                    selected
+                );
+                free_error(error);
+                error = ptr::null_mut();
+            }
+            let config = CString::new(r#"{"outbounds":[{"protocol":"freedom"}]}"#).unwrap();
+            assert_eq!(
+                xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!(set(handle, 64, 32, &mut error), XrayStatus::RuntimeError);
+            assert_eq!(
+                (*handle).tun_runtime_options.hysteria_stream_limits,
+                selected
+            );
+            free_error(error);
+            xray_core_free(handle);
+        }
+    }
 
     unsafe fn loaded_routing_test_core() -> *mut XrayCoreHandle {
         let mut error = ptr::null_mut();

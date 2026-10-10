@@ -11,6 +11,7 @@ pub struct HysteriaOutbound {
 
 #[derive(Debug)]
 struct SessionOwner {
+    limits: xray_transport::hysteria::HysteriaLimits,
     server: Target,
     tls: TlsClientConfig,
     auth: xray_config::HysteriaSettings,
@@ -36,6 +37,13 @@ impl Drop for CachedSession {
 
 impl HysteriaOutbound {
     pub(crate) fn new(config: &OutboundConfig) -> Result<Self, CoreError> {
+        Self::with_stream_limits(config, crate::HysteriaStreamLimits::default())
+    }
+
+    pub(crate) fn with_stream_limits(
+        config: &OutboundConfig,
+        limits: crate::HysteriaStreamLimits,
+    ) -> Result<Self, CoreError> {
         let (
             OutboundSettings::Hysteria(server),
             StreamTransport::Hysteria(auth),
@@ -74,6 +82,7 @@ impl HysteriaOutbound {
             .map_err(|_| CoreError::UnsupportedOutboundSecurity)?;
         Ok(Self {
             inner: Arc::new(SessionOwner {
+                limits: limits.transport_limits(),
                 server: Target::new(
                     match &server.server {
                         TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
@@ -168,6 +177,7 @@ impl HysteriaOutbound {
         for candidate in candidates.into_iter().take(8) {
             let mut config = HysteriaConfig::new(candidate, self.inner.tls.clone(), String::new());
             config.auth = self.inner.auth.auth.clone();
+            config.limits = self.inner.limits;
             // Give later DNS candidates a chance within the total operation deadline.
             let generation = self.inner.network_generation.load(Ordering::Acquire);
             let attempt = tokio::time::timeout(

@@ -205,7 +205,8 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND = 1 << 19,
   XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND = 1 << 20,
   XRAY_FFI_CAPABILITY_VMESS_OUTBOUND = 1 << 21,
-  XRAY_FFI_CAPABILITY_OUTBOUND_PROBE = 1 << 22
+  XRAY_FFI_CAPABILITY_OUTBOUND_PROBE = 1 << 22,
+  XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS = 1 << 23
 } XrayFfiCapability;
 
 /* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
@@ -243,6 +244,13 @@ XrayStatus xray_profile_import_json(
     char *buffer, size_t buffer_len, size_t *written, XrayError **error);
 
 XrayCoreHandle *xray_core_new(XrayError **error);
+/* ABI 1.10. Host resource policy, independent of Xray JSON and TUN profiles.
+ * Set before config load. Per Hysteria outbound: TCP 1..256, UDP 1..128;
+ * defaults 64/32. All inbounds share these limits. Invalid calls change nothing.
+ * Lifecycle call: do not race any other handle call. */
+XrayStatus xray_core_set_hysteria_stream_limits(
+    XrayCoreHandle *handle, uint32_t max_tcp_streams,
+    uint32_t max_udp_sessions, XrayError **error);
 /* Searches dir first, then the process default geodata directories. */
 XrayStatus xray_core_set_geodata_search_dir(
     XrayCoreHandle *handle,

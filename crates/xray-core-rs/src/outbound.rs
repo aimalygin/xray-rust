@@ -1965,6 +1965,7 @@ impl OutboundSelectionOverlay {
 /// transport pools for the lifetime of the core.
 #[derive(Debug)]
 pub struct OutboundFactory {
+    hysteria_stream_limits: crate::HysteriaStreamLimits,
     graph: Arc<OutboundGraph>,
     entries: Box<[CachedOutboundEntry]>,
     selection: Arc<OutboundSelectionOverlay>,
@@ -1976,12 +1977,20 @@ const PARALLEL_VMESS_CONNECTIONS: usize = 2;
 
 impl OutboundFactory {
     pub fn new(graph: Arc<OutboundGraph>) -> Self {
+        Self::with_hysteria_stream_limits(graph, crate::HysteriaStreamLimits::default())
+    }
+
+    pub fn with_hysteria_stream_limits(
+        graph: Arc<OutboundGraph>,
+        hysteria_stream_limits: crate::HysteriaStreamLimits,
+    ) -> Self {
         let entries = (0..graph.leaf_count)
             .map(|_| CachedOutboundEntry::default())
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let selection = Arc::new(OutboundSelectionOverlay::new(Arc::clone(&graph)));
         Self {
+            hysteria_stream_limits,
             graph,
             entries,
             selection,
@@ -2897,7 +2906,8 @@ impl OutboundFactory {
             .entry(node)?
             .hysteria
             .get_or_init(|| {
-                HysteriaOutbound::new(configured).map_err(CachedOutboundError::from_core_error)
+                HysteriaOutbound::with_stream_limits(configured, self.hysteria_stream_limits)
+                    .map_err(CachedOutboundError::from_core_error)
             })
             .clone();
         if self.sessions_closed.load(Ordering::Acquire) {

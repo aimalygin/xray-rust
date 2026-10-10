@@ -39,6 +39,15 @@ enum class XrayFfiCapability(val mask: Long) {
     VmessOutbound(1L shl 21),
     Shadowsocks2022Outbound(1L shl 20),
     OutboundProbe(1L shl 22),
+    HysteriaStreamLimits(1L shl 23),
+}
+
+/** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */
+data class XrayHysteriaStreamLimits(val maxTcpStreams: Int = 64, val maxUdpSessions: Int = 32) {
+    init {
+        require(maxTcpStreams in 1..256) { "Hysteria TCP limit must be in 1..256" }
+        require(maxUdpSessions in 1..128) { "Hysteria UDP limit must be in 1..128" }
+    }
 }
 
 data class XrayFfiInfo(
@@ -570,6 +579,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
             startupProbe: XrayStartupProbeOptions? = null,
             dnsBootstrapMode: XrayDnsBootstrapMode = XrayDnsBootstrapMode.System,
             fileLoggingDirectory: File? = null,
+            hysteriaStreamLimits: XrayHysteriaStreamLimits? = null,
         ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
@@ -582,6 +592,13 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 core.setTunCollectTcpTimings(collectTcpTimings)
                 core.setTunRuntimeProfile(tunRuntimeProfile)
                 core.setDnsBootstrapMode(dnsBootstrapMode)
+                if (hysteriaStreamLimits != null) {
+                    core.requireFeature(10, XrayFfiCapability.HysteriaStreamLimits)
+                    core.withLifecycleHandle {
+                        core.nativeSetHysteriaStreamLimits(it, hysteriaStreamLimits.maxTcpStreams,
+                            hysteriaStreamLimits.maxUdpSessions)
+                    }
+                }
                 if (startupProbe != null) {
                     core.setStartupProbe(startupProbe)
                 }
@@ -690,6 +707,20 @@ class XrayCore private constructor(handle: Long) : Closeable {
         requireCapability(XrayFfiCapability.ConnectionManagement)
         require(id > 0) { "connection id must be positive" }
         withDataPathHandle { nativeCloseConnection(it, id) }
+    }
+
+    /** Queues fresh protected carrier sockets; the count is acceptance, not recovery.
+     * Retains endpoints and inner flows, without DNS refresh. Call after the host
+     * has selected a usable underlying network. Idle outbounds remain lazy. */
+    fun rebindHysteria(): Long {
+        requireFeature(7, XrayFfiCapability.Hysteria2Outbound)
+        return withDataPathHandle { nativeRebindHysteria(it) }
+    }
+
+    /** Queues WireGuard carrier replacement; the count is acceptance, not a handshake. */
+    fun rebindWireGuard(): Long {
+        requireFeature(6, XrayFfiCapability.WireguardOutbound)
+        return withDataPathHandle { nativeRebindWireGuard(it) }
     }
 
     /**
@@ -901,6 +932,12 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
+    private fun requireFeature(minor: Int, capability: XrayFfiCapability) {
+        val info = ffiInfo()
+        check(info.version.minor >= minor) { "required xray FFI minor version: $minor" }
+        check(info.supports(capability)) { "required xray FFI capability is unavailable: $capability" }
+    }
+
     private fun <T> pollTunDiagnosticEvents(
         maxEvents: Int,
         kind: NativeTunDiagnosticKind,
@@ -959,6 +996,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeConnectionSnapshotJson(handle: Long): String
     private external fun nativeOutboundAccountingSnapshotJson(handle: Long): String
     private external fun nativeCloseConnection(handle: Long, connectionId: Long)
+    private external fun nativeRebindHysteria(handle: Long): Long
+    private external fun nativeRebindWireGuard(handle: Long): Long
+    private external fun nativeSetHysteriaStreamLimits(handle: Long, maxTcpStreams: Int, maxUdpSessions: Int)
     private external fun nativeProbeOutboundUrl(
         handle: Long,
         url: String,

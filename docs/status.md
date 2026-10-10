@@ -14,7 +14,7 @@ parity with every Xray-core release.
 The stable source baseline is `v0.7.0`, which adds Hysteria 2 and WireGuard;
 see the [changelog](../CHANGELOG.md) and [0.7 performance record](v07-performance.md).
 Development `0.8` adds Trojan, Shadowsocks 2022 and VMess AEAD, bounded shared
-Mux/XUDP, shared imports and current ABI 1.9 with both mobile SDKs. Pinned/independent
+Mux/XUDP, shared imports and current ABI 1.10 with both mobile SDKs. Pinned/independent
 interoperability and automated core/SDK checks pass. Physical Apple/Android
 testing has recorded unresolved failures, and final
 [release acceptance](v08-release-readiness.md) remains open. The [0.8 evidence](v08-implementation-plan.md) records
@@ -54,7 +54,7 @@ recorded with its original RC identity.
 | Direct fd-backed TUN | Supported | Raw-IP Android and Darwin-utun framing paths; host integration is platform-owned |
 | Freedom/direct outbound | Supported | TCP and UDP integration tests |
 | Hysteria 2 / WireGuard | Supported subset since 0.7 | Bounded TCP/UDP client paths, shared imports, native adapters and independent-server tests; [configuration limits](config-compatibility.md) and [0.7 performance evidence](v07-performance.md) retain their original acceptance boundaries. |
-| Trojan / Shadowsocks 2022 / VMess AEAD | Implemented in development 0.8 | TCP/UDP, IPv4/IPv6/domains, SOCKS/HTTP/TUN/DNS, shared imports and Swift/Kotlin protocol capabilities introduced in ABI 1.8; current ABI is 1.9. Pinned Xray and independent sing-box matrices pass. SS2022 supports all three 2022 methods and AES identity chains; VMess requires absent/zero alterId. Physical-device and release acceptance remain open; see [bounds and evidence](v08-implementation-plan.md). |
+| Trojan / Shadowsocks 2022 / VMess AEAD | Implemented in development 0.8 | TCP/UDP, IPv4/IPv6/domains, SOCKS/HTTP/TUN/DNS, shared imports and Swift/Kotlin protocol capabilities introduced in ABI 1.8; current ABI is 1.10. Pinned Xray and independent sing-box matrices pass. SS2022 supports all three 2022 methods and AES identity chains; VMess requires absent/zero alterId. Physical-device and release acceptance remain open; see [bounds and evidence](v08-implementation-plan.md). |
 | Shared Mux/XUDP | Implemented in development 0.8 | Bounded pooling for Trojan, SS2022 and VMess with cancellation/backpressure tests. XHTTP permits UDP Mux only; general VLESS Mux remains unsupported. VMess also supports standalone XUDP. Exact pool, queue and transport limits are in [configuration compatibility](config-compatibility.md). |
 
 | Blackhole outbound | Supported | Xray-compatible `none`/`http` responses for SOCKS, HTTP, TUN TCP, and UDP; a UDP flow is dispatched once and discards its datagrams until idle. Works with rules, defaults, and balancer fallbacks. SOCKS/HTTP/TUN integration tests assert the byte-exact 403 reply, FIN close, reset of continued upload, one recorded session per UDP flow, and that no outbound socket is allocated |

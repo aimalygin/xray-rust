@@ -213,6 +213,32 @@ Freedom/WireGuard split routes remain valid. Configuring a `dns.servers`
 upstream permits domain routes through these protocols. The preflight never inserts or substitutes a public
 DNS server.
 
+### Network changes and Hysteria limits
+
+`XrayCore.rebindHysteria()` (ABI >=1.7) and `rebindWireGuard()` (ABI >=1.6)
+request fresh protected carrier sockets while retaining live inner flows and
+current endpoints. Each returns accepted/coalesced requests, not completed
+path validation or handshakes. Idle outbounds return zero without connecting.
+
+The host should observe usable **underlying** networks with `ConnectivityManager`
+(exclude the VPN transport), finish its network selection/update first, coalesce
+duplicate notifications, then call the methods on its serial VPN control worker.
+Do not rebind solely because `onLost` fired when no usable replacement exists.
+Unregister the network callback and fence queued work before closing the core;
+callbacks racing close receive a closed-core error. Socket protection remains
+mandatory. The core does not call `bindProcessToNetwork` or select a `Network`
+for the host. A request alone does not prove Wi-Fi/cellular or NAT64 recovery;
+endpoint re-resolution may require rebuilding the prepared config/core.
+
+To increase Hysteria concurrency, pass
+`hysteriaStreamLimits = XrayHysteriaStreamLimits(maxTcpStreams = 128, maxUdpSessions = 64)`
+to `XrayCore.create`. This requires ABI 1.10 plus `HysteriaStreamLimits` capability.
+The defaults remain 64/32; bounds are 1..256 and 1..128. Limits are shared by
+all inbounds using one outbound. TUN admission limits remain separate: choose
+an appropriate runtime profile for large simultaneous connection bursts.
+Higher concurrency can consume more memory; per-flow queues and the Xray wire
+format do not change. Recreate the core to change limits.
+
 ## Host application responsibilities
 
 A host app must:

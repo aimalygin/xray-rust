@@ -86,6 +86,53 @@ pub struct TunRuntimeOptions {
     pub collect_tcp_timings: bool,
     pub profile: TunRuntimeProfile,
     pub dns_bootstrap: DnsBootstrapMode,
+    /// Host resource limits for each Hysteria outbound, shared by all inbounds.
+    /// Independent of the TUN profile and never interpreted as Xray JSON fields.
+    pub hysteria_stream_limits: HysteriaStreamLimits,
+}
+
+/// Bounded concurrent streams per Hysteria connection. Existing defaults are
+/// retained; increasing the limits admits more flows, not larger per-flow queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HysteriaStreamLimits {
+    max_tcp_streams: u32,
+    max_udp_sessions: u32,
+}
+
+impl Default for HysteriaStreamLimits {
+    fn default() -> Self {
+        Self {
+            max_tcp_streams: 64,
+            max_udp_sessions: 32,
+        }
+    }
+}
+
+impl HysteriaStreamLimits {
+    pub fn new(max_tcp_streams: u32, max_udp_sessions: u32) -> Result<Self, CoreError> {
+        if !(1..=256).contains(&max_tcp_streams) || !(1..=128).contains(&max_udp_sessions) {
+            return Err(xray_transport::hysteria::HysteriaError::Configuration.into());
+        }
+        Ok(Self {
+            max_tcp_streams,
+            max_udp_sessions,
+        })
+    }
+
+    pub fn max_tcp_streams(self) -> u32 {
+        self.max_tcp_streams
+    }
+    pub fn max_udp_sessions(self) -> u32 {
+        self.max_udp_sessions
+    }
+
+    pub(crate) fn transport_limits(self) -> xray_transport::hysteria::HysteriaLimits {
+        xray_transport::hysteria::HysteriaLimits {
+            max_tcp_streams: self.max_tcp_streams as usize,
+            max_udp_sessions: self.max_udp_sessions as usize,
+            ..Default::default()
+        }
+    }
 }
 
 /// Controls bootstrap and no-configured-server fallback for managed runtime DNS.
@@ -642,7 +689,10 @@ impl Core {
         let config = Arc::new(config);
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
-        let outbound_factory = Arc::new(OutboundFactory::new(outbound_graph));
+        let outbound_factory = Arc::new(OutboundFactory::with_hysteria_stream_limits(
+            outbound_graph,
+            tun_runtime_options.hysteria_stream_limits,
+        ));
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
