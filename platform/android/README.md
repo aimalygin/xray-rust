@@ -400,3 +400,37 @@ matrix and on-device checklist.
 - The adapter is a reference integration, not a production VPN product.
 - Device behavior and performance must be verified with the consuming
   application's release configuration and supported Android versions.
+
+## Per-app TUN enforcement (Android 10+)
+
+ABI 1.11 and `TunAdmission` add an optional check before new TCP/UDP flows open
+outbound connections, including DNS/FakeDNS. Pass `XrayTunAdmissionOptions` to
+`XrayCore.create`, or override `XrayVpnService.tunAdmissionOptions()`. Keep the
+normal `VpnService.Builder` app list too. For an active VPN, the supplied
+`XrayAndroidUidAdmission(connectivityManager, allowedUids)` calls Android's
+[`getConnectionOwnerUid`](https://developer.android.com/reference/android/net/ConnectivityManager#getConnectionOwnerUid(int,%20java.net.InetSocketAddress,%20java.net.InetSocketAddress)) with the original application tuple. It denies unknown
+owners and lookup errors by default, and handles packages sharing a UID as one
+identity. Android versions below 10 cannot provide this enforcement; the helper
+rejects construction rather than claiming protection.
+
+The callback runs on up to four native host workers, never on the packet loop.
+It may run concurrently and must not call core lifecycle methods. The default
+100 ms timeout denies; `failOpen` is explicit. Java exceptions deny even when
+fail-open is selected. Timeout and core close do not interrupt a blocked host
+callback; JNI retains its object until the call returns. Use the bounded native
+fd backend normally: no packet-mode JNI filtering is needed. See the
+[C ABI ownership and resource bounds](../../docs/ffi.md#optional-tun-flow-admission-abi-111).
+
+Device Gate accepts `--ez probe-only true --ez tun-admission true`. The matching
+Device Probe package is the allowed UID. Its `AdmissionProbeActivity` performs a
+bounded TCP/UDP echo probe; `bind-device=tun0` uses `SO_BINDTODEVICE`. Install a
+second probe under a different application suffix to test an excluded UID and
+compare filter-off/filter-on runs. Results are written to the probe's private
+`files/admission-result.json`; Device Gate samples record allow/deny counters.
+
+On the tested Samsung SM-A145F (API 35, Linux 5.10), Android also returned
+`INVALID_UID` for an included app's TCP socket explicitly bound to `tun0`.
+Strict admission consequently rejects that socket too; ordinary included-app
+TCP/UDP and its bound UDP traffic passed. Unknown owners cannot safely be
+classified as included, so do not enable `allowUnknownUid` to hide this result.
+The hook is opt-in and does not change hosts that leave it disabled.

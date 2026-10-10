@@ -1,3 +1,5 @@
+mod tun_admission;
+pub use tun_admission::*;
 mod profile_import;
 pub use profile_import::xray_profile_import_json;
 
@@ -28,7 +30,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 10;
+pub const XRAY_FFI_ABI_MINOR: u32 = 11;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -55,6 +57,7 @@ pub const XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND: u64 = 1 << 20;
 pub const XRAY_FFI_CAPABILITY_VMESS_OUTBOUND: u64 = 1 << 21;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE: u64 = 1 << 22;
 pub const XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS: u64 = 1 << 23;
+pub const XRAY_FFI_CAPABILITY_TUN_ADMISSION: u64 = 1 << 24;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -79,7 +82,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
     | XRAY_FFI_CAPABILITY_VMESS_OUTBOUND
     | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE
-    | XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS;
+    | XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS
+    | XRAY_FFI_CAPABILITY_TUN_ADMISSION;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -514,6 +518,7 @@ pub struct XrayCoreHandle {
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<xray_core_rs::TunAdmissionPolicy>,
     config_warnings: String,
 }
 
@@ -640,6 +645,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         tun_fd_config: None,
         tun_fd_runtime: None,
         tun_runtime_options: TunRuntimeOptions::default(),
+        tun_admission: None,
         config_warnings: String::new(),
     }))
 }
@@ -983,6 +989,8 @@ unsafe fn xray_core_load_config_json_inner(
             return XrayStatus::ConfigError;
         }
     };
+    core.set_tun_admission((*handle).tun_admission.clone())
+        .expect("new core is not running");
     if let Some(options) = unsafe { (*handle).startup_probe_options.clone() } {
         core.set_startup_probe(Some(options));
     }

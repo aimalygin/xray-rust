@@ -65,7 +65,7 @@ The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 ## Current scope
 
 The development branch adds Trojan, Shadowsocks 2022 and VMess AEAD for the
-planned 0.8 release, including Swift/Kotlin integration and current ABI 1.10. Their
+planned 0.8 release, including Swift/Kotlin integration and current ABI 1.11. Their
 [implementation and acceptance record](docs/v08-implementation-plan.md)
 distinguishes passing host/CI checks from remaining physical-device gates.
 The [0.8 protocol comparison](docs/benchmarks/results/2026-09-30-v08-protocols/README.md)
@@ -81,7 +81,7 @@ These changes are not a published 0.8 package; the stable source baseline is
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, atomic rule/geodata snapshot replacement, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection including routed `tls://` DoT, routed/local HTTP/2 DoH, and provider-local `quic+local://` DoQ, routed multi-address resolution, TTL-aware positive/negative cache with bounded stale-while-revalidate, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | Full config and outbound/balancer topology replacement still requires a new core; no UDP/protocol-layer outbound chaining, `UseSystem` route probing, per-server cache policy, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
-| Management | Development ABI 1.10 plus Swift/Kotlin expose protocol capability discovery, shared profile import and on-demand outbound probes alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative; no persistent connection history |
+| Management | Development ABI 1.11 plus Swift/Kotlin expose protocol capability discovery, shared profile import and on-demand outbound probes alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative; no persistent connection history |
 
 See [project status](docs/status.md) and
 [configuration compatibility](docs/config-compatibility.md) for the detailed

@@ -38,6 +38,7 @@ mod sniffing;
 mod socks;
 mod startup_probe;
 mod tun;
+mod tun_admission;
 mod tun_fd;
 
 #[cfg(feature = "fuzzing")]
@@ -72,6 +73,7 @@ pub use startup_probe::{
     OutboundProbeError, OutboundProbeOutcome, StartupProbeError, StartupProbeOptions,
     MAX_OUTBOUND_PROBE_TIMEOUT,
 };
+pub use tun_admission::{TunAdmissionPolicy, TunFlow, TunFlowAdmission};
 pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -449,6 +451,7 @@ pub struct Core {
     outbound_router: Arc<OutboundRouter>,
     connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<TunAdmissionPolicy>,
     startup_probe: Option<StartupProbeOptions>,
     runtime_logger: RuntimeLogger,
 }
@@ -721,6 +724,7 @@ impl Core {
             outbound_router,
             connection_registry: Arc::new(ConnectionRegistry::new()),
             tun_runtime_options,
+            tun_admission: None,
             startup_probe: None,
             runtime_logger: RuntimeLogger::disabled(),
         })
@@ -733,6 +737,18 @@ impl Core {
     pub fn with_startup_probe(mut self, options: StartupProbeOptions) -> Self {
         self.startup_probe = Some(options);
         self
+    }
+
+    /// Configure admission before start; existing flows cannot be reclassified.
+    pub fn set_tun_admission(
+        &mut self,
+        policy: Option<TunAdmissionPolicy>,
+    ) -> Result<(), CoreError> {
+        if self.state == CoreState::Running {
+            return Err(CoreError::AlreadyRunning);
+        }
+        self.tun_admission = policy;
+        Ok(())
     }
 
     pub fn set_startup_probe(&mut self, options: Option<StartupProbeOptions>) {
@@ -1132,6 +1148,7 @@ impl Core {
                 Arc::clone(&self.transport_dialer),
                 Arc::clone(&self.connection_registry),
                 tun_runtime_options,
+                self.tun_admission.clone(),
                 self.runtime_logger.clone(),
                 self.shutdown.subscribe(),
             )));

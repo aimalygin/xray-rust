@@ -1,3 +1,4 @@
+mod admission;
 mod blackhole;
 mod datagram;
 
@@ -45,7 +46,9 @@ use crate::outbound::{
     VlessUdpOpenOptions,
 };
 use crate::policy::{effective_policy_for_level, EffectivePolicy};
-use crate::{OutboundRouter, RuntimeLogger, TunRuntimeOptions, TunRuntimeProfile};
+use crate::{
+    OutboundRouter, RuntimeLogger, TunAdmissionPolicy, TunRuntimeOptions, TunRuntimeProfile,
+};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet,
     read_xudp_packet,
@@ -865,6 +868,7 @@ pub(crate) async fn serve_tun_endpoint(
     transport_dialer: Arc<TransportDialer>,
     connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<TunAdmissionPolicy>,
     runtime_logger: RuntimeLogger,
     mut shutdown: watch::Receiver<bool>,
 ) {
@@ -894,6 +898,9 @@ pub(crate) async fn serve_tun_endpoint(
     let mut flow_budget_state = FlowBudgetState::new(runtime_policy.flows);
     let upload_capacity = Arc::clone(&flow_budget_state.tcp_upload);
     let mut udp_flows = HashMap::new();
+    let mut udp_admission = tun_admission
+        .clone()
+        .map(|policy| admission::UdpAdmission::new(policy, udp_task_limit));
     let mut delayed_stack_events = VecDeque::new();
     let (stack_tx, mut stack_rx) = mpsc::channel(STACK_EVENT_CHANNEL_DEPTH);
     let fake_ip_mapper = dns_outbound_runtime.fake_ip_mapper();
@@ -918,6 +925,7 @@ pub(crate) async fn serve_tun_endpoint(
         tcp_download_serial: Arc::new(tokio::sync::Mutex::new(())),
         tun: Arc::clone(&tun),
         tun_runtime_options,
+        tun_admission,
         runtime_policy,
         tcp_pending_open_permits,
         dns_tcp_flow_permits,
@@ -962,6 +970,7 @@ pub(crate) async fn serve_tun_endpoint(
                             &mut tcp_listeners,
                             &mut tcp_flows,
                             &mut udp_flows,
+                            &mut udp_admission,
                             &mut flow_budget_state,
                             &runtime_context,
                             shutdown.clone(),
@@ -993,6 +1002,16 @@ pub(crate) async fn serve_tun_endpoint(
                     );
                 }
             }
+            completion = async {
+                match udp_admission.as_mut() {
+                    Some(state) if !state.tasks.is_empty() => state.tasks.join_next().await,
+                    _ => std::future::pending().await,
+                }
+            } => {
+                if let (Some(state), Some(completion)) = (udp_admission.as_mut(), completion) {
+                    state.complete(completion);
+                }
+            }
             () = upload_capacity.capacity_available.notified() => {
                 tcp_stack_dirty = true;
             }
@@ -1022,7 +1041,14 @@ pub(crate) async fn serve_tun_endpoint(
         );
 
         for _ in 0..MAX_TUN_INBOUND_DRAIN_PER_TICK {
-            match tun.try_poll_inbound().await {
+            let packet = match udp_admission
+                .as_mut()
+                .and_then(admission::UdpAdmission::pop_ready)
+            {
+                Some(packet) => Ok(Some(packet)),
+                None => tun.try_poll_inbound().await,
+            };
+            match packet {
                 Ok(Some(packet)) => {
                     match process_tun_packet(
                         packet,
@@ -1032,6 +1058,7 @@ pub(crate) async fn serve_tun_endpoint(
                         &mut tcp_listeners,
                         &mut tcp_flows,
                         &mut udp_flows,
+                        &mut udp_admission,
                         &mut flow_budget_state,
                         &runtime_context,
                         shutdown.clone(),
@@ -1245,6 +1272,7 @@ async fn process_tun_packet(
     tcp_listeners: &mut HashMap<IpEndpoint, TcpListenerState>,
     tcp_flows: &mut HashMap<SocketHandle, TcpFlow>,
     udp_flows: &mut HashMap<UdpFlowKey, UdpFlow>,
+    udp_admission: &mut Option<admission::UdpAdmission>,
     flow_budget_state: &mut FlowBudgetState,
     context: &TunRuntimeContext,
     shutdown: watch::Receiver<bool>,
@@ -1253,6 +1281,11 @@ async fn process_tun_packet(
     device: &mut PacketDevice,
 ) -> TunPacketOutcome {
     if !valid_tun_ip_packet(&packet) {
+        return TunPacketOutcome::Continue {
+            tcp_stack_dirty: false,
+        };
+    }
+    if context.tun_admission.is_some() && !admission::supported_packet(&packet) {
         return TunPacketOutcome::Continue {
             tcp_stack_dirty: false,
         };
@@ -1268,6 +1301,19 @@ async fn process_tun_packet(
         };
     }
     if let Some(udp_packet) = parse_udp_packet(&packet) {
+        if let Some(state) = udp_admission.as_mut() {
+            if !state.allow(
+                &udp_packet,
+                &packet,
+                udp_flows,
+                &context.tcp_flow_generation,
+                shutdown.clone(),
+            ) {
+                return TunPacketOutcome::Continue {
+                    tcp_stack_dirty: false,
+                };
+            }
+        }
         let dns_selection = match context
             .selected_dns_outbound_with_resolver(udp_packet.target, RoutingNetwork::Udp)
             .await
@@ -1384,6 +1430,7 @@ async fn process_tun_packet(
             }
             DnsUdpAction::Pass => {}
         }
+        let admission_key = UdpFlowKey::new(udp_packet.client, udp_packet.target);
         handle_udp_packet(
             udp_packet,
             packet,
@@ -1393,6 +1440,9 @@ async fn process_tun_packet(
             shutdown,
             udp_tasks,
         );
+        if let Some(state) = udp_admission.as_mut() {
+            state.bind(admission_key, udp_flows);
+        }
         return TunPacketOutcome::Continue {
             tcp_stack_dirty: false,
         };
@@ -1463,6 +1513,7 @@ struct TunRuntimeContext {
     tcp_download_serial: Arc<tokio::sync::Mutex<()>>,
     tun: Arc<TunEndpoint>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<TunAdmissionPolicy>,
     runtime_policy: TunRuntimePolicy,
     tcp_pending_open_permits: Arc<Semaphore>,
     dns_tcp_flow_permits: Arc<Semaphore>,
@@ -1993,6 +2044,12 @@ fn open_ready_tcp_flows(
                 remote_aborted: false,
             },
         );
+        let raw_tuple = context.tun_admission.as_ref().and_then(|_| {
+            sockets
+                .get::<tcp::Socket>(handle)
+                .remote_endpoint()
+                .map(|source| admission::raw_flow(generation, TCP_PROTOCOL, source, endpoint))
+        });
         let task = match admitted {
             AdmittedTcpFlow::Bridge {
                 destination,
@@ -2006,17 +2063,25 @@ fn open_ready_tcp_flows(
                         pending_open,
                         dns_flow,
                     } = permits;
-                    bridge_tasks.spawn(dns_proxy::bridge_raw_dns_tcp_flow(
+                    spawn_admitted_tcp_bridge(
+                        bridge_tasks,
+                        &context,
+                        raw_tuple,
+                        shutdown.clone(),
                         handle,
                         generation,
-                        client_target,
-                        plan,
-                        context.clone(),
-                        from_stack,
-                        shutdown.clone(),
-                        pending_open,
-                        dns_flow,
-                    ))
+                        dns_proxy::bridge_raw_dns_tcp_flow(
+                            handle,
+                            generation,
+                            client_target,
+                            plan,
+                            context.clone(),
+                            from_stack,
+                            shutdown.clone(),
+                            pending_open,
+                            dns_flow,
+                        ),
+                    )
                 }
                 TcpBridgeDestination::DnsOutbound {
                     client_target,
@@ -2026,32 +2091,54 @@ fn open_ready_tcp_flows(
                         pending_open,
                         dns_flow,
                     } = permits;
-                    bridge_tasks.spawn(dns_proxy::bridge_dns_outbound_tcp_flow(
+                    spawn_admitted_tcp_bridge(
+                        bridge_tasks,
+                        &context,
+                        raw_tuple,
+                        shutdown.clone(),
                         handle,
                         generation,
-                        client_target,
-                        outbound,
+                        dns_proxy::bridge_dns_outbound_tcp_flow(
+                            handle,
+                            generation,
+                            client_target,
+                            outbound,
+                            context.clone(),
+                            from_stack,
+                            shutdown.clone(),
+                            Some(pending_open),
+                            dns_flow,
+                            false,
+                            VecDeque::new(),
+                        ),
+                    )
+                }
+                destination => spawn_admitted_tcp_bridge(
+                    bridge_tasks,
+                    &context,
+                    raw_tuple,
+                    shutdown.clone(),
+                    handle,
+                    generation,
+                    bridge_tcp_flow(
+                        handle,
+                        generation,
+                        destination,
                         context.clone(),
                         from_stack,
                         shutdown.clone(),
-                        Some(pending_open),
-                        dns_flow,
-                        false,
-                        VecDeque::new(),
-                    ))
-                }
-                destination => bridge_tasks.spawn(bridge_tcp_flow(
-                    handle,
-                    generation,
-                    destination,
-                    context.clone(),
-                    from_stack,
-                    shutdown.clone(),
-                    permits,
-                )),
+                        permits,
+                    ),
+                ),
             },
-            AdmittedTcpFlow::FakeDns { mapper, permit } => {
-                bridge_tasks.spawn(dns_proxy::bridge_fake_ip_tcp_flow(
+            AdmittedTcpFlow::FakeDns { mapper, permit } => spawn_admitted_tcp_bridge(
+                bridge_tasks,
+                &context,
+                raw_tuple,
+                shutdown.clone(),
+                handle,
+                generation,
+                dns_proxy::bridge_fake_ip_tcp_flow(
                     handle,
                     generation,
                     mapper,
@@ -2059,8 +2146,8 @@ fn open_ready_tcp_flows(
                     from_stack,
                     shutdown.clone(),
                     permit,
-                ))
-            }
+                ),
+            ),
         };
         if let Some(flow) = flows.get_mut(&handle) {
             flow.task = Some(task);
@@ -2068,6 +2155,40 @@ fn open_ready_tcp_flows(
             task.abort();
         }
     }
+}
+
+// Keep the original concrete bridge future on the disabled path. Combining
+// all DNS/standard bridge futures into one async match would enlarge every TCP
+// task to the largest DNS variant, even when no admission callback is installed.
+fn spawn_admitted_tcp_bridge<F>(
+    tasks: &mut JoinSet<()>,
+    context: &TunRuntimeContext,
+    flow: Option<crate::TunFlow>,
+    shutdown: watch::Receiver<bool>,
+    handle: SocketHandle,
+    generation: u64,
+    bridge: F,
+) -> AbortHandle
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    let Some(policy) = context.tun_admission.clone() else {
+        return tasks.spawn(bridge);
+    };
+    let stack_tx = context.stack_tx.clone();
+    tasks.spawn(async move {
+        let mut guard = TcpBridgeCloseGuard::new(handle, generation, stack_tx);
+        let allowed = match flow {
+            Some(flow) => policy.admit(flow, shutdown).await,
+            None => false,
+        };
+        if !allowed {
+            guard.abort().await;
+            return;
+        }
+        guard.armed = false;
+        bridge.await;
+    })
 }
 
 fn insert_aborted_tcp_flow(

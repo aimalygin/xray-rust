@@ -11,6 +11,7 @@ android {
         applicationId = "org.xrayrust.devicehost"
         minSdk = 24
         targetSdk = 35
+        manifestPlaceholders["deviceProbePackage"] = "org.xrayrust.deviceprobe"
         versionCode = 1
         versionName = "0.5.0-device-gate"
     }
@@ -23,6 +24,7 @@ android {
                     "deviceGateApplicationIdSuffix must be one lowercase package component"
                 }
                 applicationIdSuffix = suffix
+                manifestPlaceholders["deviceProbePackage"] = "org.xrayrust.deviceprobe$suffix"
             }
         }
     }

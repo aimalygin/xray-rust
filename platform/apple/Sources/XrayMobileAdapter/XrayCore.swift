@@ -152,6 +152,7 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let outboundProbe = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_PROBE.rawValue)
     )
+    public static let tunAdmission = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_ADMISSION.rawValue))
     public static let hysteriaStreamLimits = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS.rawValue)
     )
@@ -895,7 +896,8 @@ public final class XrayCore: @unchecked Sendable {
         geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults,
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil,
-        hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil
+        hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
+        tunAdmission: XrayTunAdmissionOptions? = nil
     ) throws {
         try self.init(
             configJSON: configJSON,
@@ -909,7 +911,8 @@ public final class XrayCore: @unchecked Sendable {
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
-            hysteriaStreamLimits: hysteriaStreamLimits
+            hysteriaStreamLimits: hysteriaStreamLimits,
+            tunAdmission: tunAdmission
         )
     }
 
@@ -926,7 +929,8 @@ public final class XrayCore: @unchecked Sendable {
         tunFileDescriptor: Int32? = nil,
         tunPacketFormat: XrayTunFdPacketFormat = XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
         tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
-        hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil
+        hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
+        tunAdmission: XrayTunAdmissionOptions? = nil
     ) throws {
         let ffiInfo = Self.ffiInfo
         try Self.validateFFIVersion(
@@ -1052,6 +1056,18 @@ public final class XrayCore: @unchecked Sendable {
                 try check(xray_core_set_hysteria_stream_limits(handle,
                     hysteriaStreamLimits.maxTcpStreams, hysteriaStreamLimits.maxUdpSessions,
                     &error), error: error)
+            }
+            if let tunAdmission {
+                guard ffiInfo.version.minor >= 11 else {
+                    throw XrayCoreError.incompatibleFFIMinorVersion(required: 11, actual: ffiInfo.version.minor)
+                }
+                try requireCapability(.tunAdmission)
+                let context = Unmanaged.passRetained(XrayTunAdmissionContext(tunAdmission))
+                let status = xray_core_set_tun_admission(handle, xrayTunAdmissionCallback,
+                    xrayTunAdmissionRelease, context.toOpaque(), tunAdmission.timeoutMilliseconds,
+                    tunAdmission.failOpen ? 1 : 0, &error)
+                if status != XRAY_STATUS_OK { context.release() }
+                try check(status, error: error)
             }
             if let geodataSearchDirectory {
                 try geodataSearchDirectory.path.withCString { pointer in

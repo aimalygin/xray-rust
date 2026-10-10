@@ -40,6 +40,7 @@ enum class XrayFfiCapability(val mask: Long) {
     Shadowsocks2022Outbound(1L shl 20),
     OutboundProbe(1L shl 22),
     HysteriaStreamLimits(1L shl 23),
+    TunAdmission(1L shl 24),
 }
 
 /** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */
@@ -580,6 +581,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
             dnsBootstrapMode: XrayDnsBootstrapMode = XrayDnsBootstrapMode.System,
             fileLoggingDirectory: File? = null,
             hysteriaStreamLimits: XrayHysteriaStreamLimits? = null,
+            tunAdmission: XrayTunAdmissionOptions? = null,
         ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
@@ -597,6 +599,13 @@ class XrayCore private constructor(handle: Long) : Closeable {
                     core.withLifecycleHandle {
                         core.nativeSetHysteriaStreamLimits(it, hysteriaStreamLimits.maxTcpStreams,
                             hysteriaStreamLimits.maxUdpSessions)
+                    }
+                }
+                if (tunAdmission != null) {
+                    core.requireFeature(11, XrayFfiCapability.TunAdmission)
+                    core.withLifecycleHandle {
+                        core.nativeSetTunAdmission(it, NativeTunAdmission(tunAdmission.callback),
+                            tunAdmission.timeoutMs, tunAdmission.failOpen)
                     }
                 }
                 if (startupProbe != null) {
@@ -998,6 +1007,8 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeCloseConnection(handle: Long, connectionId: Long)
     private external fun nativeRebindHysteria(handle: Long): Long
     private external fun nativeRebindWireGuard(handle: Long): Long
+    private external fun nativeSetTunAdmission(handle: Long, callback: NativeTunAdmission, timeoutMs: Int, failOpen: Boolean)
+
     private external fun nativeSetHysteriaStreamLimits(handle: Long, maxTcpStreams: Int, maxUdpSessions: Int)
     private external fun nativeProbeOutboundUrl(
         handle: Long,

@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.10`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.11`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -18,6 +18,7 @@ symbols. Profile import requires minor >=5, `PROFILE_IMPORT` and the selected
 WireGuard carrier rebind requires minor >=6 and `WIREGUARD_OUTBOUND`.
 Hysteria carrier rebind requires minor >=7 and `HYSTERIA2_OUTBOUND`.
 Hysteria stream limits require minor >=10 and `HYSTERIA_STREAM_LIMITS` (bit 23).
+TUN flow admission requires minor >=11 and `TUN_ADMISSION` (bit 24).
 The on-demand outbound probe requires minor >=9 and `OUTBOUND_PROBE`.
 
 An incompatible function signature, enum representation, ownership rule, or
@@ -510,3 +511,38 @@ The ABI currently defines:
 Use the numeric constants from the header rather than duplicating them in a
 foreign-language adapter. The checked-in Swift and JNI wrappers demonstrate
 the intended mapping.
+
+## Optional TUN flow admission (ABI 1.11)
+
+`xray_core_set_tun_admission` installs an owned host callback before config load.
+With no callback the existing TUN behavior is preserved. With one installed,
+TCP is checked after its local handshake and before outbound opening; UDP is
+checked before routing, DNS interception and FakeDNS answers. The callback sees
+the original source and destination, including fake IPs. TCP denial resets the
+local flow; UDP denial is cached until 60 seconds without datagrams. Allowed UDP
+entries are checked again when the associated runtime flow is replaced or closed.
+DNS-only UDP tuples use the same idle expiry. Policy replacement requires a new
+core; a host callback may read its own atomic policy for subsequent new flows.
+
+The callback returns exactly `1` to allow and any other value to deny. A timeout
+of 1–5000 ms and explicit `fail_open` choose the response to a timeout or an
+unavailable worker. Explicit denials, Java exceptions and Rust callback panics
+always deny. Unsupported IP protocols (including local ICMP), IPv4 fragments
+and IPv6 extension/fragment chains are dropped when this policy is enabled;
+they cannot reach an unchecked local responder or reassembly path.
+
+Four process-wide blocking workers and 64 queued jobs bound host work. A timeout
+cancels the decision, not arbitrary host execution. Stop/free do not wait for a
+blocked callback: its owned context is retained until that callback returns.
+The mandatory release callback runs exactly once after all references retire,
+on any thread, possibly after core free. Registration failure retains ownership
+with the caller. Callbacks/release must return promptly, must not unwind across
+C, and must not call core lifecycle methods. Clear before config load by passing
+null callback, release and context. Code/context must remain valid until release.
+
+UDP admission has at most 64 pending decisions, four retained packets per pending
+flow, 1 MiB of retained packet data, and a cache bounded by the TUN profile's UDP
+flow budget. Overflow drops packets even with fail-open configured. Established
+TCP does not call the policy again; enabled UDP uses a bounded tuple lookup.
+There are no per-packet host/JNI calls. `XrayTunAdmissionOptions` exposes the same
+optional policy in Kotlin and Swift.

@@ -300,6 +300,9 @@ open class XrayVpnService : VpnService() {
     private val runtimeGeneration = AtomicLong()
     private val fatalTunErrors = AtomicLong()
 
+    /** Optional host policy, created after the VPN interface is established. */
+    protected open fun tunAdmissionOptions(): XrayTunAdmissionOptions? = null
+
     open fun startXrayTunnel(
         configJson: String,
         tunBackend: XrayTunBackend = DEFAULT_XRAY_TUN_BACKEND,
@@ -381,6 +384,7 @@ open class XrayVpnService : VpnService() {
                 tunRuntimeProfile = tunRuntimeProfile,
                 startupProbe = startupProbe,
                 dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
+                tunAdmission = tunAdmissionOptions(),
                 tunFileDescriptor = when (tunBackend) {
                     XrayTunBackend.PacketPump -> null
                     XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(

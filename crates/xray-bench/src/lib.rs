@@ -78,6 +78,8 @@ mod process_metrics;
 #[cfg(unix)]
 pub mod protocol_bench;
 mod stream_transport;
+#[cfg(unix)]
+pub mod tun_admission;
 
 use process_metrics::current_peak_rss_kib;
 

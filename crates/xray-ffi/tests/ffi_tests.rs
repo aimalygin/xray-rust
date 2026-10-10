@@ -648,7 +648,8 @@ fn ffi_reports_exact_current_capabilities() {
         | xray_ffi::XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
         | xray_ffi::XRAY_FFI_CAPABILITY_VMESS_OUTBOUND
         | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE
-        | xray_ffi::XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS;
+        | xray_ffi::XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS
+        | xray_ffi::XRAY_FFI_CAPABILITY_TUN_ADMISSION;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);

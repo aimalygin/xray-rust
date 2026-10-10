@@ -5,6 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import org.xrayrust.mobile.XrayAndroidUidAdmission
+import org.xrayrust.mobile.XrayTunAdmissionOptions
+import org.xrayrust.mobile.XrayTunFlowAdmission
+import java.util.concurrent.atomic.AtomicInteger
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
@@ -26,6 +31,9 @@ class DeviceGateVpnService : XrayVpnService() {
     @Volatile private var lastStats = ZeroStats
     @Volatile private var selectedBackend = XrayTunBackend.FileDescriptor
     @Volatile private var probeOnly = false
+    @Volatile private var admissionEnabled = false
+    private val admissionAllowed = AtomicInteger()
+    private val admissionDenied = AtomicInteger()
 
     override fun onCreate() {
         super.onCreate()
@@ -128,6 +136,9 @@ class DeviceGateVpnService : XrayVpnService() {
         }
         selectedBackend = backend
         probeOnly = intent.getBooleanExtra("probe-only", false)
+        admissionEnabled = intent.getBooleanExtra("tun-admission", false)
+        admissionAllowed.set(0)
+        admissionDenied.set(0)
         startForeground(NOTIFICATION_ID, notification("VPN starting"))
         DeviceGateStatus.write(this, state = "starting")
         val configJson = try {
@@ -223,6 +234,9 @@ class DeviceGateVpnService : XrayVpnService() {
         val sample = JSONObject()
             .put("tunBackend", DeviceGateOptions.backendName(selectedBackend))
             .put("probeOnly", probeOnly)
+            .put("admissionEnabled", admissionEnabled)
+            .put("admissionAllowed", admissionAllowed.get())
+            .put("admissionDenied", admissionDenied.get())
             .put("runtimeRunning", runtime.running)
             .put("runtimeGeneration", status.runtimeGeneration)
             .put("residentMemoryBytes", residentMemoryBytes())
@@ -255,6 +269,28 @@ class DeviceGateVpnService : XrayVpnService() {
             lines.first { it.startsWith("Threads:") }.substringAfter(':').trim().toInt()
         }
     }.getOrDefault(0)
+
+    override fun tunAdmissionOptions(): XrayTunAdmissionOptions? {
+        if (!admissionEnabled) return null
+        if (Build.VERSION.SDK_INT < 29) throw UnsupportedOperationException("UID admission requires Android 10+")
+        check(probeOnly) { "Device admission test requires probe-only mode" }
+        val probePackage = packageName.replace("org.xrayrust.devicehost", "org.xrayrust.deviceprobe")
+        val uid = packageManager.getApplicationInfo(probePackage, 0).uid
+        val connectivity = getSystemService(ConnectivityManager::class.java)
+        val policy = XrayAndroidUidAdmission(connectivity, setOf(uid))
+        return XrayTunAdmissionOptions(XrayTunFlowAdmission { flow ->
+            val allowed = policy.admit(flow)
+            if (allowed) admissionAllowed.incrementAndGet() else {
+                admissionDenied.incrementAndGet()
+                // Diagnostic only; never change the original denial on a retry.
+                val retryUid = runCatching {
+                    connectivity.getConnectionOwnerUid(flow.protocol, flow.source, flow.destination)
+                }.getOrDefault(-2)
+                Log.i(LOG_TAG, "XRAY_ADMISSION_DENIED protocol=${flow.protocol} retryOwnerUid=$retryUid expectedUid=$uid")
+            }
+            allowed
+        }, timeoutMs = 500)
+    }
 
     override fun buildTunnel(): Builder {
         if (!probeOnly) return super.buildTunnel()

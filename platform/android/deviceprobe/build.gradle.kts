@@ -6,6 +6,8 @@ plugins {
 android {
     namespace = "org.xrayrust.deviceprobe"
     compileSdk = 35
+    ndkVersion = "26.3.11579264"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
 
     defaultConfig {
         applicationId = "org.xrayrust.deviceprobe"

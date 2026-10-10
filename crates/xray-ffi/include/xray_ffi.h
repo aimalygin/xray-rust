@@ -180,6 +180,39 @@ typedef struct XrayCoreHandle XrayCoreHandle;
 typedef struct XrayError XrayError;
 typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
 
+/* ABI 1.11: original application tuple before FakeDNS restoration. Ports are
+ * host-endian, addresses network byte order. IPv4 uses the first 4 bytes. */
+typedef struct XrayTunFlow {
+  uint64_t id;
+  uint8_t protocol; /* TCP=6, UDP=17 */
+  uint8_t address_family; /* 4 or 6 */
+  uint16_t source_port;
+  uint16_t destination_port;
+  uint16_t reserved;
+  uint8_t source_address[16];
+  uint8_t destination_address[16];
+} XrayTunFlow;
+typedef int32_t (*XrayTunAdmissionCallback)(const XrayTunFlow *flow, void *user_data);
+typedef void (*XrayTunAdmissionRelease)(void *user_data);
+
+/* Register before config load. Return 1 to allow, any other value to deny.
+ * timeout_ms: 1..5000, fail_open: 0/1 for timeout or unavailable host workers.
+ * Callbacks run concurrently on four process-wide workers with a bounded queue.
+ * A timeout bounds the decision; it does not interrupt callback execution.
+ * On success ownership transfers: release runs exactly once after all callbacks
+ * retire, possibly after core_free and on any thread. On failure ownership stays
+ * with the caller. release is mandatory for a non-null callback. Both callbacks
+ * must return promptly, never unwind, and never call core lifecycle methods.
+ * Callback code/context must remain valid until release. flow is borrowed only
+ * during the call. To clear, pass NULL for callback/release/user_data.
+ * Disabled by default. Opting in drops unsupported IP protocols/fragments.
+ * TCP denials reset the local flow; UDP denials drop until 60 seconds idle. */
+XrayStatus xray_core_set_tun_admission(
+    XrayCoreHandle *handle, XrayTunAdmissionCallback callback,
+    XrayTunAdmissionRelease release, void *user_data, uint32_t timeout_ms,
+    int32_t fail_open, XrayError **error);
+
+
 /* Capability bits are additive within one ABI major. Preserve and ignore
  * unknown bits so a newer library remains usable through its older surface. */
 typedef enum XrayFfiCapability {
@@ -206,7 +239,8 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND = 1 << 20,
   XRAY_FFI_CAPABILITY_VMESS_OUTBOUND = 1 << 21,
   XRAY_FFI_CAPABILITY_OUTBOUND_PROBE = 1 << 22,
-  XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS = 1 << 23
+  XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS = 1 << 23,
+  XRAY_FFI_CAPABILITY_TUN_ADMISSION = 1 << 24
 } XrayFfiCapability;
 
 /* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.

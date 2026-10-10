@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private lateinit var disconnectButton: Button
     private var requestedBackend = XrayTunBackend.FileDescriptor
     private var requestedProbeOnly = false
+    private var requestedAdmission = false
     private val refreshStatus = object : Runnable {
         override fun run() {
             renderStatus()
@@ -50,6 +51,7 @@ class MainActivity : Activity() {
             savedInstanceState?.getString(DeviceGateOptions.EXTRA_TUN_BACKEND),
         )
         requestedProbeOnly = savedInstanceState?.getBoolean("probe-only", false) ?: false
+        requestedAdmission = savedInstanceState?.getBoolean("tun-admission", false) ?: false
         setContentView(buildContentView())
         requestNotificationPermission()
         handleAutomationCommand(intent)
@@ -63,6 +65,7 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("probe-only", requestedProbeOnly)
+        outState.putBoolean("tun-admission", requestedAdmission)
         outState.putString(
             DeviceGateOptions.EXTRA_TUN_BACKEND,
             DeviceGateOptions.backendName(requestedBackend),
@@ -317,6 +320,7 @@ class MainActivity : Activity() {
     private fun sendServiceAction(action: String, foreground: Boolean = true) {
         val serviceIntent = Intent(this, DeviceGateVpnService::class.java).setAction(action)
             .putExtra("probe-only", requestedProbeOnly)
+            .putExtra("tun-admission", requestedAdmission)
             .putExtra(
                 DeviceGateOptions.EXTRA_TUN_BACKEND,
                 DeviceGateOptions.backendName(requestedBackend),
@@ -332,6 +336,7 @@ class MainActivity : Activity() {
         val command = intent?.getStringExtra(EXTRA_COMMAND)
         if (command == COMMAND_CONNECT || command == COMMAND_RAPID_STOP) {
             requestedProbeOnly = intent?.getBooleanExtra("probe-only", false) ?: false
+            requestedAdmission = intent?.getBooleanExtra("tun-admission", false) ?: false
             requestedBackend = try {
                 DeviceGateOptions.backend(intent?.getStringExtra(DeviceGateOptions.EXTRA_TUN_BACKEND))
             } catch (_: IllegalArgumentException) {
@@ -362,6 +367,7 @@ class MainActivity : Activity() {
         intent?.removeExtra(EXTRA_COMMAND)
         intent?.removeExtra(DeviceGateOptions.EXTRA_TUN_BACKEND)
         intent?.removeExtra("probe-only")
+        intent?.removeExtra("tun-admission")
     }
 
     private fun renderStatus() {

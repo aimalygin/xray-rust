@@ -68,6 +68,9 @@ use xray_transport::{
 };
 use xray_tun::{TunEndpoint, TunError, TunStats};
 
+#[path = "runtime_data_path_tests/tun_admission.rs"]
+mod tun_admission;
+
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
 
