@@ -1,0 +1,117 @@
+{
+  "scope": "PR42 main merge validation; no release/device acceptance or package publication",
+  "baseline_commit": "1388c613971c8785f22107e2fac6be85f956e388",
+  "main_commit": "d0b5496f1d38e7b1b10c33513829ed56ce7c490f",
+  "candidate_commit": "3f07fa7ecab2a00530ebfb649e15edc6a5dfc734",
+  "reference": {
+    "version": "v26.7.28",
+    "commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "binary_sha256": "34cd2ff77efc0280505c000d6095de6b0f7313d3c445c9925c67c1512e7431f1"
+  },
+  "abi": {
+    "minor": 9,
+    "trojan_bit": 19,
+    "shadowsocks2022_bit": 20,
+    "vmess_bit": 21,
+    "outbound_probe_bit": 22
+  },
+  "local_checks": {
+    "workspace": {
+      "passed": 2437,
+      "failed": 0,
+      "ignored": 91
+    },
+    "workspace_command": "cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked -j4",
+    "clippy": "cargo clippy --workspace --all-targets --all-features --locked -j4 -- -D warnings -W clippy::perf -W clippy::suspicious (pass)",
+    "repository_scripts": "Exact Check repository scripts CI block, retained as check-repo-scripts.sh (pass)",
+    "secret_exception_tests": {
+      "passed": 21,
+      "log": "gitleaks-scope.log"
+    },
+    "live_v08": {
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    "live_inner_tls": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "ci_merge_commit": {
+    "run_id": 38024178277,
+    "head": "3f07fa7ecab2a00530ebfb649e15edc6a5dfc734",
+    "rust_workspace": {
+      "passed": 2432,
+      "failed": 0,
+      "ignored": 91
+    },
+    "oracle_and_interop_test_invocations": {
+      "passed": 279,
+      "failed": 0,
+      "ignored": 0
+    },
+    "conclusion": "success",
+    "jobs": {
+      "go-oracles": "success",
+      "secrets": "success",
+      "rust": "success",
+      "supply-chain": "success",
+      "apple": "success",
+      "android": "success",
+      "release-metadata": "skipped",
+      "xray-core-main-smoke": "skipped",
+      "release-evidence": "skipped",
+      "rc-interop": "skipped",
+      "host-hardening": "skipped",
+      "scheduled-pinned-interop": "skipped",
+      "fuzz-smoke": "skipped",
+      "controlled-network": "skipped",
+      "publish-prerelease": "skipped"
+    },
+    "swift_tests": 329
+  },
+  "retained_diagnostics": [
+    "Original PR Rust CI failed because the canonical workflow guard omitted test_v08_android_fixture; the guard now matches the existing workflow.",
+    "Initial local compile found a test-only RuntimeState initializer missing main's probe_dns field; fixed before candidate commit. workspace-tests.log is preserved.",
+    "First release candidate build reused a Cargo target shared across worktrees and found stale pre-main xray-config symbols. Both measured engines were rebuilt in separate empty target directories; original failed log retained.",
+    "Initial smoke collector requested SOCKS-only warmup/preface for TUN. Driver rejected the request before client startup. Invalid and corrected collectors and logs are retained; no runtime code changed.",
+    "Original primary collection stopped after 299 successful transfers because system ANECompilerService was observed at 61.7\u201396.9% CPU in a REALITY duplex/1 run. All attempts are retained. Twenty fresh runs repeat both incomplete REALITY duplex cases; only complete clean case groups enter the derived 31-case view.",
+    "The first memory A/A collection was interrupted by ANECompilerService at 83.4% CPU in its final pair. The first four complete clean pairs plus one fresh clean pair form the derived A/A control. Further controls accept the first five clean pairs by observed compiler-load criterion, never by metric value; all attempts are retained."
+  ],
+  "release_builds": {
+    "baseline": {
+      "commit": "1388c613971c8785f22107e2fac6be85f956e388",
+      "target": "/private/tmp/xray-pr42-main-validation/target-release-baseline",
+      "engine_sha256": "3f1f1ecbfce931d4573a9cce1a328b6010c170d246bd87576437bc1066ef3f52",
+      "harness_sha256": "ad2ddeb16e875028aba22d68ee12c6a4ba1b9aa6d2718dc5082c333bfa6b7c78"
+    },
+    "candidate": {
+      "commit": "3f07fa7ecab2a00530ebfb649e15edc6a5dfc734",
+      "target": "/private/tmp/xray-pr42-main-validation/target-release-candidate",
+      "engine_sha256": "7112bebebe157563dd55db4c88126a9bf348b437b67376b7c121feb462eed153",
+      "harness_sha256": "ba296560da80d0285dbd783b9692812fdca2ddfa34cb83d437d676630227baa3"
+    }
+  },
+  "source_status_at_measurement": "Both checkouts clean; production driver source identical between baseline and candidate",
+  "device_limits": "Historical iPhone/Android failures, skipped transitions and v0.8 release gates remain as documented; SDK PR33 is separate and not repinned.",
+  "performance": {
+    "primary_cases": 31,
+    "primary_clean_runs": 310,
+    "followup_clean_runs": 80,
+    "smoke_passed_runs": 8,
+    "controls": [
+      "memory-confirmation",
+      "memory-aa-clean",
+      "udp-long-confirmation-ss2022-chacha20",
+      "udp-long-confirmation-vmess-aes128",
+      "udp-long-confirmation-vmess-chacha20",
+      "udp-long-aa-ss2022-chacha20",
+      "udp-long-aa-vmess-aes128",
+      "udp-long-aa-vmess-chacha20"
+    ],
+    "conclusion": "No sustained throughput or CPU regression reproduced in this bounded host matrix. RSS varies in both directions across paired samples; memory observations and controls remain visible."
+  },
+  "artifact_metadata": "Public binary hashes use engine_sha256/harness_sha256 names, matching performance manifests; no scanner exception is added."
+}

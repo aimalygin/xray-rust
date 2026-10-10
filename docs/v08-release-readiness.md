@@ -5,6 +5,11 @@ acceptance; **release acceptance is not complete**. Required scope is Trojan,
 Shadowsocks 2022 (all three methods) and VMess AEAD in the core and both SDKs.
 Shadowsocks AEAD-2017 and legacy VMess authentication remain excluded.
 
+The [2026-10-09–10 main-merge validation](benchmarks/results/2026-10-09-pr42-main/README.md)
+records the updated draft's ABI 1.9, green ordinary PR CI, pinned/independent
+interop and paired host performance checks. Its binary identities are separate
+from the earlier device candidates below; release acceptance remains incomplete.
+
 ## Reviewed source and evidence
 
 The code review covers core `1185511dc5ed3425ba4839b4ebe38d31a89c1263` and SDK

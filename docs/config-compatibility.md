@@ -72,8 +72,8 @@ requires `mux.concurrency: -1`; use positive `xudpConcurrency` for UDP pooling.
 Enabling TCP Mux on XHTTP is rejected before dialing, including configurations
 built through the Rust API. Ordinary TCP still uses XHTTP's own transport pool.
 
-The shared Rust importer, C ABI 1.8 capability discovery, Swift adapter and
-Kotlin adapter expose all three formats. Host applications still own secure
+The shared Rust importer, protocol capability discovery introduced in C ABI 1.8,
+Swift adapter and Kotlin adapter expose all three formats. Host applications still own secure
 profile persistence. Imports preserve credentials in the returned JSON, while
 Debug/error descriptions redact them.
 
@@ -1174,7 +1174,7 @@ failure count, and a typed redacted failure category; raw URLs and transport
 error strings are not retained.
 
 Hosts that schedule their own checks, such as a mobile tunnel heartbeat, can
-request one probe at a time through C ABI 1.8 and the Swift/Kotlin adapters
+request one probe at a time through C ABI 1.9 and the Swift/Kotlin adapters
 without an `observatory` object. It accepts the same URLs as the startup probe,
 dials one leaf by tag or the default outbound with routing bypassed, takes a
 host timeout of 1 to 60000 ms, and returns the delay or the same typed failure
