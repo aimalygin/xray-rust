@@ -589,6 +589,8 @@ paths = [
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-aa/manifest\.json$''',
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-ab/manifest\.json$''',
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
 ]
 
 [[allowlists]]
@@ -645,6 +647,8 @@ paths = [
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-aa/manifest\.json$''',
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-sequence\-ab/manifest\.json$''',
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
 ]
 
 [[allowlists]]
@@ -666,6 +670,19 @@ paths = [
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-aa/manifest\.json$''',
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4\-udp\-diagnostic/manifest\.json$''',
   '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage4/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
+]
+
+[[allowlists]]
+description = "Verified PR42 issue evidence binary ba6424e834e7"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^ba6424e834e76f5594bb9041efe50d1b86a4f05c148a7397f3f06828a1b9c95b$''']
+paths = [
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5\-legacy/manifest\.json$''',
+  '''^docs/benchmarks/results/2026\-10\-10\-pr42\-issues/measurements\.tar\.gz!perf\-stage5/manifest\.json$''',
 ]
 
 [[allowlists]]

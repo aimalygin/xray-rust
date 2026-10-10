@@ -4,7 +4,8 @@ This evidence measures `2d45346` (Android rebind and configurable Hysteria
 budgets) and `1799432` (optional TUN admission) against `5ebcad0`. The baseline
 binary is the previously validated `3f07fa7` runtime; `5ebcad0` changes only
 documentation. Stage 3 measures `8e003d3` (Salamander and port hopping).
-Stage 4 is `c26eb54` (bounded ClientHello fragmentation).
+Stage 4 is `c26eb54` (bounded ClientHello fragmentation). The final runtime
+follow-up is `c81927f`, which releases expired pending UDP admission buffers.
 The reference remains Xray-core v26.7.28 at
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`.
 
@@ -41,8 +42,17 @@ fixture: its UDP-selected ephemeral port was already occupied in the separate
 TCP namespace (`AddrInUse`). The follow-up retries a bounded 32 fresh socket
 pairs and adds a deterministic held-TCP-listener collision test. It changes
 fixture allocation in `xray-bench`, not the core or the workloads measured
-below. The frozen performance source/binaries remain `c26eb54`; final CI tracks
-the fixture/documentation follow-up separately.
+below. Stage 4 retains its frozen `c26eb54` source/binaries; the final
+accounting follow-up and its new measurements are identified separately.
+
+A final review found a pending-admission accounting edge case: if an executor
+is paused long enough for UDP idle expiry, a new packet can remove the old
+pending entry before its timeout/completion is consumed. `c81927f` releases
+that entry's buffered-byte budget on removal. A deterministic regression test
+first failed (18 accounted bytes instead of 6), then passed after the fix; it
+also verifies that the old decision cannot admit the replacement flow. All
+523 core unit tests and 190 runtime tests pass (16 external tests ignored),
+as does strict core Clippy. This path is only entered when admission is enabled.
 
 ## Physical Android check
 
@@ -130,6 +140,16 @@ that binary's disabled option, median throughput changes were −2.25%..+1.37%,
 CPU/byte −0.90%..+0.60%, RSS −0.31%..+2.57%. This checks sustained 1 GiB transfers;
 configured per-fragment delays intentionally add first-handshake latency.
 It does not establish behavior on a particular DPI network.
+
+The final `c81927f` ordinary TLS/REALITY Vision rerun passes 40/40: throughput
+−2.34%..−0.73%, CPU/byte −1.56%..−0.30%, RSS −2.50%..0%. It is a separate
+campaign on the exact buffer-accounting follow-up, not pooled with stage 4.
+The same final binary passes all 80 Hysteria runs: TCP throughput
+−2.00%..+2.80%, CPU/byte −9.60%..+0.41%, RSS −1.49%..+4.32%. UDP one/eight-flow
+throughput is +0.80%/+1.18%, CPU/byte 0%/−3.85%, latency 0%/+0.83%.
+These passing repeats do not resolve the earlier UDP failures. The larger
+CPU improvement in eight-flow upload is an observation, not an optimization
+claim for the unrelated admission accounting fix.
 
 The separate `xray-bench tun-admission` run alternated five pairs of 1,000 new
 TCP flows, with 50 warmups per batch. A no-op callback added 8.33 µs to the
