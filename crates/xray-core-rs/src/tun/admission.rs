@@ -101,7 +101,16 @@ impl UdpAdmission {
                     if flows.get(&key).is_none_or(|flow| flow.generation != generation))
         });
         if stale {
-            self.entries.remove(&key);
+            let removed = self.entries.remove(&key);
+            if let Some(Entry {
+                decision: Decision::Pending(packets),
+                ..
+            }) = removed
+            {
+                // A suspended executor can observe idle expiry before it
+                // consumes the timeout/completion of the pending decision.
+                self.buffered_bytes -= packets.iter().map(Bytes::len).sum::<usize>();
+            }
         }
         if let Some(entry) = self.entries.get_mut(&key) {
             entry.last_seen = now;
@@ -211,6 +220,36 @@ mod tests {
         }
         assert_eq!(state.buffered_bytes, 0);
         assert!(state.ready.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stale_pending_udp_releases_budget_and_ignores_old_completion() {
+        let policy =
+            TunAdmissionPolicy::new(Arc::new(|_| true), Duration::from_secs(1), false).unwrap();
+        let mut state = UdpAdmission::new(policy, 1024);
+        let (_stop, shutdown) = watch::channel(false);
+        let next_id = AtomicU64::new(10);
+        let flows = HashMap::new();
+        let packet = Bytes::from_static(b"packet");
+        let udp = udp(1234);
+        let key = UdpFlowKey::new(udp.client, udp.target);
+        // Do not yield: simulate a suspended runtime whose pending decision has
+        // not been consumed when the first packet after idle expiry arrives.
+        for _ in 0..2 {
+            assert!(!state.allow(&udp, &packet, &flows, &next_id, shutdown.clone()));
+        }
+        let old_id = state.entries[&key].id;
+        state.entries.get_mut(&key).unwrap().last_seen -= UDP_IDLE_TIMEOUT + Duration::from_secs(1);
+        assert!(!state.allow(&udp, &packet, &flows, &next_id, shutdown));
+        assert_eq!(state.buffered_bytes, packet.len());
+        let new_id = state.entries[&key].id;
+        assert_ne!(new_id, old_id);
+        state.complete(Ok((key, old_id, true)));
+        assert!(state.ready.is_empty());
+        assert_eq!(state.buffered_bytes, packet.len());
+        state.complete(Ok((key, new_id, true)));
+        assert_eq!(state.pop_ready(), Some(packet));
+        assert_eq!(state.buffered_bytes, 0);
     }
 
     #[tokio::test]
