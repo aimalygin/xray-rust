@@ -6,10 +6,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use xray_ffi::{
-    xray_core_clear_outbound_selector_override, xray_core_close_connection,
-    xray_core_config_warnings, xray_core_connection_snapshot_json, xray_core_free,
-    xray_core_load_config_json, xray_core_new, xray_core_outbound_accounting_snapshot_json,
-    xray_core_outbound_health_snapshot_json, xray_core_outbound_selection_snapshot_json,
+    xray_core_cancel_outbound_probes, xray_core_clear_outbound_selector_override,
+    xray_core_close_connection, xray_core_config_warnings, xray_core_connection_snapshot_json,
+    xray_core_free, xray_core_load_config_json, xray_core_new,
+    xray_core_outbound_accounting_snapshot_json, xray_core_outbound_health_snapshot_json,
+    xray_core_outbound_selection_snapshot_json, xray_core_probe_outbound_url,
     xray_core_replace_routing_policy_json, xray_core_routing_policy_snapshot_json,
     xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging, xray_core_set_geodata_search_dir,
     xray_core_set_geodata_search_dir_exclusive, xray_core_set_outbound_selector_override,
@@ -21,14 +22,15 @@ use xray_ffi::{
     xray_tun_poll_tcp_open_error_event, xray_tun_poll_tcp_remote_write_slow_event,
     xray_tun_poll_tcp_slow_flow_event, xray_tun_poll_udp_quic_blocked_event,
     xray_tun_poll_udp_response_gap_event, xray_tun_poll_udp_slow_flow_event, xray_tun_push_packet,
-    xray_tun_stats, XrayDnsBootstrapMode, XrayStatus, XrayTcpFlowSummaryEvent,
-    XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent, XrayTcpSlowFlowEvent, XrayTunFdClosePolicy,
-    XrayTunFdPacketFormat, XrayTunRuntimeProfile, XrayTunStats, XrayUdpQuicBlockedEvent,
-    XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent, XRAY_FFI_ABI_MAJOR, XRAY_FFI_ABI_MINOR,
-    XRAY_FFI_CAPABILITIES, XRAY_FFI_CAPABILITY_CONFIG_WARNINGS,
-    XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT, XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY,
-    XRAY_FFI_CAPABILITY_FILE_LOGGING, XRAY_FFI_CAPABILITY_GEODATA_SEARCH,
-    XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND, XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH,
+    xray_tun_stats, XrayDnsBootstrapMode, XrayOutboundProbeFailureKind, XrayStatus,
+    XrayTcpFlowSummaryEvent, XrayTcpOpenErrorEvent, XrayTcpRemoteWriteSlowEvent,
+    XrayTcpSlowFlowEvent, XrayTunFdClosePolicy, XrayTunFdPacketFormat, XrayTunRuntimeProfile,
+    XrayTunStats, XrayUdpQuicBlockedEvent, XrayUdpResponseGapEvent, XrayUdpSlowFlowEvent,
+    XRAY_FFI_ABI_MAJOR, XRAY_FFI_ABI_MINOR, XRAY_FFI_CAPABILITIES,
+    XRAY_FFI_CAPABILITY_CONFIG_WARNINGS, XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT,
+    XRAY_FFI_CAPABILITY_DNS_BOOTSTRAP_POLICY, XRAY_FFI_CAPABILITY_FILE_LOGGING,
+    XRAY_FFI_CAPABILITY_GEODATA_SEARCH, XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND,
+    XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH, XRAY_FFI_CAPABILITY_OUTBOUND_PROBE,
     XRAY_FFI_CAPABILITY_OUTBOUND_SELECTION, XRAY_FFI_CAPABILITY_PROFILE_IMPORT,
     XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE, XRAY_FFI_CAPABILITY_SOCKET_PROTECTION,
     XRAY_FFI_CAPABILITY_STARTUP_PROBE, XRAY_FFI_CAPABILITY_TUN_BATCH_POLL,
@@ -131,6 +133,496 @@ fn ffi_hysteria_rebind_validates_outputs_and_keeps_idle_outbounds_lazy() {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProbeOutputs {
+    delay_ms: u64,
+    failure_kind: i32,
+    http_status: u16,
+}
+
+/// Calls the on-demand probe with sentinel outputs so each test also proves
+/// that the outputs are rewritten on every return path.
+fn probe_outbound(
+    core: *mut xray_ffi::XrayCoreHandle,
+    url: &CStr,
+    timeout_ms: u64,
+    outbound_tag: Option<&CStr>,
+    err: &mut *mut xray_ffi::XrayError,
+) -> (XrayStatus, ProbeOutputs) {
+    let mut outputs = ProbeOutputs {
+        delay_ms: u64::MAX,
+        failure_kind: -1,
+        http_status: u16::MAX,
+    };
+    let status = unsafe {
+        xray_core_probe_outbound_url(
+            core,
+            url.as_ptr(),
+            timeout_ms,
+            outbound_tag.map_or(std::ptr::null(), CStr::as_ptr),
+            &mut outputs.delay_ms,
+            &mut outputs.failure_kind,
+            &mut outputs.http_status,
+            err,
+        )
+    };
+    (status, outputs)
+}
+
+const NO_PROBE_OUTPUT: ProbeOutputs = ProbeOutputs {
+    delay_ms: 0,
+    failure_kind: XrayOutboundProbeFailureKind::None as i32,
+    http_status: 0,
+};
+
+fn started_freedom_core(err: &mut *mut xray_ffi::XrayError) -> *mut xray_ffi::XrayCoreHandle {
+    let core = unsafe { xray_core_new(err) };
+    assert!(!core.is_null());
+    let raw = CString::new(client_config_with_freedom_outbound()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), err) },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        unsafe { xray_core_start(core, err) },
+        XrayStatus::Ok,
+        "start error: {}",
+        error_message(*err)
+    );
+    core
+}
+
+#[test]
+fn ffi_outbound_probe_validates_outputs_handle_and_lifecycle() {
+    let url = c"http://127.0.0.1:9/health";
+    let mut err = std::ptr::null_mut();
+
+    let (status, outputs) = probe_outbound(std::ptr::null_mut(), url, 1_000, None, &mut err);
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_eq!(outputs, NO_PROBE_OUTPUT);
+    assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    let mut delay_ms = 0_u64;
+    let mut failure_kind = 0_i32;
+    let mut http_status = 0_u16;
+    unsafe {
+        assert_eq!(
+            xray_core_probe_outbound_url(
+                core,
+                url.as_ptr(),
+                1_000,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &mut failure_kind,
+                &mut http_status,
+                &mut err,
+            ),
+            XrayStatus::NullArgument
+        );
+        assert_error(&mut err, XrayStatus::NullArgument, "delay output is null");
+        assert_eq!(
+            xray_core_probe_outbound_url(
+                core,
+                url.as_ptr(),
+                1_000,
+                std::ptr::null(),
+                &mut delay_ms,
+                std::ptr::null_mut(),
+                &mut http_status,
+                &mut err,
+            ),
+            XrayStatus::NullArgument
+        );
+        assert_error(
+            &mut err,
+            XrayStatus::NullArgument,
+            "failure kind output is null",
+        );
+        assert_eq!(
+            xray_core_probe_outbound_url(
+                core,
+                url.as_ptr(),
+                1_000,
+                std::ptr::null(),
+                &mut delay_ms,
+                &mut failure_kind,
+                std::ptr::null_mut(),
+                &mut err,
+            ),
+            XrayStatus::NullArgument
+        );
+        assert_error(
+            &mut err,
+            XrayStatus::NullArgument,
+            "HTTP status output is null",
+        );
+    }
+
+    let (status, outputs) = probe_outbound(core, url, 1_000, None, &mut err);
+    assert_eq!(status, XrayStatus::CoreNotLoaded);
+    assert_eq!(outputs, NO_PROBE_OUTPUT);
+    assert_error(&mut err, XrayStatus::CoreNotLoaded, "not loaded");
+
+    let raw = CString::new(client_config_with_freedom_outbound()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    let (status, outputs) = probe_outbound(core, url, 1_000, None, &mut err);
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_eq!(outputs, NO_PROBE_OUTPUT);
+    assert_error(&mut err, XrayStatus::RuntimeError, "core is not running");
+
+    assert_eq!(unsafe { xray_core_start(core, &mut err) }, XrayStatus::Ok);
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    let (status, outputs) = probe_outbound(core, url, 1_000, None, &mut err);
+    assert_eq!(status, XrayStatus::RuntimeError);
+    assert_eq!(outputs, NO_PROBE_OUTPUT);
+    assert_error(&mut err, XrayStatus::RuntimeError, "core is not running");
+
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_outbound_probe_reports_delay_through_default_and_tagged_outbounds() {
+    let mut err = std::ptr::null_mut();
+    let core = started_freedom_core(&mut err);
+
+    for tag in [None, Some(c""), Some(c"direct")] {
+        let server = spawn_startup_probe_server_once();
+        let url = CString::new(format!("http://127.0.0.1:{}/health", server.addr.port())).unwrap();
+        let (status, outputs) = probe_outbound(core, &url, 5_000, tag, &mut err);
+        assert_eq!(
+            status,
+            XrayStatus::Ok,
+            "probe error for {tag:?}: {}",
+            error_message(err)
+        );
+        assert!(err.is_null());
+        assert_eq!(
+            outputs.failure_kind,
+            XrayOutboundProbeFailureKind::None as i32
+        );
+        assert_eq!(outputs.http_status, 0);
+        assert!(outputs.delay_ms <= 5_000, "delay {}", outputs.delay_ms);
+        server.wait();
+    }
+
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    unsafe { xray_core_free(core) };
+}
+
+unsafe extern "C" fn count_socket_protect_call(
+    fd: libc::c_int,
+    user_data: *mut libc::c_void,
+) -> libc::c_int {
+    assert!(fd >= 0);
+    let calls = unsafe { &*user_data.cast::<std::sync::atomic::AtomicUsize>() };
+    calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    1
+}
+
+#[test]
+fn ffi_outbound_probe_dials_through_socket_protect_callback() {
+    let calls = std::sync::atomic::AtomicUsize::new(0);
+    let mut err = std::ptr::null_mut();
+    let core = unsafe { xray_core_new(&mut err) };
+    assert!(!core.is_null());
+    assert_eq!(
+        unsafe {
+            xray_core_set_socket_protect_callback(
+                core,
+                Some(count_socket_protect_call),
+                std::ptr::from_ref(&calls).cast_mut().cast(),
+                &mut err,
+            )
+        },
+        XrayStatus::Ok
+    );
+    let raw = CString::new(client_config_with_freedom_outbound()).unwrap();
+    assert_eq!(
+        unsafe { xray_core_load_config_json(core, raw.as_ptr(), &mut err) },
+        XrayStatus::Ok
+    );
+    assert_eq!(unsafe { xray_core_start(core, &mut err) }, XrayStatus::Ok);
+    let before = calls.load(std::sync::atomic::Ordering::SeqCst);
+
+    let server = spawn_startup_probe_server_once();
+    let url = CString::new(format!("http://127.0.0.1:{}/health", server.addr.port())).unwrap();
+    let (status, outputs) = probe_outbound(core, &url, 5_000, None, &mut err);
+    assert_eq!(status, XrayStatus::Ok, "{}", error_message(err));
+    assert_eq!(
+        outputs.failure_kind,
+        XrayOutboundProbeFailureKind::None as i32
+    );
+    server.wait();
+    assert!(
+        calls.load(std::sync::atomic::Ordering::SeqCst) > before,
+        "probe socket must be protected before connect"
+    );
+
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_outbound_probe_reports_typed_failures_within_timeout() {
+    let mut err = std::ptr::null_mut();
+    let core = started_freedom_core(&mut err);
+
+    let (status_addr, status_server) =
+        spawn_http_response_once("HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\n\r\n");
+    let url = CString::new(format!("http://127.0.0.1:{}/health", status_addr.port())).unwrap();
+    let (status, outputs) = probe_outbound(core, &url, 5_000, Some(c"direct"), &mut err);
+    assert_eq!(status, XrayStatus::Ok, "{}", error_message(err));
+    assert_eq!(
+        outputs,
+        ProbeOutputs {
+            delay_ms: 0,
+            failure_kind: XrayOutboundProbeFailureKind::HttpStatus as i32,
+            http_status: 503,
+        }
+    );
+    status_server.join().unwrap();
+
+    let stalled = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let stalled_addr = stalled.local_addr().unwrap();
+    let (release_stalled, stalled_released) = mpsc::channel::<()>();
+    let stalled_server = thread::spawn(move || {
+        let (_stream, _) = stalled.accept().unwrap();
+        let _ = stalled_released.recv_timeout(Duration::from_secs(5));
+    });
+    let url = CString::new(format!("http://127.0.0.1:{}/health", stalled_addr.port())).unwrap();
+    let started = Instant::now();
+    let (status, outputs) = probe_outbound(core, &url, 200, None, &mut err);
+    let elapsed = started.elapsed();
+    assert_eq!(status, XrayStatus::Ok, "{}", error_message(err));
+    assert_eq!(
+        outputs,
+        ProbeOutputs {
+            delay_ms: 0,
+            failure_kind: XrayOutboundProbeFailureKind::Timeout as i32,
+            http_status: 0,
+        }
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "timeout must bound the blocking call, took {elapsed:?}"
+    );
+    release_stalled.send(()).unwrap();
+    stalled_server.join().unwrap();
+
+    let refused_port = reserve_loopback_port();
+    let url = CString::new(format!("http://127.0.0.1:{refused_port}/health")).unwrap();
+    let (status, outputs) = probe_outbound(core, &url, 5_000, None, &mut err);
+    assert_eq!(status, XrayStatus::Ok, "{}", error_message(err));
+    assert_eq!(
+        outputs.failure_kind,
+        XrayOutboundProbeFailureKind::Transport as i32
+    );
+    assert_eq!((outputs.delay_ms, outputs.http_status), (0, 0));
+
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_outbound_probe_cancellation_unblocks_shared_calls_before_stop() {
+    let mut err = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { xray_core_cancel_outbound_probes(std::ptr::null_mut(), &mut err) },
+        XrayStatus::NullArgument
+    );
+    assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+    let unloaded = unsafe { xray_core_new(&mut err) };
+    assert_eq!(
+        unsafe { xray_core_cancel_outbound_probes(unloaded, &mut err) },
+        XrayStatus::Ok
+    );
+    unsafe { xray_core_free(unloaded) };
+
+    let core = started_freedom_core(&mut err);
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = CString::new(format!("http://{}/health", listener.local_addr().unwrap())).unwrap();
+    // Shared FFI calls use distinct error/output storage. Free only after join.
+    let address = core as usize;
+    let probe_url = url.clone();
+    let (done_tx, done_rx) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let mut probe_error = std::ptr::null_mut();
+        let result = probe_outbound(
+            address as *mut _,
+            &probe_url,
+            60_000,
+            None,
+            &mut probe_error,
+        );
+        assert_error(&mut probe_error, XrayStatus::RuntimeError, "cancelled");
+        done_tx.send(result).unwrap();
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (_peer, _) = loop {
+        match listener.accept() {
+            Ok(peer) => break peer,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline =>
+            {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("probe did not connect: {error}"),
+        }
+    };
+    assert_eq!(
+        unsafe { xray_core_cancel_outbound_probes(core, &mut err) },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        done_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+        (XrayStatus::RuntimeError, NO_PROBE_OUTPUT)
+    );
+    worker.join().unwrap();
+    assert_eq!(
+        probe_outbound(core, &url, 60_000, None, &mut err),
+        (XrayStatus::RuntimeError, NO_PROBE_OUTPUT)
+    );
+    assert_error(&mut err, XrayStatus::RuntimeError, "cancelled");
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+
+    unsafe { xray_core_free(core) };
+
+    // A new handle creates a fresh cancellation latch.
+    let core = started_freedom_core(&mut err);
+    let server = spawn_startup_probe_server_once();
+    let url = CString::new(format!("http://{}/health", server.addr)).unwrap();
+    let (status, output) = probe_outbound(core, &url, 5_000, None, &mut err);
+    assert_eq!(status, XrayStatus::Ok, "{}", error_message(err));
+    assert_eq!(
+        output.failure_kind,
+        XrayOutboundProbeFailureKind::None as i32
+    );
+    server.wait();
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
+fn ffi_outbound_probe_rejects_invalid_arguments_with_redacted_errors() {
+    let mut err = std::ptr::null_mut();
+    let core = started_freedom_core(&mut err);
+    let url = c"http://127.0.0.1:9/health";
+
+    let mut delay_ms = 1;
+    let mut failure_kind = 1;
+    let mut http_status = 1;
+    let status = unsafe {
+        xray_core_probe_outbound_url(
+            core,
+            std::ptr::null(),
+            1_000,
+            std::ptr::null(),
+            &mut delay_ms,
+            &mut failure_kind,
+            &mut http_status,
+            &mut err,
+        )
+    };
+    assert_eq!(status, XrayStatus::NullArgument);
+    assert_eq!((delay_ms, failure_kind, http_status), (0, 0, 0));
+    assert_error(
+        &mut err,
+        XrayStatus::NullArgument,
+        "outbound probe URL is null",
+    );
+
+    let invalid_utf8 = CString::new(vec![b'h', 0xff, b'x']).unwrap();
+    for (url, timeout_ms, tag, expected, message) in [
+        (
+            c"",
+            1_000,
+            None,
+            XrayStatus::InvalidArgument,
+            "URL is empty",
+        ),
+        (
+            invalid_utf8.as_c_str(),
+            1_000,
+            None,
+            XrayStatus::InvalidUtf8,
+            "URL is not valid UTF-8",
+        ),
+        (
+            url,
+            1_000,
+            Some(invalid_utf8.as_c_str()),
+            XrayStatus::InvalidUtf8,
+            "tag is not valid UTF-8",
+        ),
+        (
+            c"ftp://probe.test/health",
+            1_000,
+            None,
+            XrayStatus::InvalidArgument,
+            "unsupported outbound probe URL",
+        ),
+        (
+            c"https://user:secret@probe.test/health?token=private",
+            1_000,
+            None,
+            XrayStatus::InvalidArgument,
+            "unsupported outbound probe URL",
+        ),
+        (
+            url,
+            0,
+            None,
+            XrayStatus::InvalidArgument,
+            "between 1 and 60000 ms",
+        ),
+        (
+            url,
+            60_001,
+            None,
+            XrayStatus::InvalidArgument,
+            "between 1 and 60000 ms",
+        ),
+        (
+            url,
+            u64::MAX,
+            None,
+            XrayStatus::InvalidArgument,
+            "between 1 and 60000 ms",
+        ),
+        (
+            url,
+            1_000,
+            Some(c"missing"),
+            XrayStatus::InvalidArgument,
+            "does not name a configured leaf outbound",
+        ),
+    ] {
+        let (status, outputs) = probe_outbound(core, url, timeout_ms, tag, &mut err);
+        assert_eq!(status, expected, "{url:?} {timeout_ms} {tag:?}");
+        assert_eq!(outputs, NO_PROBE_OUTPUT);
+        let rendered = error_message(err);
+        for secret in ["secret", "private", "probe.test", "missing"] {
+            assert!(
+                !rendered.contains(secret),
+                "error leaked `{secret}`: {rendered}"
+            );
+        }
+        assert_error(&mut err, expected, message);
+    }
+
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    unsafe { xray_core_free(core) };
+}
+
 #[test]
 fn ffi_reports_exact_current_capabilities() {
     let expected = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
@@ -154,7 +646,8 @@ fn ffi_reports_exact_current_capabilities() {
         | XRAY_FFI_CAPABILITY_PROFILE_IMPORT
         | xray_ffi::XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND
         | xray_ffi::XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
-        | xray_ffi::XRAY_FFI_CAPABILITY_VMESS_OUTBOUND;
+        | xray_ffi::XRAY_FFI_CAPABILITY_VMESS_OUTBOUND
+        | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -1195,6 +1688,32 @@ fn ffi_startup_probe_setter_runs_probe_when_core_starts() {
     unsafe {
         xray_core_free(core);
     }
+}
+
+fn spawn_http_response_once(response: &'static str) -> (SocketAddr, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind HTTP response server");
+    let addr = listener
+        .local_addr()
+        .expect("read HTTP response server addr");
+    let join = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept HTTP probe");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set HTTP probe read timeout");
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 256];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut chunk).expect("read HTTP probe request");
+            assert!(read > 0, "probe closed before sending HTTP headers");
+            request.extend_from_slice(&chunk[..read]);
+            assert!(request.len() <= 4096, "probe request headers too large");
+        }
+        assert!(request.starts_with(b"GET /health HTTP/1.1\r\n"));
+        stream
+            .write_all(response.as_bytes())
+            .expect("write HTTP probe response");
+    });
+    (addr, join)
 }
 
 #[cfg(unix)]
@@ -3296,6 +3815,12 @@ fn spawn_startup_probe_server_once() -> StartupProbeServer {
         loop {
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    // Accepted sockets can inherit O_NONBLOCK on macOS. A
+                    // read timeout alone does not switch them to blocking I/O.
+                    if let Err(err) = stream.set_nonblocking(false) {
+                        let _ = tx.send(Err(format!("failed to set probe blocking mode: {err}")));
+                        return;
+                    }
                     if let Err(err) = stream.set_read_timeout(Some(Duration::from_secs(2))) {
                         let _ = tx.send(Err(format!("failed to set probe read timeout: {err}")));
                         return;

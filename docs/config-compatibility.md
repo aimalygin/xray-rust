@@ -138,14 +138,23 @@ subset rather than full Xray sniffing behavior.
 
 ## Outbounds and streams
 
-`freedom`, `vless`, and `dns` are supported. DNS outbound settings are described
-below. VLESS accepts one `vnext` server with one or more UUID users, but the
+`freedom`, `vless`, `dns`, and `blackhole` are supported. DNS outbound settings
+are described below, and [blackhole](#blackhole-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
 `level` and these flow values are accepted:
 
 - empty/no flow;
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
+
+On the raw transport, Vision switches each direction to direct mode on its own,
+as Xray-core does. After the peer's `Direct` command the downlink is read from
+the connection beneath TLS or REALITY — the socket, or the chained carrier
+under `proxySettings` — while the uplink stays inside the session until this
+side sends its own `Direct`. Until then, reads beneath a Vision flow stop at
+TLS record boundaries so the outer session never consumes the cleartext that
+follows its last record; a flow without Vision, or one that resolves to
+`End`, drops that alignment.
 
 The development `0.6` line also accepts bounded
 `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` configurations with one
@@ -253,6 +262,58 @@ custom certificate stores, or removed chain/SPKI pin fields. They are rejected
 with a path-aware error instead of being ignored. The programmatic
 `allow_insecure` model field exists only for hermetic local tests and cannot be
 produced by canonical JSON parsing.
+
+### Blackhole outbound
+
+`blackhole` follows Xray-core v26.7.28 and is commonly the `block` target of
+deny rules (ads, QUIC on UDP/443, other traffic a profile refuses):
+
+```json
+{ "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+```
+
+`settings` may be absent, `null`, or an object with an optional `response`. A
+present `response` must be an object whose case-insensitive `type` is `none`
+(the default) or `http`. As in Xray, a `null` or non-object response, a missing
+or `null` type, and any other type fail parsing; unknown keys also fail here,
+where Go would ignore them. `sendThrough`, enabled `mux`, and `streamSettings`
+keep the generic outbound validation, but nothing in `streamSettings` is used
+because nothing is dialed.
+
+The handler never resolves a destination, dials, or opens a socket:
+
+- SOCKS and HTTP `CONNECT` are acknowledged first (SOCKS success, HTTP
+  `200 Connection Established`), as Xray's inbounds do before dispatching.
+  `none` then closes the connection. `http` writes Xray's fixed reply
+  byte-for-byte (`HTTP/1.1 403 Forbidden`, `Connection: close`,
+  `Cache-Control: max-age=3600, public`, `Content-Length: 0`, with LF line
+  endings) and half-closes. Xray holds the link for one second after that
+  reply; xray-rust instead discards late client bytes for at most one second,
+  so unread input does not turn the close into a reset.
+- TUN TCP completes the client handshake in the userspace stack, as Xray's TUN
+  inbound does, then sends FIN, preceded by the reply for `http`. Client
+  upload is discarded during the one-second grace after an `http` reply;
+  upload after that, or any upload with `none`, resets the flow, as when Xray
+  interrupts the link. It is not counted as a TCP open error.
+- UDP from SOCKS `UDP ASSOCIATE` and TUN is dispatched once per flow (client
+  address and destination), as Xray dispatches a link once. `http` returns
+  its reply once, as a datagram from the destination the client addressed;
+  `none` returns nothing, and nothing answers with an ICMP error. Later
+  datagrams of the flow are discarded rather than routed again, until the
+  flow has been idle for the 60-second UDP idle timeout (Xray waits for 30 to
+  90 seconds of inactivity), the host closes it, or the SOCKS association
+  ends. Unlike xray-rust, Xray keeps one SOCKS UDP link per client source
+  address, routed by its first destination, and that link also carries the
+  client's datagrams to later destinations.
+
+A blackhole can be a rule `outboundTag`, the default first outbound, a balancer
+candidate, or a balancer `fallbackTag`. Connection inventory and per-outbound
+accounting record each blocked session, including a whole UDP flow, once and
+with zero bytes. Paths that need a dialable transport fail closed with
+`CoreError::BlackholeOutbound` instead: a DNS server or TUN DNS upstream whose
+queries route to it, and a startup probe of it, fail without dialing;
+observatory probes record it as unhealthy. `proxySettings` chains to or from a
+blackhole are rejected by core compilation.
 
 ### WebSocket and HTTPUpgrade
 
@@ -1111,6 +1172,14 @@ the rest of the core runtime. Rust health snapshots expose unknown/healthy/
 unhealthy state, delay, last-try and last-success timestamps, consecutive
 failure count, and a typed redacted failure category; raw URLs and transport
 error strings are not retained.
+
+Hosts that schedule their own checks, such as a mobile tunnel heartbeat, can
+request one probe at a time through C ABI 1.8 and the Swift/Kotlin adapters
+without an `observatory` object. It accepts the same URLs as the startup probe,
+dials one leaf by tag or the default outbound with routing bypassed, takes a
+host timeout of 1 to 60000 ms, and returns the delay or the same typed failure
+category. Its result is not written to health snapshots and does not
+influence selector groups.
 
 Domain matchers:
 

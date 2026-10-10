@@ -38,6 +38,7 @@ enum class XrayFfiCapability(val mask: Long) {
     TrojanOutbound(1L shl 19),
     VmessOutbound(1L shl 21),
     Shadowsocks2022Outbound(1L shl 20),
+    OutboundProbe(1L shl 22),
 }
 
 data class XrayFfiInfo(
@@ -107,6 +108,45 @@ enum class XrayOutboundHealthFailureKind(val wireValue: String) {
             entries.firstOrNull { it.wireValue == value }
                 ?: throw IllegalArgumentException("unknown outbound health failure kind: $value")
     }
+}
+
+/**
+ * Typed result of [XrayCore.probeOutboundUrl]. Exactly one of [delayMs] and [failureKind] is
+ * non-null; [httpStatus] is set only for [XrayOutboundHealthFailureKind.HttpStatus].
+ */
+data class XrayOutboundProbeResult(
+    val delayMs: Long?,
+    val failureKind: XrayOutboundHealthFailureKind?,
+    val httpStatus: Int?,
+) {
+    val isReachable: Boolean
+        get() = failureKind == null
+}
+
+internal const val MAX_OUTBOUND_PROBE_TIMEOUT_MS = 60_000L
+
+/** Decodes the `[delayMs, failureKind, httpStatus]` carrier returned by the JNI bridge. */
+internal fun outboundProbeResultFromNative(values: LongArray): XrayOutboundProbeResult {
+    check(values.size == 3) { "unexpected native outbound probe result size: ${values.size}" }
+    val failureKind = when (values[1]) {
+        0L -> null
+        1L -> XrayOutboundHealthFailureKind.Timeout
+        2L -> XrayOutboundHealthFailureKind.Transport
+        3L -> XrayOutboundHealthFailureKind.Tls
+        4L -> XrayOutboundHealthFailureKind.Io
+        5L -> XrayOutboundHealthFailureKind.MalformedHttpResponse
+        6L -> XrayOutboundHealthFailureKind.HttpStatus
+        else -> throw IllegalStateException("unknown native outbound probe failure kind: ${values[1]}")
+    }
+    return XrayOutboundProbeResult(
+        delayMs = if (failureKind == null) values[0] else null,
+        failureKind = failureKind,
+        httpStatus = if (failureKind == XrayOutboundHealthFailureKind.HttpStatus) {
+            values[2].toInt()
+        } else {
+            null
+        },
+    )
 }
 
 data class XrayOutboundHealthSnapshot(
@@ -652,6 +692,32 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withDataPathHandle { nativeCloseConnection(it, id) }
     }
 
+    /**
+     * Sends one HTTP(S) GET through a leaf outbound of the running core and returns its latency
+     * or typed failure. A null or empty [outboundTag] uses the default outbound; routing rules and
+     * selector overrides are bypassed, and health snapshots are not updated.
+     *
+     * Blocks the calling thread for at most [timeoutMs], so call it off the main thread. [stop]
+     * and [close] cancel probes before draining shared calls. An empty [url], a [timeoutMs] outside 1..60000, or
+     * an argument with an embedded NUL throws [IllegalArgumentException]. A non-empty unsupported
+     * URL, an unknown [outboundTag], or a missing default outbound throws [XrayCoreException]
+     * with code INVALID_ARGUMENT (9). Neither makes any network call.
+     */
+    fun probeOutboundUrl(
+        url: String,
+        timeoutMs: Long = 5_000,
+        outboundTag: String? = null,
+    ): XrayOutboundProbeResult {
+        requireCapability(XrayFfiCapability.OutboundProbe)
+        require(url.isNotEmpty()) { "outbound probe URL must not be empty" }
+        require(timeoutMs in 1..MAX_OUTBOUND_PROBE_TIMEOUT_MS) {
+            "outbound probe timeout must be between 1 and $MAX_OUTBOUND_PROBE_TIMEOUT_MS ms"
+        }
+        return outboundProbeResultFromNative(
+            withDataPathHandle { nativeProbeOutboundUrl(it, url, timeoutMs, outboundTag) },
+        )
+    }
+
     fun pollTcpSlowFlowEvents(maxEvents: Int = 16): List<XrayTcpSlowFlowEvent> =
         pollTunDiagnosticEvents(maxEvents, NativeTunDiagnosticKind.TcpSlowFlow) {
             it.toTcpSlowFlowEvent()
@@ -764,6 +830,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     }
 
     override fun close() {
+        cancelOutboundProbesForLifecycle()
         // Zero the handle under the write lock so no concurrent data-path caller can observe
         // (and pass to native code) a handle that is about to be freed.
         val handle = lifecycleLock.write {
@@ -851,11 +918,21 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
-    private inline fun <T> withLifecycleHandle(block: (Long) -> T): T =
-        lifecycleLock.write {
+    private fun cancelOutboundProbesForLifecycle() = lifecycleLock.read {
+        if (nativeHandle != 0L && ffiInfo().supports(XrayFfiCapability.OutboundProbe)) {
+            nativeCancelOutboundProbes(nativeHandle)
+        }
+    }
+
+    private inline fun <T> withLifecycleHandle(block: (Long) -> T): T {
+        // Cancel under a shared lock before waiting for probe readers. The
+        // native latch also rejects probes racing this read-to-write transition.
+        cancelOutboundProbesForLifecycle()
+        return lifecycleLock.write {
             check(nativeHandle != 0L) { "xray core is closed" }
             block(nativeHandle)
         }
+    }
 
     private inline fun <T> withDataPathHandle(block: (Long) -> T): T =
         lifecycleLock.read {
@@ -867,6 +944,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeConfigWarnings(handle: Long): String?
     private external fun nativeStart(handle: Long)
     private external fun nativeStop(handle: Long)
+    private external fun nativeCancelOutboundProbes(handle: Long)
     private external fun nativeFree(handle: Long)
     private external fun nativeSetOutboundSelectorOverride(
         handle: Long,
@@ -881,6 +959,12 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeConnectionSnapshotJson(handle: Long): String
     private external fun nativeOutboundAccountingSnapshotJson(handle: Long): String
     private external fun nativeCloseConnection(handle: Long, connectionId: Long)
+    private external fun nativeProbeOutboundUrl(
+        handle: Long,
+        url: String,
+        timeoutMs: Long,
+        outboundTag: String?,
+    ): LongArray
     private external fun nativePollTunDiagnosticEvent(
         handle: Long,
         kind: Int,

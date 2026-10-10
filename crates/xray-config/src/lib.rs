@@ -32,6 +32,7 @@ pub use model::{
     DEFAULT_OBSERVATORY_PROBE_URL, MAX_DNS_SERVER_TIMEOUT_MS, MAX_DNS_SERVE_EXPIRED_TTL_SECONDS,
     OBSERVATORY_PROBE_TIMEOUT,
 };
+pub use model::{BlackholeOutboundSettings, BlackholeResponse};
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,
     parse_xray_json_with_geodata_dirs, ConfigParseError, ParsedConfig, MAX_CONFIG_DOMAIN_MATCHERS,

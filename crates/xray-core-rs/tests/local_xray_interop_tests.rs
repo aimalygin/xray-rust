@@ -137,6 +137,17 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_visi
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn inner_tls_session_survives_vision_direct_switch_through_local_xray_tls_vision() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_tls_vision_inner_tls_interop(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn inner_tls_session_survives_vision_direct_switch_through_local_xray_reality_vision() {
     timeout(
         Duration::from_secs(180),
@@ -441,6 +452,38 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
     )
     .await
     .expect("start xray timeout");
+    let (rust_config, dialer) = rust_tls_core_config_and_dialer(&xray, flow);
+
+    run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
+}
+
+async fn run_local_xray_tls_vision_inner_tls_interop() {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Tls,
+                transport: XrayInboundTransport::Raw,
+                flow: Some("xtls-rprx-vision"),
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    let (rust_config, dialer) = rust_tls_core_config_and_dialer(&xray, Some("xtls-rprx-vision"));
+
+    run_inner_tls_interop_scenario(xray, rust_config, Some(dialer)).await;
+}
+
+/// The client half of the TLS inbound `start_xray_vless_server` writes: a
+/// VLESS outbound with `security: tls` plus a dialer that trusts the server's
+/// generated certificate.
+fn rust_tls_core_config_and_dialer(
+    xray: &XrayServer,
+    flow: Option<&str>,
+) -> (CoreConfig, TransportDialer) {
     let tls_client_config = Arc::clone(
         xray.tls_client_config
             .as_ref()
@@ -462,7 +505,7 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
         tls_client_config,
     ));
 
-    run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
+    (rust_config, dialer)
 }
 
 fn selected_reality_interop_fingerprints() -> Vec<String> {
@@ -609,16 +652,29 @@ async fn run_local_xray_reality_vision_inner_tls_interop(fingerprint: &str) {
     .await;
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
-    run_inner_tls_interop_scenario(xray, rust_config).await;
+    run_inner_tls_interop_scenario(xray, rust_config, None).await;
 }
 
 /// Carry a real TLS session inside the tunnel, which is what makes Vision
-/// engage direct mode: the peer stops wrapping the downlink in REALITY TLS
-/// part way through while it keeps decrypting the uplink. Echo workloads never
-/// reach this state because a non-TLS payload resolves to `VisionCommand::End`.
-async fn run_inner_tls_interop_scenario(xray: XrayServer, rust_config: CoreConfig) {
+/// engage direct mode: the peer stops wrapping the downlink in its outer TLS
+/// or REALITY session part way through while it keeps decrypting the uplink.
+/// Echo workloads never reach this state because a non-TLS payload resolves to
+/// `VisionCommand::End`.
+async fn run_inner_tls_interop_scenario(
+    xray: XrayServer,
+    rust_config: CoreConfig,
+    transport_dialer: Option<TransportDialer>,
+) {
     let (tls_echo_addr, inner_client_config, echo_handle) = spawn_inner_tls_echo_server().await;
-    let mut core = Core::new(rust_config).expect("create rust core");
+    let mut core = match transport_dialer {
+        Some(dialer) => Core::with_runtime_dependencies(
+            rust_config,
+            Arc::new(SystemDnsResolver),
+            Arc::new(dialer),
+        ),
+        None => Core::new(rust_config),
+    }
+    .expect("create rust core");
 
     timeout(Duration::from_secs(5), core.start())
         .await
@@ -680,6 +736,35 @@ async fn run_inner_tls_interop_scenario(xray: XrayServer, rust_config: CoreConfi
         }
         assert_eq!(echoed, payload.as_bytes());
     }
+
+    // Vision has switched both directions to direct mode by now. A bulk
+    // round spans many inner TLS records per direction, so a byte lost or
+    // left behind in the outer session at a switch surfaces as an inner
+    // record error.
+    let payload = bulk_interop_payload(256 * 1024);
+    let mut echoed = vec![0; payload.len()];
+    let transfer = async {
+        let (mut reader, mut writer) = tokio::io::split(&mut tls);
+        let (written, read) = tokio::join!(
+            async {
+                writer.write_all(&payload).await?;
+                writer.flush().await
+            },
+            reader.read_exact(&mut echoed),
+        );
+        written.map_err(|error| format!("write inner tls bulk payload: {error}"))?;
+        read.map_err(|error| format!("read inner tls bulk echo: {error}"))?;
+        Ok::<(), String>(())
+    };
+    if let Err(error) = timeout(Duration::from_secs(30), transfer)
+        .await
+        .map_err(|error| format!("inner tls bulk transfer timeout: {error}"))
+        .and_then(|result| result)
+    {
+        eprintln!("{}", xray.logs());
+        panic!("inner tls bulk round failed: {error}");
+    }
+    assert!(echoed == payload, "inner tls bulk echo differs");
 
     drop(tls);
     core.stop().await.expect("stop rust core");

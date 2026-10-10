@@ -318,7 +318,8 @@ cargo test --locked -p xray-core-rs \
 
 These tests generate loopback server/client configurations and ephemeral TLS or
 REALITY test material. They cover VLESS TCP, TLS, TLS+Vision, REALITY+Vision,
-selected fingerprints, parallel flows, round-robin across two local Xray VLESS
+an inner TLS session across the TLS+Vision and REALITY+Vision direct-mode
+switch, selected fingerprints, parallel flows, round-robin across two local Xray VLESS
 members, a two-hop transport-layer VLESS chain, and the WebSocket, HTTPUpgrade
 and gRPC stream transports, plus the 15-case XHTTP H1/H2/H3 matrix below. They
 do not establish compatibility with every Xray-core revision or configuration.

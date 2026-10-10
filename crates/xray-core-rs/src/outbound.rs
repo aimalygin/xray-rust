@@ -3,6 +3,8 @@ pub use vmess::VmessOutbound;
 mod protocol_stream;
 mod shadowsocks;
 pub use shadowsocks::Shadowsocks2022Outbound;
+mod blackhole;
+pub(crate) use blackhole::{absorb_udp_datagrams, BlackholeOutbound, BLACKHOLE_RESPONSE_GRACE};
 mod encryption;
 mod trojan;
 pub use trojan::TrojanOutbound;
@@ -369,11 +371,13 @@ pub enum UdpOutbound {
 }
 
 /// One configured handler selected for a TCP session. DNS remains a message
-/// handler rather than pretending to be a byte-stream transport.
+/// handler rather than pretending to be a byte-stream transport, and a
+/// blackhole answers the session itself without dialing.
 #[derive(Debug, Clone)]
 pub(crate) enum TcpSessionOutbound {
     Transport(TcpOutbound),
     Dns(DnsOutbound),
+    Blackhole(BlackholeOutbound),
 }
 
 #[derive(Debug, Clone)]
@@ -388,6 +392,9 @@ pub(crate) struct SelectedTcpSessionOutbound {
 pub(crate) enum UdpSessionOutbound {
     Transport(UdpOutbound),
     Dns(DnsOutbound),
+    /// The flow gets the optional response once and its datagrams are then
+    /// discarded without opening a socket.
+    Blackhole(BlackholeOutbound),
 }
 
 #[derive(Debug, Clone)]
@@ -792,6 +799,7 @@ enum CachedOutboundError {
     InvalidGrpcUserAgent(String),
     InvalidXhttpConfiguration(String),
     UnsupportedOutboundProxyNetwork(&'static str),
+    BlackholeOutbound,
 }
 
 impl CachedOutboundError {
@@ -814,6 +822,7 @@ impl CachedOutboundError {
             CoreError::UnsupportedOutboundProxyNetwork(network) => {
                 Self::UnsupportedOutboundProxyNetwork(network)
             }
+            CoreError::BlackholeOutbound => Self::BlackholeOutbound,
             other => unreachable!("outbound compilation returned non-cacheable error: {other}"),
         }
     }
@@ -837,6 +846,7 @@ impl CachedOutboundError {
             Self::UnsupportedOutboundProxyNetwork(network) => {
                 CoreError::UnsupportedOutboundProxyNetwork(network)
             }
+            Self::BlackholeOutbound => CoreError::BlackholeOutbound,
         }
     }
 }
@@ -874,6 +884,7 @@ pub enum OutboundNodeKind {
     Vmess,
     Shadowsocks2022,
     Dns,
+    Blackhole,
     Selector,
 }
 
@@ -1086,6 +1097,7 @@ impl OutboundGraph {
                     OutboundSettings::Hysteria(_) => OutboundNodeKind::Hysteria,
                     OutboundSettings::Wireguard(_) => OutboundNodeKind::Wireguard,
                     OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
+                    OutboundSettings::Blackhole(_) => OutboundNodeKind::Blackhole,
                 },
             })
             .collect::<Vec<_>>();
@@ -1310,6 +1322,7 @@ fn build_outbound_proxy_edges(
                 Some("XHTTP downloadSettings with outbound chaining is unsupported")
             }
             (OutboundSettings::Dns(_), _) => Some("DNS outbounds are not TCP carriers"),
+            (OutboundSettings::Blackhole(_), _) => Some("blackhole outbounds are not TCP carriers"),
             (OutboundSettings::Hysteria(_), _) => Some("Hysteria chaining is unsupported"),
             (OutboundSettings::Wireguard(_), _) => Some("WireGuard chaining is unsupported"),
             (
@@ -2403,22 +2416,24 @@ impl OutboundRouter {
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
-        let outbound = if self
-            .graph()
-            .node(node)
-            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
-        {
-            self.factory
+        let outbound = match self.graph().node(node).map(OutboundNode::kind) {
+            Some(OutboundNodeKind::Dns) => self
+                .factory
                 .cached_dns_outbound(node)
-                .map(TcpSessionOutbound::Dns)
-        } else {
-            self.factory
+                .map(TcpSessionOutbound::Dns),
+            Some(OutboundNodeKind::Blackhole) => self
+                .factory
+                .blackhole_outbound(node)
+                .map(TcpSessionOutbound::Blackhole),
+            _ => self
+                .factory
                 .cached_tcp_outbound(node)
-                .map(TcpSessionOutbound::Transport)
+                .map(TcpSessionOutbound::Transport),
         }?;
         Ok(SelectedTcpSessionOutbound { outbound, tag })
     }
 
+    #[cfg(test)]
     pub(crate) async fn select_tcp_outbound_for_session_with_tag_and_resolver(
         &self,
         inbound_tag: Option<&str>,
@@ -2569,18 +2584,19 @@ impl OutboundRouter {
         let tag = include_tag
             .then(|| self.graph().node(node).and_then(|node| node.tag.clone()))
             .flatten();
-        let outbound = if self
-            .graph()
-            .node(node)
-            .is_some_and(|node| node.kind() == OutboundNodeKind::Dns)
-        {
-            self.factory
+        let outbound = match self.graph().node(node).map(OutboundNode::kind) {
+            Some(OutboundNodeKind::Dns) => self
+                .factory
                 .cached_dns_outbound(node)
-                .map(UdpSessionOutbound::Dns)
-        } else {
-            self.factory
+                .map(UdpSessionOutbound::Dns),
+            Some(OutboundNodeKind::Blackhole) => self
+                .factory
+                .blackhole_outbound(node)
+                .map(UdpSessionOutbound::Blackhole),
+            _ => self
+                .factory
                 .cached_udp_outbound(node)
-                .map(UdpSessionOutbound::Transport)
+                .map(UdpSessionOutbound::Transport),
         }?;
         Ok(SelectedUdpSessionOutbound { outbound, tag })
     }
@@ -3023,6 +3039,7 @@ impl OutboundFactory {
                 .cached_shadowsocks_outbound(node)
                 .map(TcpOutbound::Shadowsocks2022),
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
+            OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
@@ -3086,6 +3103,7 @@ impl OutboundFactory {
                 .cached_shadowsocks_outbound(node)
                 .map(UdpOutbound::Shadowsocks2022),
             OutboundSettings::Dns(_) => Err(CachedOutboundError::NoSupportedOutbound),
+            OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
                     return Err(CachedOutboundError::UnsupportedOutboundNetwork);
@@ -3135,6 +3153,7 @@ impl OutboundFactory {
                 DnsOutbound::new_with_stream(settings.clone(), &configured.stream, conn_idle)
                     .map_err(CachedOutboundError::from_core_error)
             }
+            OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom
             | OutboundSettings::Vless(_)
             | OutboundSettings::Hysteria(_)
@@ -3185,6 +3204,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
             Shadowsocks2022Outbound::new(outbound).map(TcpOutbound::Shadowsocks2022)
         }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
+        OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
         OutboundSettings::Freedom => {
             if !stream_transport_is_dialable(&outbound.stream) {
                 return Err(CoreError::UnsupportedOutboundNetwork);
@@ -3212,6 +3232,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
             Shadowsocks2022Outbound::new(outbound).map(UdpOutbound::Shadowsocks2022)
         }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
+        OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
         OutboundSettings::Freedom => {
             if !stream_transport_is_dialable(&outbound.stream) {
                 return Err(CoreError::UnsupportedOutboundNetwork);

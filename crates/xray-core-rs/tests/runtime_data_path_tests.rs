@@ -68,6 +68,9 @@ use xray_transport::{
 };
 use xray_tun::{TunEndpoint, TunError, TunStats};
 
+#[path = "runtime_data_path_tests/blackhole.rs"]
+mod blackhole;
+
 #[path = "runtime_data_path_tests/tun_download_backpressure.rs"]
 mod tun_download_backpressure;
 

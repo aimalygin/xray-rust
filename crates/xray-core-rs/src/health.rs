@@ -6,9 +6,7 @@ use tokio::task::JoinSet;
 use xray_config::{ObservatoryConfig, OBSERVATORY_PROBE_TIMEOUT};
 use xray_transport::{DnsResolver, TransportDialer};
 
-use crate::outbound::{
-    OutboundHealthFailure, OutboundNodeId, OutboundRouter, OutboundSelectionOverlay,
-};
+use crate::outbound::{OutboundNodeId, OutboundRouter, OutboundSelectionOverlay};
 use crate::startup_probe::{run_outbound_url_probe, StartupProbeError, StartupProbeOptions};
 
 const MAX_CONCURRENT_HEALTH_PROBES: usize = 4;
@@ -216,21 +214,8 @@ fn record_result(
     match result {
         Ok(delay) => selection.record_health_success(node, delay, now_unix_ms),
         Err(error) => {
-            selection.record_health_failure(node, classify_failure(&error), now_unix_ms);
+            selection.record_health_failure(node, error.health_failure(), now_unix_ms);
         }
-    }
-}
-
-fn classify_failure(error: &StartupProbeError) -> OutboundHealthFailure {
-    match error {
-        StartupProbeError::UnsupportedUrl | StartupProbeError::Core { .. } => {
-            OutboundHealthFailure::Transport
-        }
-        StartupProbeError::Timeout { .. } => OutboundHealthFailure::Timeout,
-        StartupProbeError::Tls { .. } => OutboundHealthFailure::Tls,
-        StartupProbeError::Io { .. } => OutboundHealthFailure::Io,
-        StartupProbeError::MalformedHttpResponse(_) => OutboundHealthFailure::MalformedHttpResponse,
-        StartupProbeError::HttpStatus { status, .. } => OutboundHealthFailure::HttpStatus(*status),
     }
 }
 
@@ -259,6 +244,7 @@ async fn wait_for_shutdown(shutdown: &mut watch::Receiver<bool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outbound::OutboundHealthFailure;
 
     #[test]
     fn failure_classification_is_structured() {
@@ -268,7 +254,7 @@ mod tests {
         };
 
         assert_eq!(
-            classify_failure(&error),
+            error.health_failure(),
             OutboundHealthFailure::HttpStatus(503)
         );
     }

@@ -155,6 +155,15 @@ class StablePromotionTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(hashlib.sha256(fixture["files"][name].encode()).hexdigest(), expected)
 
+    def test_scanner_correction_hashes_match_published_v07_files(self):
+        # These hashes constrain the historical v0.7 promotion, not future
+        # development of the scanner policy. Keep the published bytes pinned.
+        published = "67969094b352f948c6b8b9e2ac75402c577cb7f7"
+        for name, (_, expected) in PROMOTION.SCANNER_POLICY_FILES.items():
+            with self.subTest(name=name):
+                content = PROMOTION.git(ROOT, "show", f"{published}:{name}")
+                self.assertEqual(hashlib.sha256(content).hexdigest(), expected)
+
     def test_mode_change_is_rejected(self):
         (self.root / "README.md").chmod(0o755)
         self.commit()

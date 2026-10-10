@@ -126,7 +126,7 @@ parsed model without exposing it in a report.
 
 ## Maintenance and verification
 
-`surface.rs` owns the 41 recognized object-key sets used by parser rejection
+`surface.rs` owns the 47 recognized object-key sets used by parser rejection
 and contract generation. `parser/dns.rs` owns DNS clients, hosts, fake IP and
 DNS outbound rules; `parser/stream.rs` owns stream/carrier/security selection.
 They join the previously extracted routing, VLESS and XHTTP modules. This

@@ -535,6 +535,22 @@
       "notes": "random, roundRobin, leastPing and leastLoad only; settings are interpreted according to the selected strategy."
     },
     {
+      "context": "$.outbounds[].settings (blackhole)",
+      "fields": [
+        "response"
+      ],
+      "id": "BLACKHOLE_SETTINGS",
+      "notes": "Absent or null settings and an absent response mean type none. The handler never dials: TCP receives the optional response and is closed; UDP datagrams are dropped."
+    },
+    {
+      "context": "$.outbounds[].settings.response (blackhole)",
+      "fields": [
+        "type"
+      ],
+      "id": "BLACKHOLE_RESPONSE",
+      "notes": "type is required and case-insensitive: none or http (Xray's fixed HTTP 403 reply). Null, empty and unknown responses fail closed, matching Xray."
+    },
+    {
       "context": "$.dns",
       "fields": [
         "fakeIp",
@@ -743,7 +759,7 @@
         "sendThrough"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",

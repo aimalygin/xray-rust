@@ -17,9 +17,10 @@ mode flag the script keeps the same `--all` behavior.
 For ABI 1.5 Hysteria2/WireGuard import, use the current native library/header
 with the [shared import fixtures and SDK checks](v07-profile-import.md#verification).
 `scripts/test-profile-import-jni.sh` builds host Rust/JNI and runs the Kotlin
-boundary tests plus actual JNI import. It requires the configured JDK and
-Android SDK and supports macOS/Linux. This host proof does not start a VPN or
-replace device testing.
+boundary tests plus actual JNI import and an ABI 1.9 outbound probe through a
+loopback SOCKS/Freedom core. It requires the configured JDK and Android SDK and
+supports macOS/Linux. This host proof does not start a VPN or replace device
+testing.
 
 Run the platform-independent contract tests first:
 

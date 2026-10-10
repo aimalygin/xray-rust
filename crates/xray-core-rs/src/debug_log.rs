@@ -105,8 +105,8 @@ pub(crate) fn configured_tag_label(tag: Option<&str>) -> &'static str {
 
 fn safe_outbound_label(label: &str) -> &str {
     match label {
-        "freedom" | "vless" | "hysteria" | "wireguard" | "untagged" | "unselected"
-        | "<configured>" => label,
+        "freedom" | "vless" | "hysteria" | "wireguard" | "blackhole" | "untagged"
+        | "unselected" | "<configured>" => label,
         _ => "<configured>",
     }
 }

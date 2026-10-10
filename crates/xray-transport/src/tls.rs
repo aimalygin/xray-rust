@@ -25,8 +25,8 @@ use crate::{
     utls_profiles::UtlsClientHelloProfile,
     utls_shaping::profile_offers_tls13,
     utls_tls::{unshaped_alpn_protocols, TlsAlpnPolicy},
-    BoxedTransportStream, HappyEyeballsConfig, SocketProtector, TlsClientConfig, TransportError,
-    TransportStream,
+    BoxedTransportStream, CapturedStream, HappyEyeballsConfig, PenetratingTlsStream,
+    SocketProtector, TlsClientConfig, TransportError, TransportStream,
 };
 
 /// Identifies one rustls configuration shape. Two connections that agree on
@@ -307,6 +307,28 @@ impl TlsConnector {
         Ok(Box::new(stream))
     }
 
+    /// Completes the handshake on a carrier that Vision may unwrap.
+    ///
+    /// Once a direction switches to direct mode, Xray-core's Vision reads and
+    /// writes the connection under the TLS session (`tls.Conn.NetConn()`),
+    /// for plain TLS exactly as for REALITY. The returned stream therefore
+    /// wraps its carrier the way REALITY wraps its socket: reads stay aligned
+    /// to TLS record boundaries, so the cleartext that follows the last
+    /// downlink record never lands in the rustls deframer, until a direct
+    /// read takes the carrier over or the consumer releases the alignment.
+    pub(crate) async fn connect_prepared_penetrating_stream(
+        &self,
+        stream: BoxedTransportStream,
+        prepared: PreparedTlsStream,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let stream = TokioTlsConnector::from(prepared.client_config)
+            .connect(prepared.server_name, CapturedStream::new(stream, None))
+            .await
+            .map_err(TransportError::Tls)?;
+
+        Ok(Box::new(PenetratingTlsStream::new(stream)))
+    }
+
     pub async fn connect(
         &self,
         target: &Target,
@@ -412,6 +434,11 @@ fn validate_quic_client_config(client_config: &rustls::ClientConfig) -> Result<(
     .map_err(|error| TransportError::TlsConfig(error.to_string()))
 }
 
+/// TLS that Vision never unwraps: the session under an HTTP-based stream
+/// transport, where Vision requires VLESS encryption and its Direct command
+/// removes only that layer, and the sessions `TlsConnector` dials for DNS and
+/// probes. Direct I/O therefore stays inside the session. The raw transport's
+/// TLS, which Vision does unwrap, is a `PenetratingTlsStream`.
 impl TransportStream for tokio_rustls::client::TlsStream<BoxedTransportStream> {
     fn poll_read_direct(
         self: Pin<&mut Self>,

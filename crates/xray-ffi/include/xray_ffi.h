@@ -204,8 +204,21 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_PROFILE_IMPORT = 1 << 18,
   XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND = 1 << 19,
   XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND = 1 << 20,
-  XRAY_FFI_CAPABILITY_VMESS_OUTBOUND = 1 << 21
+  XRAY_FFI_CAPABILITY_VMESS_OUTBOUND = 1 << 21,
+  XRAY_FFI_CAPABILITY_OUTBOUND_PROBE = 1 << 22
 } XrayFfiCapability;
+
+/* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
+ * Failure kinds mirror the outbound health snapshot's lastFailureKind. */
+typedef enum XrayOutboundProbeFailureKind {
+  XRAY_OUTBOUND_PROBE_FAILURE_NONE = 0,
+  XRAY_OUTBOUND_PROBE_FAILURE_TIMEOUT = 1,
+  XRAY_OUTBOUND_PROBE_FAILURE_TRANSPORT = 2,
+  XRAY_OUTBOUND_PROBE_FAILURE_TLS = 3,
+  XRAY_OUTBOUND_PROBE_FAILURE_IO = 4,
+  XRAY_OUTBOUND_PROBE_FAILURE_MALFORMED_HTTP_RESPONSE = 5,
+  XRAY_OUTBOUND_PROBE_FAILURE_HTTP_STATUS = 6
+} XrayOutboundProbeFailureKind;
 
 uint32_t xray_ffi_version_major(void);
 uint32_t xray_ffi_version_minor(void);
@@ -328,6 +341,32 @@ XrayStatus xray_core_rebind_wireguard(
 XrayStatus xray_core_rebind_hysteria(
     XrayCoreHandle *handle,
     uint64_t *accepted,
+    XrayError **error);
+/* ABI 1.9, OUTBOUND_PROBE. Nonblocking, shared teardown preparation. Cancels
+ * current AND future probes on a running core; no-op before start/unloaded.
+ * Then drain shared calls before exclusive stop/load/free. A new handle with loaded config
+ * resets the latch. Normal traffic and health state are unaffected. */
+XrayStatus xray_core_cancel_outbound_probes(
+    XrayCoreHandle *handle,
+    XrayError **error);
+/* ABI 1.9, OUTBOUND_PROBE. Blocks for at most timeout_ms (1..=60000) while one
+ * HTTP(S) GET (URL rules as the startup probe) goes through a leaf outbound of a
+ * running core, bypassing routing and selectors; a NULL/empty outbound_tag uses
+ * the default outbound. delay_ms, failure_kind and http_status are required and
+ * zeroed on entry. OK means the probe ran: failure_kind NONE with delay_ms for
+ * a 2xx/3xx status line, else a failure kind; http_status is set only for
+ * HTTP_STATUS. Bad URL/timeout/tag: INVALID_ARGUMENT, no network. Loaded but
+ * not running or cancelled: RUNTIME_ERROR. No health/selector/accounting side effects.
+ * Concurrent with data-path/snapshot calls, but not lifecycle/free; never call
+ * it from the socket-protect callback. */
+XrayStatus xray_core_probe_outbound_url(
+    XrayCoreHandle *handle,
+    const char *url,
+    uint64_t timeout_ms,
+    const char *outbound_tag,
+    uint64_t *delay_ms,
+    int32_t *failure_kind,
+    uint16_t *http_status,
     XrayError **error);
 XrayStatus xray_core_set_socket_protect_callback(
     XrayCoreHandle *handle,

@@ -12,8 +12,9 @@ use xray_config::{
     RoutingConfig, RoutingRule, StreamSecurity, StreamSettings, StreamTransport,
 };
 use xray_core_rs::{
-    Core, CoreError, CoreState, DnsBootstrapMode, RuntimeLogConfig, RuntimeLogger,
-    StartupProbeError, StartupProbeOptions, TunRuntimeOptions,
+    Core, CoreError, CoreState, DnsBootstrapMode, OutboundHealthFailure, OutboundProbeError,
+    OutboundProbeOutcome, RuntimeLogConfig, RuntimeLogger, StartupProbeError, StartupProbeOptions,
+    TunRuntimeOptions, MAX_OUTBOUND_PROBE_TIMEOUT,
 };
 use xray_transport::{DnsResolver, TransportDialer, TransportError};
 
@@ -550,5 +551,298 @@ async fn startup_probe_sends_custom_port_in_host_header() {
     core.start().await.unwrap();
 
     assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+}
+
+async fn spawn_http_status_times(
+    status: u16,
+    times: usize,
+) -> (SocketAddr, tokio::task::JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut requests = Vec::with_capacity(times);
+        for _ in 0..times {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 512];
+            let read = stream.read(&mut request).await.unwrap();
+            requests.push(String::from_utf8_lossy(&request[..read]).into_owned());
+            let response = format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\n\r\n");
+            stream.write_all(response.as_bytes()).await.unwrap();
+        }
+        requests
+    });
+    (addr, handle)
+}
+
+fn outbound_probe(url: String, timeout: Duration, tag: Option<&str>) -> StartupProbeOptions {
+    StartupProbeOptions {
+        url,
+        timeout,
+        outbound_tag: tag.map(ToOwned::to_owned),
+    }
+}
+
+fn outbound_probe_core(addr: SocketAddr) -> Core {
+    let mut config = config_with_outbounds(
+        vec![freedom("direct"), freedom("alternate")],
+        Some("direct"),
+    );
+    // Routing would reject every flow; the host probe must dial leaves directly.
+    config.routing = RoutingConfig {
+        rules: vec![RoutingRule {
+            inbound_tags: Vec::new(),
+            networks: Vec::new(),
+            port_ranges: Vec::new(),
+            domain_matchers: DomainMatcherSet::default(),
+            ip_matchers: Default::default(),
+            target: xray_config::RoutingRuleTarget::Outbound("missing".to_owned()),
+        }],
+        ..Default::default()
+    };
+    Core::with_runtime_dependencies(
+        config,
+        Arc::new(StaticDnsResolver {
+            domain: "probe.test",
+            addr,
+        }),
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn outbound_probe_reports_delay_through_tagged_and_default_leaves() {
+    let (addr, server) = spawn_http_status_times(204, 2).await;
+    let mut core = outbound_probe_core(addr);
+    core.start().await.unwrap();
+    let health_before = core.outbound_health_snapshot();
+
+    for tag in [Some("alternate"), None] {
+        let outcome = core
+            .probe_outbound_url(outbound_probe(probe_url(addr), Duration::from_secs(2), tag))
+            .await
+            .unwrap();
+        let OutboundProbeOutcome::Reachable { delay } = outcome else {
+            panic!("expected reachable outcome for {tag:?}, got {outcome:?}");
+        };
+        assert!(delay <= Duration::from_secs(2), "delay {delay:?}");
+    }
+
+    let requests = tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
+    for request in requests {
+        assert!(request.starts_with("GET /health HTTP/1.1\r\n"), "{request}");
+        assert!(request.contains("\r\nUser-Agent: xray-rust-outbound-probe\r\n"));
+    }
+    assert_eq!(core.outbound_health_snapshot(), health_before);
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn outbound_probe_reports_typed_failures_and_keeps_core_running() {
+    let (status_addr, status_server) = spawn_http_status_times(503, 1).await;
+    let stalled_addr = spawn_stalled_http_once().await;
+    let refused_addr = {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        listener.local_addr().unwrap()
+    };
+    let mut core = outbound_probe_core(status_addr);
+    core.start().await.unwrap();
+
+    let outcome = core
+        .probe_outbound_url(outbound_probe(
+            probe_url(status_addr),
+            Duration::from_secs(2),
+            Some("direct"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        OutboundProbeOutcome::Failed(OutboundHealthFailure::HttpStatus(503))
+    );
+    status_server.await.unwrap();
+
+    let started = tokio::time::Instant::now();
+    let outcome = core
+        .probe_outbound_url(outbound_probe(
+            format!("http://127.0.0.1:{}/health", stalled_addr.port()),
+            Duration::from_millis(150),
+            Some("direct"),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        OutboundProbeOutcome::Failed(OutboundHealthFailure::Timeout)
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "timeout must bound the probe, took {:?}",
+        started.elapsed()
+    );
+
+    let outcome = core
+        .probe_outbound_url(outbound_probe(
+            format!("http://127.0.0.1:{}/health", refused_addr.port()),
+            Duration::from_secs(2),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        OutboundProbeOutcome::Failed(OutboundHealthFailure::Transport)
+    );
+
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn outbound_probe_rejects_invalid_requests_without_network_activity() {
+    let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let addr = listener.local_addr().unwrap();
+    let url = format!("http://127.0.0.1:{}/health", addr.port());
+    let mut core = outbound_probe_core(addr);
+
+    assert_eq!(
+        core.probe_outbound_url(outbound_probe(url.clone(), Duration::from_secs(1), None))
+            .await,
+        Err(OutboundProbeError::NotRunning)
+    );
+
+    core.start().await.unwrap();
+    for (options, expected) in [
+        (
+            outbound_probe(
+                "ftp://probe.test/health".to_owned(),
+                Duration::from_secs(1),
+                None,
+            ),
+            OutboundProbeError::UnsupportedUrl,
+        ),
+        (
+            outbound_probe(
+                format!("http://user:secret@127.0.0.1:{}/health", addr.port()),
+                Duration::from_secs(1),
+                None,
+            ),
+            OutboundProbeError::UnsupportedUrl,
+        ),
+        (
+            outbound_probe(url.clone(), Duration::ZERO, None),
+            OutboundProbeError::InvalidTimeout,
+        ),
+        (
+            outbound_probe(
+                url.clone(),
+                MAX_OUTBOUND_PROBE_TIMEOUT + Duration::from_millis(1),
+                None,
+            ),
+            OutboundProbeError::InvalidTimeout,
+        ),
+        (
+            outbound_probe(url.clone(), Duration::from_secs(1), Some("missing")),
+            OutboundProbeError::UnknownOutbound,
+        ),
+        (
+            outbound_probe(url.clone(), Duration::from_secs(1), Some("")),
+            OutboundProbeError::UnknownOutbound,
+        ),
+    ] {
+        let error = core.probe_outbound_url(options).await.unwrap_err();
+        assert_eq!(error, expected);
+        assert!(!error.to_string().contains("secret"));
+        assert!(!format!("{error:?}").contains("secret"));
+    }
+    assert_eq!(
+        listener.accept().map(|_| ()).unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock,
+        "rejected probes must not dial"
+    );
+
+    core.stop().await.unwrap();
+    assert_eq!(
+        core.probe_outbound_url(outbound_probe(url, Duration::from_secs(1), None))
+            .await,
+        Err(OutboundProbeError::NotRunning)
+    );
+}
+
+#[tokio::test]
+async fn outbound_probe_cancellation_drains_all_probes_and_rejects_late_dials() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut core = outbound_probe_core(addr);
+    // Adapter initialization must not accidentally disable probes.
+    core.cancel_outbound_probes();
+    core.start().await.unwrap();
+    let health_before = core.outbound_health_snapshot();
+    let options = outbound_probe(probe_url(addr), MAX_OUTBOUND_PROBE_TIMEOUT, None);
+    let probes = async {
+        tokio::join!(
+            core.probe_outbound_url(options.clone()),
+            core.probe_outbound_url(options.clone()),
+        )
+    };
+    let cancel = async {
+        let (_first, _) = listener.accept().await.unwrap();
+        let (_second, _) = listener.accept().await.unwrap();
+        core.cancel_outbound_probes();
+        core.cancel_outbound_probes();
+        // Keep both peers open until the cancelled futures return.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let ((first, second), ()) = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(probes, cancel)
+    })
+    .await
+    .expect("60-second probes must promptly drain on cancellation");
+    assert_eq!(first, Err(OutboundProbeError::Cancelled));
+    assert_eq!(second, Err(OutboundProbeError::Cancelled));
+    assert_eq!(
+        core.probe_outbound_url(options).await,
+        Err(OutboundProbeError::Cancelled)
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), listener.accept())
+            .await
+            .is_err()
+    );
+    assert_eq!(core.outbound_health_snapshot(), health_before);
+    assert_eq!(core.state(), CoreState::Running);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn outbound_probe_reports_missing_default_outbound() {
+    let mut config = config_with_outbounds(Vec::new(), None);
+    config.default_outbound_tag = None;
+    let mut core = Core::with_runtime_dependencies(
+        config,
+        Arc::new(StaticDnsResolver {
+            domain: "probe.test",
+            addr: SocketAddr::from((Ipv4Addr::LOCALHOST, 9)),
+        }),
+        Arc::new(TransportDialer::system().unwrap()),
+    )
+    .unwrap();
+    core.start().await.unwrap();
+
+    assert_eq!(
+        core.probe_outbound_url(outbound_probe(
+            "http://127.0.0.1:9/health".to_owned(),
+            Duration::from_secs(1),
+            None,
+        ))
+        .await,
+        Err(OutboundProbeError::NoDefaultOutbound)
+    );
     core.stop().await.unwrap();
 }

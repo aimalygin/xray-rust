@@ -10,6 +10,33 @@ long-term supported release series.
 
 ## Unreleased
 
+- Fix `xtls-rprx-vision` direct mode over plain TLS on the raw transport.
+  Direct reads and writes now use the connection beneath the TLS session, as
+  they already did beneath REALITY and as Xray-core does, instead of staying
+  inside the session. Previously an inner TLS session carried through
+  VLESS + TLS + Vision to Xray-core failed with EOF right after its handshake.
+  Local Xray-core interop now carries a real inner TLS session through TLS
+  Vision as well as REALITY Vision, including a bulk round in each direction.
+- Add an Xray-compatible `blackhole` outbound so profiles that route ads, QUIC
+  or other denied traffic to `block` load and keep blocking it. `none` closes
+  TCP after the inbound acknowledgement and `http` first sends Xray's fixed
+  403 reply. A UDP flow is dispatched once, gets the `http` reply once, and
+  then discards its datagrams until it is idle. Nothing is dialed and no
+  socket is opened. Unknown response types and blackhole proxy chains fail
+  closed.
+- Close TUN TCP flows whose remote closes before the client's handshake ACK
+  without waiting for another client segment.
+- Added a capability-gated on-demand outbound probe in C ABI 1.9 and the
+  Swift/Kotlin adapters. A host heartbeat can send one bounded HTTP(S) probe
+  through a leaf outbound of a running core, selected by tag or the default
+  outbound, and receive its delay or a typed failure matching the health
+  snapshot categories. Invalid URLs, timeouts outside 1 to 60000 ms, and
+  unknown tags are rejected before any network activity; results do not change
+  health snapshots or selector state, and diagnostics stay redacted. Lifecycle
+  calls cancel probes before draining shared calls, so stop/close do not wait
+  for a 60-second probe timeout. Swift rejects embedded NUL before the C bridge.
+  The probe uses bit 22, reserving ABI 1.8 and bits 19–21 for v0.8 clients.
+
 ## 0.8.0-rc.1 - 2026-10-03
 
 Candidate preparation only; no tag or package has been published. Device and

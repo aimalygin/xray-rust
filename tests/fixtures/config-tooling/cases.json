@@ -1870,6 +1870,94 @@
         "VMESS_SERVER": "/outbounds/0/settings/vnext/0",
         "VMESS_USER": "/outbounds/0/settings/vnext/0/users/0"
       }
+    },
+    {
+      "name": "blackhole-routing",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          },
+          {
+            "tag": "block",
+            "protocol": "blackhole",
+            "settings": {
+              "response": {
+                "type": "http"
+              }
+            }
+          }
+        ],
+        "routing": {
+          "balancers": [
+            {
+              "tag": "proxies",
+              "selector": [
+                "proxy-"
+              ],
+              "fallbackTag": "block"
+            }
+          ],
+          "rules": [
+            {
+              "type": "field",
+              "domain": [
+                "domain:ads.example"
+              ],
+              "outboundTag": "block"
+            },
+            {
+              "type": "field",
+              "network": "udp",
+              "port": "443",
+              "outboundTag": "block"
+            },
+            {
+              "type": "field",
+              "ip": [
+                "192.0.2.0/24"
+              ],
+              "balancerTag": "proxies"
+            }
+          ]
+        }
+      },
+      "objects": {
+        "BLACKHOLE_SETTINGS": "/outbounds/1/settings",
+        "BLACKHOLE_RESPONSE": "/outbounds/1/settings/response"
+      }
+    },
+    {
+      "name": "blackhole-unknown-response",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.response.type",
+      "base": "blackhole-routing",
+      "set": {
+        "/outbounds/1/settings/response/type": "redirect"
+      }
+    },
+    {
+      "name": "blackhole-null-response",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.response",
+      "base": "blackhole-routing",
+      "set": {
+        "/outbounds/1/settings/response": null
+      }
     }
   ]
 }

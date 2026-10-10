@@ -3,6 +3,19 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+
+# These v0.8 exceptions were reviewed in 1388c613971c8785f22107e2fac6be85f956e388.
+# CI scans --all, so main also needs their exact path/value/rule scope while
+# the v0.8 evidence is still on a separate branch.
+
+[[allowlists]]
+description = "Public VMess oracle command-key assignment in its scanner regression test"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^scripts/tests/check-gitleaks-allowlists\.test\.py$''']
+regexes = ['''^\s*command_key = "d34482dca079f1e8" \+ "ad37ff8d08a382cf"$''']
+
 # Rehashed from the signed iPhone app's Mach-O files; these are public digests.
 [[allowlists]]
 description = "Verified iPhone v0.8 app executable digests"
@@ -501,4 +514,41 @@ regexes = [
   '''^76d3b20f34bfa9b892fe8c177104fc799e37e107e5dbae83565b78c4f96f1c29$''',
   '''^7665ef5be9c7912c87b1accfcac9089edc115f065d9134b8f00a2fd5a416f099$''',
   '''^dfb807094495c6d641d36f99177a0e3c6c93c5d3b68beb02eb1cf4f8fa43e70c$''',
+]
+
+# Rehashed from the frozen local release binaries; these are public digests.
+[[allowlists]]
+description = "Verified baseline build hashes for PR 48-50 measurements"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^docs/benchmarks/results/2026\-10\-09\-vivat\-pr\-integration/measurements\.tar\.gz!validation/baseline\-build\.json$''']
+regexes = [
+  '''^d931bdbca9f2eb10c15a949a02e26daf45cc491aee2f684595eeada6f8d609b9$''',
+  '''^f4b2e2a16fbbf3b295273be8b47c5531cd223e944bc62577752e07826ba88674$''',
+]
+
+# Rehashed from the frozen local release binaries; these are public digests.
+[[allowlists]]
+description = "Verified pr48 build hashes for PR 48-50 measurements"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^docs/benchmarks/results/2026\-10\-09\-vivat\-pr\-integration/measurements\.tar\.gz!validation/pr48\-build\.json$''']
+regexes = [
+  '''^ce917eb84120b739b9c9387a6fd5e4f5bb23808709c3d7c07669df57c4bd6fa1$''',
+  '''^83e0628f3f61464e27b61a13d7b4de6a8cef752c478d7fcc6ff36cc6f37d69d8$''',
+]
+
+# Rehashed from the frozen local release binaries; these are public digests.
+[[allowlists]]
+description = "Verified candidate build hashes for PR 48-50 measurements"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^docs/benchmarks/results/2026\-10\-09\-vivat\-pr\-integration/measurements\.tar\.gz!validation/candidate\-build\.json$''']
+regexes = [
+  '''^afdffd5d1e3f22302caab6448cc208cfa9ab5557cd8b80520a2e08033f159c48$''',
+  '''^e1097624ca6baef6c59eb7831958aaf37267f60c668a6030dc8907fbf100ac72$''',
+  '''^34cd2ff77efc0280505c000d6095de6b0f7313d3c445c9925c67c1512e7431f1$''',
 ]

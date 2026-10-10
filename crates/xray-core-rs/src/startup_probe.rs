@@ -5,10 +5,15 @@ use tokio::time::timeout;
 use xray_routing::{Network as RoutingNetwork, Target, TargetAddr as RoutingTargetAddr};
 use xray_transport::{DnsResolver, TlsClientConfig, TlsConnector, TransportDialer};
 
-use crate::outbound::open_tcp_stream_with_resolvers_and_dialer;
+use crate::outbound::{
+    open_tcp_stream_with_resolvers_and_dialer, OutboundGraph, OutboundHealthFailure,
+};
 use crate::{CoreError, OutboundRouter};
 
 const MAX_HTTP_STATUS_LINE_LEN: usize = 1024;
+
+/// Upper bound for one host-requested [`crate::Core::probe_outbound_url`] call.
+pub const MAX_OUTBOUND_PROBE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartupProbeOptions {
@@ -74,6 +79,89 @@ pub enum StartupProbeError {
     MalformedHttpResponse(String),
     #[error("startup probe received HTTP status {status} from `{url}`")]
     HttpStatus { url: String, status: u16 },
+}
+
+impl StartupProbeError {
+    /// Maps a probe failure to the redacted category shared by the outbound
+    /// health snapshot, the observatory, and on-demand outbound probes.
+    pub(crate) fn health_failure(&self) -> OutboundHealthFailure {
+        match self {
+            Self::UnsupportedUrl | Self::Core { .. } => OutboundHealthFailure::Transport,
+            Self::Timeout { .. } => OutboundHealthFailure::Timeout,
+            Self::Tls { .. } => OutboundHealthFailure::Tls,
+            Self::Io { .. } => OutboundHealthFailure::Io,
+            Self::MalformedHttpResponse(_) => OutboundHealthFailure::MalformedHttpResponse,
+            Self::HttpStatus { status, .. } => OutboundHealthFailure::HttpStatus(*status),
+        }
+    }
+}
+
+/// Typed result of an on-demand outbound probe that reached the network.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutboundProbeOutcome {
+    /// The outbound returned an HTTP 2xx/3xx status line. `delay` covers the
+    /// outbound dial, optional TLS handshake, request write, and status line.
+    Reachable { delay: Duration },
+    /// The probe failed with the same redacted category that outbound health
+    /// snapshots report.
+    Failed(OutboundHealthFailure),
+}
+
+/// A host-requested outbound probe rejected before network activity or cancelled
+/// during teardown. Cancellation does not report an outbound health failure.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum OutboundProbeError {
+    #[error("core is not running")]
+    NotRunning,
+    #[error("outbound probe cancelled for core teardown")]
+    Cancelled,
+    #[error("unsupported outbound probe URL")]
+    UnsupportedUrl,
+    #[error(
+        "outbound probe timeout must be between 1 and {max} ms",
+        max = MAX_OUTBOUND_PROBE_TIMEOUT.as_millis()
+    )]
+    InvalidTimeout,
+    #[error("outbound probe tag does not name a configured leaf outbound")]
+    UnknownOutbound,
+    #[error("no default outbound is configured")]
+    NoDefaultOutbound,
+}
+
+/// Validates an on-demand probe without touching the network: the URL must be
+/// accepted by the startup-probe parser, the timeout must be positive and at
+/// most [`MAX_OUTBOUND_PROBE_TIMEOUT`], and the tag (or the default outbound
+/// when absent) must resolve to a configured leaf outbound.
+pub(crate) fn validate_outbound_probe(
+    options: &StartupProbeOptions,
+    graph: &OutboundGraph,
+) -> Result<(), OutboundProbeError> {
+    parse_probe_url(&options.url).map_err(|_| OutboundProbeError::UnsupportedUrl)?;
+    if options.timeout.is_zero() || options.timeout > MAX_OUTBOUND_PROBE_TIMEOUT {
+        return Err(OutboundProbeError::InvalidTimeout);
+    }
+    match options.outbound_tag.as_deref() {
+        Some(tag) => graph
+            .node_for_tag(tag)
+            .map(|_| ())
+            .ok_or(OutboundProbeError::UnknownOutbound),
+        None => graph
+            .default_node()
+            .map(|_| ())
+            .ok_or(OutboundProbeError::NoDefaultOutbound),
+    }
+}
+
+/// Stable label for redacted runtime diagnostics.
+pub(crate) fn health_failure_label(failure: OutboundHealthFailure) -> &'static str {
+    match failure {
+        OutboundHealthFailure::Timeout => "timeout",
+        OutboundHealthFailure::Transport => "transport",
+        OutboundHealthFailure::Tls => "tls",
+        OutboundHealthFailure::Io => "io",
+        OutboundHealthFailure::MalformedHttpResponse => "malformedHttpResponse",
+        OutboundHealthFailure::HttpStatus(_) => "httpStatus",
+    }
 }
 
 pub(crate) async fn run_startup_probe(
@@ -556,6 +644,80 @@ mod tests {
         let error = parse_probe_url("https://example.com/path#frag").unwrap_err();
 
         assert!(matches!(error, StartupProbeError::UnsupportedUrl));
+    }
+
+    #[test]
+    fn probe_errors_map_to_health_failure_categories() {
+        let url = "http://<redacted-host>:80".to_owned();
+        let cases = [
+            (
+                StartupProbeError::UnsupportedUrl,
+                OutboundHealthFailure::Transport,
+            ),
+            (
+                StartupProbeError::Core {
+                    url: url.clone(),
+                    source: Box::new(CoreError::NoSupportedOutbound),
+                },
+                OutboundHealthFailure::Transport,
+            ),
+            (
+                StartupProbeError::Timeout {
+                    url: url.clone(),
+                    timeout_ms: 5,
+                },
+                OutboundHealthFailure::Timeout,
+            ),
+            (
+                StartupProbeError::Io {
+                    url: url.clone(),
+                    source: std::io::Error::other("synthetic"),
+                },
+                OutboundHealthFailure::Io,
+            ),
+            (
+                StartupProbeError::MalformedHttpResponse(url.clone()),
+                OutboundHealthFailure::MalformedHttpResponse,
+            ),
+            (
+                StartupProbeError::HttpStatus { url, status: 503 },
+                OutboundHealthFailure::HttpStatus(503),
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.health_failure(), expected, "{error:?}");
+        }
+    }
+
+    #[test]
+    fn health_failure_labels_match_snapshot_wire_names() {
+        assert_eq!(
+            health_failure_label(OutboundHealthFailure::Timeout),
+            "timeout"
+        );
+        assert_eq!(
+            health_failure_label(OutboundHealthFailure::Transport),
+            "transport"
+        );
+        assert_eq!(health_failure_label(OutboundHealthFailure::Tls), "tls");
+        assert_eq!(health_failure_label(OutboundHealthFailure::Io), "io");
+        assert_eq!(
+            health_failure_label(OutboundHealthFailure::MalformedHttpResponse),
+            "malformedHttpResponse"
+        );
+        assert_eq!(
+            health_failure_label(OutboundHealthFailure::HttpStatus(404)),
+            "httpStatus"
+        );
+    }
+
+    #[test]
+    fn outbound_probe_timeout_error_reports_the_bound() {
+        assert_eq!(
+            OutboundProbeError::InvalidTimeout.to_string(),
+            "outbound probe timeout must be between 1 and 60000 ms"
+        );
     }
 }
 

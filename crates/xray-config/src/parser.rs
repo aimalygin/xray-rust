@@ -1,3 +1,4 @@
+mod blackhole;
 mod dns;
 mod hysteria;
 mod routing;
@@ -938,6 +939,7 @@ impl Parser<'_> {
             Some("shadowsocks") => OutboundProtocol::Shadowsocks2022,
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
+            Some("blackhole") => OutboundProtocol::Blackhole,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -978,6 +980,9 @@ impl Parser<'_> {
             OutboundProtocol::Vless => {
                 OutboundSettings::Vless(self.parse_vless_settings(outbound, index)?)
             }
+            OutboundProtocol::Blackhole => {
+                OutboundSettings::Blackhole(self.parse_blackhole_settings(outbound, index)?)
+            }
         };
         let stream = self.parse_stream_settings(outbound, index)?;
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
@@ -1011,7 +1016,8 @@ impl Parser<'_> {
             | OutboundSettings::Trojan(_)
             | OutboundSettings::Vmess(_)
             | OutboundSettings::Shadowsocks2022(_)
-            | OutboundSettings::Wireguard(_) => false,
+            | OutboundSettings::Wireguard(_)
+            | OutboundSettings::Blackhole(_) => false,
         };
         if rejects_plaintext_server {
             self.error(

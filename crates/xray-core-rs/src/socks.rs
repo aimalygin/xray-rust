@@ -25,7 +25,8 @@ use xray_routing::{Target, TargetAddr};
 use xray_transport::{protect_udp_socket, DnsResolver, TransportDialer};
 
 use crate::outbound::{
-    open_tcp_stream_with_resolvers_and_dialer, DnsOutbound, TcpSessionOutbound, UdpSessionOutbound,
+    absorb_udp_datagrams, open_tcp_stream_with_resolvers_and_dialer, BlackholeOutbound,
+    DnsOutbound, TcpSessionOutbound, UdpSessionOutbound,
 };
 use crate::{
     connection::{wait_for_connection_close, ConnectionLease},
@@ -409,6 +410,7 @@ async fn handle_socks_connect(
                 crate::debug_log::tcp_outbound_label(outbound)
             }
             TcpSessionOutbound::Dns(_) => "dns",
+            TcpSessionOutbound::Blackhole(_) => "blackhole",
         };
         crate::debug_log::log_route_decision(
             &runtime_logger,
@@ -446,6 +448,27 @@ async fn handle_socks_connect(
                 () = wait_for_connection_close(&mut connection_close) => None,
             };
             let _ = served;
+            connection.finish();
+            return;
+        }
+        TcpSessionOutbound::Blackhole(blackhole) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_accepted(
+                    &runtime_logger,
+                    source,
+                    &dial_target,
+                    "blackhole",
+                );
+            }
+            // Xray's SOCKS server acknowledges CONNECT before dispatching, so a
+            // blackholed client sees success followed by the response and close.
+            if !sniff_tcp && write_socks5_success(&mut inbound).await.is_err() {
+                return;
+            }
+            tokio::select! {
+                () = blackhole.finish_stream(&mut inbound) => {}
+                () = wait_for_connection_close(&mut connection_close) => {}
+            }
             connection.finish();
             return;
         }
@@ -983,6 +1006,7 @@ async fn bridge_socks_udp_flow(
                         crate::debug_log::udp_outbound_label(outbound)
                     }
                     UdpSessionOutbound::Dns(_) => "dns",
+                    UdpSessionOutbound::Blackhole(_) => "blackhole",
                 });
         crate::debug_log::log_route_decision(
             &context.runtime_logger,
@@ -1028,6 +1052,29 @@ async fn bridge_socks_udp_flow(
                 first_payload,
                 connection,
                 connection_close,
+            )
+            .await;
+            return;
+        }
+        UdpSessionOutbound::Blackhole(blackhole) => {
+            if context.runtime_logger.is_enabled() {
+                let source = context.client_addr.to_string();
+                crate::debug_log::log_access_accepted(
+                    &context.runtime_logger,
+                    &source,
+                    &dial_target,
+                    "blackhole",
+                );
+            }
+            drop(pending_open_permit);
+            drop(first_payload);
+            absorb_socks_udp_blackhole_flow(
+                &target,
+                blackhole,
+                &context,
+                from_client,
+                shutdown,
+                connection,
             )
             .await;
             return;
@@ -1102,6 +1149,42 @@ async fn bridge_socks_udp_flow(
             .await;
         }
     }
+}
+
+/// Absorbs a SOCKS UDP flow routed to a blackhole without opening a socket.
+///
+/// Xray dispatches the flow once. Its SOCKS inbound returns an `http` response
+/// as one datagram from the address the client sent to, and the blackhole then
+/// discards later datagrams until the flow is idle, so they are not routed
+/// again. The flow therefore stays registered as one connection.
+async fn absorb_socks_udp_blackhole_flow(
+    client_target: &Target,
+    blackhole: BlackholeOutbound,
+    context: &SocksUdpFlowContext,
+    mut from_client: mpsc::Receiver<Bytes>,
+    mut shutdown: watch::Receiver<bool>,
+    connection: ConnectionLease,
+) {
+    let mut connection_close = connection.close_receiver();
+    connection.mark_active();
+    let response = blackhole.response_bytes();
+    if !response.is_empty() {
+        if let Ok(reply) = encode_socks5_udp_datagram(client_target, response) {
+            tokio::select! {
+                biased;
+                () = wait_for_connection_close(&mut connection_close) => {}
+                _ = context.client_socket.send_to(&reply, context.client_addr) => {}
+            }
+        }
+    }
+    absorb_udp_datagrams(
+        &mut from_client,
+        &mut shutdown,
+        &mut connection_close,
+        SOCKS_UDP_FLOW_IDLE_TIMEOUT,
+    )
+    .await;
+    connection.finish();
 }
 
 #[expect(

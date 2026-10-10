@@ -18,8 +18,9 @@ use xray_config::{
 };
 use xray_core_rs::{
     ConnectionId, ConnectionState, Core, DnsBootstrapMode, OutboundHealthFailure,
-    OutboundHealthState, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy,
-    TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
+    OutboundHealthState, OutboundProbeError, OutboundProbeOutcome, RuntimeLogConfig, RuntimeLogger,
+    StartupProbeOptions, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
+    TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_routing::{Network, TargetAddr};
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
@@ -27,7 +28,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 8;
+pub const XRAY_FFI_ABI_MINOR: u32 = 9;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -52,6 +53,7 @@ pub const XRAY_FFI_CAPABILITY_PROFILE_IMPORT: u64 = 1 << 18;
 pub const XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND: u64 = 1 << 19;
 pub const XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND: u64 = 1 << 20;
 pub const XRAY_FFI_CAPABILITY_VMESS_OUTBOUND: u64 = 1 << 21;
+pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE: u64 = 1 << 22;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -74,7 +76,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_PROFILE_IMPORT
     | XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND
     | XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
-    | XRAY_FFI_CAPABILITY_VMESS_OUTBOUND;
+    | XRAY_FFI_CAPABILITY_VMESS_OUTBOUND
+    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +125,35 @@ pub enum XrayTunRuntimeProfile {
 pub enum XrayDnsBootstrapMode {
     System = 0,
     StaticOnly = 1,
+}
+
+/// Outcome category written by [`xray_core_probe_outbound_url`] (ABI 1.9).
+///
+/// The values other than `None` mirror the `lastFailureKind` categories of the
+/// outbound health snapshot. The C ABI transports them as `int32_t`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrayOutboundProbeFailureKind {
+    None = 0,
+    Timeout = 1,
+    Transport = 2,
+    Tls = 3,
+    Io = 4,
+    MalformedHttpResponse = 5,
+    HttpStatus = 6,
+}
+
+impl From<OutboundHealthFailure> for XrayOutboundProbeFailureKind {
+    fn from(value: OutboundHealthFailure) -> Self {
+        match value {
+            OutboundHealthFailure::Timeout => Self::Timeout,
+            OutboundHealthFailure::Transport => Self::Transport,
+            OutboundHealthFailure::Tls => Self::Tls,
+            OutboundHealthFailure::Io => Self::Io,
+            OutboundHealthFailure::MalformedHttpResponse => Self::MalformedHttpResponse,
+            OutboundHealthFailure::HttpStatus(_) => Self::HttpStatus,
+        }
+    }
 }
 
 #[repr(C)]
@@ -1562,6 +1594,177 @@ pub unsafe extern "C" fn xray_core_rebind_hysteria(
             *accepted = core.rebind_hysteria();
             XrayStatus::Ok
         })
+    }
+}
+
+/// Cancels current and future on-demand probes before exclusive teardown
+/// (ABI 1.9, `OUTBOUND_PROBE`). Nonblocking, idempotent, and a no-op before
+/// start or when no config is loaded. Normal traffic and health are unaffected.
+/// Creating a new handle and loading its config enables probes again.
+///
+/// # Safety
+///
+/// `handle` must be null or a live core handle. This is a shared call: it may
+/// overlap probes and other shared calls, but not lifecycle/free. After this
+/// returns, drain all shared calls before calling stop/load/free. If `error`
+/// is non-null it must point to an initialized, library-owned error pointer
+/// or null, exclusively accessible by this call.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_cancel_outbound_probes(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            if let Some(core) = handle.core.as_ref() {
+                core.cancel_outbound_probes();
+            }
+            XrayStatus::Ok
+        })
+    }
+}
+
+/// Sends one HTTP(S) GET through a leaf outbound of a running core and
+/// reports its latency or typed failure (ABI 1.9, `OUTBOUND_PROBE`).
+///
+/// `outbound_tag` may be null or empty to use the default outbound; otherwise
+/// it must name a configured leaf outbound. Routing rules, balancers, and
+/// selector overrides are bypassed. The caller blocks for at most `timeout_ms`
+/// (1..=60000). `XRAY_STATUS_OK` means the probe ran: `failure_kind` is
+/// `XRAY_OUTBOUND_PROBE_FAILURE_NONE` with `delay_ms` set for a 2xx/3xx status
+/// line, or another kind with `delay_ms` zero; `http_status` is nonzero only
+/// for `HTTP_STATUS`. Unsupported URLs, out-of-range timeouts, and unknown tags
+/// return `INVALID_ARGUMENT` without network activity; a loaded core that is
+/// not running or a probe cancelled for teardown returns `RUNTIME_ERROR`.
+/// Outputs are zeroed on entry. The probe
+/// does not update health snapshots, selector state, or accounting.
+///
+/// # Safety
+///
+/// `handle` must be null or a live core handle. `url` must be null or point to
+/// a NUL-terminated string, and `outbound_tag` may be null or point to one.
+/// `delay_ms`, `failure_kind`, and `http_status` must each be null or writable.
+/// If `error` is non-null, it must point to an initialized `*mut XrayError`
+/// value that is either null or a live error pointer returned by this library.
+/// This function may run concurrently with data-path, snapshot, and other
+/// shared calls, but not lifecycle calls or `xray_core_free`. It must not be
+/// called from a runtime worker thread such as the socket-protect callback.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn xray_core_probe_outbound_url(
+    handle: *mut XrayCoreHandle,
+    url: *const c_char,
+    timeout_ms: u64,
+    outbound_tag: *const c_char,
+    delay_ms: *mut u64,
+    failure_kind: *mut i32,
+    http_status: *mut u16,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_result_status(error, || {
+            xray_core_probe_outbound_url_inner(
+                handle,
+                url,
+                timeout_ms,
+                outbound_tag,
+                delay_ms,
+                failure_kind,
+                http_status,
+                error,
+            )
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn xray_core_probe_outbound_url_inner(
+    handle: *mut XrayCoreHandle,
+    url: *const c_char,
+    timeout_ms: u64,
+    outbound_tag: *const c_char,
+    delay_ms: *mut u64,
+    failure_kind: *mut i32,
+    http_status: *mut u16,
+    error: *mut *mut XrayError,
+) -> FfiResult {
+    unsafe {
+        clear_error(error);
+        ensure_non_null(delay_ms, error, "outbound probe delay output is null")?;
+        ensure_non_null(
+            failure_kind,
+            error,
+            "outbound probe failure kind output is null",
+        )?;
+        ensure_non_null(
+            http_status,
+            error,
+            "outbound probe HTTP status output is null",
+        )?;
+        *delay_ms = 0;
+        *failure_kind = XrayOutboundProbeFailureKind::None as i32;
+        *http_status = 0;
+    }
+    let handle = unsafe { shared_handle(handle, error) }?;
+    let url = unsafe { required_utf8_argument(url, "outbound probe URL", error) }?;
+    let outbound_tag = if outbound_tag.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(outbound_tag) }.to_str() {
+            Ok("") => None,
+            Ok(tag) => Some(tag.to_owned()),
+            Err(source) => unsafe {
+                set_error(
+                    error,
+                    XrayStatus::InvalidUtf8,
+                    format!("outbound probe tag is not valid UTF-8: {source}"),
+                );
+                return Err(XrayStatus::InvalidUtf8);
+            },
+        }
+    };
+    let core = unsafe { loaded_core(handle, error) }?;
+    let options = StartupProbeOptions {
+        url: url.to_owned(),
+        timeout: Duration::from_millis(timeout_ms),
+        outbound_tag,
+    };
+    match handle.runtime.block_on(core.probe_outbound_url(options)) {
+        Ok(OutboundProbeOutcome::Reachable { delay }) => {
+            unsafe {
+                *delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX);
+            }
+            Ok(XrayStatus::Ok)
+        }
+        Ok(OutboundProbeOutcome::Failed(failure)) => {
+            unsafe {
+                *failure_kind = XrayOutboundProbeFailureKind::from(failure) as i32;
+                if let OutboundHealthFailure::HttpStatus(status) = failure {
+                    *http_status = status;
+                }
+            }
+            Ok(XrayStatus::Ok)
+        }
+        Err(source) => {
+            let status = match source {
+                OutboundProbeError::NotRunning | OutboundProbeError::Cancelled => {
+                    XrayStatus::RuntimeError
+                }
+                OutboundProbeError::UnsupportedUrl
+                | OutboundProbeError::InvalidTimeout
+                | OutboundProbeError::UnknownOutbound
+                | OutboundProbeError::NoDefaultOutbound => XrayStatus::InvalidArgument,
+            };
+            unsafe {
+                set_error(error, status, source.to_string());
+            }
+            Err(status)
+        }
     }
 }
 

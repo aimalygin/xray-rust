@@ -209,7 +209,7 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
     func testFFIInfoReportsCurrentCapabilities() {
         let info = XrayCore.ffiInfo
 
-        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 8))
+        XCTAssertEqual(info.version, XrayFFIVersion(major: 1, minor: 9))
         XCTAssertTrue(info.supports(.hysteria2Outbound))
         XCTAssertTrue(info.supports(.wireguardOutbound))
         XCTAssertTrue(info.supports(.profileImport))
@@ -229,7 +229,41 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertTrue(info.supports(.outboundHealth))
         XCTAssertTrue(info.supports(.connectionManagement))
         XCTAssertTrue(info.supports(.routingPolicyUpdate))
+        XCTAssertTrue(info.supports(.outboundProbe))
+        XCTAssertEqual(XrayFFICapabilities.outboundProbe.rawValue, 1 << 22)
         XCTAssertFalse(info.supports(XrayFFICapabilities(rawValue: 1 << 63)))
+    }
+
+    func testOutboundProbeResultMapsFFIOutcomeKinds() throws {
+        let reachable = try XrayOutboundProbeResult(ffiDelayMs: 42, failureKind: 0, httpStatus: 0)
+        XCTAssertTrue(reachable.isReachable)
+        XCTAssertEqual(reachable.delayMs, 42)
+        XCTAssertNil(reachable.failureKind)
+        XCTAssertNil(reachable.httpStatus)
+
+        let expected: [(Int32, XrayOutboundHealthFailureKind)] = [
+            (1, .timeout),
+            (2, .transport),
+            (3, .tls),
+            (4, .io),
+            (5, .malformedHttpResponse),
+            (6, .httpStatus),
+        ]
+        for (rawKind, kind) in expected {
+            let result = try XrayOutboundProbeResult(
+                ffiDelayMs: 0,
+                failureKind: rawKind,
+                httpStatus: 503
+            )
+            let expectedStatus: UInt16? = kind == .httpStatus ? 503 : nil
+            XCTAssertFalse(result.isReachable)
+            XCTAssertNil(result.delayMs)
+            XCTAssertEqual(result.failureKind, kind)
+            XCTAssertEqual(result.httpStatus, expectedStatus)
+        }
+        XCTAssertThrowsError(
+            try XrayOutboundProbeResult(ffiDelayMs: 0, failureKind: 7, httpStatus: 0)
+        )
     }
 
     func testRoutingPolicySnapshotDecodesVersionedWireContract() throws {
@@ -405,6 +439,52 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
 
         releaseLifecycle.signal()
         XCTAssertEqual(lateReaderEntered.wait(timeout: .now() + 1), .success)
+    }
+
+    func testLifecycleGateCancelsBeforeWaitingForReaders() {
+        let gate = XrayCoreCallGate()
+        let readerEntered = expectation(description: "reader entered")
+        let readerLeft = DispatchSemaphore(value: 0)
+        let cancellation = DispatchSemaphore(value: 0)
+        let lifecycleFinished = expectation(description: "lifecycle finished")
+        DispatchQueue.global().async {
+            gate.withDataPath {
+                readerEntered.fulfill()
+                XCTAssertEqual(cancellation.wait(timeout: .now() + 2), .success)
+                readerLeft.signal()
+            }
+        }
+        wait(for: [readerEntered], timeout: 1)
+        DispatchQueue.global().async {
+            gate.withLifecycle(beforeWaiting: { cancellation.signal() }) {
+                XCTAssertEqual(readerLeft.wait(timeout: .now() + 1), .success)
+            }
+            lifecycleFinished.fulfill()
+        }
+        wait(for: [lifecycleFinished], timeout: 2)
+    }
+
+    func testLifecycleGatePreflightNeverOverlapsAnotherExclusiveCaller() {
+        let gate = XrayCoreCallGate()
+        let firstEntered = expectation(description: "first exclusive caller entered")
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let preflightEntered = DispatchSemaphore(value: 0)
+        let secondFinished = expectation(description: "second exclusive caller finished")
+        DispatchQueue.global().async {
+            gate.withLifecycle {
+                firstEntered.fulfill()
+                releaseFirst.wait()
+            }
+        }
+        wait(for: [firstEntered], timeout: 1)
+        DispatchQueue.global().async {
+            gate.withLifecycle(beforeWaiting: { preflightEntered.signal() }) {}
+            secondFinished.fulfill()
+        }
+        XCTAssertEqual(preflightEntered.wait(timeout: .now() + 0.05), .timedOut)
+        releaseFirst.signal()
+        XCTAssertEqual(preflightEntered.wait(timeout: .now() + 1), .success)
+        wait(for: [secondFinished], timeout: 1)
     }
 
     func testLifecycleGateReleasesAfterThrowingBody() {

@@ -47,7 +47,9 @@ pub use dns::{
     NameServerTransport, SystemDnsResolver,
 };
 pub use happy_eyeballs::{connect_tcp_happy_eyeballs, HappyEyeballsConfig};
-pub(crate) use penetrating_tls::{CapturedTcpStream, PenetratingTlsStream, ServerReadLog};
+pub(crate) use penetrating_tls::{
+    CapturedStream, CapturedTcpStream, PenetratingTlsStream, ServerReadLog,
+};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{
     RealityHandshakeContextProvider, RealityRuntimeEngine, SystemRealityHandshakeContextProvider,

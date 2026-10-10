@@ -49,6 +49,9 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_close_connection",
         "xray_core_rebind_wireguard",
         "xray_core_rebind_hysteria",
+        "xray_core_probe_outbound_url",
+        "xray_core_cancel_outbound_probes",
+        "XrayOutboundProbeFailureKind",
         "xray_core_start",
         "xray_core_stop",
         "xray_core_free",
@@ -92,6 +95,26 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_HEALTH = 1 << 13"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_CONNECTION_MANAGEMENT = 1 << 14"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE = 1 << 15"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_PROBE = 1 << 22"));
+    // The Rust enum, the JNI result carrier and the Swift mapping all rely on
+    // these discriminants staying stable within ABI major 1.
+    for (name, value) in [
+        ("XRAY_OUTBOUND_PROBE_FAILURE_NONE", 0),
+        ("XRAY_OUTBOUND_PROBE_FAILURE_TIMEOUT", 1),
+        ("XRAY_OUTBOUND_PROBE_FAILURE_TRANSPORT", 2),
+        ("XRAY_OUTBOUND_PROBE_FAILURE_TLS", 3),
+        ("XRAY_OUTBOUND_PROBE_FAILURE_IO", 4),
+        ("XRAY_OUTBOUND_PROBE_FAILURE_MALFORMED_HTTP_RESPONSE", 5),
+        ("XRAY_OUTBOUND_PROBE_FAILURE_HTTP_STATUS", 6),
+    ] {
+        assert!(
+            header.contains(&format!("{name} = {value}")),
+            "header missing `{name} = {value}`"
+        );
+    }
+    assert!(header.contains(
+        "    uint64_t *delay_ms,\n    int32_t *failure_kind,\n    uint16_t *http_status,\n    XrayError **error);"
+    ));
 
     for field in [
         "struct_size",
@@ -187,6 +210,11 @@ fn apple_adapter_declares_packet_tunnel_pump() {
     assert!(core.contains("public static let outboundHealth"));
     assert!(core.contains("public static let connectionManagement"));
     assert!(core.contains("public static let routingPolicyUpdate"));
+    assert!(core.contains("public static let outboundProbe"));
+    assert!(core.contains("public struct XrayOutboundProbeResult"));
+    assert!(core.contains("public func probeOutboundURL("));
+    assert!(core.contains("xray_core_probe_outbound_url("));
+    assert!(core.contains("guard version.minor >= 9 else"));
     assert!(core.contains("public func setOutboundSelectorOverride("));
     assert!(core.contains("public func clearOutboundSelectorOverride("));
     assert!(core.contains("public func replaceRoutingPolicy("));
@@ -446,6 +474,10 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("OutboundHealth(1L shl 13)"));
     assert!(core.contains("ConnectionManagement(1L shl 14)"));
     assert!(core.contains("RoutingPolicyUpdate(1L shl 15)"));
+    assert!(core.contains("OutboundProbe(1L shl 22)"));
+    assert!(core.contains("fun probeOutboundUrl("));
+    assert!(core.contains("requireCapability(XrayFfiCapability.OutboundProbe)"));
+    assert!(core.contains("data class XrayOutboundProbeResult"));
     assert!(core.contains("fileLoggingDirectory: File? = null"));
     assert!(core.contains("nativeSetFileLogging"));
     assert!(core.contains("XrayTunRuntimeProfile"));
@@ -480,6 +512,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("xray_core_connection_snapshot_json"));
     assert!(jni.contains("xray_core_outbound_accounting_snapshot_json"));
     assert!(jni.contains("xray_core_close_connection"));
+    assert!(jni.contains("xray_core_probe_outbound_url"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeProbeOutboundUrl"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
@@ -1135,6 +1169,8 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_close_connection",
     "xray_core_rebind_wireguard",
     "xray_core_rebind_hysteria",
+    "xray_core_probe_outbound_url",
+    "xray_core_cancel_outbound_probes",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -1219,6 +1255,7 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND;
   capabilities &= XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND;
   capabilities &= XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
+  capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
   (void)capabilities;
   (void)xray_profile_import_json(packet, sizeof(packet), NULL, 0, &written, &error);
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
@@ -1272,6 +1309,23 @@ static void use_xray_ffi_api(void) {
   (void)xray_core_close_connection(handle, 1, &error);
   (void)xray_core_rebind_wireguard(handle, &stats_probe, &error);
   (void)xray_core_rebind_hysteria(handle, &stats_probe, &error);
+  {
+    uint64_t probe_delay_ms = 0;
+    int32_t probe_failure_kind = XRAY_OUTBOUND_PROBE_FAILURE_NONE;
+    uint16_t probe_http_status = 0;
+    (void)xray_core_cancel_outbound_probes(handle, &error);
+    (void)xray_core_probe_outbound_url(
+        handle,
+        "http://probe.test/health",
+        5000,
+        NULL,
+        &probe_delay_ms,
+        &probe_failure_kind,
+        &probe_http_status,
+        &error);
+    stats_probe += probe_delay_ms + (uint64_t)probe_http_status;
+    stats_probe += probe_failure_kind == XRAY_OUTBOUND_PROBE_FAILURE_HTTP_STATUS;
+  }
   (void)xray_core_start(handle, &error);
   (void)xray_core_stop(handle, &error);
   (void)xray_tun_push_packet(handle, packet, sizeof(packet), &error);

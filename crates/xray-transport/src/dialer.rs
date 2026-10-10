@@ -251,7 +251,24 @@ impl TransportDialer {
                 let stream = self
                     .connect_tcp_carrier(original_target, candidates, happy_eyeballs)
                     .await?;
-                self.tls.connect_prepared_stream(stream, prepared).await
+                match alpn_policy {
+                    // The raw transport hands this TLS session to VLESS
+                    // itself, so it is the session Vision unwraps into direct
+                    // mode, as REALITY's is.
+                    TlsAlpnPolicy::Raw => {
+                        self.tls
+                            .connect_prepared_penetrating_stream(stream, prepared)
+                            .await
+                    }
+                    // HTTP framing sits between this session and VLESS, so
+                    // Vision never reaches it: there Vision requires VLESS
+                    // encryption, and Direct strips only that layer.
+                    TlsAlpnPolicy::HttpClient
+                    | TlsAlpnPolicy::Http1Upgrade
+                    | TlsAlpnPolicy::Http2 => {
+                        self.tls.connect_prepared_stream(stream, prepared).await
+                    }
+                }
             }
             ConnectorConfig::Reality(reality_config) => {
                 if self.resolved_tcp_connector.is_some() {

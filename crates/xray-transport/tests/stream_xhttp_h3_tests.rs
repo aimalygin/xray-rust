@@ -584,13 +584,12 @@ async fn fixed_length_upload_accepts_remote_no_error_that_races_request_fin() {
     upload.write_all(&payload).await.expect("request DATA");
     upload.flush().await.expect("deliver request DATA");
     stopped_rx.await.expect("server STOP_SENDING");
-    tokio::task::yield_now().await;
+    let mut response = pending.open().await.expect("status 200 after STOP_SENDING");
     upload
         .shutdown()
         .await
         .expect("H3_NO_ERROR after all fixed-length DATA is a successful finish");
 
-    let mut response = pending.open().await.expect("status 200");
     let mut sink = Vec::new();
     response.read_to_end(&mut sink).await.expect("response EOF");
     handler.await.expect("server handler");
@@ -627,7 +626,10 @@ async fn unknown_length_upload_rejects_remote_no_error_that_races_request_fin() 
     upload.write_all(b"body").await.expect("request DATA");
     upload.flush().await.expect("deliver request DATA");
     stopped_rx.await.expect("server STOP_SENDING");
-    tokio::task::yield_now().await;
+    // The server-side notification only means the frames were queued. Wait
+    // for the client driver to receive the response instead of assuming that
+    // one scheduler yield delivers STOP_SENDING over the loopback socket.
+    let response = pending.open().await.expect("status 200 after STOP_SENDING");
     let error = upload
         .shutdown()
         .await
@@ -636,7 +638,7 @@ async fn unknown_length_upload_rejects_remote_no_error_that_races_request_fin() 
         error.to_string().contains("Remote reset: H3_NO_ERROR"),
         "unexpected finish error: {error}"
     );
-    drop(pending);
+    drop(response);
     handler.await.expect("server handler");
 }
 

@@ -1,4 +1,4 @@
-use std::io::{self, Read};
+use std::io::{self, IoSlice, Read};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -14,15 +14,23 @@ const TLS_READ_CHUNK_LIMIT: usize = 8 * 1024;
 
 pub(crate) type ServerReadLog = Arc<Mutex<Option<Vec<u8>>>>;
 
-pub(crate) struct CapturedTcpStream {
-    stream: TcpStream,
+/// The carrier under a TLS session that Vision may unwrap into direct mode.
+///
+/// REALITY captures its own TCP socket; plain TLS captures whatever carrier
+/// the dialer produced, which under a chained outbound is another proxy
+/// stream. Either way it is the connection Xray-core's Vision reads and
+/// writes once a direction switches to direct mode (`tls.Conn.NetConn()`).
+pub(crate) struct CapturedStream<S> {
+    stream: S,
     server_read_log: Option<ServerReadLog>,
     tls_read_limiter: TlsRecordReadLimiter,
     limiter_released: bool,
 }
 
-impl CapturedTcpStream {
-    pub(crate) fn new(stream: TcpStream, server_read_log: Option<ServerReadLog>) -> Self {
+pub(crate) type CapturedTcpStream = CapturedStream<TcpStream>;
+
+impl<S> CapturedStream<S> {
+    pub(crate) fn new(stream: S, server_read_log: Option<ServerReadLog>) -> Self {
         Self {
             stream,
             server_read_log,
@@ -93,7 +101,10 @@ impl TlsRecordReadLimiter {
     }
 }
 
-impl AsyncRead for CapturedTcpStream {
+impl<S> AsyncRead for CapturedStream<S>
+where
+    S: AsyncRead + Unpin,
+{
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -149,13 +160,30 @@ impl AsyncRead for CapturedTcpStream {
     }
 }
 
-impl AsyncWrite for CapturedTcpStream {
+impl<S> AsyncWrite for CapturedStream<S>
+where
+    S: AsyncWrite + Unpin,
+{
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         input: &[u8],
     ) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.get_mut().stream).poll_write(cx, input)
+    }
+
+    // rustls hands its queued records over as one vectored write; keep that
+    // a single carrier write rather than one per record.
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        inputs: &[IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write_vectored(cx, inputs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.stream.is_write_vectored()
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -167,27 +195,30 @@ impl AsyncWrite for CapturedTcpStream {
     }
 }
 
-enum PenetratingTlsState {
-    Tls(Option<Box<TlsStream<CapturedTcpStream>>>),
+enum PenetratingTlsState<S> {
+    Tls(Option<Box<TlsStream<CapturedStream<S>>>>),
     /// The read side switched to Vision direct mode while the write side may
     /// still owe the peer TLS records.
     ///
     /// Vision switches each direction independently — Xray-core swaps only its
     /// reader on `VisionCommand::Direct` downlink and keeps decrypting our
     /// uplink until we send `Direct` ourselves — so the session has to stay
-    /// alive here. Raw bytes come straight off the captured socket instead.
+    /// alive here. Raw bytes come straight off the captured carrier instead.
     ReadDirect {
-        stream: Box<TlsStream<CapturedTcpStream>>,
+        stream: Box<TlsStream<CapturedStream<S>>>,
         pending_plaintext: BytesMut,
     },
 }
 
-pub(crate) struct PenetratingTlsStream {
-    state: PenetratingTlsState,
+pub(crate) struct PenetratingTlsStream<S = TcpStream> {
+    state: PenetratingTlsState<S>,
 }
 
-impl PenetratingTlsStream {
-    pub(crate) fn new(stream: TlsStream<CapturedTcpStream>) -> Self {
+impl<S> PenetratingTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    pub(crate) fn new(stream: TlsStream<CapturedStream<S>>) -> Self {
         Self {
             state: PenetratingTlsState::Tls(Some(Box::new(stream))),
         }
@@ -267,7 +298,10 @@ impl PenetratingTlsStream {
     }
 }
 
-impl AsyncRead for PenetratingTlsStream {
+impl<S> AsyncRead for PenetratingTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -284,7 +318,10 @@ impl AsyncRead for PenetratingTlsStream {
     }
 }
 
-impl AsyncWrite for PenetratingTlsStream {
+impl<S> AsyncWrite for PenetratingTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -301,6 +338,31 @@ impl AsyncWrite for PenetratingTlsStream {
             PenetratingTlsState::Tls(None) => {
                 Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
             }
+        }
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        inputs: &[IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        match &mut this.state {
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => {
+                Pin::new(stream).poll_write_vectored(cx, inputs)
+            }
+            PenetratingTlsState::Tls(None) => {
+                Poll::Ready(Err(io::Error::other("TLS stream was already taken")))
+            }
+        }
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        match &self.state {
+            PenetratingTlsState::Tls(Some(stream))
+            | PenetratingTlsState::ReadDirect { stream, .. } => stream.is_write_vectored(),
+            PenetratingTlsState::Tls(None) => false,
         }
     }
 
@@ -327,7 +389,10 @@ impl AsyncWrite for PenetratingTlsStream {
     }
 }
 
-impl TransportStream for PenetratingTlsStream {
+impl<S> TransportStream for PenetratingTlsStream<S>
+where
+    S: AsyncRead + AsyncWrite + Send + Unpin,
+{
     fn release_record_alignment(&mut self) {
         if let PenetratingTlsState::Tls(Some(stream)) = &mut self.state {
             let (captured, _) = stream.as_mut().get_mut();
