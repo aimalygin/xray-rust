@@ -886,7 +886,23 @@ pub struct StreamSettings {
     /// preserves the distinction between an absent/null Go pointer and an
     /// explicitly present (possibly default-valued) configuration.
     pub quic_params: Option<QuicParamsSettings>,
+    /// One normalized FinalMask or legacy freedom `tlshello` transform.
+    pub tcp_fragment: Option<TcpFragmentSettings>,
     pub socket_options: Option<SocketOptions>,
+}
+
+/// Bounded first-ClientHello record fragmentation. Ranges are inclusive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TcpFragmentSettings {
+    pub lengths: Vec<FragmentRange>,
+    pub delays_ms: Vec<FragmentRange>,
+    pub max_split: FragmentRange,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FragmentRange {
+    pub from: u32,
+    pub to: u32,
 }
 
 /// Xray's final QUIC parameters after config-build normalization.

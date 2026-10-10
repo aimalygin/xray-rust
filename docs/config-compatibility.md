@@ -48,6 +48,50 @@ manual rebind and rejected socket protection against pinned Xray-core and
 independent official Hysteria v2.12.2. This is client carrier support, not a
 change to the congestion-control parity or published v0.7 artifacts.
 
+## v0.8 TLS ClientHello fragmentation
+
+TCP TLS/REALITY carriers accept one `tlshello` FinalMask, after socket
+protection and after the TLS/REALITY handshake bytes have been finalized:
+
+```json
+"finalmask": {
+  "tcp": [{"type": "fragment", "settings": {
+    "packets": "tlshello", "length": "100-200", "delay": "1-2", "maxSplit": 32
+  }}]
+}
+```
+
+`lengths` and `delays` optionally override the scalar ranges with sequences of
+at most 16 entries; subsequent fragments reuse the last entry. Ranges accept
+integers or inclusive `min-max` strings and normalize reversed bounds as Xray
+does. This bounded subset requires lengths 1..16384 bytes, delays 0..1000 ms,
+and `maxSplit` 0..4096 (zero means no explicit split limit). Before sending,
+each actual randomized plan must fit 4096 records and ten seconds of total
+delay; exceeding either limit fails the connection. `maxSplit` makes the last
+record contain the remainder, even when it exceeds the configured length.
+Arbitrary/all-write packet selectors, zero lengths, other mask types and
+unknown fields are rejected. FinalMask spells the delay `delay`, not `interval`.
+
+Existing mobile profiles may instead put
+`{"fragment":{"packets":"tlshello","length":"100-200","interval":"1-2","maxSplit":32}}`
+in a dedicated `freedom` outbound's `settings`, then reference its tag with
+`streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
+security, socket overrides, mux or proxy chain. The parser normalizes its sole
+fragment transform into the caller's stream. General `dialerProxy` chaining,
+combining two fragment masks, UDP noise, QUIC/H3 fragmentation and split XHTTP
+downloads remain unsupported. A raw freedom outbound can also fragment an
+application's first complete TLS record directly.
+
+As in pinned Xray-core v26.7.28, only the first write's complete handshake
+record is fragmented; an incomplete or non-TLS first write passes through.
+TLS record envelopes change, while the concatenated handshake bytes, including
+REALITY authentication, remain identical. Later writes pass through unchanged.
+One zero delay entry coalesces the new records into one write; it does not
+promise separate IP packets. Nonzero delays use cancellable async timers.
+Dropping the handshake drops its bounded buffer and timer without a background
+sender. The option is disabled by default and adds no fragment wrapper to
+existing profiles. Configured delays intentionally increase handshake latency.
+
 ## v0.8 development client protocols
 
 The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
@@ -649,8 +693,8 @@ initial congestion window, not quic-go's exact controller. Distinct
 `maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
 the transport API, conservative/aggressive BBR profiles, Brutal and
 force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
-a socket. Nonempty `finalmask.tcp` or `finalmask.udp` masks also remain
-unsupported. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
+a socket. H3 rejects nonempty TCP and UDP masks; the opt-in TCP fragment
+and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively
 allows one active HTTP request per QUIC connection and opens another

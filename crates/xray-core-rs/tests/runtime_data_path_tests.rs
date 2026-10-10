@@ -100,6 +100,7 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         TcpOutbound::Vless(outbound) => Ok(*outbound),
         TcpOutbound::Freedom
         | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_)
         | TcpOutbound::Trojan(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
@@ -119,6 +120,7 @@ fn vless_outbound(security: StreamSecurity, server: TargetAddr, port: u16) -> Ou
             transport: StreamTransport::Raw,
             security,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -144,6 +146,7 @@ fn freedom_outbound() -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -160,6 +163,7 @@ fn dns_outbound(settings: DnsOutboundSettings) -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Dns(settings),
@@ -12116,3 +12120,26 @@ async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
 
 #[path = "trojan_runtime/tun_tests.rs"]
 mod trojan_tun_tests;
+
+#[tokio::test]
+async fn socks_freedom_fragment_flushes_first_record_and_leaves_later_writes_unchanged() {
+    timeout(Duration::from_secs(3), async {
+        let (echo_addr, echo_task) = spawn_echo_server().await;
+        let mut config = runtime_config_with_freedom_outbound();
+        let parsed = xray_config::parse_xray_json(r#"{"outbounds":[{"protocol":"freedom","settings":{"fragment":{"packets":"tlshello","length":2,"interval":0}}}]}"#).unwrap();
+        config.outbounds[0].stream.tcp_fragment = parsed.config.outbounds[0].stream.tcp_fragment.clone();
+        let mut core = Core::new(config).unwrap();
+        core.start().await.unwrap();
+        let mut client = TcpStream::connect(core.inbound_addr(Some("socks-in")).unwrap()).await.unwrap();
+        socks5_connect(&mut client, echo_addr).await;
+        let record = [22,3,1,0,4,1,2,3,4];
+        client.write_all(&record).await.unwrap();
+        let mut fragmented = [0;14];
+        client.read_exact(&mut fragmented).await.unwrap();
+        assert_eq!(fragmented, [22,3,1,0,2,1,2,22,3,1,0,2,3,4]);
+        client.write_all(&record).await.unwrap();
+        let mut later = [0;9];client.read_exact(&mut later).await.unwrap();
+        assert_eq!(later, record);
+        drop(client);core.stop().await.unwrap();echo_task.await.unwrap();
+    }).await.unwrap();
+}

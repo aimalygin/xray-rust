@@ -1,5 +1,6 @@
 mod blackhole;
 mod dns;
+mod fragment;
 mod hysteria;
 mod routing;
 mod shadowsocks;
@@ -917,11 +918,18 @@ impl Parser<'_> {
             return Vec::new();
         };
 
-        outbounds
+        let mut parsed: Vec<_> = outbounds
             .iter()
             .enumerate()
             .filter_map(|(index, outbound)| self.parse_outbound(outbound, index))
-            .collect()
+            .collect();
+        if parsed.len() == outbounds.len() {
+            self.resolve_fragment_dialer_proxies(outbounds, &mut parsed);
+        }
+        for (index, outbound) in parsed.iter().enumerate() {
+            self.validate_tcp_fragment_scope(outbound, index);
+        }
+        parsed
     }
 
     fn parse_outbound(&mut self, outbound: &Value, index: usize) -> Option<OutboundConfig> {
@@ -984,7 +992,27 @@ impl Parser<'_> {
                 OutboundSettings::Blackhole(self.parse_blackhole_settings(outbound, index)?)
             }
         };
-        let stream = self.parse_stream_settings(outbound, index)?;
+        let mut stream = self.parse_stream_settings(outbound, index)?;
+        if protocol == OutboundProtocol::Freedom {
+            if let Some(raw) = outbound
+                .get("settings")
+                .and_then(|s| s.get("fragment"))
+                .filter(|v| !v.is_null())
+            {
+                let fragment = self.parse_tcp_fragment(
+                    raw,
+                    &format!("$.outbounds[{index}].settings.fragment"),
+                    true,
+                );
+                if stream.tcp_fragment.is_some() {
+                    self.error(
+                        format!("$.outbounds[{index}].settings.fragment"),
+                        "freedom fragment and FinalMask fragment cannot be combined",
+                    );
+                }
+                stream.tcp_fragment = fragment;
+            }
+        }
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);

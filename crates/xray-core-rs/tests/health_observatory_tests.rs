@@ -18,6 +18,7 @@ fn freedom_outbound(tag: &str) -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,

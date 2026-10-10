@@ -23,6 +23,7 @@ pub(super) struct StreamCarrier {
     pub(super) transport_layer: TransportLayer,
     pub(super) download: Option<XhttpDownloadOutbound>,
     pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
+    pub(super) fragment: Option<Arc<xray_transport::TcpFragmentConfig>>,
 }
 
 impl StreamCarrier {
@@ -36,14 +37,24 @@ impl StreamCarrier {
         if stream.network != Network::Tcp {
             return Err(CoreError::UnsupportedOutboundNetwork);
         }
+        let fragment = fragment_config(stream)?;
         let transport = build_connector(&stream.security, server);
+        let transport_layer = build_transport_layer(stream, server, port, &transport, paths)?;
+        if fragment.is_some()
+            && (matches!(transport, ConnectorConfig::Tcp)
+                || matches!(&transport_layer, TransportLayer::Xhttp(xhttp) if xhttp.http_version() == XhttpHttpVersion::Http3)
+                || matches!(&stream.transport, StreamTransport::Xhttp(xhttp) if xhttp.download.is_some()))
+        {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
         let addr = match server {
             TargetAddr::Ip(ip) => RoutingTargetAddr::Ip(*ip),
             TargetAddr::Domain(domain) => RoutingTargetAddr::Domain(domain.clone()),
         };
         Ok(Self {
             server: Target::new(addr, port, RoutingNetwork::Tcp),
-            transport_layer: build_transport_layer(stream, server, port, &transport, paths)?,
+            transport_layer,
+            fragment,
             transport,
             download: build_xhttp_download(stream, unencrypted_payload)?,
             happy_eyeballs: happy_eyeballs_config(stream),
@@ -65,6 +76,11 @@ impl StreamCarrier {
         download_candidates: &[SocketAddr],
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, CoreError> {
+        let fragmented_dialer = self
+            .fragment
+            .as_ref()
+            .map(|fragment| dialer.clone().with_tcp_fragment(fragment.clone()));
+        let dialer = fragmented_dialer.as_ref().unwrap_or(dialer);
         if let Some(down) = &self.download {
             let TransportLayer::Xhttp(up) = &self.transport_layer else {
                 return Err(invalid_xhttp_configuration(
@@ -409,4 +425,22 @@ fn host_and_port(server: &TargetAddr, port: u16) -> String {
         TargetAddr::Domain(domain) => format!("{domain}:{port}"),
         TargetAddr::Ip(ip) => SocketAddr::new(ip.to_canonical(), port).to_string(),
     }
+}
+
+pub(super) fn fragment_config(
+    stream: &StreamSettings,
+) -> Result<Option<Arc<xray_transport::TcpFragmentConfig>>, CoreError> {
+    stream
+        .tcp_fragment
+        .as_ref()
+        .map(|settings| {
+            xray_transport::TcpFragmentConfig::new(
+                settings.lengths.iter().map(|r| r.from..=r.to).collect(),
+                settings.delays_ms.iter().map(|r| r.from..=r.to).collect(),
+                settings.max_split.from..=settings.max_split.to,
+            )
+            .map(Arc::new)
+            .map_err(|_| CoreError::UnsupportedOutboundNetwork)
+        })
+        .transpose()
 }

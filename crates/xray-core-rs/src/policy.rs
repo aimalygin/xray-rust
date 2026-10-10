@@ -408,6 +408,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,

@@ -45,6 +45,7 @@ impl Parser<'_> {
             );
         }
         let quic_params = self.parse_quic_params(stream, stream_network, index);
+        let tcp_fragment = self.parse_tcp_fragment_mask(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
         if let Some(stream) = stream {
             self.validate_stream_settings_compatibility(stream, index);
@@ -75,6 +76,7 @@ impl Parser<'_> {
             transport,
             security,
             quic_params,
+            tcp_fragment,
             socket_options,
         })
     }
@@ -480,7 +482,6 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(finalmask, &finalmask_path, &surface::FINALMASK);
-        self.reject_finalmask_masks(finalmask, "tcp", &finalmask_path);
         if network != StreamNetwork::Hysteria {
             self.reject_finalmask_masks(finalmask, "udp", &finalmask_path);
         }
@@ -827,6 +828,13 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(socket_options, &socket_options_path, &surface::SOCKOPT);
+        // The bounded freedom-fragment dialerProxy form is resolved across
+        // outbounds after parsing, then normalized into tcp_fragment.
+        self.nullable_string_at(
+            socket_options,
+            "dialerProxy",
+            format!("{socket_options_path}.dialerProxy"),
+        )?;
         let happy_eyeballs = socket_options
             .get("happyEyeballs")
             .and_then(|settings| self.parse_happy_eyeballs_settings(settings, index));

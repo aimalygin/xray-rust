@@ -44,6 +44,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                 mldsa65_verify: None,
             }),
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -104,6 +105,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
                     mldsa65_verify: None,
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -156,6 +158,7 @@ fn normalized_model_can_represent_freedom_outbound() {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -258,6 +261,7 @@ fn normalized_model_uses_xray_happy_eyeballs_defaults() {
         transport: StreamTransport::Raw,
         security: StreamSecurity::None,
         quic_params: None,
+        tcp_fragment: None,
         socket_options: Some(SocketOptions {
             happy_eyeballs: Some(HappyEyeballsSettings::default()),
         }),

@@ -2790,11 +2790,13 @@ async fn open_tcp_bridge_stream(
             .await?);
         }
         match outbound {
-            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+            TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_) => {
                 let candidates =
                     dns_proxy::resolve_freedom_dns_upstreams(upstream, context).await?;
                 return Ok(crate::dns::open_routed_freedom_dns_tcp_stream(
-                    context.transport_dialer.as_ref(),
+                    &outbound.freedom_dialer(&context.transport_dialer),
                     target,
                     &candidates,
                     outbound.freedom_happy_eyeballs(),
@@ -2844,9 +2846,9 @@ async fn open_tcp_bridge_stream(
         }
     }
     let destination_resolver = match outbound.primary() {
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-            context.dns_resolver.as_ref()
-        }
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Trojan(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
@@ -3239,9 +3241,9 @@ async fn bridge_tcp_flow_inner(
             TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
                 effective_policy_for_level(&context.config, Some(0)).handshake
             }
-            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-                context.inbound_policy.handshake
-            }
+            TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_) => context.inbound_policy.handshake,
             TcpOutbound::Trojan(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.level())).handshake
             }

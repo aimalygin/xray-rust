@@ -673,6 +673,31 @@ impl Core {
         }
         ensure_effective_dns_tag(&mut config);
         for outbound in &config.outbounds {
+            if let Some(fragment) = &outbound.stream.tcp_fragment {
+                if outbound.stream.network != xray_config::Network::Tcp
+                    || matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                        && (outbound.stream.security != xray_config::StreamSecurity::None
+                            || outbound.stream.transport != xray_config::StreamTransport::Raw)
+                    || !matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                        && outbound.stream.security == xray_config::StreamSecurity::None
+                    || matches!(&outbound.stream.transport, xray_config::StreamTransport::Xhttp(xhttp) if xhttp.download.is_some() || matches!(&outbound.stream.security, xray_config::StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
+                    || matches!(
+                        outbound.settings,
+                        xray_config::OutboundSettings::Dns(_)
+                            | xray_config::OutboundSettings::Hysteria(_)
+                            | xray_config::OutboundSettings::Wireguard(_)
+                            | xray_config::OutboundSettings::Blackhole(_)
+                    )
+                {
+                    return Err(CoreError::UnsupportedOutboundNetwork);
+                }
+                xray_transport::TcpFragmentConfig::new(
+                    fragment.lengths.iter().map(|r| r.from..=r.to).collect(),
+                    fragment.delays_ms.iter().map(|r| r.from..=r.to).collect(),
+                    fragment.max_split.from..=fragment.max_split.to,
+                )
+                .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+            }
             if matches!(
                 outbound.settings,
                 xray_config::OutboundSettings::Wireguard(_)

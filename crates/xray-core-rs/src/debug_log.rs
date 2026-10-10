@@ -19,7 +19,9 @@ pub(crate) fn log_route_decision(logger: &RuntimeLogger, event: RouteDecisionLog
 
 pub(crate) fn tcp_outbound_label(outbound: &TcpOutbound) -> &'static str {
     match outbound.primary() {
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => "freedom",
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => "freedom",
         TcpOutbound::Vless(_) => "vless",
         TcpOutbound::Trojan(_) => "trojan",
         TcpOutbound::Vmess(_) => "vmess",

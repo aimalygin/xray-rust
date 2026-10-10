@@ -36,6 +36,7 @@ fn runtime_config() -> CoreConfig {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -113,6 +114,7 @@ async fn core_selector_override_is_available_before_and_during_runtime() {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,

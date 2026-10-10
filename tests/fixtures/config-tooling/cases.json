@@ -1976,6 +1976,66 @@
       "set": {
         "/outbounds/1/settings/response": null
       }
+    },
+    {
+      "name": "tcp-tlshello-finalmask",
+      "accepted": true,
+      "config": {
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "streamSettings": {
+              "finalmask": {
+                "tcp": [
+                  {
+                    "type": "fragment",
+                    "settings": {
+                      "packets": "tlshello",
+                      "length": "100-200",
+                      "delay": 0,
+                      "lengths": [
+                        10,
+                        "100-200"
+                      ],
+                      "delays": [
+                        0,
+                        1
+                      ],
+                      "maxSplit": 12
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "TCP_MASK_ENTRY": "/outbounds/0/streamSettings/finalmask/tcp/0",
+        "TCP_FRAGMENT": "/outbounds/0/streamSettings/finalmask/tcp/0/settings"
+      }
+    },
+    {
+      "name": "tcp-tlshello-legacy",
+      "accepted": true,
+      "config": {
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "settings": {
+              "fragment": {
+                "packets": "tlshello",
+                "length": "100-200",
+                "interval": 0,
+                "maxSplit": 8
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "FREEDOM_FRAGMENT": "/outbounds/0/settings/fragment"
+      }
     }
   ]
 }

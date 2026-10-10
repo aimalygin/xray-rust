@@ -432,10 +432,12 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         Ok(match selected.outbound {
-            outbound @ (TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_)) => {
+            outbound @ (TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_)) => {
                 let candidates = self.resolved_servers(server).await?;
                 open_routed_freedom_dns_tcp_stream(
-                    self.transport_dialer.as_ref(),
+                    &outbound.freedom_dialer(&self.transport_dialer),
                     &target,
                     &candidates,
                     outbound.freedom_happy_eyeballs(),
@@ -1151,6 +1153,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         )
@@ -1193,6 +1196,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -1206,6 +1210,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(DnsOutboundSettings {
@@ -1254,6 +1259,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         )
@@ -1712,6 +1718,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -2096,6 +2103,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2154,6 +2162,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2263,6 +2272,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2330,6 +2340,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
         );
@@ -2775,6 +2786,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -2979,6 +2991,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,
@@ -3051,6 +3064,7 @@ mod tests {
                     transport: StreamTransport::Raw,
                     security: StreamSecurity::None,
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 settings: OutboundSettings::Freedom,

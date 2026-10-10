@@ -633,7 +633,7 @@
         "quicParams"
       ],
       "id": "FINALMASK",
-      "notes": "tcp masks accept only null or empty arrays. Hysteria supports one Salamander udp mask; other nonempty masks fail closed."
+      "notes": "TCP supports one tlshello fragment mask. Hysteria supports one Salamander udp mask; other nonempty masks fail closed."
     },
     {
       "context": "streamSettings.finalmask.udp[] (Hysteria)",
@@ -655,9 +655,44 @@
     },
     {
       "context": "$.outbounds[].settings (freedom)",
-      "fields": [],
+      "fields": [
+        "fragment"
+      ],
       "id": "FREEDOM_SETTINGS",
-      "notes": "Only an empty settings object is supported."
+      "notes": "Only the bounded tlshello fragment option is supported; noise and other freedom settings fail closed."
+    },
+    {
+      "context": "streamSettings.finalmask.tcp[]",
+      "fields": [
+        "type",
+        "settings"
+      ],
+      "id": "TCP_MASK_ENTRY",
+      "notes": "Exactly one fragment mask; type is case-insensitive."
+    },
+    {
+      "context": "streamSettings.finalmask.tcp[].settings (fragment)",
+      "fields": [
+        "packets",
+        "length",
+        "delay",
+        "lengths",
+        "delays",
+        "maxSplit"
+      ],
+      "id": "TCP_FRAGMENT",
+      "notes": "Only packets=tlshello. Positive lengths 1..16384, delays 0..1000 ms, up to 16 sequence entries, maxSplit 0..4096; actual plans cap at 4096 records and 10 seconds."
+    },
+    {
+      "context": "$.outbounds[].settings.fragment (freedom)",
+      "fields": [
+        "packets",
+        "length",
+        "interval",
+        "maxSplit"
+      ],
+      "id": "FREEDOM_FRAGMENT",
+      "notes": "Legacy tlshello spelling. Same runtime bounds as FinalMask; interval is the delay range."
     },
     {
       "context": "streamSettings.grpcSettings",
@@ -919,7 +954,8 @@
     {
       "context": "streamSettings.sockopt",
       "fields": [
-        "happyEyeballs"
+        "happyEyeballs",
+        "dialerProxy"
       ],
       "id": "SOCKOPT",
       "notes": "Value types, bounds and activation rules are enforced by the executable parser."

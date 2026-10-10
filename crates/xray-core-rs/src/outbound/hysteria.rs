@@ -57,7 +57,8 @@ impl HysteriaOutbound {
         else {
             return Err(CoreError::UnsupportedOutboundSecurity);
         };
-        if config.stream.network != Network::Udp
+        if config.stream.tcp_fragment.is_some()
+            || config.stream.network != Network::Udp
             || config.proxy_settings.is_some()
             || config.stream.socket_options.is_some()
             || tls.allow_insecure

@@ -338,9 +338,16 @@ pub(crate) enum DnsHappyEyeballsMode {
 }
 
 #[derive(Debug, Clone)]
+pub struct FragmentedFreedomOutbound {
+    fragment: Arc<xray_transport::TcpFragmentConfig>,
+    happy_eyeballs: Option<HappyEyeballsConfig>,
+}
+
+#[derive(Debug, Clone)]
 pub enum TcpOutbound {
     Freedom,
     FreedomHappyEyeballs(HappyEyeballsConfig),
+    FreedomFragment(Box<FragmentedFreedomOutbound>),
     Vless(Box<VlessTcpOutbound>),
     Trojan(TrojanOutbound),
     Vmess(VmessOutbound),
@@ -600,6 +607,17 @@ impl VlessTcpOutbound {
 }
 
 impl TcpOutbound {
+    pub(crate) fn freedom_dialer<'a>(
+        &self,
+        dialer: &'a TransportDialer,
+    ) -> std::borrow::Cow<'a, TransportDialer> {
+        match self.primary() {
+            Self::FreedomFragment(config) => {
+                std::borrow::Cow::Owned(dialer.clone().with_tcp_fragment(config.fragment.clone()))
+            }
+            _ => std::borrow::Cow::Borrowed(dialer),
+        }
+    }
     pub(crate) fn primary(&self) -> &Self {
         match self {
             Self::Chained { outbound, .. } => outbound.primary(),
@@ -611,6 +629,7 @@ impl TcpOutbound {
         match self.primary() {
             Self::Freedom => None,
             Self::FreedomHappyEyeballs(config) => Some(config),
+            Self::FreedomFragment(config) => config.happy_eyeballs.as_ref(),
             Self::Vless(_)
             | Self::Vmess(_)
             | Self::Trojan(_)
@@ -638,8 +657,11 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
         happy_eyeballs: Option<&HappyEyeballsConfig>,
     ) -> Result<BoxedTransportStream, TransportError> {
         match self.outbound.primary() {
-            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-                self.transport_dialer
+            TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_) => {
+                self.outbound
+                    .freedom_dialer(&self.transport_dialer)
                     .connect_resolved(
                         &ConnectorConfig::Tcp,
                         original_target,
@@ -747,7 +769,9 @@ fn prepare_outbound_proxy_dialer<'a>(
             TcpOutbound::Hysteria(_) => {
                 return Err(CoreError::UnsupportedOutboundProxyNetwork("Hysteria"))
             }
-            TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => Box::default(),
+            TcpOutbound::Freedom
+            | TcpOutbound::FreedomHappyEyeballs(_)
+            | TcpOutbound::FreedomFragment(_) => Box::default(),
             TcpOutbound::Chained { .. } => {
                 unreachable!("a compiled chain wrapper has one plain primary outbound")
             }
@@ -771,7 +795,9 @@ fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
         | TcpOutbound::Wireguard(_) => false,
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => match proxy {
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => match proxy {
             TcpOutbound::Chained { proxy, .. } => proxy_chain_requires_local_resolution(proxy),
             _ => true,
         },
@@ -3057,7 +3083,8 @@ impl OutboundFactory {
                 if outbound.stream.security != StreamSecurity::None {
                     return Err(CachedOutboundError::UnsupportedOutboundSecurity);
                 }
-                Ok(build_freedom_tcp_outbound(&outbound.stream))
+                build_freedom_tcp_outbound(&outbound.stream)
+                    .map_err(CachedOutboundError::from_core_error)
             }
             OutboundSettings::Vless(_) => self
                 .cached_vless_outbound(node)
@@ -3222,7 +3249,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
             if outbound.stream.security != StreamSecurity::None {
                 return Err(CoreError::UnsupportedOutboundSecurity);
             }
-            Ok(build_freedom_tcp_outbound(&outbound.stream))
+            build_freedom_tcp_outbound(&outbound.stream)
         }
         OutboundSettings::Vless(_) => build_vless_tcp_outbound(outbound)
             .map(|outbound| TcpOutbound::Vless(Box::new(outbound))),
@@ -3323,11 +3350,19 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
     })
 }
 
-fn build_freedom_tcp_outbound(stream: &StreamSettings) -> TcpOutbound {
-    match happy_eyeballs_config(stream) {
+fn build_freedom_tcp_outbound(stream: &StreamSettings) -> Result<TcpOutbound, CoreError> {
+    if let Some(fragment) = carrier::fragment_config(stream)? {
+        return Ok(TcpOutbound::FreedomFragment(Box::new(
+            FragmentedFreedomOutbound {
+                fragment,
+                happy_eyeballs: happy_eyeballs_config(stream),
+            },
+        )));
+    }
+    Ok(match happy_eyeballs_config(stream) {
         Some(config) => TcpOutbound::FreedomHappyEyeballs(config),
         None => TcpOutbound::Freedom,
-    }
+    })
 }
 
 fn dns_tcp_connector(stream: &StreamSettings) -> Result<DnsTcpConnector, CoreError> {
@@ -3571,13 +3606,16 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
         TcpOutbound::Hysteria(outbound) => {
             Box::pin(outbound.open_tcp(target, bootstrap_resolver, transport_dialer)).await
         }
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => {
             let candidates = if requires_local_resolution {
                 resolve_server_candidates(target, destination_resolver).await?
             } else {
                 Vec::new()
             };
-            Ok(transport_dialer
+            Ok(outbound
+                .freedom_dialer(transport_dialer)
                 .connect_resolved(
                     &ConnectorConfig::Tcp,
                     target,
@@ -3881,6 +3919,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Freedom,
@@ -3897,6 +3936,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -3922,6 +3962,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             settings: OutboundSettings::Dns(settings),
@@ -4219,6 +4260,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4259,6 +4301,7 @@ mod tests {
                         alpn: Vec::new(),
                     }),
                     quic_params: None,
+                    tcp_fragment: None,
                     socket_options: None,
                 },
                 Duration::from_secs(60),
@@ -4294,6 +4337,7 @@ mod tests {
                 alpn: vec!["http/1.1".to_owned()],
             }),
             quic_params: None,
+            tcp_fragment: None,
             socket_options: None,
         };
 
@@ -4326,6 +4370,7 @@ mod tests {
                     alpn: vec!["h2".to_owned()],
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4399,6 +4444,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4435,6 +4481,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::Reality(reality.clone()),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings {
                         prioritize_ipv6: configured.prioritize_ipv6,
@@ -4476,6 +4523,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4493,6 +4541,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: Some(SocketOptions {
                     happy_eyeballs: Some(HappyEyeballsSettings::default()),
                 }),
@@ -4515,6 +4564,7 @@ mod tests {
                 transport: StreamTransport::Raw,
                 security: StreamSecurity::None,
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4535,6 +4585,7 @@ mod tests {
                     alpn: Vec::new(),
                 }),
                 quic_params: None,
+                tcp_fragment: None,
                 socket_options: None,
             },
             Duration::from_secs(60),
@@ -4997,6 +5048,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    fragment: None,
                     download: None,
                     server: domain_tcp_target("proxy.example"),
                     transport: ConnectorConfig::Tcp,
@@ -7727,6 +7779,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    fragment: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -7762,6 +7815,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    fragment: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -7815,6 +7869,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    fragment: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -7899,6 +7954,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    fragment: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
@@ -7959,6 +8015,7 @@ mod tests {
                 },
                 encryption: None,
                 carrier: StreamCarrier {
+                    fragment: None,
                     download: None,
                     server: Target::new(
                         RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),

@@ -3263,9 +3263,9 @@ async fn open_raw_dns_tcp_candidate(
         TcpOutbound::Hysteria(_) | TcpOutbound::Wireguard(_) => {
             effective_policy_for_level(&context.config, Some(0)).handshake
         }
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => {
-            context.inbound_policy.handshake
-        }
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => context.inbound_policy.handshake,
         TcpOutbound::Trojan(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.level())).handshake
         }
