@@ -90,6 +90,5 @@ ring and simultaneous server echo/outer-packet metadata when reproducing it.
 
 The direct-target fixture and its independent UDP source-port reuse reproducer
 are maintained separately from these optional client diagnostics. See
-[`docs/wireguard-direct-fixture.md`](../../docs/wireguard-direct-fixture.md)
-once that companion change is merged. A fixture failure does not establish the
+[PR #61](https://github.com/aimalygin/xray-rust/pull/61). A fixture failure does not establish the
 cause of a historical mobile timeout without matching packet evidence.

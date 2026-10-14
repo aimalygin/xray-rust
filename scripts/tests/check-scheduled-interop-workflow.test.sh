@@ -395,7 +395,9 @@ expected_rust="$(cat <<'EXPECTED'
       - name: Lint
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -W clippy::perf -W clippy::suspicious
       - name: Test
-        run: cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+        run: |
+          cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+          cargo test --locked -p xray-wireguard --features diagnostics
       - name: Verify Linux transparent TCP and UDP interception
         run: |
           test_binary="$(cargo test --locked -p xray-core-rs --test tproxy_tests --no-run --message-format=json | python3 -c 'import json,sys; print(next(v["executable"] for v in map(json.loads,sys.stdin) if v.get("reason")=="compiler-artifact" and v.get("executable")))')"
