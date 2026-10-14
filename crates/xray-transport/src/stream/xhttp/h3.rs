@@ -98,6 +98,7 @@ pub struct H3QuicConfig {
     pub disable_path_mtu_discovery: bool,
     pub congestion: H3Congestion,
     pub udp_hop: H3UdpHopConfig,
+    pub udp_noise: Option<crate::udp_noise::UdpNoiseConfig>,
     pub debug: bool,
 }
 
@@ -119,6 +120,7 @@ impl Default for H3QuicConfig {
             )),
             congestion: H3Congestion::BbrStandard,
             udp_hop: H3UdpHopConfig::default(),
+            udp_noise: None,
             debug: false,
         }
     }
@@ -146,6 +148,9 @@ impl H3QuicConfig {
     /// `adaptive_receive_windows == false`. Explicit adaptive maxima are
     /// rejected instead of being silently reduced to those static limits.
     pub fn diagnostics(&self) -> Result<H3Diagnostics, H3Error> {
+        if let Some(noise) = &self.udp_noise {
+            noise.validate().map_err(H3Error::UdpSocket)?;
+        }
         if self.version != H3QuicVersion::V1 {
             return Err(H3Error::UnsupportedQuicVersion {
                 requested: self.version,
@@ -469,7 +474,7 @@ pub(crate) async fn connect_quic_transport(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
-    connect_quic_transport_with_datagrams(config, expected_alpn, None).await
+    connect_quic_transport_with_datagrams(config, expected_alpn, None, None, None).await
 }
 
 /// Optional receive/send byte budgets and advertised frame-size cap for QUIC datagrams.
@@ -478,6 +483,8 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
     datagram_buffers: Option<(usize, usize, u16)>,
+    carrier: Option<&crate::hysteria::HysteriaCarrierConfig>,
+    noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
 ) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
@@ -488,7 +495,11 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         return Err(H3Error::InvalidAlpn { expected });
     }
 
-    let (endpoint_config, client_config) = build_quinn_config(&config, datagram_buffers)?;
+    let (endpoint_config, client_config) = build_quinn_config(
+        &config,
+        datagram_buffers,
+        carrier.is_some_and(|c| c.salamander_password.is_some()),
+    )?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
     let bind_addr = match remote_addr.ip() {
         IpAddr::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
@@ -504,10 +515,16 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     protect_quic_socket(&socket, config.socket_protector.as_deref())?;
     socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
 
-    #[cfg(target_os = "macos")]
-    let endpoint = if datagram_buffers.is_some() {
+    let noise_carrier = crate::hysteria::HysteriaCarrierConfig {
+        noise: config.quic.udp_noise.clone(),
+        ..Default::default()
+    };
+    let carrier = carrier.or_else(|| noise_carrier.enabled().then_some(&noise_carrier));
+    let endpoint = if let Some(carrier) = carrier.filter(|c| c.enabled()) {
+        let wire_peer = carrier.next_peer(remote_addr);
         let socket =
-            crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?;
+            crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, noise_state)
+                .map_err(H3Error::UdpSocket)?;
         Endpoint::new_with_abstract_socket(
             endpoint_config,
             None,
@@ -515,12 +532,25 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
             Arc::new(quinn::TokioRuntime),
         )
     } else {
+        #[cfg(target_os = "macos")]
+        {
+            if datagram_buffers.is_some() {
+                let socket =
+                    crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?;
+                Endpoint::new_with_abstract_socket(
+                    endpoint_config,
+                    None,
+                    socket,
+                    Arc::new(quinn::TokioRuntime),
+                )
+            } else {
+                Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
         Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
     }
     .map_err(H3Error::Endpoint)?;
-    #[cfg(not(target_os = "macos"))]
-    let endpoint = Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
-        .map_err(H3Error::Endpoint)?;
     let connecting = endpoint
         .connect_with(client_config, remote_addr, &config.server_name)
         .map_err(H3Error::ConnectStart)?;
@@ -647,6 +677,7 @@ impl quinn::ConnectionIdGenerator for EmptyConnectionId {
 fn build_quinn_config(
     config: &H3ConnectConfig,
     datagram_buffers: Option<(usize, usize, u16)>,
+    salamander: bool,
 ) -> Result<(EndpointConfig, ClientConfig), H3Error> {
     let mut endpoint = EndpointConfig::default();
     endpoint.supported_versions(vec![QUIC_V1]);
@@ -688,6 +719,12 @@ fn build_quinn_config(
         transport.datagram_receive_buffer_size(Some(receive));
         transport.datagram_send_buffer_size(send);
         transport.advertised_datagram_frame_size(Some(frame_size));
+    }
+    if salamander {
+        // Reserve the 8-byte salt within the normal IPv6-safe wire budget.
+        let mut mtu = quinn::MtuDiscoveryConfig::default();
+        mtu.upper_bound(1452 - crate::hysteria::carrier::SALT_LEN as u16);
+        transport.mtu_discovery_config(Some(mtu));
     }
     if config.quic.disable_path_mtu_discovery {
         transport.mtu_discovery_config(None);

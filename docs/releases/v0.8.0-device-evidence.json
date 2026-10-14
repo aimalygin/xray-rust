@@ -1,0 +1,13 @@
+{
+  "candidateCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "candidateTree": "820cbdc251861d02c93ed007015e5c6109baa3c0",
+  "archive": "v0.8.0-device-evidence.zip",
+  "archiveSHA256": "f970171f8fc88f412758e7a65b40f9af374d6cf6cd06e774f38c62f8e85d0f25",
+  "schemaVersion": 4,
+  "localValidation": "passed with the unchanged exact-candidate validator",
+  "workflowValidation": "passed",
+  "publication": "not yet published",
+  "scope": "Tested deployment conditions and explicit owner decisions; original failures retained, not universal regression-free or all-trials-passed acceptance.",
+  "workflowRun": "https://github.com/aimalygin/xray-rust/actions/runs/38288094780",
+  "coreTagObject": "c7c1cd788e75dcc6ec27e915016fe304dfe68855"
+}

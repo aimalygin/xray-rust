@@ -1,0 +1,27 @@
+{
+  "combinations": 12,
+  "httpFailed": 0,
+  "httpPassed": 5760,
+  "idleCpuPercentOfOneCore": {
+    "max": 3.163155498251603,
+    "median": 2.404393041254445
+  },
+  "limits": {
+    "cycles": 2,
+    "httpAttempts": 240,
+    "rssGrowthBytes": 8388608,
+    "rssGrowthFraction": 0.25,
+    "settleSeconds": 20,
+    "threadGrowth": 4,
+    "udpAttempts": 480,
+    "workers": 32
+  },
+  "maxMedianRssGrowthBytes": 9097216,
+  "maxMedianThreadGrowth": 0,
+  "overallTrafficPassed": false,
+  "regressionFreeClaim": false,
+  "resourcePassed": 12,
+  "trafficPassed": 11,
+  "udpFailed": 1,
+  "udpPassed": 11519
+}

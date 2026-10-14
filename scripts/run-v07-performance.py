@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Paired local v0.6.1/v0.7 benchmarks. Fresh processes; failures are retained.
+"""Paired local release benchmarks. Fresh processes; failures are retained.
 
 Run the original v0.5/v0.6 gates separately. This collector adds old transport
-coverage and same-driver SOCKS/TUN measurements for Hysteria2 and WireGuard.
+coverage and same-driver SOCKS/TUN measurements for Hysteria2, WireGuard and
+the v0.8 clients (Trojan, Shadowsocks 2022 and VMess AEAD).
 It never changes host routes or invokes production VPNs.
 """
 from __future__ import annotations
@@ -73,12 +74,12 @@ def load_module(path):
 
 
 @contextlib.contextmanager
-def fixture(reference, output, reality=False):
+def fixture(reference, output, reality=False, client_protocols=False):
     root = output / "fixture"
     root.mkdir(mode=0o700, parents=True)
     device = load_module(ROOT / "scripts/run-v07-apple-protocol-fixture.py")
     device.verify_reference(reference)
-    device.write_fixtures(root, "127.0.0.1", 1, 2, 3)
+    device.write_fixtures(root, "127.0.0.1", 1, 2, 3, protocol="v08" if client_protocols else "both")
     server = json.loads((root / "server.json").read_text())
     # The driver binds its synthetic origin to this host's own IPv4 interface.
     # No production credentials, DNS names or remote application targets.
@@ -95,7 +96,9 @@ def fixture(reference, output, reality=False):
         configs[case["format"]] = config
     cert = str(root / "tls.crt")
     key = str(root / "tls.key")
-    pin = configs["hysteria2"]["outbounds"][0]["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"]
+    tls_protocol = "trojan" if client_protocols else "hysteria2"
+    fixture_tls = configs[tls_protocol]["outbounds"][0]["streamSettings"]["tlsSettings"]
+    pin = fixture_tls["pinnedPeerCertSha256"]
     configs["freedom"] = {"outbounds": [{"protocol": "freedom"}]}
     for name, network, alpn, mode in [("vless-tls", "raw", "http/1.1", None),
             ("xhttp-h1", "xhttp", "http/1.1", "packet-up"),
@@ -109,7 +112,7 @@ def fixture(reference, output, reality=False):
         server["inbounds"].append({"protocol": "vless", "listen": "127.0.0.1", "port": listen,
             "settings": {"clients": [{"id": UUID}], "decryption": "none"}, "streamSettings": stream})
         client_stream = copy.deepcopy(stream)
-        client_stream["tlsSettings"] = {"serverName": "v07-probe.test", "alpn": [alpn], "pinnedPeerCertSha256": pin}
+        client_stream["tlsSettings"] = {"serverName": fixture_tls["serverName"], "alpn": [alpn], "pinnedPeerCertSha256": pin}
         if mode:
             client_stream["xhttpSettings"]["mode"] = mode
         if alpn == "h3":
@@ -153,12 +156,13 @@ def fixture(reference, output, reality=False):
 def protocol_cases(suite, smoke):
     protocols = ["hysteria2", "wireguard"] if suite == "new" else ["freedom", "vless-tls", "xhttp-h1", "xhttp-h2", "xhttp-h3"]
     if suite == "reality": protocols = ["reality-vision"]
-    paths = ["socks", "tun"] if suite in ("new", "reality") else ["tun"]
+    if suite == "v08": protocols = ["trojan", "shadowsocks2022", "vmess"]
+    paths = ["socks", "tun"] if suite in ("new", "reality", "v08") else ["tun"]
     cases = []
     for protocol in protocols:
         for path in paths:
             for connections in [1, 8]:
-                traffic_types = ["upload", "download", "full-duplex", "tcp-latency", "udp"] if suite == "new" else ["upload", "download", "full-duplex"]
+                traffic_types = ["upload", "download", "full-duplex", "tcp-latency", "udp"] if suite in ("new", "v08") else ["upload", "download", "full-duplex"]
                 for traffic in traffic_types:
                     latency = traffic in ("tcp-latency", "udp")
                     cases.append({"id": f"{protocol}-{path}-{traffic}-{connections}",
@@ -239,7 +243,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root",type=Path,required=True,help="campaign directory with bin/{baseline,candidate} and clean source checkouts")
     parser.add_argument("--harness",type=Path,required=True)
-    parser.add_argument("--suite",choices=["legacy","tun","new","reality"],required=True)
+    parser.add_argument("--suite",choices=["legacy","tun","new","reality","v08"],required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--smoke",action="store_true")
     parser.add_argument("--case",help="optional exact case ID for diagnosis; never replaces original evidence")
@@ -257,7 +261,7 @@ def main():
     if args.iterations is not None:
         if args.suite=="legacy" or not 1<=args.iterations<=16384:raise ValueError("iterations override requires a generic suite and 1..16384")
         for case in cases:case["iterations"]=args.iterations
-    versions = ["candidate"] if args.suite == "new" else ["baseline","candidate"]
+    versions = ["candidate"] if args.suite in ("new", "v08") else ["baseline","candidate"]
     manifest={"schema_version":1,"suite":args.suite,"smoke":args.smoke,"diagnostic":bool(args.case or args.iterations is not None),
         "repeats":repeats,"cases":cases,"started_unix":time.time(),"platform":platform.platform(),
         "harness_sha256":sha(args.harness),"collector_sha256":sha(__file__),
@@ -287,7 +291,7 @@ def main():
                     identifier=f"{case['id']}-{version}-{repeat+1}"
                     output=args.output/identifier
                     print(identifier,flush=True)
-                    context=contextlib.nullcontext(shared) if shared is not None else contextlib.nullcontext({}) if args.suite=="legacy" else fixture(args.root/"bin/xray-core",args.output/f"{identifier}-server")
+                    context=contextlib.nullcontext(shared) if shared is not None else contextlib.nullcontext({}) if args.suite=="legacy" else fixture(args.root/"bin/xray-core",args.output/f"{identifier}-server",client_protocols=args.suite=="v08")
                     with context as configs:
                         if args.suite=="legacy":
                             invocation=[str(args.root/"bin"/version/"xray-bench"),"run","--engine","xray-rust",

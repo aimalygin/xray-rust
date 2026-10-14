@@ -1,0 +1,101 @@
+[
+  {
+    "queryTag": "8ab4cea4cc04ac88",
+    "clientTimeoutEpoch": 1791161433.493,
+    "localPort": 36973,
+    "error": "SocketTimeoutException",
+    "backendReplies": [
+      {
+        "fixture": "fixture2",
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791161428.394426,
+        "queryTag": "8ab4cea4cc04ac88",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromBackendReplyToFailure": 5.099,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "c751875770ccfba6",
+    "clientTimeoutEpoch": 1791161464.29,
+    "localPort": 53277,
+    "error": "SocketTimeoutException",
+    "backendReplies": [
+      {
+        "fixture": "fixture2",
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791161459.234015,
+        "queryTag": "c751875770ccfba6",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromBackendReplyToFailure": 5.056,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "41903c8673bcbb60",
+    "clientTimeoutEpoch": 1791161493.912,
+    "localPort": 34242,
+    "error": "SocketTimeoutException",
+    "backendReplies": [
+      {
+        "fixture": "fixture2",
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791161488.846842,
+        "queryTag": "41903c8673bcbb60",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromBackendReplyToFailure": 5.065,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "aee95e7c19005672",
+    "clientTimeoutEpoch": 1791161812.584,
+    "localPort": 38963,
+    "error": "SocketTimeoutException",
+    "backendReplies": [
+      {
+        "fixture": "fixture3",
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791161807.512033,
+        "queryTag": "aee95e7c19005672",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromBackendReplyToFailure": 5.072,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "47169e0d46b17ee9",
+    "clientTimeoutEpoch": 1791162080.436,
+    "localPort": 51544,
+    "error": "SocketTimeoutException",
+    "backendReplies": [
+      {
+        "fixture": "fixture3",
+        "backend": "udp",
+        "requestBytes": 67,
+        "time": 1791162075.3337128,
+        "queryTag": "47169e0d46b17ee9",
+        "responseBytes": 83
+      }
+    ],
+    "secondsFromBackendReplyToFailure": 5.102,
+    "expectedVpnOffControl": false
+  },
+  {
+    "queryTag": "2e57bf66e062d063",
+    "clientTimeoutEpoch": 1791162607.213,
+    "localPort": 58489,
+    "error": "SocketTimeoutException",
+    "backendReplies": [],
+    "secondsFromBackendReplyToFailure": null,
+    "expectedVpnOffControl": true
+  }
+]

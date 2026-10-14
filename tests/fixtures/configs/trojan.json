@@ -1,0 +1,40 @@
+{
+  "inbounds": [
+    {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "settings": {}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "trojan",
+      "settings": {
+        "address": "trojan.example",
+        "port": 443,
+        "password": "synthetic-example-trojan-password"
+      },
+      "streamSettings": {
+        "network": "raw",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "trojan.example"
+        }
+      }
+    }
+  ],
+  "dns": {
+    "queryStrategy": "UseIPv4",
+    "fakeIp": {
+      "enabled": true,
+      "ipv4Pool": "198.19.0.0/16",
+      "poolSize": 32768,
+      "ttl": 60
+    }
+  },
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": []
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "candidateCore": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "candidateSDK": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7",
+  "imports": [
+    {
+      "format": "trojan",
+      "hostTime": 1791820760.114804,
+      "kind": "invalid-import-control",
+      "markerAbsentFromHostLog": true,
+      "passed": true,
+      "pendingRemoved": true,
+      "profileCiphertextUnchanged": true,
+      "status": {
+        "detail": "pending-profile-XrayCoreException",
+        "fatal-tun-errors": "0",
+        "runtime-generation": "2",
+        "state": "failed"
+      }
+    },
+    {
+      "format": "shadowsocks2022",
+      "hostTime": 1791820761.48459,
+      "kind": "invalid-import-control",
+      "markerAbsentFromHostLog": true,
+      "passed": true,
+      "pendingRemoved": true,
+      "profileCiphertextUnchanged": true,
+      "status": {
+        "detail": "pending-profile-XrayCoreException",
+        "fatal-tun-errors": "0",
+        "runtime-generation": "2",
+        "state": "failed"
+      }
+    },
+    {
+      "format": "vmess",
+      "hostTime": 1791820762.899264,
+      "kind": "invalid-import-control",
+      "markerAbsentFromHostLog": true,
+      "passed": true,
+      "pendingRemoved": true,
+      "profileCiphertextUnchanged": true,
+      "status": {
+        "detail": "pending-profile-XrayCoreException",
+        "fatal-tun-errors": "0",
+        "runtime-generation": "2",
+        "state": "failed"
+      }
+    }
+  ],
+  "matrix": {
+    "durationSeconds": 395.00579810142517,
+    "failures": [],
+    "httpPassed": 182,
+    "passed": 14,
+    "planned": 14,
+    "udpPassed": 182
+  },
+  "overallReleaseAcceptance": false,
+  "ownerSkippedAndroid": [
+    "wifi-cellular-wifi",
+    "lock-wake"
+  ],
+  "resourceSeries": "in-progress",
+  "vpnOff": [
+    {
+      "expectedTrafficFailure": true,
+      "hostTime": 1791820773.907379,
+      "kind": "vpn-off-negative-control",
+      "passed": true,
+      "status": {
+        "http-failed": "1",
+        "http-passed": "0",
+        "running": "true",
+        "udp-failed": "1",
+        "udp-passed": "0"
+      }
+    }
+  ]
+}

@@ -173,6 +173,7 @@ async fn handle_http_connection(
                 crate::debug_log::tcp_outbound_label(outbound)
             }
             TcpSessionOutbound::Dns(_) => "dns",
+            TcpSessionOutbound::Blackhole(_) => "blackhole",
         };
         crate::debug_log::log_route_decision(
             &runtime_logger,
@@ -212,16 +213,63 @@ async fn handle_http_connection(
             connection.finish();
             return;
         }
+        TcpSessionOutbound::Blackhole(blackhole) => {
+            if let Some(source) = source.as_deref() {
+                crate::debug_log::log_access_accepted(
+                    &runtime_logger,
+                    source,
+                    &target,
+                    "blackhole",
+                );
+            }
+            // Xray's HTTP inbound answers CONNECT before dispatching, so the
+            // blackhole response, if any, arrives inside the tunnel.
+            if inbound.write_all(HTTP_CONNECT_ESTABLISHED).await.is_err() {
+                return;
+            }
+            tokio::select! {
+                () = blackhole.finish_stream(&mut inbound) => {}
+                () = wait_for_connection_close(&mut connection_close) => {}
+            }
+            connection.finish();
+            return;
+        }
     };
 
     let (open_timeout, tunnel_idle, relay_buffer_size) = match outbound.primary() {
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => (
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => (
             policy.handshake,
             policy.conn_idle,
             policy.relay_buffer_size(),
         ),
         TcpOutbound::Vless(outbound) => {
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.user().level));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Trojan(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Vmess(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Shadowsocks2022(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,
                 policy.conn_idle.min(outbound_policy.conn_idle),

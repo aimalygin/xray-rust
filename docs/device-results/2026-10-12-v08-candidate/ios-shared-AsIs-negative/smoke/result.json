@@ -1,0 +1,107 @@
+[
+  {
+    "event": "abi",
+    "major": 1,
+    "minor": 11,
+    "protocol": "setup",
+    "time": "2026-10-12T16:43:30Z"
+  },
+  {
+    "event": "import",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "result": "passed",
+    "time": "2026-10-12T16:43:31Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "seconds": 0.2315659523010254,
+    "time": "2026-10-12T16:43:31Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "time": "2026-10-12T16:43:31Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 2.949484125012532,
+    "host": "198.51.100.7",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "result": "passed",
+    "time": "2026-10-12T16:43:34Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "time": "2026-10-12T16:43:34Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.130377083318308,
+    "host": "2001:db8::7",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "result": "passed",
+    "time": "2026-10-12T16:43:34Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-10e16fee2c50.test",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "time": "2026-10-12T16:43:34Z"
+  },
+  {
+    "code": 1,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "failure",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "time": "2026-10-12T16:43:34Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380121.2108704167"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380121.4761791667"
+      }
+    ],
+    "protocol": "ip-on-demand-AsIs-negative",
+    "stage": "failure",
+    "time": "2026-10-12T16:43:34Z"
+  },
+  {
+    "cycle": 0,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4310640,
+    "inboundPackets": 202,
+    "outboundPackets": 138,
+    "protocol": "ip-on-demand-AsIs-negative",
+    "rss": 28917760,
+    "runtime": "66c74a9c-e3b4-4eef-a062-95b9631e9179",
+    "stage": "failure",
+    "tcp": 2,
+    "threads": 11,
+    "time": "2026-10-12T16:43:34Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 5
+  },
+  {
+    "event": "complete",
+    "protocol": "ip-on-demand-AsIs-negative",
+    "result": "failed",
+    "time": "2026-10-12T16:43:35Z"
+  }
+]

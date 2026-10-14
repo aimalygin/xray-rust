@@ -1,6 +1,8 @@
 mod transport_tests {
+    use std::future::poll_fn;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
     use std::num::NonZeroUsize;
+    use std::pin::Pin;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
@@ -12,14 +14,15 @@ mod transport_tests {
     };
     use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use sha2::{Digest, Sha256};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadBuf};
     use tokio::net::TcpListener;
     use tokio_rustls::TlsAcceptor;
     use xray_routing::{Network, Target, TargetAddr};
+    use xray_transport::stream::TransportLayer;
     use xray_transport::{
         BoxedTransportStream, ConnectorConfig, HappyEyeballsConfig, RealityClientConfig,
-        RealityTlsEngine, SocketHandle, SocketProtector, TcpConnector, TlsClientConfig,
-        TlsConnector, TransportConnector, TransportDialer, TransportError,
+        RealityTlsEngine, ResolvedTcpConnector, SocketHandle, SocketProtector, TcpConnector,
+        TlsClientConfig, TlsConnector, TransportConnector, TransportDialer, TransportError,
     };
 
     #[derive(Debug)]
@@ -1312,5 +1315,221 @@ mod transport_tests {
             .expect_err("an unknown fingerprint must fail");
 
         assert!(error.to_string().contains("nosuchbrowser"));
+    }
+
+    /// The cleartext a Vision peer forwards once it has switched a direction
+    /// to direct mode: an inner TLS application-data record. Its header is a
+    /// valid outer record header too, so an outer session that reads it tries
+    /// to decrypt it and fails instead of handing it through.
+    const INNER_TLS_RECORD: &[u8] = &[0x17, 0x03, 0x03, 0x00, 0x05, b'i', b'n', b'n', b'e', b'r'];
+
+    fn raw_carrier_tls_config() -> ConnectorConfig {
+        ConnectorConfig::Tls(TlsClientConfig {
+            server_name: "server.test".to_owned(),
+            allow_insecure: false,
+            pinned_peer_cert_sha256: Vec::new(),
+            verify_peer_cert_by_name: Vec::new(),
+            alpn: Vec::new(),
+            fingerprint: None,
+        })
+    }
+
+    async fn read_direct_exact(
+        stream: &mut BoxedTransportStream,
+        output: &mut [u8],
+    ) -> std::io::Result<()> {
+        let mut offset = 0;
+        while offset < output.len() {
+            let mut read_buf = ReadBuf::new(&mut output[offset..]);
+            poll_fn(|cx| Pin::new(&mut **stream).poll_read_direct(cx, &mut read_buf)).await?;
+            let read = read_buf.filled().len();
+            if read == 0 {
+                return Err(std::io::ErrorKind::UnexpectedEof.into());
+            }
+            offset += read;
+        }
+        Ok(())
+    }
+
+    async fn write_direct_all(
+        stream: &mut BoxedTransportStream,
+        input: &[u8],
+    ) -> std::io::Result<()> {
+        let mut offset = 0;
+        while offset < input.len() {
+            let written =
+                poll_fn(|cx| Pin::new(&mut **stream).poll_write_direct(cx, &input[offset..]))
+                    .await?;
+            if written == 0 {
+                return Err(std::io::ErrorKind::WriteZero.into());
+            }
+            offset += written;
+        }
+        poll_fn(|cx| Pin::new(&mut **stream).poll_flush_direct(cx)).await
+    }
+
+    /// Plays the server half of a Vision direct switch over plain TLS, the
+    /// way Xray-core does: each direction leaves the TLS session on its own,
+    /// and the cleartext that follows travels on the carrier underneath it.
+    async fn assert_vision_direct_switch_over_tls<S>(
+        client: &mut BoxedTransportStream,
+        server: &mut tokio_rustls::server::TlsStream<S>,
+    ) where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    {
+        // The last downlink TLS record and the first direct bytes leave back
+        // to back, so one socket read could carry both.
+        server
+            .write_all(b"tls frame")
+            .await
+            .expect("write TLS frame");
+        server.flush().await.expect("flush TLS frame");
+        let (server_carrier, _) = server.get_mut();
+        server_carrier
+            .write_all(INNER_TLS_RECORD)
+            .await
+            .expect("write direct downlink");
+        server_carrier.flush().await.expect("flush direct downlink");
+
+        let mut tls_frame = [0; 9];
+        tokio::time::timeout(Duration::from_secs(5), client.read_exact(&mut tls_frame))
+            .await
+            .expect("TLS frame read timeout")
+            .expect("read TLS frame before the downlink switch");
+        assert_eq!(&tls_frame, b"tls frame");
+
+        let mut direct = [0; INNER_TLS_RECORD.len()];
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            read_direct_exact(client, &mut direct),
+        )
+        .await
+        .expect("direct downlink read timeout")
+        .expect("read direct downlink from the carrier");
+        assert_eq!(direct, INNER_TLS_RECORD);
+
+        // Xray-core keeps decrypting the uplink until this side sends its
+        // own Direct command, so a direct read must not end uplink TLS.
+        client
+            .write_all(b"uplink tls")
+            .await
+            .expect("write uplink TLS");
+        client.flush().await.expect("flush uplink TLS");
+        let mut uplink = [0; 10];
+        tokio::time::timeout(Duration::from_secs(5), server.read_exact(&mut uplink))
+            .await
+            .expect("uplink TLS read timeout")
+            .expect("server reads uplink TLS after the downlink switch");
+        assert_eq!(&uplink, b"uplink tls");
+
+        write_direct_all(client, INNER_TLS_RECORD)
+            .await
+            .expect("write direct uplink");
+        let (server_carrier, _) = server.get_mut();
+        let mut direct = [0; INNER_TLS_RECORD.len()];
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            server_carrier.read_exact(&mut direct),
+        )
+        .await
+        .expect("direct uplink read timeout")
+        .expect("server reads direct uplink from the carrier");
+        assert_eq!(direct, INNER_TLS_RECORD);
+    }
+
+    #[tokio::test]
+    async fn raw_transport_tls_switches_vision_direct_mode_to_the_socket() {
+        let (client_config, server_config) = tls_test_configs();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind TLS listener");
+        let addr = listener.local_addr().expect("read listener address");
+        let acceptor = TlsAcceptor::from(server_config);
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept TLS client");
+            acceptor.accept(stream).await.expect("accept TLS stream")
+        });
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ));
+        let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Tcp);
+
+        let mut client = dialer
+            .connect_stream(
+                &raw_carrier_tls_config(),
+                &TransportLayer::Raw,
+                &target,
+                &[addr],
+                None,
+            )
+            .await
+            .expect("dial raw-transport TLS");
+        let mut server = server.await.expect("server task");
+
+        assert_vision_direct_switch_over_tls(&mut client, &mut server).await;
+    }
+
+    /// A TLS carrier that is itself a chained outbound stream: direct mode
+    /// must hand the cleartext to that stream, which is what Xray-core's
+    /// `tls.Conn.NetConn()` is under `dialerProxy`.
+    #[derive(Debug)]
+    struct DuplexCarrierConnector {
+        carrier: Mutex<Option<tokio::io::DuplexStream>>,
+    }
+
+    #[async_trait]
+    impl ResolvedTcpConnector for DuplexCarrierConnector {
+        async fn connect_resolved(
+            &self,
+            _original_target: &Target,
+            _candidates: &[SocketAddr],
+            _happy_eyeballs: Option<&HappyEyeballsConfig>,
+        ) -> Result<BoxedTransportStream, TransportError> {
+            let carrier = self
+                .carrier
+                .lock()
+                .expect("carrier lock")
+                .take()
+                .expect("chained carrier should be used once");
+            Ok(Box::new(carrier))
+        }
+    }
+
+    #[tokio::test]
+    async fn chained_raw_transport_tls_switches_vision_direct_mode_to_the_carrier() {
+        let (client_config, server_config) = tls_test_configs();
+        let (client_carrier, server_carrier) = tokio::io::duplex(64 * 1024);
+        let acceptor = TlsAcceptor::from(server_config);
+        let server = tokio::spawn(async move {
+            acceptor
+                .accept(server_carrier)
+                .await
+                .expect("accept chained TLS stream")
+        });
+        let dialer = TransportDialer::with_tls_connector(TlsConnector::with_pinned_client_config(
+            client_config,
+        ))
+        .with_resolved_tcp_connector(Arc::new(DuplexCarrierConnector {
+            carrier: Mutex::new(Some(client_carrier)),
+        }));
+        let target = Target::new(
+            TargetAddr::Domain("server.test".to_owned()),
+            443,
+            Network::Tcp,
+        );
+
+        let mut client = dialer
+            .connect_stream(
+                &raw_carrier_tls_config(),
+                &TransportLayer::Raw,
+                &target,
+                &[],
+                None,
+            )
+            .await
+            .expect("dial chained raw-transport TLS");
+        let mut server = server.await.expect("server task");
+
+        assert_vision_direct_switch_over_tls(&mut client, &mut server).await;
     }
 }

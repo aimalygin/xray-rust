@@ -66,10 +66,16 @@ RESERVED_TEST_HOST_SUFFIXES = (
 )
 
 # These SHA-256 digests represent reviewed deterministic UUID, short-ID,
-# X25519 and Hysteria authentication test vectors. Keeping only digests here
-# prevents the scanner from echoing credential-shaped values in logs.
+# X25519, Hysteria and v0.8 client authentication test vectors. Keeping only
+# digests here prevents the scanner from echoing credential-shaped values in logs.
 APPROVED_TEST_CREDENTIAL_DIGESTS = frozenset(
     {
+        # Trojan literal synthetic example password.
+        "cbf3b9271fd5b4ab5d1a073abf6786022e2f4ca555aeb5a79c937a75ef372f99",
+        # SS2022 base64 of sixteen repeated 0x01 bytes.
+        "d853bb52c2c2f6631a848e13d2e0ef920973b02dac6b4cdc2bccf8f79b942646",
+        # VMess sequential-byte 00112233... test UUID.
+        "e34f7b59834d35a6dcb646f99b7d856df3ffbc955cece7c90714d13705703680",
         # WireGuard PSK: repeated synthetic 0x64 bytes, hex encoded.
         "f572435c3fd11241828de21d1f590ee80ca6331356a2ae1f978ea655052737d7",
         # WireGuard example keys: repeated synthetic 0x42 / 0x53 bytes.

@@ -273,7 +273,7 @@ EXPECTED
 
 expected_scheduled_pinned="$(cat <<'EXPECTED'
   scheduled-pinned-interop:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -306,7 +306,7 @@ EXPECTED
 
 expected_main_smoke="$(cat <<'EXPECTED'
   xray-core-main-smoke:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     continue-on-error: true
@@ -332,10 +332,10 @@ expected_main_smoke="$(cat <<'EXPECTED'
           fi
           echo "revision=$revision" >>"$GITHUB_OUTPUT"
           printf 'Xray-core main revision: `%s`\n' "$revision" >>"$GITHUB_STEP_SUMMARY"
-      - name: Install pinned Go toolchain
+      - name: Install Go toolchain required by Xray-core main
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: "1.26.5"
+          go-version-file: Xray-core/go.mod
           cache-dependency-path: Xray-core/go.sum
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.96.0 --profile minimal
@@ -360,6 +360,7 @@ expected_rust="$(cat <<'EXPECTED'
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Check repository scripts
         run: |
@@ -377,7 +378,10 @@ expected_rust="$(cat <<'EXPECTED'
           bash scripts/tests/check-v05-performance.test.sh
           bash scripts/tests/check-v05-host-hardening.test.sh
           bash scripts/tests/check-mobile-device-evidence.test.sh
-          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence
+          python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence scripts.tests.test_v07_stable_promotion scripts.tests.test_v08_release_evidence
+          python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison scripts.tests.test_v08_android_fixture
+          python3 -m unittest scripts.tests.test_source_tag_ci
+          python3 scripts/tests/set-xray-ss2022-udp-pmtu.test.py
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
@@ -392,6 +396,10 @@ expected_rust="$(cat <<'EXPECTED'
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -W clippy::perf -W clippy::suspicious
       - name: Test
         run: cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+      - name: Verify Linux transparent TCP and UDP interception
+        run: |
+          test_binary="$(cargo test --locked -p xray-core-rs --test tproxy_tests --no-run --message-format=json | python3 -c 'import json,sys; print(next(v["executable"] for v in map(json.loads,sys.stdin) if v.get("reason")=="compiler-artifact" and v.get("executable")))')"
+          sudo env XRAY_TPROXY_ISOLATED_NETWORK=1 XRAY_TPROXY_TEST_BINARY="$test_binary" unshare --net bash scripts/check-tproxy-linux.sh
       - name: Build public API documentation
         env:
           RUSTDOCFLAGS: -D warnings

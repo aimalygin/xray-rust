@@ -1,0 +1,36 @@
+[
+  {
+    "event": "udp-send",
+    "localPort": 58127,
+    "relayPort": 54572,
+    "tag": "3e5aa1e0a3580a24",
+    "time": 1791924327.0541108
+  },
+  {
+    "event": "udp-send",
+    "localPort": 41177,
+    "relayPort": 54572,
+    "tag": "73555c8ca1833bdb",
+    "time": 1791924327.083093
+  },
+  {
+    "event": "udp-finished",
+    "relayPort": 54572,
+    "tag": "3e5aa1e0a3580a24",
+    "time": 1791924327.0871468
+  },
+  {
+    "error": "read udp4 127.0.0.1:41177: i/o timeout",
+    "event": "udp-failure",
+    "localPort": 41177,
+    "relayPort": 54572,
+    "tag": "73555c8ca1833bdb",
+    "time": 1791924332.0839245
+  },
+  {
+    "event": "udp-finished",
+    "relayPort": 54572,
+    "tag": "73555c8ca1833bdb",
+    "time": 1791924332.084204
+  }
+]

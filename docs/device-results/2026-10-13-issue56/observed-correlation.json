@@ -1,0 +1,447 @@
+{
+  "summary": [
+    {
+      "tag": "72e09d174d0c8635",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write"
+      ],
+      "misdeliveredTo": []
+    },
+    {
+      "tag": "c8df32999f8545ab",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write"
+      ],
+      "misdeliveredTo": []
+    },
+    {
+      "tag": "91538046456e9dd6",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write"
+      ],
+      "misdeliveredTo": []
+    },
+    {
+      "tag": "c05ad0fcc6297e93",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write",
+        "misdelivered-reply"
+      ],
+      "misdeliveredTo": [
+        51235
+      ]
+    },
+    {
+      "tag": "993ed401f260e6d8",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write"
+      ],
+      "misdeliveredTo": []
+    },
+    {
+      "tag": "b61edae418576a67",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write",
+        "misdelivered-reply"
+      ],
+      "misdeliveredTo": [
+        64406
+      ]
+    },
+    {
+      "tag": "945a81752858c3cb",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write",
+        "misdelivered-reply"
+      ],
+      "misdeliveredTo": [
+        55737
+      ]
+    },
+    {
+      "tag": "b9c8acb515421f1c",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write",
+        "misdelivered-reply"
+      ],
+      "misdeliveredTo": [
+        56800
+      ]
+    },
+    {
+      "tag": "0ff59a124ea40da8",
+      "events": [
+        "backend-recv",
+        "udp",
+        "reference-udp-write"
+      ],
+      "misdeliveredTo": []
+    }
+  ],
+  "events": [
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922722.921144,
+      "bytes": 67,
+      "tag": "72e09d174d0c8635",
+      "peer": [
+        "127.0.0.1",
+        52889
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922722.9211898,
+      "queryTag": "72e09d174d0c8635",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922773.334383,
+      "bytes": 67,
+      "tag": "c8df32999f8545ab",
+      "peer": [
+        "127.0.0.1",
+        56652
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922773.334465,
+      "queryTag": "c8df32999f8545ab",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922806.572108,
+      "bytes": 67,
+      "tag": "91538046456e9dd6",
+      "peer": [
+        "127.0.0.1",
+        64098
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922806.572169,
+      "queryTag": "91538046456e9dd6",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922833.864097,
+      "bytes": 67,
+      "tag": "c05ad0fcc6297e93",
+      "peer": [
+        "127.0.0.1",
+        51235
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922833.864119,
+      "queryTag": "c05ad0fcc6297e93",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922834.047413,
+      "bytes": 67,
+      "tag": "993ed401f260e6d8",
+      "peer": [
+        "127.0.0.1",
+        51658
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922834.04753,
+      "queryTag": "993ed401f260e6d8",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922834.167983,
+      "bytes": 67,
+      "tag": "b61edae418576a67",
+      "peer": [
+        "127.0.0.1",
+        64406
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922834.168136,
+      "queryTag": "b61edae418576a67",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922834.184793,
+      "bytes": 67,
+      "tag": "945a81752858c3cb",
+      "peer": [
+        "127.0.0.1",
+        55737
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922834.184809,
+      "queryTag": "945a81752858c3cb",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922861.7708302,
+      "bytes": 67,
+      "tag": "b9c8acb515421f1c",
+      "peer": [
+        "127.0.0.1",
+        56800
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922861.7709482,
+      "queryTag": "b9c8acb515421f1c",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture.log",
+      "event": "backend-recv",
+      "time": 1791922889.215173,
+      "bytes": 67,
+      "tag": "0ff59a124ea40da8",
+      "peer": [
+        "127.0.0.1",
+        51054
+      ],
+      "local": [
+        "127.0.0.1",
+        49965
+      ],
+      "validQuery": true
+    },
+    {
+      "file": "observe-fixture.log",
+      "backend": "udp",
+      "requestBytes": 67,
+      "time": 1791922889.215212,
+      "queryTag": "0ff59a124ea40da8",
+      "responseBytes": 83
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 842,
+      "tag": "72e09d174d0c8635",
+      "time": 1791922722.920918
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 1525,
+      "tag": "c8df32999f8545ab",
+      "time": 1791922773.3342562
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 2190,
+      "tag": "91538046456e9dd6",
+      "time": 1791922806.571528
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 2475,
+      "tag": "c05ad0fcc6297e93",
+      "time": 1791922833.86396
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 2588,
+      "tag": "993ed401f260e6d8",
+      "time": 1791922834.04675
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 2660,
+      "tag": "b61edae418576a67",
+      "time": 1791922834.167514
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 2669,
+      "tag": "945a81752858c3cb",
+      "time": 1791922834.1845171
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 3180,
+      "tag": "b9c8acb515421f1c",
+      "time": 1791922861.770612
+    },
+    {
+      "file": "observe-fixture/server.log",
+      "bytes": 67,
+      "event": "reference-udp-write",
+      "socket": 3692,
+      "tag": "0ff59a124ea40da8",
+      "time": 1791922889.2149088
+    },
+    {
+      "file": "collision-fixture.log",
+      "event": "misdelivered-reply",
+      "time": 1791922833.864307,
+      "bytes": 83,
+      "tag": "c05ad0fcc6297e93",
+      "local": [
+        "127.0.0.1",
+        51235
+      ],
+      "peer": [
+        "127.0.0.1",
+        49965
+      ]
+    },
+    {
+      "file": "collision-fixture.log",
+      "event": "misdelivered-reply",
+      "time": 1791922834.168452,
+      "bytes": 83,
+      "tag": "b61edae418576a67",
+      "local": [
+        "127.0.0.1",
+        64406
+      ],
+      "peer": [
+        "127.0.0.1",
+        49965
+      ]
+    },
+    {
+      "file": "collision-fixture.log",
+      "event": "misdelivered-reply",
+      "time": 1791922834.1848671,
+      "bytes": 83,
+      "tag": "945a81752858c3cb",
+      "local": [
+        "127.0.0.1",
+        55737
+      ],
+      "peer": [
+        "127.0.0.1",
+        49965
+      ]
+    },
+    {
+      "file": "collision-fixture.log",
+      "event": "misdelivered-reply",
+      "time": 1791922861.771135,
+      "bytes": 83,
+      "tag": "b9c8acb515421f1c",
+      "local": [
+        "127.0.0.1",
+        56800
+      ],
+      "peer": [
+        "127.0.0.1",
+        49965
+      ]
+    }
+  ]
+}

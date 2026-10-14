@@ -1,0 +1,38 @@
+{
+  "finding": "WireGuard whole-VPN stop closes local client immediately but the synthetic remote TCP request reaches backend timeout; per-connection close delivers EOF",
+  "physicalCases": [
+    {
+      "id": 2002,
+      "backend": "file-descriptor",
+      "serverReason": "TimeoutError",
+      "serverLimitSeconds": 20
+    },
+    {
+      "id": 2004,
+      "backend": "packet-pump",
+      "serverReason": "TimeoutError",
+      "serverLimitSeconds": 20
+    }
+  ],
+  "sourceComparison": [
+    {
+      "path": "crates/xray-wireguard/src/client.rs",
+      "v070Blob": "fd2a9bdc1dd26269efe698c3f00f16c40de6e3db",
+      "measuredBlob": "fd2a9bdc1dd26269efe698c3f00f16c40de6e3db",
+      "identical": true
+    },
+    {
+      "path": "crates/xray-wireguard/src/stack.rs",
+      "v070Blob": "44265b741b992639920bd487a0a7a1cdd74bc354",
+      "measuredBlob": "44265b741b992639920bd487a0a7a1cdd74bc354",
+      "identical": true
+    }
+  ],
+  "inference": "Core closes outbound sessions before draining TUN tasks. The WireGuard carrier/stack shutdown and ordering also exist in v0.7.0; this is source evidence, not an Android v0.7 runtime comparison.",
+  "runtimeChangesMade": false,
+  "releaseAcceptanceComplete": false,
+  "stopOrderEvidence": {
+    "v0.7.0": "-> Result<(), CoreError> {\n        self.shutdown.signal();\n        self.outbound_factory().close_sessions();\n        if let Some(runtime) = self.runtime.take() {\n            for task in runtime.tasks {\n                task.abort();\n                let _ = task.await;\n            }\n        }\n        self.tun.close();\n        self.state = CoreState::Stopped;\n        Ok(())\n    }",
+    "de339981": "-> Result<(), CoreError> {\n        self.shutdown.signal();\n        self.outbound_factory().close_sessions();\n        if let Some(runtime) = self.runtime.take() {\n            for task in runtime.tasks {\n                // Runtime owners observe the shutdown signal and join their\n                // connection tasks. Aborting the owner here would skip that\n                // drain and let stop return while children are still closing.\n                let _ = task.await;\n            }\n        }\n        self.outbound_factory().join_sessions().await;\n        self.tun.close();\n        self.state = CoreState::Stopped;\n        Ok(())\n    }"
+  }
+}

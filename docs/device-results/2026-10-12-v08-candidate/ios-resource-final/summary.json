@@ -1,0 +1,257 @@
+{
+  "cases": [
+    {
+      "baseline": {
+        "cycle": 0,
+        "droppedPackets": 0,
+        "event": "sample",
+        "footprint": 4195976,
+        "inboundPackets": 197,
+        "outboundPackets": 188,
+        "protocol": "trojan",
+        "rss": 32489472,
+        "runtime": "0f2751b1-ce8b-4daa-af28-85f875ff4ef1",
+        "stage": "baseline",
+        "tcp": 0,
+        "threads": 10,
+        "time": "2026-10-12T17:52:17Z",
+        "tunFDReadLoopExits": 0,
+        "tunFDWriteLoopExits": 0,
+        "udp": 0
+      },
+      "loadIntervals": [
+        {
+          "concurrency": 1,
+          "cycle": 1,
+          "echoedBytes": 61800448,
+          "event": "load-result",
+          "protocol": "trojan",
+          "result": "passed",
+          "runtime": "0f2751b1-ce8b-4daa-af28-85f875ff4ef1",
+          "seconds": 20.73921812500339,
+          "systemCPUSeconds": 1.008799,
+          "time": "2026-10-12T17:52:38Z",
+          "userCPUSeconds": 0.642423
+        },
+        {
+          "concurrency": 8,
+          "cycle": 1,
+          "echoedBytes": 272891904,
+          "event": "load-result",
+          "protocol": "trojan",
+          "result": "passed",
+          "runtime": "0f2751b1-ce8b-4daa-af28-85f875ff4ef1",
+          "seconds": 20.757016916701104,
+          "systemCPUSeconds": 4.476794,
+          "time": "2026-10-12T17:53:07Z",
+          "userCPUSeconds": 2.58035
+        },
+        {
+          "concurrency": 1,
+          "cycle": 2,
+          "echoedBytes": 60686336,
+          "event": "load-result",
+          "protocol": "trojan",
+          "result": "passed",
+          "runtime": "0f2751b1-ce8b-4daa-af28-85f875ff4ef1",
+          "seconds": 20.89696099999128,
+          "systemCPUSeconds": 0.9853039999999993,
+          "time": "2026-10-12T17:53:36Z",
+          "userCPUSeconds": 0.6294200000000001
+        },
+        {
+          "concurrency": 8,
+          "cycle": 2,
+          "echoedBytes": 268435456,
+          "event": "load-result",
+          "protocol": "trojan",
+          "result": "passed",
+          "runtime": "0f2751b1-ce8b-4daa-af28-85f875ff4ef1",
+          "seconds": 20.844240250007715,
+          "systemCPUSeconds": 4.325632000000001,
+          "time": "2026-10-12T17:54:05Z",
+          "userCPUSeconds": 2.486395
+        }
+      ],
+      "observedGrowth": {
+        "physicalFootprintGrowthBytes": 131072,
+        "residentMemoryGrowthBytes": 3358720,
+        "threadGrowth": 0
+      },
+      "passed": true,
+      "protocol": "trojan",
+      "recoverySampleCount": 20,
+      "sameRuntime": true
+    },
+    {
+      "baseline": {
+        "cycle": 0,
+        "droppedPackets": 0,
+        "event": "sample",
+        "footprint": 3999368,
+        "inboundPackets": 195,
+        "outboundPackets": 185,
+        "protocol": "shadowsocks2022",
+        "rss": 29310976,
+        "runtime": "5756ce64-327a-40e1-8943-e2f724713c18",
+        "stage": "baseline",
+        "tcp": 0,
+        "threads": 9,
+        "time": "2026-10-12T17:54:22Z",
+        "tunFDReadLoopExits": 0,
+        "tunFDWriteLoopExits": 0,
+        "udp": 0
+      },
+      "loadIntervals": [
+        {
+          "concurrency": 1,
+          "cycle": 1,
+          "echoedBytes": 59375616,
+          "event": "load-result",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "runtime": "5756ce64-327a-40e1-8943-e2f724713c18",
+          "seconds": 20.91782937501557,
+          "systemCPUSeconds": 1.208123,
+          "time": "2026-10-12T17:54:43Z",
+          "userCPUSeconds": 0.8496670000000001
+        },
+        {
+          "concurrency": 8,
+          "cycle": 1,
+          "echoedBytes": 299827200,
+          "event": "load-result",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "runtime": "5756ce64-327a-40e1-8943-e2f724713c18",
+          "seconds": 20.829207166680135,
+          "systemCPUSeconds": 6.002457,
+          "time": "2026-10-12T17:55:13Z",
+          "userCPUSeconds": 3.82308
+        },
+        {
+          "concurrency": 1,
+          "cycle": 2,
+          "echoedBytes": 59179008,
+          "event": "load-result",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "runtime": "5756ce64-327a-40e1-8943-e2f724713c18",
+          "seconds": 20.950537333323155,
+          "systemCPUSeconds": 1.1997669999999996,
+          "time": "2026-10-12T17:55:42Z",
+          "userCPUSeconds": 0.8463599999999998
+        },
+        {
+          "concurrency": 8,
+          "cycle": 2,
+          "echoedBytes": 263323648,
+          "event": "load-result",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "runtime": "5756ce64-327a-40e1-8943-e2f724713c18",
+          "seconds": 21.003986875002738,
+          "systemCPUSeconds": 5.265145,
+          "time": "2026-10-12T17:56:11Z",
+          "userCPUSeconds": 3.307798
+        }
+      ],
+      "observedGrowth": {
+        "physicalFootprintGrowthBytes": 147456,
+        "residentMemoryGrowthBytes": 4538368,
+        "threadGrowth": 0
+      },
+      "passed": true,
+      "protocol": "shadowsocks2022",
+      "recoverySampleCount": 20,
+      "sameRuntime": true
+    },
+    {
+      "baseline": {
+        "cycle": 0,
+        "droppedPackets": 0,
+        "event": "sample",
+        "footprint": 4048520,
+        "inboundPackets": 206,
+        "outboundPackets": 188,
+        "protocol": "vmess",
+        "rss": 29638656,
+        "runtime": "25e7cf78-3657-44b9-94e8-136be939abed",
+        "stage": "baseline",
+        "tcp": 0,
+        "threads": 9,
+        "time": "2026-10-12T17:56:29Z",
+        "tunFDReadLoopExits": 0,
+        "tunFDWriteLoopExits": 0,
+        "udp": 0
+      },
+      "loadIntervals": [
+        {
+          "concurrency": 1,
+          "cycle": 1,
+          "echoedBytes": 61210624,
+          "event": "load-result",
+          "protocol": "vmess",
+          "result": "passed",
+          "runtime": "25e7cf78-3657-44b9-94e8-136be939abed",
+          "seconds": 20.085682208300568,
+          "systemCPUSeconds": 0.927762,
+          "time": "2026-10-12T17:56:49Z",
+          "userCPUSeconds": 0.507861
+        },
+        {
+          "concurrency": 8,
+          "cycle": 1,
+          "echoedBytes": 302383104,
+          "event": "load-result",
+          "protocol": "vmess",
+          "result": "passed",
+          "runtime": "25e7cf78-3657-44b9-94e8-136be939abed",
+          "seconds": 20.123468833277002,
+          "systemCPUSeconds": 5.4358830000000005,
+          "time": "2026-10-12T17:57:18Z",
+          "userCPUSeconds": 2.704341
+        },
+        {
+          "concurrency": 1,
+          "cycle": 2,
+          "echoedBytes": 63569920,
+          "event": "load-result",
+          "protocol": "vmess",
+          "result": "passed",
+          "runtime": "25e7cf78-3657-44b9-94e8-136be939abed",
+          "seconds": 21.010988833324518,
+          "systemCPUSeconds": 0.5799570000000003,
+          "time": "2026-10-12T17:57:47Z",
+          "userCPUSeconds": 0.31393000000000004
+        },
+        {
+          "concurrency": 8,
+          "cycle": 2,
+          "echoedBytes": 286654464,
+          "event": "load-result",
+          "protocol": "vmess",
+          "result": "passed",
+          "runtime": "25e7cf78-3657-44b9-94e8-136be939abed",
+          "seconds": 21.17545045830775,
+          "systemCPUSeconds": 3.8516760000000003,
+          "time": "2026-10-12T17:58:17Z",
+          "userCPUSeconds": 1.8871110000000004
+        }
+      ],
+      "observedGrowth": {
+        "physicalFootprintGrowthBytes": 98304,
+        "residentMemoryGrowthBytes": 3801088,
+        "threadGrowth": 0
+      },
+      "passed": true,
+      "protocol": "vmess",
+      "recoverySampleCount": 20,
+      "sameRuntime": true
+    }
+  ],
+  "controllerExitCode": 0,
+  "passed": true,
+  "planSHA256": "fa468159e1e094d690d9848d31863375b91c112da9a4098ebbcc4dc59c93b85d",
+  "rawSHA256": "c3a456c85d95d4fe17e36d63978d064d44d69d5a2d1694ed10b6b2427270adcb"
+}

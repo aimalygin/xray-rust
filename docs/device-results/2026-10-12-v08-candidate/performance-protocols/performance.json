@@ -1,0 +1,150 @@
+{
+  "aggregation": "worst cipher per repeat; throughput minimum, p95 latency and sampled RSS maximum; all seven profiles retained",
+  "clean": true,
+  "measurements": [
+    {
+      "comparison": "at-least",
+      "id": "trojan-throughput",
+      "median": 116.66364512539613,
+      "passed": true,
+      "samples": [
+        93.13175234435833,
+        123.36265724985411,
+        128.19683793186533,
+        116.66364512539613,
+        116.10889730988075
+      ],
+      "threshold": 50,
+      "unit": "% of paired Xray throughput"
+    },
+    {
+      "comparison": "at-most",
+      "id": "trojan-latency",
+      "median": 102.4390243902439,
+      "passed": true,
+      "samples": [
+        108.47457627118644,
+        106.35838150289017,
+        91.2568306010929,
+        93.92523364485982,
+        102.4390243902439
+      ],
+      "threshold": 200,
+      "unit": "% of paired Xray p95 latency"
+    },
+    {
+      "comparison": "at-most",
+      "id": "trojan-memory",
+      "median": 7.703125,
+      "passed": true,
+      "samples": [
+        7.703125,
+        7.703125,
+        7.75,
+        7.734375,
+        7.703125
+      ],
+      "threshold": 64,
+      "unit": "MiB sampled peak RSS"
+    },
+    {
+      "comparison": "at-least",
+      "id": "shadowsocks2022-throughput",
+      "median": 68.65057155874503,
+      "passed": true,
+      "samples": [
+        70.636137333202,
+        71.35353904372595,
+        65.58183467856354,
+        68.65057155874503,
+        65.03275216237657
+      ],
+      "threshold": 50,
+      "unit": "% of paired Xray throughput"
+    },
+    {
+      "comparison": "at-most",
+      "id": "shadowsocks2022-latency",
+      "median": 111.85567010309278,
+      "passed": true,
+      "samples": [
+        108.33333333333333,
+        173.71134020618555,
+        107.27272727272727,
+        111.85567010309278,
+        113.13131313131314
+      ],
+      "threshold": 200,
+      "unit": "% of paired Xray p95 latency"
+    },
+    {
+      "comparison": "at-most",
+      "id": "shadowsocks2022-memory",
+      "median": 5.609375,
+      "passed": true,
+      "samples": [
+        5.625,
+        5.59375,
+        5.609375,
+        5.625,
+        5.59375
+      ],
+      "threshold": 64,
+      "unit": "MiB sampled peak RSS"
+    },
+    {
+      "comparison": "at-least",
+      "id": "vmess-throughput",
+      "median": 74.93084399197517,
+      "passed": true,
+      "samples": [
+        74.93084399197517,
+        69.61859714461986,
+        78.8381426068344,
+        77.8180419649584,
+        72.57582124469715
+      ],
+      "threshold": 50,
+      "unit": "% of paired Xray throughput"
+    },
+    {
+      "comparison": "at-most",
+      "id": "vmess-latency",
+      "median": 102.07253886010362,
+      "passed": true,
+      "samples": [
+        92.70833333333333,
+        118.78453038674033,
+        102.07253886010362,
+        129.8780487804878,
+        100.0
+      ],
+      "threshold": 200,
+      "unit": "% of paired Xray p95 latency"
+    },
+    {
+      "comparison": "at-most",
+      "id": "vmess-memory",
+      "median": 5.828125,
+      "passed": true,
+      "samples": [
+        5.828125,
+        5.75,
+        5.828125,
+        5.828125,
+        5.765625
+      ],
+      "threshold": 64,
+      "unit": "MiB sampled peak RSS"
+    }
+  ],
+  "notClaimed": [
+    "calibrated 5% no-regression",
+    "full parity with Xray",
+    "energy",
+    "mobile throughput parity"
+  ],
+  "passed": true,
+  "profile": "release",
+  "scope": "single-flow SOCKS localhost, all seven cipher profiles, bounded operational comparison; not old-version or calibrated 5% parity; CPU and startup retained"
+}

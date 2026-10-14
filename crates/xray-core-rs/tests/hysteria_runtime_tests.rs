@@ -8,6 +8,96 @@ use tokio::time::timeout;
 use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
 use xray_routing::{Network, Target, TargetAddr};
 
+async fn run_parsed_salamander_hop_profile(noise_before: Option<bool>) {
+    use std::{sync::Arc, time::Duration};
+    use xray_core_rs::Core;
+    use xray_transport::TransportDialer;
+    timeout(Duration::from_secs(20), async {
+        let server = ReferenceServer::start_with_carrier(true, true).await;
+        let noise_packets = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut hop_port = server.address.port();
+        let _wire_capture = if noise_before == Some(false) {
+            let proxy = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            hop_port = proxy.local_addr().unwrap().port();
+            let remote = server.address;
+            let observed = noise_packets.clone();
+            Some(Task(tokio::spawn(async move {
+                let mut client = None;
+                let mut buffer = vec![0; 65_536];
+                loop {
+                    let (n, source) = proxy.recv_from(&mut buffer).await.unwrap();
+                    if source == remote {
+                        if let Some(client) = client { proxy.send_to(&buffer[..n], client).await.unwrap(); }
+                    } else {
+                        client = Some(source);
+                        if &buffer[..n] == b"synthetic-noise" { observed.fetch_add(1, Ordering::SeqCst); }
+                        proxy.send_to(&buffer[..n], remote).await.unwrap();
+                    }
+                }
+            })))
+        } else { None };
+        let (tcp_addr, _tcp) = tcp_echo().await;
+        let (udp_addr, _udp) = udp_echo().await;
+        let mut profile = profile(server.address);
+        let unused = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        profile["outbounds"][0]["settings"]["port"] = serde_json::json!(unused.local_addr().unwrap().port());
+        profile["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({
+            "udp":[{"type":"salamander","settings":{"password":support::server::SALAMANDER_PASSWORD}}],
+            "quicParams":{"udpHop":{"ports":hop_port,"interval":5}}
+        });
+        if let Some(before) = noise_before {
+            let noise = serde_json::json!({"type":"noise","settings":{"noise":[
+                {"type":"str","packet":"synthetic-noise","delay":"1-3"},
+                {"rand":"16-24","delay":1}, {"type":"base64","packet":"AAEC"}]}});
+            let masks = profile["outbounds"][0]["streamSettings"]["finalmask"]["udp"].as_array_mut().unwrap();
+            if before { masks.insert(0,noise); } else { masks.push(noise); }
+        }
+        let parsed = xray_config::parse_xray_json(&profile.to_string()).unwrap();
+        let protector = Arc::new(Protector::default());
+        let resolver = Arc::new(Bootstrap::default());
+        let dialer = Arc::new(TransportDialer::with_tls_connector(server.connector.clone()).with_socket_protector(protector.clone()));
+        let mut core = Core::with_runtime_dependencies_and_tun_options(parsed.config, resolver.clone(), dialer, Default::default()).unwrap();
+        core.start().await.unwrap();
+        let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut tcp, _) = socks(socks_addr, 1, "127.0.0.1", tcp_addr.port()).await;
+        echo(&mut tcp, b"parsed Salamander before hop").await;
+        let (_control, relay) = socks(socks_addr, 3, "0.0.0.0", 0).await;
+        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let target = Target::new(TargetAddr::Ip(udp_addr.ip()), udp_addr.port(), Network::Udp);
+        let request = encode_socks5_udp_datagram(&target, b"same UDP after hop").unwrap();
+        for phase in 0..2 {
+            if phase == 1 {
+                timeout(Duration::from_secs(7), async {
+                    while protector.0.load(Ordering::SeqCst) < 2 {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }).await.unwrap();
+                echo(&mut tcp, b"same parsed core TCP after hop").await;
+            }
+            udp.send_to(&request, relay).await.unwrap();
+            let mut bytes = [0; 8192];
+            let n = timeout(DEADLINE, udp.recv(&mut bytes)).await.unwrap().unwrap();
+            let reply = parse_socks5_udp_datagram(&bytes[..n]).unwrap();
+            assert_eq!(reply.target, target);
+            assert_eq!(reply.payload.as_ref(), b"same UDP after hop");
+        }
+        assert_eq!(resolver.0.load(Ordering::SeqCst), 1, "hopping preserves the session owner");
+        assert_eq!(core.rebind_hysteria(), 1);
+        timeout(Duration::from_secs(2), async {
+            while protector.0.load(Ordering::SeqCst) < 3 {
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        echo(&mut tcp, b"same parsed core TCP after host rebind").await;
+        if noise_before == Some(false) {
+            assert_eq!(noise_packets.load(Ordering::SeqCst), 1,
+                "reset=0 noise belongs to the QUIC connection, not each hop/rebind socket");
+        }
+        core.stop().await.unwrap();
+        assert_eq!(core.rebind_hysteria(), 0);
+    }).await.unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires pinned reference; use check-hysteria-interop.sh or check-native-hysteria-interop.sh"]
 async fn hysteria_runtime_socks_http_udp_share_session_account_and_stop() {
@@ -211,4 +301,20 @@ async fn hysteria_runtime_concurrent_open_isolated_trust_and_socket_policy() {
     })
     .await
     .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned reference"]
+async fn parsed_salamander_hop_profile_reaches_shared_core_carrier() {
+    run_parsed_salamander_hop_profile(None).await;
+}
+#[tokio::test]
+#[ignore = "requires pinned reference"]
+async fn udp_noise_hysteria_before_salamander_hop_and_rebind() {
+    run_parsed_salamander_hop_profile(Some(true)).await;
+}
+#[tokio::test]
+#[ignore = "requires pinned reference"]
+async fn udp_noise_hysteria_after_salamander_hop_and_rebind() {
+    run_parsed_salamander_hop_profile(Some(false)).await;
 }

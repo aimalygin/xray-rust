@@ -1,0 +1,7 @@
+{
+  "all_numeric_summaries_reproduced": true,
+  "archive_files_verified": 904,
+  "complete_case_selections_verified": 30,
+  "release_rebuild_sha256": "1d518f043d68e901918211e265c0f9c057862ba3e04961e1a8e989ea63289436",
+  "scope": "numeric archive and rebuild only; CI not checked"
+}

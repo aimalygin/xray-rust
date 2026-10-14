@@ -117,10 +117,97 @@ class V07ReleaseEvidenceTests(unittest.TestCase):
         for value, expected in [("0.6.1","v06"),("v0.6.1-rc.1","v06"),("0.7.0-rc.1","v07"),("v0.7.0","v07")]:
             result=subprocess.run(["bash",str(ROOT/"scripts/release-evidence-profile.sh"),value],capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stderr);self.assertEqual(result.stdout.strip(),expected)
-        for value in ["", "0.7.no", "0.7.0-rc.0", "0.7.0-rc.01", "0.8.0", "v0.70.0", "0.7.0/../../x"]:
+        for value in ["", "0.7.no", "0.7.0-rc.0", "0.7.0-rc.01", "0.9.0", "v0.70.0", "0.7.0/../../x"]:
             with self.subTest(version=value):
                 result=subprocess.run(["bash",str(ROOT/"scripts/release-evidence-profile.sh"),value],capture_output=True,text=True)
                 self.assertNotEqual(result.returncode,0)
+
+
+class V07AcceptedEvidenceTests(unittest.TestCase):
+    write_zip = legacy.V06ReleaseEvidenceTests.write_zip
+    reject = V07ReleaseEvidenceTests.reject
+
+    def evidence(self):
+        manifest, blobs = V07ReleaseEvidenceTests.evidence(self)
+        manifest.update(schemaVersion=3, result="accepted-with-exceptions", acceptance=V07.accepted_scope())
+        for device in manifest["devices"]:
+            if device["platform"] == "android":
+                for scenario in device["scenarios"]:
+                    if scenario["id"] in V07.ANDROID_PROTOCOLS:
+                        scenario["transitions"].remove("wifi-cellular-wifi")
+        path = "performance/release-decisions.json"
+        blobs[path] = V07.OWNER_DECISIONS.read_bytes()
+        manifest["performance"]["artifacts"].append({
+            "kind": "release-decisions", "path": path,
+            "sha256": hashlib.sha256(blobs[path]).hexdigest(),
+        })
+        return manifest, blobs
+
+    def test_explicit_acceptance_preserves_archive_result(self):
+        import zipfile
+        path = self.write_zip()
+        V07.validate_archive(path, REVISION, TREE)
+        with zipfile.ZipFile(path) as archive:
+            self.assertEqual(json.loads(archive.read("manifest.json"))["result"], "accepted-with-exceptions")
+
+    def test_cannot_hide_or_expand_acceptance(self):
+        for mutation in [
+            lambda m, b: m.update(result="pass"),
+            lambda m, b: m.pop("acceptance"),
+            lambda m, b: m["acceptance"].update(release="0.7.1"),
+            lambda m, b: m["acceptance"]["acceptedCases"].append("all-udp-loss"),
+            lambda m, b: m["acceptance"]["notTested"].pop(),
+        ]:
+            with self.subTest(mutation=mutation):
+                self.reject(mutation, "acceptance|accepted-with-exceptions")
+
+    def test_decision_artifact_must_match_reviewed_bytes(self):
+        def alter(manifest, blobs):
+            path = "performance/release-decisions.json"
+            blobs[path] = b"unreviewed decision"
+            next(a for a in manifest["performance"]["artifacts"] if a["kind"] == "release-decisions")["sha256"] = hashlib.sha256(blobs[path]).hexdigest()
+        self.reject(alter, "reviewed owner decision bytes")
+        self.reject(lambda m, b: b.update({"performance/release-decisions.json": b"changed"}), "checksum differs")
+
+    def test_android_cellular_must_remain_not_tested(self):
+        def fake(manifest, _):
+            device = next(d for d in manifest["devices"] if d["platform"] == "android")
+            next(s for s in device["scenarios"] if s["id"] in V07.ANDROID_PROTOCOLS)["transitions"].append("wifi-cellular-wifi")
+        self.reject(fake, "must remain not-tested")
+
+    def test_other_device_transitions_still_required(self):
+        for platform in ["apple", "android"]:
+            required = V07.PROTOCOL_TRANSITIONS - ({"wifi-cellular-wifi"} if platform == "android" else set())
+            for transition in required:
+                with self.subTest(platform=platform, transition=transition):
+                    def omit(manifest, _):
+                        device = next(d for d in manifest["devices"] if d["platform"] == platform)
+                        next(s for s in device["scenarios"] if s["id"].startswith("wireguard"))["transitions"].remove(transition)
+                    self.reject(omit, "transitions must include")
+
+    def test_current_failures_and_resource_regressions_still_rejected(self):
+        self.reject(lambda m, b: m["devices"][0]["scenarios"][0].update(trafficResult="fail"), "trafficResult")
+        for metric, value in [("fatalErrors", 1), ("unrecoveredTransitions", 1), ("residentMemoryGrowthBytes", 2**40)]:
+            with self.subTest(metric=metric):
+                self.reject(lambda m, b: m["devices"][1]["observed"].update({metric: value}), "exceeds its explicit limit")
+
+    def test_other_versions_do_not_inherit_exceptions_via_cli(self):
+        import contextlib
+        import io
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text('[workspace.package]\nversion = "0.7.1"\n')
+            with patch.object(V07, "ROOT", root), patch.object(V07.sys, "argv", ["validator", str(self.write_zip()), REVISION, TREE]), contextlib.redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(V07.main(), 1)
+                self.assertIn("unexpected=['acceptance']", error.getvalue())
+
+    def test_old_schema_does_not_inherit_exceptions(self):
+        def downgrade(manifest, _):
+            manifest.update(schemaVersion=2, result="pass")
+            manifest.pop("acceptance")
+        self.reject(downgrade, "transitions must include|kinds must be exactly")
 
 
 if __name__ == "__main__":

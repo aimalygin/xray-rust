@@ -1,0 +1,17 @@
+[
+  {
+    "package": "org.xrayrust.devicehost.v08",
+    "sha256": "ce8f66b44865bed8e0a2689a35c6ed4d2d0a3a72c71f9fd6a3880abfb2f52762",
+    "nativeLibraries": {
+      "lib/arm64-v8a/libxray_ffi.so": "420e35d063e43005fd8a174894c7fdbf29197b56bcb6e802a04fb7743e52c884",
+      "lib/arm64-v8a/libxray_mobile_jni.so": "05edc946cd715c7064e0f92723b7ceb4e799508b8afabd77a6b4008cccc422e8"
+    }
+  },
+  {
+    "package": "org.xrayrust.deviceprobe.v08",
+    "sha256": "9b93cc130a29c9de47fc711f6d611a539cf2293573efdf3d2305184b60f53693",
+    "nativeLibraries": {
+      "lib/arm64-v8a/libxray_tun_admission_probe.so": "303198112ea666bcdfd8a08dcb5b9d0b832ad53cd41268d44f174552cca606a5"
+    }
+  }
+]

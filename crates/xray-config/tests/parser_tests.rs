@@ -3750,7 +3750,7 @@ fn rejects_unsupported_outbound_protocol_with_path() {
     let raw = r#"{
         "inbounds": [],
         "outbounds": [
-            { "protocol": "trojan", "settings": {} }
+            { "protocol": "unsupported-test-protocol", "settings": {} }
         ]
     }"#;
 
@@ -5484,7 +5484,10 @@ fn finalmask_empty_masks_are_accepted_but_nonempty_masks_fail_closed() {
                 r#""network": "xhttp", "security": "none",
                    "finalmask": {{"{mask}": [{{"type": "example"}}]}}"#
             )),
-            &format!("$.outbounds[0].streamSettings.finalmask.{mask}"),
+            &format!(
+                "$.outbounds[0].streamSettings.finalmask.{mask}{}",
+                if mask == "udp" { "[0]" } else { "" }
+            ),
         );
     }
 }

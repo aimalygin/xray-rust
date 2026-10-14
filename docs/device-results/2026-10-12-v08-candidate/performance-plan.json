@@ -1,0 +1,11 @@
+{
+  "binaryBuildLog": "build/native-host.log",
+  "budgetsSource": "scripts/run-v06-feature-benchmarks.py at fcce4be",
+  "encryptionMinimumPlainFraction": 0.5,
+  "measurementsStarted": false,
+  "processMinimumMiBs": 10,
+  "repetitions": 5,
+  "routingMaximumOverDirectMs": 1,
+  "scope": "loopback feature budgets; not calibrated 5% regression test",
+  "xhttpMaximumMiB": 64
+}

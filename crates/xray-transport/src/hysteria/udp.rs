@@ -24,6 +24,10 @@ struct Queued {
     packet: HysteriaDatagram,
     _bytes: OwnedSemaphorePermit,
 }
+struct RetryDelivery {
+    sender: mpsc::Sender<Queued>,
+    queued: Queued,
+}
 struct Sink {
     sender: mpsc::Sender<Queued>,
     reassembly: Reassembler,
@@ -105,24 +109,22 @@ impl Registry {
             sink.reassembly.expire(now);
         }
     }
-    fn feed(&self, bytes: &[u8], now: Instant) {
+    fn feed(&self, bytes: &[u8], now: Instant) -> Option<RetryDelivery> {
         let Ok(message) = decode_udp_message(bytes) else {
-            return;
+            return None;
         };
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(sink) = entries.sessions.get_mut(&message.session_id) else {
-            return;
-        };
+        let sink = entries.sessions.get_mut(&message.session_id)?;
         let Ok(Some(packet)) = sink.reassembly.feed(&message, now) else {
-            return;
+            return None;
         };
         let Ok(source) = super::parse_udp_source(&packet.address) else {
-            return;
+            return None;
         };
         let Ok(permit) =
             Arc::clone(&self.queued_bytes).try_acquire_many_owned(packet.payload.len() as u32)
         else {
-            return;
+            return None;
         };
         let queued = Queued {
             packet: HysteriaDatagram {
@@ -131,9 +133,26 @@ impl Registry {
             },
             _bytes: permit,
         };
-        // UDP is lossy: drop excess packets; never block every session on one
-        // slow consumer. Dropping the queued item releases its global budget.
-        let _ = sink.sender.try_send(queued);
+        match sink.sender.try_send(queued) {
+            Err(mpsc::error::TrySendError::Full(queued)) => Some(RetryDelivery {
+                sender: sink.sender.clone(),
+                queued,
+            }),
+            _ => None,
+        }
+    }
+
+    async fn deliver(&self, bytes: &[u8], now: Instant) {
+        if let Some(retry) = self.feed(bytes, now) {
+            // A socket receive batch can fill a small queue before its ready
+            // consumer runs. Offer it a scheduling opportunity, without holding the
+            // registry lock or waiting for capacity on a slow session. The
+            // single pending packet still owns its global byte-budget permit.
+            tokio::task::yield_now().await;
+            // If it is still full, retain UDP's bounded drop policy. Never
+            // block every other session behind this consumer.
+            let _ = retry.sender.try_send(retry.queued);
+        }
     }
 }
 
@@ -144,7 +163,7 @@ pub(super) fn spawn_receiver(connection: Connection, registry: Arc<Registry>) ->
         loop {
             tokio::select! {
                 packet = connection.read_datagram() => match packet {
-                    Ok(bytes) => registry.feed(&bytes, Instant::now()),
+                    Ok(bytes) => registry.deliver(&bytes, Instant::now()).await,
                     Err(_) => break,
                 },
                 _ = cleanup.tick() => registry.expire(Instant::now()),
@@ -264,6 +283,79 @@ mod tests {
         .unwrap()
     }
 
+    #[test]
+    fn default_queue_absorbs_a_short_burst_and_retains_its_memory_bound() {
+        let limits = HysteriaLimits::default();
+        assert_eq!(limits.udp_queue_packets, 16);
+        assert_eq!(limits.udp_queue_bytes, 1024 * 1024);
+        let registry = Registry::new(limits);
+        let (id, mut receiver) = registry.register().unwrap();
+        // A receive burst may finish before the ready relay is scheduled.
+        for sequence in 0..16 {
+            drop(registry.feed(&wire(id, &[sequence]), Instant::now()));
+        }
+        drop(registry.feed(&wire(id, b"excess"), Instant::now()));
+        for sequence in 0..16 {
+            assert_eq!(receiver.try_recv().unwrap().packet.payload, [sequence]);
+        }
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(
+            registry.queued_bytes.available_permits(),
+            limits.udp_queue_bytes
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn ready_consumer_receives_a_burst_larger_than_its_queue() {
+        let registry = Registry::new(HysteriaLimits {
+            udp_queue_packets: 4,
+            ..HysteriaLimits::default()
+        });
+        let (id, mut receiver) = registry.register().unwrap();
+        let consumer = tokio::spawn(async move {
+            let mut received = Vec::new();
+            while let Some(packet) = receiver.recv().await {
+                received.push(packet.packet.payload[0]);
+            }
+            received
+        });
+        // Quinn can return an entire socket receive batch without Pending.
+        // A ready consumer must get a scheduling turn before this burst drops.
+        for sequence in 0..32 {
+            registry
+                .deliver(&wire(id, &[sequence]), Instant::now())
+                .await;
+        }
+        registry.close();
+        assert_eq!(consumer.await.unwrap(), (0..32).collect::<Vec<u8>>());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn stalled_consumer_does_not_block_other_sessions_or_retain_retry_budget() {
+        let registry = Registry::new(HysteriaLimits {
+            udp_queue_packets: 1,
+            udp_queue_bytes: 8,
+            ..HysteriaLimits::default()
+        });
+        let (slow, mut slow_rx) = registry.register().unwrap();
+        let (fast, mut fast_rx) = registry.register().unwrap();
+        timeout(Duration::from_secs(2), async {
+            registry.deliver(&wire(slow, b"one"), Instant::now()).await;
+            for _ in 0..32 {
+                registry.deliver(&wire(slow, b"drop"), Instant::now()).await;
+                // The dropped retry must release four bytes; otherwise this
+                // unrelated session cannot acquire its three-byte budget.
+                registry.deliver(&wire(fast, b"two"), Instant::now()).await;
+                assert_eq!(fast_rx.recv().await.unwrap().packet.payload, b"two");
+            }
+        })
+        .await
+        .expect("a full session must not hold up the shared receive driver");
+        assert_eq!(slow_rx.try_recv().unwrap().packet.payload, b"one");
+        assert!(slow_rx.try_recv().is_err());
+        assert_eq!(registry.queued_bytes.available_permits(), 8);
+    }
+
     #[tokio::test]
     async fn global_queue_budget_is_shared_released_and_unknown_ids_are_ignored() {
         let registry = Registry::new(HysteriaLimits {
@@ -272,12 +364,12 @@ mod tests {
         });
         let (a, mut rx_a) = registry.register().unwrap();
         let (b, mut rx_b) = registry.register().unwrap();
-        registry.feed(&wire(999, b"xxxx"), Instant::now());
-        registry.feed(&wire(a, b"12345678"), Instant::now());
-        registry.feed(&wire(b, b"xxxx"), Instant::now());
+        drop(registry.feed(&wire(999, b"xxxx"), Instant::now()));
+        drop(registry.feed(&wire(a, b"12345678"), Instant::now()));
+        drop(registry.feed(&wire(b, b"xxxx"), Instant::now()));
         assert!(rx_b.try_recv().is_err());
         drop(rx_a.try_recv().unwrap());
-        registry.feed(&wire(b, b"xxxx"), Instant::now());
+        drop(registry.feed(&wire(b, b"xxxx"), Instant::now()));
         assert_eq!(rx_b.try_recv().unwrap().packet.payload, b"xxxx");
         assert_eq!(registry.queued_bytes.available_permits(), 8);
     }
@@ -294,8 +386,8 @@ mod tests {
             registry.register(),
             Err(HysteriaError::SessionLimit)
         ));
-        registry.feed(&wire(id, b"one"), Instant::now());
-        registry.feed(&wire(id, b"two"), Instant::now());
+        drop(registry.feed(&wire(id, b"one"), Instant::now()));
+        drop(registry.feed(&wire(id, b"two"), Instant::now()));
         assert_eq!(rx.try_recv().unwrap().packet.payload, b"one");
         assert!(rx.try_recv().is_err());
         registry.remove(id);

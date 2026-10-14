@@ -1,0 +1,38 @@
+{
+  "baseline": {
+    "runtime_commit": "fdc0dad1aa1ffe39d3621008ab66512b30ccf452",
+    "source_commit": "00f660bb6f1248e4841af3a508a37f7d05acbbd4",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-batch-investigation/baseline",
+    "sha256": "1ed77d5b5afbf4fe466dde699442d3d6938c8e7ffd12b20f5cf987ab355c797d"
+  },
+  "profile": {
+    "source_commit": "00f660bb6f1248e4841af3a508a37f7d05acbbd4",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-batch-investigation/profile-baseline",
+    "sha256": "7d0e2dc6b5e2f5cb8619d0d0e6f70a749043d4ad074b092d006ef8fdd1ce8217",
+    "rustc_args": [
+      "-C",
+      "strip=none",
+      "-C",
+      "debuginfo=1"
+    ],
+    "diagnostic_only": true
+  },
+  "batch16": {
+    "source_commit": "00f660bb6f1248e4841af3a508a37f7d05acbbd4",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-batch-investigation/batch16",
+    "sha256": "ab590efcce52af5885bdb59e2abd69ca9e71b30e379a212dc6e00f460f572d4a",
+    "patch": "batch16.patch",
+    "patch_sha256": "1b11dbe1346c99c6fbe176d692387ca216bf113ac3e86a2f3d7a5e7a636ec75a",
+    "build": "CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=target/v08-comparison-driver cargo build --offline --locked --release -p xray-cli"
+  },
+  "batch2": {
+    "source_commit": "00f660bb6f1248e4841af3a508a37f7d05acbbd4",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-batch-investigation/batch2",
+    "sha256": "784ce279f375de47332cfb3efa7dd90905767fdd226f8cf5364f27263eb3d937",
+    "patch": "batch2.patch",
+    "patch_sha256": "5dd9bc9b295f05e7aea242ca50e20cdb3511a043d108a572b70545f41e3d5710",
+    "build": "CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=target/v08-comparison-driver cargo build --offline --locked --release -p xray-cli",
+    "commit": "1804e17890baf4c3a587fbd86d6a17a0787ce9dd",
+    "tree": "8501825d7a40170ca192269b9ec7657fbb721663"
+  }
+}

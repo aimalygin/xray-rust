@@ -528,6 +528,13 @@ public final class NetworkExtensionTunnelController: XrayClientTunnelControlling
     }
 
 #if DEBUG
+    public func protocolProbeCPU() async throws -> [String: Double]? {
+        guard let manager = try await loadManager(),
+              let session = manager.connection as? NETunnelProviderSession else { return nil }
+        guard let response = try await session.sendProviderMessageAsync(Data("v08-process-cpu".utf8)) else { return nil }
+        return try JSONDecoder().decode([String: Double].self, from: response)
+    }
+
     public func protocolProbeNetworkEvents() async throws -> [[String: String]]? {
         guard let manager = try await loadManager(),
               let session = manager.connection as? NETunnelProviderSession else { return nil }

@@ -2,22 +2,22 @@
 
 Project website: [xray-rust.aimalygin.chatgpt.site](https://xray-rust.aimalygin.chatgpt.site)
 
-`xray-rust` is a mobile/client-first Rust implementation of Xray configuration
-and proxy protocols. It provides a native runtime, a C ABI, and integrations
-for Apple platforms and Android. The current release focuses on an embeddable
-client runtime; its supported compatibility surface is documented below.
+Mobile repository: [xray-rust-mobile](https://github.com/aimalygin/xray-rust-mobile)
 
-This project is unofficial and is not affiliated with XTLS or Xray-core.
+## Support the project
 
-Stable source version: [`v0.6.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.1).
-Mobile SDK: [`v0.6.1`](https://github.com/aimalygin/xray-rust-mobile/releases/tag/v0.6.1).
-Both retain the tested [`v0.6.1-rc.1`](https://github.com/aimalygin/xray-rust/releases/tag/v0.6.1-rc.1)
-runtime. The immutable mobile SDK remains pinned to that exact RC1 core
-revision. See [stable promotion and evidence provenance](docs/v061-stable-promotion.md).
+If you find this project useful, consider supporting its development with a donation:
+
+- **TON (TON network):** UQCIpU1qagwDltuqPUZh4EuI2zXvismk6esCCTWUVphj_o4y
+- **ETH (Ethereum network):** 0x96A9a65E188c439a95267a3dA6920884C530f57f
+- **BTC (Bitcoin network):** bc1qxxk42z2ty8wx702sk5cammwhchl95y39kf2wdc
+- **SOL (Solana network):** D4xFX2GwPniSetHZWn2XRTBaSM6m1k1wMtacr6TMVHQD
+
+Thank you for your support!
 
 ## Benchmarks
 
-The latest published synthetic localhost evidence compares the `v0.4.1-rc.4`
+The historical synthetic localhost evidence below compares the `v0.4.1-rc.4`
 benchmark candidate `5895b09`
 with Xray-core `v26.7.28`
 (`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) and stable sing-box `v1.13.20`
@@ -26,6 +26,10 @@ release runs from the 2026-08-31 result group on an Apple M3 Pro MacBook Pro
 with 18 GB RAM and macOS 26.5.2. The [full dated evidence](docs/benchmarks/results/2026-08-31-v26.7.28/README.md)
 contains 139 validated series, exact binary hashes, tables, omissions, and raw
 archive provenance.
+
+For 0.7 regression checks and Hysteria2/WireGuard comparisons, see the
+[0.7 performance record](docs/v07-performance.md), including the accepted
+measurement tolerance, deferred RSS work and remaining comparison gaps.
 
 Lowest resident memory at every measured idle-flow scale — 4.2 MiB idle and
 20.9 MiB with 1,000 held SOCKS flows, against 80.8 MiB for Xray-core and
@@ -60,14 +64,24 @@ The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
 
 ## Current scope
 
+The development branch adds Trojan, Shadowsocks 2022 and VMess AEAD for the
+planned 0.8 release, including Swift/Kotlin integration and current ABI 1.11. Their
+[implementation and acceptance record](docs/v08-implementation-plan.md)
+distinguishes passing host/CI checks from remaining physical-device gates.
+The [0.8 protocol comparison](docs/benchmarks/results/2026-09-30-v08-protocols/README.md)
+contains 1050 successful full-client trials against Xray-core and sing-box:
+RSS is lower throughout, but SS2022/VMess bulk throughput and CPU targets remain unmet.
+These changes are not a published 0.8 package; the stable source baseline is
+0.7.0, which already includes Hysteria 2 and WireGuard.
+
 | Area | Implemented | Important limits |
 | --- | --- | --- |
 | Local inbounds | SOCKS5 no-auth `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | No authenticated proxy inbound or server-side Xray protocols |
-| Outbounds | Freedom/direct, VLESS client over TCP, DNS, health-aware selector groups including bounded `leastLoad`, and validated transport-layer TCP chaining | No VMess, Trojan, Shadowsocks, WireGuard, or chaining outside the documented TCP subset |
+| Outbounds | Freedom/direct, Xray-compatible blackhole, VLESS, Hysteria 2, WireGuard, DNS, health-aware selector groups including bounded `leastLoad`, and validated transport-layer TCP chaining; development 0.8 adds Trojan, Shadowsocks 2022 and VMess AEAD | No Shadowsocks AEAD-2017, legacy VMess authentication, server-side proxy protocols, or chaining outside the documented TCP subset |
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, atomic rule/geodata snapshot replacement, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection including routed `tls://` DoT, routed/local HTTP/2 DoH, and provider-local `quic+local://` DoQ, routed multi-address resolution, TTL-aware positive/negative cache with bounded stale-while-revalidate, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | Full config and outbound/balancer topology replacement still requires a new core; no UDP/protocol-layer outbound chaining, `UseSystem` route probing, per-server cache policy, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
-| Management | ABI 1.4 plus Swift/Kotlin expose routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative; no persistent connection history |
+| Management | Development ABI 1.11 plus Swift/Kotlin expose protocol capability discovery, shared profile import and on-demand outbound probes alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative; no persistent connection history |
 
 See [project status](docs/status.md) and
 [configuration compatibility](docs/config-compatibility.md) for the detailed

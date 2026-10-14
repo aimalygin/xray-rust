@@ -1,54 +1,19 @@
 //! Compilation and opening of independently owned XHTTP carriers.
 use super::*;
-use xray_transport::stream::XhttpConnectTarget;
 
 #[derive(Debug)]
 pub(super) struct XhttpDownloadOutbound {
-    server: Target,
-    connector: ConnectorConfig,
-    transport: XhttpTransport,
-    happy_eyeballs: Option<HappyEyeballsConfig>,
-}
-
-pub(super) fn build_vless_connector(
-    security: &StreamSecurity,
-    destination: &TargetAddr,
-) -> ConnectorConfig {
-    match security {
-        StreamSecurity::None => ConnectorConfig::Tcp,
-        StreamSecurity::Tls(tls) => {
-            let server_name = match tls.server_name.as_deref() {
-                Some(name) if !name.is_empty() => name.to_owned(),
-                Some(_) | None => match destination {
-                    TargetAddr::Domain(domain) => domain.clone(),
-                    TargetAddr::Ip(ip) => ip.to_string(),
-                },
-            };
-
-            ConnectorConfig::Tls(TlsClientConfig {
-                server_name,
-                allow_insecure: tls.allow_insecure,
-                pinned_peer_cert_sha256: tls.pinned_peer_cert_sha256.clone(),
-                verify_peer_cert_by_name: tls.verify_peer_cert_by_name.clone(),
-                alpn: tls.alpn.clone(),
-                fingerprint: tls.fingerprint.clone(),
-            })
-        }
-        StreamSecurity::Reality(reality) => ConnectorConfig::Reality(RealityClientConfig {
-            server_name: reality.server_name.clone(),
-            fingerprint: reality.fingerprint.clone(),
-            public_key: reality.public_key,
-            short_id: reality.short_id.as_slice().to_vec(),
-            spider_x: reality.spider_x.clone(),
-            mldsa65_verify: reality.mldsa65_verify.clone(),
-        }),
-    }
+    pub(super) server: Target,
+    pub(super) connector: ConnectorConfig,
+    pub(super) transport: XhttpTransport,
+    pub(super) happy_eyeballs: Option<HappyEyeballsConfig>,
 }
 
 pub(super) fn build_xhttp_download(
-    outbound: &OutboundConfig,
+    stream: &StreamSettings,
+    unencrypted_payload: bool,
 ) -> Result<Option<XhttpDownloadOutbound>, CoreError> {
-    let StreamTransport::Xhttp(up) = &outbound.stream.transport else {
+    let StreamTransport::Xhttp(up) = &stream.transport else {
         return Ok(None);
     };
     let Some(download) = &up.download else {
@@ -68,22 +33,18 @@ pub(super) fn build_xhttp_download(
             "invalid nested downloadSettings or stream-one combination",
         ));
     }
-    if outbound.stream.security != StreamSecurity::None
-        && download.stream.security == StreamSecurity::None
-    {
+    if stream.security != StreamSecurity::None && download.stream.security == StreamSecurity::None {
         return Err(invalid_xhttp_configuration(
             "protected upload cannot use plaintext download",
         ));
     }
-    if let OutboundSettings::Vless(vless) = &outbound.settings {
-        if download.stream.security == StreamSecurity::None
-            && vless.users.first().is_none_or(|u| u.encryption.is_none())
-            && !download.address.is_xray_plaintext_server_exempt()
-        {
-            return Err(invalid_xhttp_configuration(
-                "unencrypted VLESS download requires a private or test server",
-            ));
-        }
+    if unencrypted_payload
+        && download.stream.security == StreamSecurity::None
+        && !download.address.is_xray_plaintext_server_exempt()
+    {
+        return Err(invalid_xhttp_configuration(
+            "unencrypted protocol download requires a private or test server",
+        ));
     }
     if matches!(&download.stream.security, StreamSecurity::Tls(tls) if tls.allow_insecure) {
         return Err(invalid_xhttp_configuration(
@@ -103,68 +64,16 @@ pub(super) fn build_xhttp_download(
     };
     Ok(Some(XhttpDownloadOutbound {
         server: Target::new(addr, download.port, RoutingNetwork::Tcp),
-        connector: build_vless_connector(&download.stream.security, &download.address),
+        connector: carrier::build_connector(&download.stream.security, &download.address),
         transport: build_xhttp_transport(
             settings,
             &download.stream.security,
             &download.address,
             download.stream.quic_params.as_ref(),
+            download.stream.udp_noise.as_ref(),
         )?,
         happy_eyeballs: happy_eyeballs_config(&download.stream),
     }))
-}
-
-pub(super) async fn resolve_xhttp_download(
-    outbound: &VlessTcpOutbound,
-    resolver: &dyn DnsResolver,
-) -> Result<Vec<SocketAddr>, CoreError> {
-    match &outbound.payload.download {
-        Some(down) => resolve_server_candidates(&down.server, resolver).await,
-        None => Ok(Vec::new()),
-    }
-}
-
-pub(super) async fn open_vless_carrier(
-    outbound: &VlessTcpOutbound,
-    candidates: &[SocketAddr],
-    download_candidates: &[SocketAddr],
-    dialer: &TransportDialer,
-) -> Result<BoxedTransportStream, CoreError> {
-    if let Some(down) = &outbound.payload.download {
-        let TransportLayer::Xhttp(up) = outbound.transport_layer() else {
-            return Err(invalid_xhttp_configuration(
-                "split download requires XHTTP upload",
-            ));
-        };
-        return up
-            .open_split_stream(
-                dialer,
-                XhttpConnectTarget {
-                    connector: outbound.transport(),
-                    target: outbound.server(),
-                    candidates,
-                    happy_eyeballs: outbound.happy_eyeballs(),
-                },
-                &down.transport,
-                XhttpConnectTarget {
-                    connector: &down.connector,
-                    target: &down.server,
-                    candidates: download_candidates,
-                    happy_eyeballs: down.happy_eyeballs.as_ref(),
-                },
-            )
-            .await
-            .map_err(|e| CoreError::from(TransportError::Xhttp(e.to_string())));
-    }
-    Ok(dialer
-        .connect_stream(
-            outbound.transport(),
-            outbound.transport_layer(),
-            outbound.server(),
-            candidates,
-            outbound.happy_eyeballs(),
-        )
-        .await?)
 }
 
 pub(super) fn build_xhttp_transport(
@@ -172,12 +81,13 @@ pub(super) fn build_xhttp_transport(
     security: &StreamSecurity,
     destination: &TargetAddr,
     quic_params: Option<&QuicParamsSettings>,
+    noise: Option<&xray_config::UdpNoiseSettings>,
 ) -> Result<XhttpTransport, CoreError> {
     let http_version = xhttp_http_version(security)?;
     let endpoint = xhttp_endpoint(settings, security, destination)?;
     let config = xhttp_config(settings, matches!(security, StreamSecurity::Reality(_)))?;
     let xmux = xhttp_xmux_policy(settings);
-    let h3_quic = if http_version == XhttpHttpVersion::Http3 {
+    let mut h3_quic = if http_version == XhttpHttpVersion::Http3 {
         xhttp_h3_quic_config(quic_params)?
     } else {
         // Xray retains finalmask.quicParams in every stream config but only
@@ -185,6 +95,10 @@ pub(super) fn build_xhttp_transport(
         H3QuicConfig::default()
     };
 
+    if noise.is_some() && http_version != XhttpHttpVersion::Http3 {
+        return Err(invalid_xhttp_configuration("UDP noise requires XHTTP H3"));
+    }
+    h3_quic.udp_noise = noise.map(udp_noise_config).transpose()?;
     XhttpTransport::new_with_h3_quic(config, endpoint, http_version, xmux, h3_quic)
         .map_err(invalid_xhttp_configuration)
 }
@@ -533,6 +447,32 @@ pub(super) const fn xhttp_uplink_data_placement(
     }
 }
 
+pub(super) fn udp_noise_config(
+    noise: &xray_config::UdpNoiseSettings,
+) -> Result<xray_transport::udp_noise::UdpNoiseConfig, CoreError> {
+    use xray_transport::udp_noise::{NoiseRange, UdpNoiseConfig, UdpNoiseItem};
+    let range = |r: xray_config::FragmentRange| NoiseRange {
+        from: r.from,
+        to: r.to,
+    };
+    let config = UdpNoiseConfig {
+        reset_secs: range(noise.reset_secs),
+        before_salamander: noise.before_salamander,
+        items: noise
+            .items
+            .iter()
+            .map(|i| UdpNoiseItem {
+                packet: i.packet.clone(),
+                random_length: range(i.random_length),
+                random_bytes: range(i.random_bytes),
+                delay_ms: range(i.delay_ms),
+            })
+            .collect(),
+    };
+    config.validate().map_err(invalid_xhttp_configuration)?;
+    Ok(config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,7 +495,13 @@ mod tests {
             let TransportLayer::Xhttp(up) = outbound.transport_layer() else {
                 panic!("XHTTP")
             };
-            let down = &outbound.payload.download.as_ref().unwrap().transport;
+            let down = &outbound
+                .payload
+                .carrier
+                .download
+                .as_ref()
+                .unwrap()
+                .transport;
             assert_eq!(up.config().h2_stream_receive_window, 1048576);
             assert_eq!(down.config().h2_stream_receive_window, 8388608);
             assert_eq!(up.http_version(), XhttpHttpVersion::Http1);
@@ -580,7 +526,7 @@ mod tests {
     fn independent_download_compiles_its_own_destination_tls_http_and_pool() {
         let parsed = xray_config::parse_xray_json(&config().to_string()).unwrap();
         let outbound = build_vless_tcp_outbound(&parsed.config.outbounds[0]).unwrap();
-        let down = outbound.payload.download.as_ref().unwrap();
+        let down = outbound.payload.carrier.download.as_ref().unwrap();
         assert_eq!(down.server.port, 8443);
         assert_eq!(target_domain(&down.server), Some("download.test"));
         let ConnectorConfig::Tls(tls) = &down.connector else {

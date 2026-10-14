@@ -10,9 +10,79 @@ long-term supported release series.
 
 ## Unreleased
 
-## 0.7.0-rc.1 - 2026-09-22
+## 0.8.0 - 2026-10-11
 
-Release candidate preparation; publication and final device acceptance are pending.
+Stable release preparation; publication status is tracked in [the promotion record](docs/v08-stable-promotion.md).
+
+- Fix `xtls-rprx-vision` direct mode over plain TLS on the raw transport.
+  Direct reads and writes now use the connection beneath the TLS session, as
+  they already did beneath REALITY and as Xray-core does, instead of staying
+  inside the session. Previously an inner TLS session carried through
+  VLESS + TLS + Vision to Xray-core failed with EOF right after its handshake.
+  Local Xray-core interop now carries a real inner TLS session through TLS
+  Vision as well as REALITY Vision, including a bulk round in each direction.
+- Add an Xray-compatible `blackhole` outbound so profiles that route ads, QUIC
+  or other denied traffic to `block` load and keep blocking it. `none` closes
+  TCP after the inbound acknowledgement and `http` first sends Xray's fixed
+  403 reply. A UDP flow is dispatched once, gets the `http` reply once, and
+  then discards its datagrams until it is idle. Nothing is dialed and no
+  socket is opened. Unknown response types and blackhole proxy chains fail
+  closed.
+- Close TUN TCP flows whose remote closes before the client's handshake ACK
+  without waiting for another client segment.
+- Added a capability-gated on-demand outbound probe in C ABI 1.9 and the
+  Swift/Kotlin adapters. A host heartbeat can send one bounded HTTP(S) probe
+  through a leaf outbound of a running core, selected by tag or the default
+  outbound, and receive its delay or a typed failure matching the health
+  snapshot categories. Invalid URLs, timeouts outside 1 to 60000 ms, and
+  unknown tags are rejected before any network activity; results do not change
+  health snapshots or selector state, and diagnostics stay redacted. Lifecycle
+  calls cancel probes before draining shared calls, so stop/close do not wait
+  for a 60-second probe timeout. Swift rejects embedded NUL before the C bridge.
+  The probe uses bit 22, reserving ABI 1.8 and bits 19–21 for v0.8 clients.
+
+- Add Trojan, Shadowsocks 2022 and VMess AEAD client outbounds for SOCKS,
+  HTTP, TUN and routed DNS, with shared protected carriers and bounded Mux/XUDP.
+  SS2022 supports all three methods and AES identity chains; VMess supports
+  AES/ChaCha/auto and authenticated-length/termination options. Legacy
+  Shadowsocks AEAD-2017 and nonzero VMess alterId remain excluded.
+- Add shared profile imports, capability bits and Swift/Kotlin integration
+  through additive C ABI 1.11. Retain Xray-core v26.7.28 as the compatibility
+  reference and document transport, nonce, session and recovery limits.
+- Add independent-server and carrier matrices, wire oracles, fuzz coverage
+  and a separate v0.8 release-evidence gate. Historical physical results keep their original build identities; current
+  release decisions and limitations are recorded separately.
+- Reduce VMess record I/O and crypto overhead with bounded batching and
+  read-ahead, preserving authenticated delivery, plaintext erasure and UDP
+  boundaries. Admit at most two sustained raw-TCP ChaCha duplex relays to an
+  additional task per core; AES retains the combined relay. Record the CPU,
+  throughput, memory and latency tradeoffs against pinned Xray and sing-box.
+- Wait for inbound owners and admitted VMess relay children during Core.stop.
+- Expose existing Hysteria/WireGuard rebind through Android adapters and add
+  configurable Hysteria stream budgets through C ABI 1.10. Defaults remain 64 TCP/32 UDP streams
+  per session; host-selected limits remain bounded and do not add QUIC sessions.
+- Add opt-in TUN flow admission through C ABI 1.11 and Swift/Kotlin callbacks,
+  including an Android 10+ UID allowlist helper. Admission runs before upstream
+  TCP/UDP/DNS handling with bounded workers/queues and an explicit timeout
+  policy. Unknown Android owners are denied by the strict helper.
+- Support bounded Hysteria Salamander and automatic port hopping with protected
+  socket replacement, retaining the authenticated session and stream leases.
+- Support first-ClientHello fragmentation for TCP TLS/REALITY in FinalMask and
+  dedicated freedom `dialerProxy` profiles. Preserve handshake authentication
+  and Vision direct mode; delay/count/memory bounds and unsupported combinations
+  fail explicitly. UDP noise supports bounded FinalMask preludes on Hysteria2 and XHTTP H3, including Salamander ordering and idle reset. Linux TPROXY adds transparent IPv4/IPv6 TCP/UDP via dokodemo-door with shared routing and bounded flows.
+
+- Avoid an unnecessary Apple initial-path rebind while preserving real network
+  changes and recovery. Absorb Hysteria UDP receive bursts with a bounded
+  16-packet queue; the shared 1 MiB payload budget is unchanged.
+- Preserve the owner's release-specific deferral of further iPhone Hysteria
+  startup-failure investigation and the unconfirmed 5% performance gate.
+  Failures remain recorded; no zero-regression or reliability guarantee is made.
+
+## 0.7.0 - 2026-09-27
+
+Stable source release. Canonical SDK packages and their publication status are
+listed in [xray-rust-mobile releases](https://github.com/aimalygin/xray-rust-mobile/releases).
 
 - Add Hysteria 2 and standard WireGuard client outbounds for SOCKS, HTTP,
   TUN and routed DNS, with bounded TCP/UDP resources and independent native
@@ -33,10 +103,17 @@ Release candidate preparation; publication and final device acceptance are pendi
 - Expose capability discovery, shared profile import and network-change
   notifications through the additive C ABI 1.7 and matching Swift/Kotlin APIs.
 - Retain the pinned Xray-core v26.7.28 compatibility target. Supported options
-  and bounds are documented; this RC does not claim full upstream parity.
+  and bounds are documented; this release does not claim full upstream parity.
 - Defer the higher XHTTP/H2 TUN RSS to a future version by owner decision.
   Separate Hysteria2 latency/short WAN duplex gaps remain documented; complete
   performance parity has not been established. See [performance evidence](docs/v07-performance.md).
+- Preserve device/performance measurements of clean candidate `3533166` and
+  validate stable promotion as version/documentation/evidence tooling only.
+  Runtime, dependencies, ABI and build inputs must remain unchanged.
+- Record two explicit owner decisions: Android cellular handover was not tested;
+  the investigated rare Android WireGuard timeout case is accepted for 0.7.
+  Original failures remain visible; no root-cause fix or general reliability
+  allowance is claimed. See [stable evidence](docs/v07-stable-promotion.md).
 - Require versioned exact-candidate Apple/Android evidence for 0.7 publication.
   New checks include both protocols, both Android adapter paths, recovery and
   legacy regression coverage; old v0.6 evidence remains independently validated.

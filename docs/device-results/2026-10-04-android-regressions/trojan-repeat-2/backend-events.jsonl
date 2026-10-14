@@ -1,0 +1,15 @@
+{"backend": "http", "status": 204}
+{"backend": "udp-pending", "queryTag": "7fbdd4f47e13c6a6", "time": 1791168844.2118678, "delaySeconds": 3}
+{"backend": "udp", "requestBytes": 67, "time": 1791168847.214449, "queryTag": "7fbdd4f47e13c6a6", "responseBytes": 83}
+{"backend": "http", "status": 204}
+{"backend": "udp-pending", "queryTag": "06aeee545e887646", "time": 1791168850.4103239, "delaySeconds": 3}
+{"backend": "udp", "requestBytes": 67, "time": 1791168853.412899, "queryTag": "06aeee545e887646", "responseBytes": 83}
+{"backend": "http", "status": 204}
+{"backend": "udp-pending", "queryTag": "b4dd578b5549f27b", "time": 1791168862.0892851, "delaySeconds": 3}
+{"backend": "udp", "requestBytes": 67, "time": 1791168865.090026, "queryTag": "b4dd578b5549f27b", "responseBytes": 83}
+{"backend": "http", "status": 204}
+{"backend": "udp-pending", "queryTag": "544b2590653ad453", "time": 1791168868.83984, "delaySeconds": 3}
+{"backend": "udp", "requestBytes": 67, "time": 1791168871.840626, "queryTag": "544b2590653ad453", "responseBytes": 83}
+{"backend": "http", "status": 204}
+{"backend": "udp-pending", "queryTag": "e328a460e23abfb5", "time": 1791168879.394719, "delaySeconds": 3}
+{"backend": "udp", "requestBytes": 67, "time": 1791168882.397181, "queryTag": "e328a460e23abfb5", "responseBytes": 83}

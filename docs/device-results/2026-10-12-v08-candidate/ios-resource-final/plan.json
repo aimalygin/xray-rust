@@ -1,0 +1,24 @@
+{
+  "concurrency": [
+    1,
+    8
+  ],
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "cycles": 2,
+  "declaredAt": 1791827523.461196,
+  "limits": {
+    "physicalFootprintGrowthBytes": 8388608,
+    "residentMemoryGrowthBytes": 8388608,
+    "threadGrowth": 8
+  },
+  "loadSeconds": 20,
+  "observedRule": "Maximum of every recovery sample minus its protocol baseline; clamp aggregate growth at zero. RSS and physical footprint are distinct metrics.",
+  "protocols": [
+    "trojan",
+    "shadowsocks2022",
+    "vmess"
+  ],
+  "recoverySamplesPerInterval": 5,
+  "scope": "Fresh series to apply an explicit RSS bound, separate from earlier harness footprint-only checks. Same installed signed harness and unchanged release Rust library.",
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7"
+}

@@ -29,3 +29,9 @@ env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
 
 env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
   cargo test --locked -p xray-core-rs --lib outbound::hysteria::tests -- --include-ignored --nocapture
+
+# FinalMask prelude must reach both QUIC carriers, including both Salamander orders.
+env -u NATIVE_HYSTERIA_BINARY XRAY_HYSTERIA_BINARY="$TEST_ROOT/xray" \
+  XRAY_CORE_CHECKOUT="$CHECKOUT" XRAY_VLESS_FULL_BINARY="$TEST_ROOT/xray" \
+  cargo test --locked -p xray-core-rs --test hysteria_runtime_tests \
+  --test local_xray_interop_tests udp_noise_ -- --ignored --nocapture

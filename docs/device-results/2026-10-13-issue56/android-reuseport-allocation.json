@@ -1,0 +1,18 @@
+[
+  {
+    "allocations": 10000,
+    "collisions": 16,
+    "examplePort": 37795,
+    "heldListeners": 32,
+    "reusePort": true,
+    "seconds": 1.6465971910000001
+  },
+  {
+    "allocations": 10000,
+    "collisions": 0,
+    "examplePort": 0,
+    "heldListeners": 32,
+    "reusePort": false,
+    "seconds": 1.5284071909999999
+  }
+]

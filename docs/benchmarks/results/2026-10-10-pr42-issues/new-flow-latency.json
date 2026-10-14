@@ -1,0 +1,106 @@
+{
+  "runs": [
+    {
+      "callback_calls": 0,
+      "enabled": false,
+      "p50_us": 70.917,
+      "p95_us": 158.875,
+      "p99_us": 198.834,
+      "repeat": 1,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 1050,
+      "enabled": true,
+      "p50_us": 80.0,
+      "p95_us": 91.125,
+      "p99_us": 97.916,
+      "repeat": 1,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 1050,
+      "enabled": true,
+      "p50_us": 79.666,
+      "p95_us": 90.584,
+      "p99_us": 96.334,
+      "repeat": 2,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 0,
+      "enabled": false,
+      "p50_us": 71.667,
+      "p95_us": 80.208,
+      "p99_us": 90.0,
+      "repeat": 2,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 0,
+      "enabled": false,
+      "p50_us": 71.667,
+      "p95_us": 81.708,
+      "p99_us": 90.667,
+      "repeat": 3,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 1050,
+      "enabled": true,
+      "p50_us": 80.083,
+      "p95_us": 90.834,
+      "p99_us": 98.125,
+      "repeat": 3,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 1050,
+      "enabled": true,
+      "p50_us": 80.0,
+      "p95_us": 93.167,
+      "p99_us": 105.708,
+      "repeat": 4,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 0,
+      "enabled": false,
+      "p50_us": 71.791,
+      "p95_us": 80.625,
+      "p99_us": 86.875,
+      "repeat": 4,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 0,
+      "enabled": false,
+      "p50_us": 71.792,
+      "p95_us": 80.875,
+      "p99_us": 88.625,
+      "repeat": 5,
+      "samples": 1000,
+      "warmup": 50
+    },
+    {
+      "callback_calls": 1050,
+      "enabled": true,
+      "p50_us": 80.583,
+      "p95_us": 91.167,
+      "p99_us": 97.292,
+      "repeat": 5,
+      "samples": 1000,
+      "warmup": 50
+    }
+  ],
+  "schema_version": 1,
+  "scope": "host in-process TUN + loopback freedom TCP first-byte latency; no Android UID lookup"
+}

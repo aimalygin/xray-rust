@@ -1,0 +1,15 @@
+{
+  "backends": [
+    "file-descriptor",
+    "packet-pump"
+  ],
+  "candidate": "fcce4be",
+  "cyclesEach": 2,
+  "httpAttemptsPerCycle": 240,
+  "hypothesis": "Check XUDP association reuse; not established as original cause.",
+  "policy": "Run fixed 4 bursts once; preserve original failure irrespective of follow-up result. Info-level reference logging makes this diagnostic, not calibrated performance.",
+  "protocol": "vmess-aes128",
+  "timeoutSeconds": 5,
+  "udpAttemptsPerCycle": 480,
+  "workers": 32
+}

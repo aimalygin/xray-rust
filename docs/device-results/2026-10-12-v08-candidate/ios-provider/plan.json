@@ -1,0 +1,205 @@
+{
+  "core": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "scope": "signed harness overrides with unchanged production provider and SDK",
+  "sdk": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7",
+  "tests": [
+    {
+      "admission": "nil",
+      "expected": "both-pass",
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-default",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-allow",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "nil",
+      "count": 3,
+      "expected": "first-only-existing-survives",
+      "fd": true,
+      "fixture": 0,
+      "kind": "limits",
+      "name": "fd-hysteria-limits-one",
+      "readyDelayMs": 1200,
+      "tcpLimit": 1,
+      "udpLimit": 1
+    },
+    {
+      "admission": "deny",
+      "expected": "both-denied",
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-deny",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "denyPort": 62048,
+      "expected": "tcp-denied-udp-pass",
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-deny-tcp",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "delayMs": 150,
+      "expected": "both-denied",
+      "failOpen": false,
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-timeout-closed",
+      "readyDelayMs": 1200,
+      "timeoutMs": 50
+    },
+    {
+      "admission": "allow",
+      "delayMs": 150,
+      "expected": "both-pass",
+      "failOpen": true,
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-timeout-open",
+      "readyDelayMs": 1200,
+      "timeoutMs": 50
+    },
+    {
+      "admission": "nil",
+      "expected": "both-pass",
+      "fd": true,
+      "fixture": 0,
+      "name": "fd-hysteria-recovery",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": true,
+      "fixture": 1,
+      "name": "fd-trojan-projection",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": true,
+      "fixture": 2,
+      "name": "fd-shadowsocks2022-projection",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": true,
+      "fixture": 3,
+      "name": "fd-vmess-projection",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "nil",
+      "expected": "both-pass",
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-default",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-allow",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "nil",
+      "count": 3,
+      "expected": "first-only-existing-survives",
+      "fd": false,
+      "fixture": 0,
+      "kind": "limits",
+      "name": "packet-pump-hysteria-limits-one",
+      "readyDelayMs": 1200,
+      "tcpLimit": 1,
+      "udpLimit": 1
+    },
+    {
+      "admission": "deny",
+      "expected": "both-denied",
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-deny",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "denyPort": 62048,
+      "expected": "tcp-denied-udp-pass",
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-deny-tcp",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "delayMs": 150,
+      "expected": "both-denied",
+      "failOpen": false,
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-timeout-closed",
+      "readyDelayMs": 1200,
+      "timeoutMs": 50
+    },
+    {
+      "admission": "allow",
+      "delayMs": 150,
+      "expected": "both-pass",
+      "failOpen": true,
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-timeout-open",
+      "readyDelayMs": 1200,
+      "timeoutMs": 50
+    },
+    {
+      "admission": "nil",
+      "expected": "both-pass",
+      "fd": false,
+      "fixture": 0,
+      "name": "packet-pump-hysteria-recovery",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": false,
+      "fixture": 1,
+      "name": "packet-pump-trojan-projection",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": false,
+      "fixture": 2,
+      "name": "packet-pump-shadowsocks2022-projection",
+      "readyDelayMs": 1200
+    },
+    {
+      "admission": "allow",
+      "expected": "both-pass",
+      "fd": false,
+      "fixture": 3,
+      "name": "packet-pump-vmess-projection",
+      "readyDelayMs": 1200
+    }
+  ]
+}

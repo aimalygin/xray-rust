@@ -1,0 +1,74 @@
+{"backends": ["file-descriptor", "packet-pump"], "caseCount": 4, "hostTime": 1791822766.320929, "kind": "matrix-start"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822766.321105, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822767.945502, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822769.229949, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822775.392864, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822780.053843, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822784.7795148, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822788.458266, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822794.31883, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822794.636758, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822797.74134, "kind": "case-start"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822798.982267, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822800.1581461, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822806.257453, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822810.975716, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822815.695125, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822819.32709, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822825.180612, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822825.47029, "kind": "case-pass"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822828.602667, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822829.8614452, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822831.045354, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822835.8964539, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822840.518966, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822844.581328, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822848.226997, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822854.153491, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822854.4410748, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822857.566109, "kind": "case-start"}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822858.8229172, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822860.008951, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822864.853747, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822869.560272, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822874.266815, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822877.890188, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822883.757764, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "xhttp-h1", "hostTime": 1791822884.0384798, "kind": "case-pass"}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822887.1005352, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822888.3478029, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822889.538681, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822893.698604, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822897.7508638, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822901.828445, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822904.922206, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822910.80446, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "xhttp-h2", "hostTime": 1791822911.097163, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822914.188575, "kind": "case-start"}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822915.458671, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822916.648829, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822920.837236, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822924.9080389, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822929.018095, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822932.08895, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822938.446362, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "xhttp-h2", "hostTime": 1791822939.3062332, "kind": "case-pass"}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822942.403125, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822943.675637, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822944.868623, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822949.0747561, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822953.132668, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822957.195393, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822960.23885, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822965.498632, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "xhttp-h3", "hostTime": 1791822965.7906492, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822968.8733828, "kind": "case-start"}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822970.117232, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822971.2941551, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822975.4475389, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822979.4837902, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822983.523653, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822986.587926, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822993.0029938, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "xhttp-h3", "hostTime": 1791822993.881495, "kind": "case-pass"}
+{"hostTime": 1791822996.963778, "kind": "matrix-pass"}

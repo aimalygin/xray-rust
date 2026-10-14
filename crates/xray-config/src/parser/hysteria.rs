@@ -73,7 +73,68 @@ impl Parser<'_> {
         }
         Some(HysteriaSettings {
             auth: zeroize::Zeroizing::new(auth.into()),
+            salamander_password: self.parse_hysteria_salamander(stream, index),
         })
+    }
+
+    fn parse_hysteria_salamander(
+        &mut self,
+        stream: Option<&Value>,
+        index: usize,
+    ) -> Option<zeroize::Zeroizing<String>> {
+        let masks = stream?.get("finalmask")?.get("udp")?;
+        if masks.is_null() {
+            return None;
+        }
+        let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp");
+        let Some(masks) = masks.as_array() else {
+            self.error(path, "finalmask.udp must be an array or null");
+            return None;
+        };
+        if masks.is_empty() {
+            return None;
+        }
+        let (mask_index, mask) = masks.iter().enumerate().find(|(_, m)| {
+            m.get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|s| s.eq_ignore_ascii_case("salamander"))
+        })?;
+        let path = format!("{path}[{mask_index}]");
+        self.reject_unknown_fields(mask, &path, &surface::FINALMASK_ENTRY);
+        let settings = mask.get("settings").filter(|v| v.is_object());
+        let Some(settings) = settings else {
+            self.error(
+                format!("{path}.settings"),
+                "Salamander settings must be an object",
+            );
+            return None;
+        };
+        self.reject_unknown_fields(settings, &format!("{path}.settings"), &surface::SALAMANDER);
+        // A positive packetSize selects Gecko in Xray, not Salamander.
+        if settings
+            .get("packetSize")
+            .is_some_and(|v| !v.is_null() && v.as_i64() != Some(0) && v.as_str() != Some("0"))
+        {
+            self.error(
+                format!("{path}.settings.packetSize"),
+                "Gecko packetSize is unsupported",
+            );
+        }
+        let Some(password) = settings.get("password").and_then(Value::as_str) else {
+            self.error(
+                format!("{path}.settings.password"),
+                "Salamander requires a password",
+            );
+            return None;
+        };
+        if !(4..=4096).contains(&password.len()) {
+            self.error(
+                format!("{path}.settings.password"),
+                "Salamander password must contain 4..=4096 UTF-8 bytes",
+            );
+            return None;
+        }
+        Some(zeroize::Zeroizing::new(password.into()))
     }
 
     pub(super) fn validate_hysteria_pair(
@@ -105,9 +166,6 @@ impl Parser<'_> {
                 format!("$.outbounds[{index}].proxySettings"),
                 "Hysteria outbound chaining is unsupported",
             );
-        }
-        if stream.quic_params.is_some() {
-            self.error(format!("$.outbounds[{index}].streamSettings.finalmask.quicParams"), "Hysteria currently uses bounded default QUIC parameters; overrides are unsupported");
         }
         if stream.socket_options.is_some() {
             self.error(

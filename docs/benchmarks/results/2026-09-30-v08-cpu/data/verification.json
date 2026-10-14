@@ -1,0 +1,10 @@
+{
+  "archive_files_verified": 856,
+  "strict_summary_recomputed": true,
+  "mac_3pct_summary_recomputed": true,
+  "release_rebuild_sha256": {
+    "target/v08-comparison-driver/release/xray-rust": "2180631c4187dd3cd85fda27d06c3b98a22f92c0954b841d3a1c13d9bd1beb04",
+    "target/v08-cpu-final/bin/candidate": "2180631c4187dd3cd85fda27d06c3b98a22f92c0954b841d3a1c13d9bd1beb04"
+  },
+  "runtime_commit": "ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5"
+}

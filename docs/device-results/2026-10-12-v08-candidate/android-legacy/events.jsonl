@@ -1,0 +1,27 @@
+{"backends": ["file-descriptor", "packet-pump"], "caseCount": 4, "hostTime": 1791822623.568661, "kind": "matrix-start"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822623.56883, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822624.969478, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822626.2506628, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822631.3218439, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822636.1371992, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822642.9522948, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822646.858891, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822653.708655, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "vless-reality", "hostTime": 1791822654.0496829, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822657.246058, "kind": "case-start"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822658.610608, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822659.877546, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822665.622257, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822670.515077, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822676.1020448, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822679.947419, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822686.603838, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "vless-reality", "hostTime": 1791822686.931564, "kind": "case-pass"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822690.1003032, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822691.511153, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822692.7599092, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822697.086944, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822701.254966, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822706.098492, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "xhttp-h1", "hostTime": 1791822709.308662, "kind": "close-recovery", "status": {}}
+{"backend": "file-descriptor", "case": "xhttp-h1", "error": "adb command failed: adb: device '<android-serial>' not found\n", "hostTime": 1791822709.336152, "kind": "case-fail"}

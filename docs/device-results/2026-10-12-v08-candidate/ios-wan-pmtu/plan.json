@@ -1,0 +1,32 @@
+{
+  "before": {
+    "x-ui.service": {
+      "ActiveState": "active",
+      "MainPID": "3463711"
+    },
+    "xray-apple-device-probe-server.service": {
+      "ActiveState": "active",
+      "MainPID": "3470371"
+    },
+    "xray-xhttp-device-test.service": {
+      "ActiveState": "active",
+      "MainPID": "3470369"
+    },
+    "xray-xhttp-memory-probe.service": {
+      "ActiveState": "active",
+      "MainPID": "3333378"
+    }
+  },
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "fixtureLifetimeSeconds": 780,
+  "fixturePort": 53053,
+  "protocols": [
+    "shadowsocks2022"
+  ],
+  "referenceSHA256": "64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d",
+  "referenceVersion": "26.7.28 / 5ca6f4b / go1.26.5 linux/amd64; full clean VCS stamp not verified",
+  "scope": "Fresh-flow Wi-Fi/cellular/Wi-Fi and lock/wake; exact signed candidate; no existing-session continuity claim",
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7",
+  "serverSocketCondition": "IP_MTU_DISCOVER=IP_PMTUDISC_DONT via previously reviewed helper on owned SS2022 listener only; default-policy failure retained separately",
+  "serviceRuntimeMaxSeconds": 840
+}

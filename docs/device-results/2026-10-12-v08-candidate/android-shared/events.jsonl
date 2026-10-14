@@ -1,0 +1,21 @@
+{"backends": ["file-descriptor", "packet-pump"], "caseCount": 3, "hostTime": 1791822079.090305, "kind": "matrix-start"}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822079.090471, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822080.50092, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822081.758512, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822086.1094668, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822090.276963, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822094.491915, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822097.6470258, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822103.126867, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "vless-encryption", "hostTime": 1791822103.457706, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822106.617682, "kind": "case-start"}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822107.97691, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822109.236358, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822113.5691578, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822117.770447, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822121.903865, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822125.037487, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822131.55081, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "vless-encryption", "hostTime": 1791822132.440982, "kind": "case-pass"}
+{"backend": "file-descriptor", "case": "ip-on-demand", "hostTime": 1791822135.520383, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "ip-on-demand", "error": "profile rejected: {\"state\": \"failed\", \"detail\": \"pending-profile-rejected-UnsupportedQueryValue\", \"runtime-generation\": \"0\", \"fatal-tun-errors\": \"0\"}", "hostTime": 1791822136.792226, "kind": "case-fail"}

@@ -1,5 +1,9 @@
 # v0.7 Hysteria 2 and WireGuard implementation
 
+Historical v0.7 implementation record. The v0.8 development branch adds
+[Salamander, UDP hopping and matching imports](config-compatibility.md#v08-hysteria-carrier-additions);
+references to their absence below describe the original increments.
+
 Started on 2026-09-08. The owner selected both client protocols for v0.7 and
 explicitly retained Xray-core **v26.7.28**, commit
 `5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Go remains 1.26.5 in the oracle
@@ -163,7 +167,7 @@ not implemented. Defaults use fixed 2 MiB stream/3 MiB connection windows and a
 transport-parameter or congestion-algorithm parity. Endpoint bootstrap DNS and
 automatic reconnection are provided by the third increment below.
 
-Default budgets per connection: 64 TCP streams, 32 UDP sessions, four queued
+Default budgets per connection: 64 TCP streams, 32 UDP sessions, sixteen queued
 packets per UDP session, a shared 1 MiB queued-payload budget, at most one 65,535-byte
 partial reassembly per session, five-second fragment expiry, and 256 KiB each for
 QUIC receive/send datagrams. Config validation caps these respectively at 256,

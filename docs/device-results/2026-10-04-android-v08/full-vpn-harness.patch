@@ -1,0 +1,398 @@
+--- /dev/null
++++ b/platform/android/devicehost/src/test/java/org/xrayrust/devicehost/DeviceGateOptionsTest.kt
+@@ -0,0 +1,50 @@
++package org.xrayrust.devicehost
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertThrows
++import org.junit.Test
++import org.xrayrust.mobile.XrayProfileFormat
++import org.xrayrust.mobile.XrayTunBackend
++
++class DeviceGateOptionsTest {
++    @Test fun defaultsToExistingBackendAndExplicitlySelectsBothPaths() {
++        assertEquals(XrayTunBackend.FileDescriptor, DeviceGateOptions.backend(null))
++        for ((name, backend) in listOf(
++            "file-descriptor" to XrayTunBackend.FileDescriptor,
++            "packet-pump" to XrayTunBackend.PacketPump,
++        )) {
++            assertEquals(backend, DeviceGateOptions.backend(name))
++            assertEquals(name, DeviceGateOptions.backendName(backend))
++        }
++    }
++
++    @Test fun unknownBackendCannotSilentlyBecomeFileDescriptor() {
++        for (value in listOf("", "PacketPump", "packet-pump-typo")) {
++            assertThrows(IllegalArgumentException::class.java) { DeviceGateOptions.backend(value) }
++        }
++    }
++
++    @Test fun routesProtocolLinksToTheExistingImporters() {
++        assertNull(DeviceGateOptions.profileFormat("vless://example"))
++        for ((scheme, format) in listOf(
++            "trojan" to XrayProfileFormat.Trojan,
++            "ss" to XrayProfileFormat.Shadowsocks2022,
++            "vmess" to XrayProfileFormat.Vmess,
++            "hysteria2" to XrayProfileFormat.Hysteria2,
++            "hy2" to XrayProfileFormat.Hysteria2,
++        )) {
++            assertEquals(format, DeviceGateOptions.profileFormat("$scheme://example"))
++        }
++    }
++
++    @Test fun invalidInputIsRejectedWithoutEchoingCredentials() {
++        val input = "unsupported://private-input@example.invalid"
++        val error = assertThrows(IllegalArgumentException::class.java) {
++            DeviceGateOptions.profileFormat(input)
++        }
++        assertFalse(error.message.orEmpty().contains("private-input"))
++        assertThrows(IllegalArgumentException::class.java) { DeviceGateOptions.profileFormat("vmess") }
++    }
++}
+--- /dev/null
++++ b/platform/android/devicehost/src/main/java/org/xrayrust/devicehost/DeviceGateOptions.kt
+@@ -0,0 +1,35 @@
++package org.xrayrust.devicehost
++
++import org.xrayrust.mobile.XrayProfileFormat
++import org.xrayrust.mobile.XrayTunBackend
++import java.util.Locale
++
++/** Explicit test selections; diagnostics must never include raw input. */
++internal object DeviceGateOptions {
++    const val EXTRA_TUN_BACKEND = "tun-backend"
++
++    fun backend(value: String?): XrayTunBackend = when (value) {
++        null, "file-descriptor" -> XrayTunBackend.FileDescriptor
++        "packet-pump" -> XrayTunBackend.PacketPump
++        else -> throw IllegalArgumentException("unsupported test TUN backend")
++    }
++
++    fun backendName(value: XrayTunBackend): String = when (value) {
++        XrayTunBackend.FileDescriptor -> "file-descriptor"
++        XrayTunBackend.PacketPump -> "packet-pump"
++    }
++
++    // VLESS keeps its existing importer; other links use the shared Rust importer.
++    fun profileFormat(text: String): XrayProfileFormat? {
++        val schemeEnd = text.indexOf("://")
++        require(schemeEnd > 0) { "unsupported test profile format" }
++        return when (text.substring(0, schemeEnd).lowercase(Locale.ROOT)) {
++            "vless" -> null
++            "trojan" -> XrayProfileFormat.Trojan
++            "ss" -> XrayProfileFormat.Shadowsocks2022
++            "vmess" -> XrayProfileFormat.Vmess
++            "hysteria2", "hy2" -> XrayProfileFormat.Hysteria2
++            else -> throw IllegalArgumentException("unsupported test profile format")
++        }
++    }
++}
+--- a/platform/android/devicehost/src/main/java/org/xrayrust/devicehost/MainActivity.kt
++++ b/platform/android/devicehost/src/main/java/org/xrayrust/devicehost/MainActivity.kt
+@@ -23,6 +23,8 @@
+ import org.json.JSONObject
+ import org.xrayrust.mobile.XrayVlessUrlImportException
+ import org.xrayrust.mobile.XrayVlessUrlImporter
++import org.xrayrust.mobile.XrayProfileImporter
++import org.xrayrust.mobile.XrayTunBackend
+ import java.io.File
+ import java.io.RandomAccessFile
+ 
+@@ -31,7 +33,9 @@
+     private lateinit var profileInput: EditText
+     private lateinit var statusText: TextView
+     private lateinit var connectButton: Button
++    private lateinit var packetPumpButton: Button
+     private lateinit var disconnectButton: Button
++    private var requestedBackend = XrayTunBackend.FileDescriptor
+     private val refreshStatus = object : Runnable {
+         override fun run() {
+             renderStatus()
+@@ -41,6 +45,9 @@
+ 
+     override fun onCreate(savedInstanceState: Bundle?) {
+         super.onCreate(savedInstanceState)
++        requestedBackend = DeviceGateOptions.backend(
++            savedInstanceState?.getString(DeviceGateOptions.EXTRA_TUN_BACKEND),
++        )
+         setContentView(buildContentView())
+         requestNotificationPermission()
+         handleAutomationCommand(intent)
+@@ -50,6 +57,14 @@
+         super.onNewIntent(intent)
+         setIntent(intent)
+         handleAutomationCommand(intent)
++    }
++
++    override fun onSaveInstanceState(outState: Bundle) {
++        outState.putString(
++            DeviceGateOptions.EXTRA_TUN_BACKEND,
++            DeviceGateOptions.backendName(requestedBackend),
++        )
++        super.onSaveInstanceState(outState)
+     }
+ 
+     override fun onResume() {
+@@ -102,7 +117,7 @@
+         content.addView(statusText, matchWrap())
+ 
+         profileInput = EditText(this).apply {
+-            hint = "Paste a VLESS share link"
++            hint = "Paste a VLESS, Trojan, SS2022, VMess or Hysteria2 link"
+             minLines = 3
+             maxLines = 7
+             inputType = InputType.TYPE_CLASS_TEXT or
+@@ -112,13 +127,17 @@
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                 importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+             }
+-            contentDescription = "VLESS profile input"
++            contentDescription = "Protocol profile input"
+         }
+         content.addView(profileInput, matchWrap(top = 18))
+ 
+         content.addView(button("Import and encrypt profile") { importProfile() })
+-        connectButton = button("Connect VPN") { requestVpnConsentAndConnect() }
++        connectButton = button("Connect using FileDescriptor") { requestVpnConsentAndConnect() }
+         content.addView(connectButton)
++        packetPumpButton = button("Connect using PacketPump") {
++            requestVpnConsentAndConnect(XrayTunBackend.PacketPump)
++        }
++        content.addView(packetPumpButton)
+         disconnectButton = button("Disconnect VPN") { sendServiceAction(DeviceGateVpnService.ACTION_STOP) }
+         content.addView(disconnectButton)
+         content.addView(button("Rapid connect then stop") { rapidConnectThenStop() })
+@@ -144,7 +163,7 @@
+     private fun importProfile() {
+         val rawUrl = profileInput.text.toString()
+         if (rawUrl.isBlank()) {
+-            showToast("Paste a VLESS share link first")
++            showToast("Paste a supported share link first")
+             return
+         }
+         try {
+@@ -157,7 +176,7 @@
+             val parameter = error.parameter?.let { " ($it)" } ?: ""
+             showToast("Profile rejected: ${error.code}$parameter")
+         } catch (error: Throwable) {
+-            showToast("Profile storage failed: ${error.javaClass.simpleName}")
++            showToast("Profile import/storage failed: ${error.javaClass.simpleName}")
+         }
+     }
+ 
+@@ -223,7 +242,13 @@
+     }
+ 
+     private fun importRawProfile(rawUrl: String) {
+-        val profile = XrayVlessUrlImporter.profile(rawUrl)
++        val text = rawUrl.trim()
++        val format = DeviceGateOptions.profileFormat(text)
++        val profile = if (format == null) {
++            XrayVlessUrlImporter.profile(text)
++        } else {
++            XrayProfileImporter.profile(text, format)
++        }
+         EncryptedProfileStore(this).write(profile.configJson)
+         DeviceGateStatus.write(this, state = "stopped", detail = "profile-ready")
+     }
+@@ -247,11 +272,12 @@
+         runCatching { file.delete() }
+     }
+ 
+-    private fun requestVpnConsentAndConnect() {
++    private fun requestVpnConsentAndConnect(backend: XrayTunBackend = XrayTunBackend.FileDescriptor) {
+         if (!EncryptedProfileStore(this).exists()) {
+             showToast("Import a profile first")
+             return
+         }
++        requestedBackend = backend
+         val consent = VpnService.prepare(this)
+         if (consent == null) {
+             startVpnService()
+@@ -283,6 +309,10 @@
+ 
+     private fun sendServiceAction(action: String, foreground: Boolean = true) {
+         val serviceIntent = Intent(this, DeviceGateVpnService::class.java).setAction(action)
++            .putExtra(
++                DeviceGateOptions.EXTRA_TUN_BACKEND,
++                DeviceGateOptions.backendName(requestedBackend),
++            )
+         if (foreground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+             startForegroundService(serviceIntent)
+         } else {
+@@ -291,8 +321,19 @@
+     }
+ 
+     private fun handleAutomationCommand(intent: Intent?) {
+-        when (intent?.getStringExtra(EXTRA_COMMAND)) {
+-            COMMAND_CONNECT -> requestVpnConsentAndConnect()
++        val command = intent?.getStringExtra(EXTRA_COMMAND)
++        if (command == COMMAND_CONNECT || command == COMMAND_RAPID_STOP) {
++            requestedBackend = try {
++                DeviceGateOptions.backend(intent?.getStringExtra(DeviceGateOptions.EXTRA_TUN_BACKEND))
++            } catch (_: IllegalArgumentException) {
++                showToast("Unsupported test TUN backend")
++                intent?.removeExtra(EXTRA_COMMAND)
++                intent?.removeExtra(DeviceGateOptions.EXTRA_TUN_BACKEND)
++                return
++            }
++        }
++        when (command) {
++            COMMAND_CONNECT -> requestVpnConsentAndConnect(requestedBackend)
+             COMMAND_DISCONNECT -> sendServiceAction(
+                 DeviceGateVpnService.ACTION_STOP,
+                 foreground = false,
+@@ -310,6 +351,7 @@
+             COMMAND_IMPORT_PENDING_CONFIG -> importPendingPrivateConfig()
+         }
+         intent?.removeExtra(EXTRA_COMMAND)
++        intent?.removeExtra(DeviceGateOptions.EXTRA_TUN_BACKEND)
+     }
+ 
+     private fun renderStatus() {
+@@ -326,6 +368,7 @@
+             detail,
+         )
+         connectButton.isEnabled = status.hasProfile && status.state !in setOf("running", "starting")
++        packetPumpButton.isEnabled = connectButton.isEnabled
+         disconnectButton.isEnabled = status.state in setOf("running", "starting", "fatal")
+     }
+ 
+--- a/platform/android/devicehost/src/main/java/org/xrayrust/devicehost/DeviceGateVpnService.kt
++++ b/platform/android/devicehost/src/main/java/org/xrayrust/devicehost/DeviceGateVpnService.kt
+@@ -24,6 +24,7 @@
+         Thread(runnable, "xray-android-device-sampler").apply { isDaemon = true }
+     }
+     @Volatile private var lastStats = ZeroStats
++    @Volatile private var selectedBackend = XrayTunBackend.FileDescriptor
+ 
+     override fun onCreate() {
+         super.onCreate()
+@@ -38,12 +39,12 @@
+ 
+     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+         when (intent?.action) {
+-            ACTION_START -> startFromStoredProfile()
++            ACTION_START -> startFromStoredProfile(intent)
+             ACTION_STOP -> stopAndFinish()
+             ACTION_RESET_COUNTERS -> resetCounters()
+             ACTION_CLOSE_CONNECTIONS -> closeConnections()
+             ACTION_RAPID_STOP -> {
+-                startFromStoredProfile()
++                startFromStoredProfile(intent)
+                 stopAndFinish()
+             }
+             else -> {
+@@ -69,7 +70,11 @@
+             runtimeGeneration = generation,
+         )
+         updateNotification("VPN connected")
+-        Log.i(LOG_TAG, "XRAY_ANDROID_LIFECYCLE state=running generation=$generation")
++        Log.i(
++            LOG_TAG,
++            "XRAY_ANDROID_LIFECYCLE state=running generation=$generation " +
++                "tunBackend=${DeviceGateOptions.backendName(selectedBackend)}",
++        )
+         emitSample()
+     }
+ 
+@@ -108,7 +113,14 @@
+         super.onDestroy()
+     }
+ 
+-    private fun startFromStoredProfile() {
++    private fun startFromStoredProfile(intent: Intent) {
++        val backend = try {
++            DeviceGateOptions.backend(intent.getStringExtra(DeviceGateOptions.EXTRA_TUN_BACKEND))
++        } catch (error: IllegalArgumentException) {
++            onXrayTunnelStartFailed(error)
++            return
++        }
++        selectedBackend = backend
+         startForeground(NOTIFICATION_ID, notification("VPN starting"))
+         DeviceGateStatus.write(this, state = "starting")
+         val configJson = try {
+@@ -138,7 +150,7 @@
+         try {
+             startXrayTunnel(
+                 configJson = configJson,
+-                tunBackend = XrayTunBackend.FileDescriptor,
++                tunBackend = backend,
+                 tunRuntimeProfile = XrayTunRuntimeProfile.MobilePlus,
+             )
+         } catch (error: Throwable) {
+@@ -202,12 +214,16 @@
+         val status = DeviceGateStatus.read(this)
+         val stats = runtime.tunStats ?: lastStats
+         val sample = JSONObject()
++            .put("tunBackend", DeviceGateOptions.backendName(selectedBackend))
+             .put("runtimeGeneration", status.runtimeGeneration)
+             .put("residentMemoryBytes", residentMemoryBytes())
+-            .put("threadCount", Thread.getAllStackTraces().size)
++            .put("threadCount", processThreadCount())
++            .put("processCpuMillis", android.os.Process.getElapsedCpuTime())
++            .put("elapsedRealtimeMillis", android.os.SystemClock.elapsedRealtime())
+             .put("activeConnections", runtime.activeConnections)
+             .put("tunInboundPackets", stats.inboundPackets)
+             .put("tunOutboundPackets", stats.outboundPackets)
++            .put("tunDroppedPackets", stats.droppedPackets)
+             .put("fatalTunErrors", status.fatalTunErrors)
+             .put("unrecoveredTransitions", 0)
+         Log.i(LOG_TAG, "XRAY_ANDROID_SAMPLE $sample")
+@@ -221,6 +237,12 @@
+             .toLong()
+         residentPages * Os.sysconf(OsConstants._SC_PAGESIZE)
+     }.getOrDefault(0L)
++
++    private fun processThreadCount(): Int = runCatching {
++        File("/proc/self/status").useLines { lines ->
++            lines.first { it.startsWith("Threads:") }.substringAfter(':').trim().toInt()
++        }
++    }.getOrDefault(0)
+ 
+     private fun createNotificationChannel() {
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+--- a/platform/android/devicehost/build.gradle.kts
++++ b/platform/android/devicehost/build.gradle.kts
+@@ -13,6 +13,18 @@
+         targetSdk = 35
+         versionCode = 1
+         versionName = "0.5.0-device-gate"
++    }
++
++    buildTypes {
++        getByName("debug") {
++            // Isolate physical campaigns from an existing device profile store.
++            providers.gradleProperty("deviceGateApplicationIdSuffix").orNull?.let { suffix ->
++                require(Regex("\\.[a-z][a-z0-9_]*").matches(suffix)) {
++                    "deviceGateApplicationIdSuffix must be one lowercase package component"
++                }
++                applicationIdSuffix = suffix
++            }
++        }
+     }
+ 
+     compileOptions {
+--- a/platform/android/deviceprobe/build.gradle.kts
++++ b/platform/android/deviceprobe/build.gradle.kts
+@@ -15,6 +15,18 @@
+         versionName = "0.5.0-device-gate"
+     }
+ 
++    buildTypes {
++        getByName("debug") {
++            // Isolate physical campaigns from an existing device profile store.
++            providers.gradleProperty("deviceGateApplicationIdSuffix").orNull?.let { suffix ->
++                require(Regex("\\.[a-z][a-z0-9_]*").matches(suffix)) {
++                    "deviceGateApplicationIdSuffix must be one lowercase package component"
++                }
++                applicationIdSuffix = suffix
++            }
++        }
++    }
++
+     compileOptions {
+         sourceCompatibility = JavaVersion.VERSION_1_8
+         targetCompatibility = JavaVersion.VERSION_1_8

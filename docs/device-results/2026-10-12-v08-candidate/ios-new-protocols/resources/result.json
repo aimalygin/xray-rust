@@ -1,0 +1,1161 @@
+[
+  {
+    "event": "abi",
+    "major": 1,
+    "minor": 11,
+    "protocol": "setup",
+    "time": "2026-10-12T16:49:19Z"
+  },
+  {
+    "event": "import",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:19Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:19Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.349471083318349,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:21Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:21Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.18631216668291017,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:21Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:21Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.34527729166438803,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:21Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:21Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.22678512503625825,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:22Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:22Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.0911146667203866,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:22Z"
+  },
+  {
+    "answerIPv4": "198.51.100.7",
+    "event": "dns-anchor",
+    "expectsFakeIPDNS": false,
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:49:22Z"
+  },
+  {
+    "cycle": 0,
+    "event": "connection-close-request",
+    "ids": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:22Z"
+  },
+  {
+    "closedIDs": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 0,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "trojan",
+    "seconds": 2.177024791657459,
+    "time": "2026-10-12T16:49:24Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-close",
+    "time": "2026-10-12T16:49:24Z"
+  },
+  {
+    "cycle": 0,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4081288,
+    "inboundPackets": 194,
+    "outboundPackets": 176,
+    "protocol": "trojan",
+    "rss": 32030720,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 11,
+    "time": "2026-10-12T16:49:24Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "baseline",
+    "time": "2026-10-12T16:49:29Z"
+  },
+  {
+    "cycle": 0,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 197,
+    "outboundPackets": 179,
+    "protocol": "trojan",
+    "rss": 32161792,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "baseline",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:29Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 0,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "baseline",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:29Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.040839,
+      "uptime": 380466.66791508335,
+      "userSeconds": 0.10304
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:29Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 244,
+    "outboundPackets": 185,
+    "protocol": "trojan",
+    "rss": 32227328,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 1,
+    "threads": 10,
+    "time": "2026-10-12T16:49:29Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:29Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.044524,
+      "uptime": 380466.79471770837,
+      "userSeconds": 0.106783
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:31Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32325632,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:31Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:31Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.061142,
+      "uptime": 380467.95237016666,
+      "userSeconds": 0.117476
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:32Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32342016,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:32Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:32Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.061522,
+      "uptime": 380469.12400479167,
+      "userSeconds": 0.118345
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:33Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32342016,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:33Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:33Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.061904,
+      "uptime": 380470.3213889167,
+      "userSeconds": 0.119165
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:34Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32342016,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:34Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:34Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.062297,
+      "uptime": 380471.45983658335,
+      "userSeconds": 0.120011
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:35Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32342016,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:35Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:35Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.062707,
+      "uptime": 380472.65198633337,
+      "userSeconds": 0.120943
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:36Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32342016,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:36Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:37Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.063117,
+      "uptime": 380473.84461308335,
+      "userSeconds": 0.121827
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:38Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4097672,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32342016,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:38Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:38Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.063498,
+      "uptime": 380474.9778205833,
+      "userSeconds": 0.122673
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:39Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:39Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:39Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.06389,
+      "uptime": 380476.1668190417,
+      "userSeconds": 0.123539
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:40Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:40Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:40Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.06428,
+      "uptime": 380477.33509937505,
+      "userSeconds": 0.124413
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:41Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:41Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:41Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.064661,
+      "uptime": 380478.5003337917,
+      "userSeconds": 0.125221
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:42Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:42Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:42Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.065054,
+      "uptime": 380479.65485704166,
+      "userSeconds": 0.126119
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:43Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:43Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:44Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.065474,
+      "uptime": 380480.8177447083,
+      "userSeconds": 0.127021
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:45Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:45Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:45Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.065848,
+      "uptime": 380481.96955337503,
+      "userSeconds": 0.127914
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:46Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:46Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:46Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.066183,
+      "uptime": 380483.10273125005,
+      "userSeconds": 0.128574
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:47Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:47Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:47Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.066546,
+      "uptime": 380484.3034747917,
+      "userSeconds": 0.12944
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:48Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:48Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:48Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.066933,
+      "uptime": 380485.47088900005,
+      "userSeconds": 0.130241
+    }
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "load-1",
+    "time": "2026-10-12T16:49:49Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "load-1",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:49Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "cycle": 1,
+    "event": "cpu-sample",
+    "protocol": "trojan",
+    "stage": "load-1",
+    "thermalState": 0,
+    "time": "2026-10-12T16:49:49Z",
+    "values": {
+      "pid": 28653,
+      "systemSeconds": 0.06732,
+      "uptime": 380486.651685375,
+      "userSeconds": 0.131137
+    }
+  },
+  {
+    "code": 1,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "failure",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:49:50Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.61974370835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "380456.748497125"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "failure",
+    "time": "2026-10-12T16:49:50Z"
+  },
+  {
+    "cycle": 0,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114056,
+    "inboundPackets": 1034,
+    "outboundPackets": 1007,
+    "protocol": "trojan",
+    "rss": 32358400,
+    "runtime": "7d1d35ef-8823-48fc-bfc1-d6c76d4abb8d",
+    "stage": "failure",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:49:50Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "complete",
+    "protocol": "trojan",
+    "result": "failed",
+    "time": "2026-10-12T16:49:51Z"
+  }
+]

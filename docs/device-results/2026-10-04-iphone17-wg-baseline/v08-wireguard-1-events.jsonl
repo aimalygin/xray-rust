@@ -1,0 +1,102 @@
+{"event": "abi", "major": 1, "minor": 8, "protocol": "setup", "time": "2026-10-04T19:22:14Z"}
+{"event": "import", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:14Z"}
+{"cycle": 1, "event": "connected", "protocol": "wireguard", "seconds": 0.31343698501586914, "time": "2026-10-04T19:22:15Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10915266666779644, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:15Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.17185937500107684, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:15Z"}
+{"event": "tcp-start", "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1130025000020396, "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05386250000083237, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:15Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05553154166773311, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:16Z"}
+{"event": "dns-anchor", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:16Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26003.33244454167"}, {"interface": "en0", "kind": "unchanged", "uptime": "26003.589428791667"}, {"interface": "", "kind": "applied", "uptime": "26003.859705333336"}], "protocol": "wireguard", "stage": "after-traffic", "time": "2026-10-04T19:22:16Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4769416, "inboundPackets": 218, "outboundPackets": 181, "protocol": "wireguard", "rss": 30474240, "runtime": "5bd4225a-6b7b-4270-ba69-e3e566f04229", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T19:22:16Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 1, "event": "connection-close-request", "ids": [2, 3, 4, 5, 6], "protocol": "wireguard", "time": "2026-10-04T19:22:16Z"}
+{"closedIDs": [2, 3, 4, 5, 6], "cycle": 1, "event": "connection-close-verified", "newIDs": [], "protocol": "wireguard", "seconds": 2.08087504166906, "time": "2026-10-04T19:22:18Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26003.33244454167"}, {"interface": "en0", "kind": "unchanged", "uptime": "26003.589428791667"}, {"interface": "", "kind": "applied", "uptime": "26003.859705333336"}], "protocol": "wireguard", "stage": "after-close", "time": "2026-10-04T19:22:18Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4277896, "inboundPackets": 222, "outboundPackets": 188, "protocol": "wireguard", "rss": 30785536, "runtime": "5bd4225a-6b7b-4270-ba69-e3e566f04229", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T19:22:18Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09636150000005728, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:18Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09931166666865465, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:18Z"}
+{"event": "tcp-start", "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.12701770833155024, "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.054795166666735895, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:18Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.052500499998132, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:18Z"}
+{"event": "dns-anchor", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:19Z"}
+{"cycle": 1, "event": "traffic-after-close", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:19Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26003.33244454167"}, {"interface": "en0", "kind": "unchanged", "uptime": "26003.589428791667"}, {"interface": "", "kind": "applied", "uptime": "26003.859705333336"}], "protocol": "wireguard", "stage": "after-recovery", "time": "2026-10-04T19:22:19Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4425352, "inboundPackets": 422, "outboundPackets": 363, "protocol": "wireguard", "rss": 31178752, "runtime": "5bd4225a-6b7b-4270-ba69-e3e566f04229", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T19:22:19Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 1, "event": "disconnected", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:19Z"}
+{"cycle": 2, "event": "connected", "protocol": "wireguard", "seconds": 0.22235596179962158, "time": "2026-10-04T19:22:19Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:19Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10880225000073551, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:20Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:20Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09406495833172812, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:20Z"}
+{"event": "tcp-start", "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "time": "2026-10-04T19:22:20Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.17320716666654334, "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:20Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:20Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05554279166608467, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:20Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:20Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05259433333412744, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:20Z"}
+{"event": "dns-anchor", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:20Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26007.920953250003"}, {"interface": "", "kind": "applied", "uptime": "26008.450133416667"}], "protocol": "wireguard", "stage": "after-traffic", "time": "2026-10-04T19:22:20Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4720264, "inboundPackets": 206, "outboundPackets": 177, "protocol": "wireguard", "rss": 29966336, "runtime": "2fdaaeef-6271-44f1-acb1-dd456a274dca", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T19:22:20Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5], "protocol": "wireguard", "time": "2026-10-04T19:22:20Z"}
+{"closedIDs": [1, 2, 3, 4, 5], "cycle": 2, "event": "connection-close-verified", "newIDs": [], "protocol": "wireguard", "seconds": 2.144623000000138, "time": "2026-10-04T19:22:22Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26007.920953250003"}, {"interface": "", "kind": "applied", "uptime": "26008.450133416667"}], "protocol": "wireguard", "stage": "after-close", "time": "2026-10-04T19:22:22Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4195976, "inboundPackets": 210, "outboundPackets": 184, "protocol": "wireguard", "rss": 30294016, "runtime": "2fdaaeef-6271-44f1-acb1-dd456a274dca", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T19:22:22Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10929583333199844, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09875387499778299, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"event": "tcp-start", "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.18942104166490026, "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05584258333328762, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:23Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05257091666862834, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"event": "dns-anchor", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"cycle": 2, "event": "traffic-after-close", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:23Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26007.920953250003"}, {"interface": "", "kind": "applied", "uptime": "26008.450133416667"}], "protocol": "wireguard", "stage": "after-recovery", "time": "2026-10-04T19:22:23Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4376200, "inboundPackets": 409, "outboundPackets": 357, "protocol": "wireguard", "rss": 30720000, "runtime": "2fdaaeef-6271-44f1-acb1-dd456a274dca", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T19:22:23Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "disconnected", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:24Z"}
+{"cycle": 3, "event": "connected", "protocol": "wireguard", "seconds": 0.20359301567077637, "time": "2026-10-04T19:22:24Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:24Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.12364870833334862, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:24Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:24Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.21964016666606767, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:25Z"}
+{"event": "tcp-start", "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "time": "2026-10-04T19:22:25Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10843891666809213, "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:25Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:25Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05408629166777246, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:25Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:25Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05411787500270293, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:25Z"}
+{"event": "dns-anchor", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:25Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26012.707679083334"}, {"interface": "", "kind": "applied", "uptime": "26013.23734075"}], "protocol": "wireguard", "stage": "after-traffic", "time": "2026-10-04T19:22:25Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4769416, "inboundPackets": 208, "outboundPackets": 179, "protocol": "wireguard", "rss": 29949952, "runtime": "ed8c4edc-948b-4064-a1bc-a046f34bad5c", "stage": "after-traffic", "tcp": 3, "threads": 10, "time": "2026-10-04T19:22:25Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 3, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5], "protocol": "wireguard", "time": "2026-10-04T19:22:25Z"}
+{"closedIDs": [1, 2, 3, 4, 5], "cycle": 3, "event": "connection-close-verified", "newIDs": [], "protocol": "wireguard", "seconds": 2.1316309583344264, "time": "2026-10-04T19:22:27Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26012.707679083334"}, {"interface": "", "kind": "applied", "uptime": "26013.23734075"}, {"interface": "en0", "kind": "unchanged", "uptime": "26014.583190208334"}], "protocol": "wireguard", "stage": "after-close", "time": "2026-10-04T19:22:27Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4212360, "inboundPackets": 213, "outboundPackets": 186, "protocol": "wireguard", "rss": 30294016, "runtime": "ed8c4edc-948b-4064-a1bc-a046f34bad5c", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T19:22:27Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:27Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11007295833405806, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:28Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.19936850000158302, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"event": "tcp-start", "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "time": "2026-10-04T19:22:28Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10213991666751099, "host": "v07-probe-bd566ad4b0fb.test", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "wireguard", "time": "2026-10-04T19:22:28Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.051801875000819564, "host": "198.51.100.7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "wireguard", "time": "2026-10-04T19:22:28Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.056872875000408385, "host": "2001:db8::7", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"event": "dns-anchor", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"cycle": 3, "event": "traffic-after-close", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:28Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "26012.707679083334"}, {"interface": "", "kind": "applied", "uptime": "26013.23734075"}, {"interface": "en0", "kind": "unchanged", "uptime": "26014.583190208334"}], "protocol": "wireguard", "stage": "after-recovery", "time": "2026-10-04T19:22:28Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4359816, "inboundPackets": 415, "outboundPackets": 360, "protocol": "wireguard", "rss": 30703616, "runtime": "ed8c4edc-948b-4064-a1bc-a046f34bad5c", "stage": "after-recovery", "tcp": 3, "threads": 10, "time": "2026-10-04T19:22:28Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 3, "event": "disconnected", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:29Z"}
+{"event": "complete", "protocol": "wireguard", "result": "passed", "time": "2026-10-04T19:22:29Z"}

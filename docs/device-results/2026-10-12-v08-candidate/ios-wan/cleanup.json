@@ -1,0 +1,40 @@
+{
+  "after": {
+    "x-ui.service": {
+      "ActiveState": "active",
+      "MainPID": "3463711"
+    },
+    "xray-apple-device-probe-server.service": {
+      "ActiveState": "active",
+      "MainPID": "3470371"
+    },
+    "xray-xhttp-device-test.service": {
+      "ActiveState": "active",
+      "MainPID": "3470369"
+    },
+    "xray-xhttp-memory-probe.service": {
+      "ActiveState": "active",
+      "MainPID": "3333378"
+    }
+  },
+  "before": {
+    "x-ui.service": {
+      "ActiveState": "active",
+      "MainPID": "3463711"
+    },
+    "xray-apple-device-probe-server.service": {
+      "ActiveState": "active",
+      "MainPID": "3383065"
+    },
+    "xray-xhttp-device-test.service": {
+      "ActiveState": "active",
+      "MainPID": "3383064"
+    },
+    "xray-xhttp-memory-probe.service": {
+      "ActiveState": "active",
+      "MainPID": "3333378"
+    }
+  },
+  "controlServicesUnchanged": true,
+  "testServicesActive": true
+}

@@ -1,0 +1,19 @@
+[
+  {
+    "family": "dual-stack",
+    "decoyPort": 49645,
+    "attempts": 12945,
+    "collision": true,
+    "seconds": 0.33819420900545083,
+    "replyReceiver": [
+      "unrelated-ipv4-socket"
+    ]
+  },
+  {
+    "family": "ipv4",
+    "decoyPort": 57525,
+    "attempts": 100000,
+    "collision": false,
+    "seconds": 2.1678697080060374
+  }
+]

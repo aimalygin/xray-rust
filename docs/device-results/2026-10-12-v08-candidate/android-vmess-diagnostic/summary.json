@@ -1,0 +1,54 @@
+{
+  "candidate": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "httpPassed": 960,
+  "interpretation": "Fixed follow-up series, not calibrated performance; original failure retained.",
+  "result": "fail",
+  "trials": [
+    {
+      "backend": "file-descriptor",
+      "completion": {
+        "durationMillis": 1123,
+        "httpFailed": 0,
+        "httpPassed": 240,
+        "udpFailed": 0,
+        "udpPassed": 480
+      },
+      "cycle": 1
+    },
+    {
+      "backend": "file-descriptor",
+      "completion": {
+        "durationMillis": 5795,
+        "httpFailed": 0,
+        "httpPassed": 240,
+        "udpFailed": 1,
+        "udpPassed": 479
+      },
+      "cycle": 2
+    },
+    {
+      "backend": "packet-pump",
+      "completion": {
+        "durationMillis": 1282,
+        "httpFailed": 0,
+        "httpPassed": 240,
+        "udpFailed": 0,
+        "udpPassed": 480
+      },
+      "cycle": 1
+    },
+    {
+      "backend": "packet-pump",
+      "completion": {
+        "durationMillis": 6152,
+        "httpFailed": 0,
+        "httpPassed": 240,
+        "udpFailed": 1,
+        "udpPassed": 479
+      },
+      "cycle": 2
+    }
+  ],
+  "udpFailed": 2,
+  "udpPassed": 1918
+}

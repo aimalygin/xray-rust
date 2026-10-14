@@ -137,6 +137,17 @@ async fn rust_socks_client_reaches_echo_server_through_local_xray_vless_tls_visi
 
 #[tokio::test]
 #[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
+async fn inner_tls_session_survives_vision_direct_switch_through_local_xray_tls_vision() {
+    timeout(
+        Duration::from_secs(180),
+        run_local_xray_tls_vision_inner_tls_interop(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires local Go toolchain, Xray-core checkout, and loopback process execution"]
 async fn inner_tls_session_survives_vision_direct_switch_through_local_xray_reality_vision() {
     timeout(
         Duration::from_secs(180),
@@ -441,6 +452,38 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
     )
     .await
     .expect("start xray timeout");
+    let (rust_config, dialer) = rust_tls_core_config_and_dialer(&xray, flow);
+
+    run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
+}
+
+async fn run_local_xray_tls_vision_inner_tls_interop() {
+    let xray_checkout = resolve_xray_checkout();
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &xray_checkout,
+            XrayVlessServerConfig {
+                security: XrayInboundSecurity::Tls,
+                transport: XrayInboundTransport::Raw,
+                flow: Some("xtls-rprx-vision"),
+            },
+        ),
+    )
+    .await
+    .expect("start xray timeout");
+    let (rust_config, dialer) = rust_tls_core_config_and_dialer(&xray, Some("xtls-rprx-vision"));
+
+    run_inner_tls_interop_scenario(xray, rust_config, Some(dialer)).await;
+}
+
+/// The client half of the TLS inbound `start_xray_vless_server` writes: a
+/// VLESS outbound with `security: tls` plus a dialer that trusts the server's
+/// generated certificate.
+fn rust_tls_core_config_and_dialer(
+    xray: &XrayServer,
+    flow: Option<&str>,
+) -> (CoreConfig, TransportDialer) {
     let tls_client_config = Arc::clone(
         xray.tls_client_config
             .as_ref()
@@ -462,7 +505,7 @@ async fn run_local_xray_vless_tls_interop(flow: Option<&'static str>) {
         tls_client_config,
     ));
 
-    run_local_xray_vless_interop_scenario(xray, rust_config, Some(dialer)).await;
+    (rust_config, dialer)
 }
 
 fn selected_reality_interop_fingerprints() -> Vec<String> {
@@ -609,16 +652,29 @@ async fn run_local_xray_reality_vision_inner_tls_interop(fingerprint: &str) {
     .await;
     let rust_config = rust_reality_vision_core_config(xray.addr, fingerprint);
 
-    run_inner_tls_interop_scenario(xray, rust_config).await;
+    run_inner_tls_interop_scenario(xray, rust_config, None).await;
 }
 
 /// Carry a real TLS session inside the tunnel, which is what makes Vision
-/// engage direct mode: the peer stops wrapping the downlink in REALITY TLS
-/// part way through while it keeps decrypting the uplink. Echo workloads never
-/// reach this state because a non-TLS payload resolves to `VisionCommand::End`.
-async fn run_inner_tls_interop_scenario(xray: XrayServer, rust_config: CoreConfig) {
+/// engage direct mode: the peer stops wrapping the downlink in its outer TLS
+/// or REALITY session part way through while it keeps decrypting the uplink.
+/// Echo workloads never reach this state because a non-TLS payload resolves to
+/// `VisionCommand::End`.
+async fn run_inner_tls_interop_scenario(
+    xray: XrayServer,
+    rust_config: CoreConfig,
+    transport_dialer: Option<TransportDialer>,
+) {
     let (tls_echo_addr, inner_client_config, echo_handle) = spawn_inner_tls_echo_server().await;
-    let mut core = Core::new(rust_config).expect("create rust core");
+    let mut core = match transport_dialer {
+        Some(dialer) => Core::with_runtime_dependencies(
+            rust_config,
+            Arc::new(SystemDnsResolver),
+            Arc::new(dialer),
+        ),
+        None => Core::new(rust_config),
+    }
+    .expect("create rust core");
 
     timeout(Duration::from_secs(5), core.start())
         .await
@@ -680,6 +736,35 @@ async fn run_inner_tls_interop_scenario(xray: XrayServer, rust_config: CoreConfi
         }
         assert_eq!(echoed, payload.as_bytes());
     }
+
+    // Vision has switched both directions to direct mode by now. A bulk
+    // round spans many inner TLS records per direction, so a byte lost or
+    // left behind in the outer session at a switch surfaces as an inner
+    // record error.
+    let payload = bulk_interop_payload(256 * 1024);
+    let mut echoed = vec![0; payload.len()];
+    let transfer = async {
+        let (mut reader, mut writer) = tokio::io::split(&mut tls);
+        let (written, read) = tokio::join!(
+            async {
+                writer.write_all(&payload).await?;
+                writer.flush().await
+            },
+            reader.read_exact(&mut echoed),
+        );
+        written.map_err(|error| format!("write inner tls bulk payload: {error}"))?;
+        read.map_err(|error| format!("read inner tls bulk echo: {error}"))?;
+        Ok::<(), String>(())
+    };
+    if let Err(error) = timeout(Duration::from_secs(30), transfer)
+        .await
+        .map_err(|error| format!("inner tls bulk transfer timeout: {error}"))
+        .and_then(|result| result)
+    {
+        eprintln!("{}", xray.logs());
+        panic!("inner tls bulk round failed: {error}");
+    }
+    assert!(echoed == payload, "inner tls bulk echo differs");
 
     drop(tls);
     core.stop().await.expect("stop rust core");
@@ -1789,6 +1874,7 @@ fn rust_vless_outbound(
     transport: StreamTransport,
 ) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -1796,6 +1882,8 @@ fn rust_vless_outbound(
             transport,
             security,
             quic_params: None,
+            tcp_fragment: None,
+            udp_noise: None,
             socket_options: None,
         },
         settings: OutboundSettings::Vless(VlessOutboundSettings {
@@ -1813,6 +1901,7 @@ fn rust_vless_outbound(
 
 fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
     OutboundConfig {
+        mux: None,
         tag: Some(tag.to_owned()),
         proxy_settings: None,
         stream: StreamSettings {
@@ -1820,6 +1909,8 @@ fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
             transport: StreamTransport::Raw,
             security: StreamSecurity::None,
             quic_params: None,
+            tcp_fragment: None,
+            udp_noise: None,
             socket_options: None,
         },
         settings: OutboundSettings::Freedom,
@@ -2649,6 +2740,9 @@ fn selected_xhttp_interop_cases() -> Vec<XhttpInteropCase> {
 }
 
 async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
+    run_local_xray_xhttp_interop_with_noise(case, false).await;
+}
+async fn run_local_xray_xhttp_interop_with_noise(case: XhttpInteropCase, noise: bool) {
     let xray_checkout = resolve_xray_checkout();
     let (server_security, tls_alpn, client_security) = match case.security {
         XhttpInteropSecurity::H1None => (XrayInboundSecurity::None, None, StreamSecurity::None),
@@ -2713,7 +2807,15 @@ async fn run_local_xray_xhttp_interop(case: XhttpInteropCase) {
     .await
     .expect("start XHTTP Xray server timeout");
 
-    let rust_config = rust_xhttp_core_config(xray.addr, client_security, case.mode);
+    let mut rust_config = rust_xhttp_core_config(xray.addr, client_security, case.mode);
+    if noise {
+        let raw = serde_json::json!({"outbounds":[{"protocol":"freedom","streamSettings":{"network":"xhttp","security":"tls","tlsSettings":{"serverName":"example.com","alpn":["h3"]},"finalmask":{"udp":[{"type":"noise","settings":{"noise":[{"type":"str","packet":"synthetic","delay":2},{"rand":"16-24","delay":1}]}}]}}}]});
+        rust_config.outbounds[0].stream.udp_noise =
+            parse_xray_json(&raw.to_string()).unwrap().config.outbounds[0]
+                .stream
+                .udp_noise
+                .clone();
+    }
     if case.security == XhttpInteropSecurity::H2Reality {
         // The first REALITY contact may wait for the cover-origin detector.
         // Warm it with the exact XHTTP mode being tested, never with the raw
@@ -3425,5 +3527,155 @@ fn bulk_interop_payload(len: usize) -> Vec<u8> {
 #[path = "local_xray_interop_tests/vless_encryption.rs"]
 mod vless_encryption;
 
+#[path = "local_xray_interop_tests/v08_carriers.rs"]
+mod v08_carriers;
 #[path = "local_xray_interop_tests/xhttp_download.rs"]
 mod xhttp_download;
+
+/// Record-level observer: it forwards the finalized ClientHello unchanged and
+/// then becomes a byte relay, including Vision's later direct-mode payload.
+async fn fragment_observer(
+    upstream: SocketAddr,
+) -> (SocketAddr, tokio::task::JoinHandle<Vec<usize>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        let (mut client, _) = listener.accept().await.unwrap();
+        let mut server = TcpStream::connect(upstream).await.unwrap();
+        let mut hello = Vec::new();
+        let mut sizes = Vec::new();
+        loop {
+            let mut header = [0; 5];
+            client.read_exact(&mut header).await.unwrap();
+            assert_eq!(header[0], 22);
+            let length = u16::from_be_bytes([header[3], header[4]]) as usize;
+            let start = hello.len();
+            hello.resize(start + length, 0);
+            client.read_exact(&mut hello[start..]).await.unwrap();
+            server.write_all(&header).await.unwrap();
+            server.write_all(&hello[start..]).await.unwrap();
+            sizes.push(length);
+            assert!(sizes.len() <= 24, "maxSplit must bound the wire records");
+            if hello.len() >= 4 {
+                assert_eq!(hello[0], 1, "only the ClientHello is fragmented");
+                let total =
+                    ((hello[1] as usize) << 16) | ((hello[2] as usize) << 8) | hello[3] as usize;
+                if hello.len() >= total + 4 {
+                    assert_eq!(hello.len(), total + 4);
+                    break;
+                }
+            }
+        }
+        let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
+        sizes
+    });
+    (addr, task)
+}
+
+async fn run_fragmented_xray_interop(reality: bool, legacy: bool, vision: bool) {
+    use serde_json::json;
+    let flow = vision.then_some("xtls-rprx-vision");
+    let xray = timeout(
+        Duration::from_secs(60),
+        start_xray_vless_server(
+            &resolve_xray_checkout(),
+            XrayVlessServerConfig {
+                security: if reality {
+                    XrayInboundSecurity::Reality
+                } else {
+                    XrayInboundSecurity::Tls
+                },
+                transport: XrayInboundTransport::Raw,
+                flow,
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    if reality {
+        warm_up_reality_server_detector(
+            &xray,
+            rust_reality_vision_core_config(xray.addr, "chrome"),
+        )
+        .await;
+    }
+    let (relay, observation) = fragment_observer(xray.addr).await;
+    let mut stream = if reality {
+        json!({"security":"reality","realitySettings":{"serverName":REALITY_SERVER_NAME,"fingerprint":"chrome","publicKey":REALITY_PUBLIC_KEY_BASE64,"shortId":REALITY_SHORT_ID_HEX}})
+    } else {
+        json!({"security":"tls","tlsSettings":{"serverName":TLS_SERVER_NAME}})
+    };
+    if legacy {
+        stream["sockopt"] = json!({"dialerProxy":"fragment"});
+    } else {
+        stream["finalmask"] = json!({"tcp":[{"type":"fragment","settings":{"packets":"tlshello","lengths":[11,37],"delays":[0],"maxSplit":24}}]});
+    }
+    let mut user = json!({"id":TEST_UUID,"encryption":"none"});
+    if let Some(flow) = flow {
+        user["flow"] = json!(flow);
+    }
+    let mut outbounds = vec![
+        json!({"protocol":"vless","tag":"proxy","settings":{"vnext":[{"address":"127.0.0.1","port":relay.port(),"users":[user]}]},"streamSettings":stream}),
+    ];
+    if legacy {
+        outbounds.push(json!({"protocol":"freedom","tag":"fragment","settings":{"fragment":{"packets":"tlshello","length":11,"interval":1,"maxSplit":24}}}));
+    }
+    let raw = json!({"inbounds":[{"tag":"socks-in","listen":"127.0.0.1","port":0,"protocol":"socks","settings":{"auth":"noauth"}}],"outbounds":outbounds});
+    let config = parse_xray_json(&raw.to_string()).unwrap().config;
+    let dialer = (!reality).then(|| rust_tls_core_config_and_dialer(&xray, flow).1);
+    if vision {
+        run_inner_tls_interop_scenario(xray, config, dialer).await;
+    } else {
+        run_local_xray_vless_interop_scenario(xray, config, dialer).await;
+    }
+    let sizes = timeout(Duration::from_secs(5), observation)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        sizes.len() > 2,
+        "ClientHello must actually fragment on the socket"
+    );
+    assert_eq!(sizes[0], 11);
+    assert_eq!(sizes[1], if legacy { 11 } else { 37 });
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn fragment_finalmask_tls_interop() {
+    run_fragmented_xray_interop(false, false, false).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn fragment_finalmask_tls_vision_direct_interop() {
+    run_fragmented_xray_interop(false, false, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary and REALITY cover network"]
+async fn fragment_finalmask_reality_vision_direct_interop() {
+    run_fragmented_xray_interop(true, false, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary and REALITY cover network"]
+async fn fragment_legacy_dialer_proxy_reality_vision_direct_interop() {
+    run_fragmented_xray_interop(true, true, true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray-core checkout/binary"]
+async fn udp_noise_xhttp_h3_interop_all_modes() {
+    for case in XHTTP_INTEROP_CASES
+        .into_iter()
+        .filter(|case| case.security == XhttpInteropSecurity::H3Tls)
+    {
+        timeout(
+            Duration::from_secs(60),
+            run_local_xray_xhttp_interop_with_noise(case, true),
+        )
+        .await
+        .unwrap();
+    }
+}

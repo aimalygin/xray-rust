@@ -1,0 +1,11 @@
+{
+  "status": "pass",
+  "members": 161,
+  "complete_clients": 26,
+  "pilot_clients_excluded": 8,
+  "verified_bytes_each_direction": 41903194112,
+  "summary_reconstructed": true,
+  "runtime_source_unchanged": true,
+  "restored_release_matches_baseline": true,
+  "restored_sha256": "528e6532d6919bc867dc0c7993bc090125ed3a725c0ebbc12db02791f60ff8e8"
+}

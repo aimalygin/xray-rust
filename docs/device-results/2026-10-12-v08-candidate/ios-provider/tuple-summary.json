@@ -1,0 +1,138 @@
+{
+  "allPassed": true,
+  "cases": [
+    {
+      "enabled": false,
+      "name": "fd-hysteria-default",
+      "targetDecisions": 0,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-hysteria-allow",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": false,
+      "name": "fd-hysteria-limits-one",
+      "targetDecisions": 0,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-hysteria-deny",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-hysteria-deny-tcp",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-hysteria-timeout-closed",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-hysteria-timeout-open",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": false,
+      "name": "fd-hysteria-recovery",
+      "targetDecisions": 0,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-trojan-projection",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-shadowsocks2022-projection",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "fd-vmess-projection",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": false,
+      "name": "packet-pump-hysteria-default",
+      "targetDecisions": 0,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-hysteria-allow",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": false,
+      "name": "packet-pump-hysteria-limits-one",
+      "targetDecisions": 0,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-hysteria-deny",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-hysteria-deny-tcp",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-hysteria-timeout-closed",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-hysteria-timeout-open",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": false,
+      "name": "packet-pump-hysteria-recovery",
+      "targetDecisions": 0,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-trojan-projection",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-shadowsocks2022-projection",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    },
+    {
+      "enabled": true,
+      "name": "packet-pump-vmess-projection",
+      "targetDecisions": 2,
+      "tupleAndDecisionPassed": true
+    }
+  ],
+  "scope": "Observed IPv4 TCP/UDP callback tuples, source/destination address, nonzero ports, allow/deny result; no originating-app UID/PID claim. Timeout traffic outcomes remain in the separate traffic summary."
+}

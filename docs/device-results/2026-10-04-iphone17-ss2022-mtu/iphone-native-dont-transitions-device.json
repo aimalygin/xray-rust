@@ -1,0 +1,1423 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 8,
+    "protocol" : "setup",
+    "time" : "2026-10-04T19:48:23Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:23Z"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:23Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:23Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:23Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:24Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:24Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:27Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:27Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:27Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:27Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.81215066666482016,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:28Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:28Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.7428502499969909,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:28Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:28Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.93378354166634381,
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:29Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:29Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.24933379166395753,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:30Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:30Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.84679650000180118,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:31Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:31Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.842313416666002,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 7.2008163333339326,
+    "stage" : "wifi-baseline",
+    "time" : "2026-10-04T19:48:31Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27575.315274250002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27575.517195583336"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27575.838682333335"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "wifi-baseline",
+    "time" : "2026-10-04T19:48:31Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4277896,
+    "inboundPackets" : 244,
+    "outboundPackets" : 206,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 29474816,
+    "runtime" : "a6cc9ac9-f84c-4067-8f6c-dae4cf336e57",
+    "stage" : "wifi-baseline",
+    "tcp" : 1,
+    "threads" : 10,
+    "time" : "2026-10-04T19:48:31Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "action" : "cellular",
+    "event" : "action-required",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:31Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:34Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "unavailable",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:34Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:34Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "cellular",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:34Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:34Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:34Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.79839879166684113,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:35Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:35Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:35Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75343795833396143,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:36Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:36Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.78637420833183569,
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.20695074999821372,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:37Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.23473762499997974,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.3347833750012796,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 3.3987387916640728,
+    "stage" : "cellular",
+    "time" : "2026-10-04T19:48:37Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27575.315274250002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27575.517195583336"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27575.838682333335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27582.433897833336"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "27582.53663966667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "27582.758746791667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27583.29047379167"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27585.40071366667"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "cellular",
+    "time" : "2026-10-04T19:48:38Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4294280,
+    "inboundPackets" : 472,
+    "outboundPackets" : 401,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 29704192,
+    "runtime" : "a6cc9ac9-f84c-4067-8f6c-dae4cf336e57",
+    "stage" : "cellular",
+    "tcp" : 2,
+    "threads" : 9,
+    "time" : "2026-10-04T19:48:38Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 5
+  },
+  {
+    "action" : "wifi",
+    "event" : "action-required",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:38Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:48Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "access-network",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:49Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:49Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:49Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.79712225000184844,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:50Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:50Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.81667129166817176,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.91746279166545719,
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.24029350000273553,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.32551162500021746,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:53Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:48:53Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.3902034999991884,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 3.5543670000006387,
+    "stage" : "wifi",
+    "time" : "2026-10-04T19:48:53Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27575.315274250002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27575.517195583336"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27575.838682333335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27582.433897833336"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "27582.53663966667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "27582.758746791667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27583.29047379167"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27585.40071366667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.485732083336"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.649937958337"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.858490333336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27598.555641833336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27598.757659458333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27598.958055291667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27599.08571679167"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "wifi",
+    "time" : "2026-10-04T19:48:53Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4343432,
+    "inboundPackets" : 704,
+    "outboundPackets" : 596,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 29933568,
+    "runtime" : "a6cc9ac9-f84c-4067-8f6c-dae4cf336e57",
+    "stage" : "wifi",
+    "tcp" : 2,
+    "threads" : 10,
+    "time" : "2026-10-04T19:48:53Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 7
+  },
+  {
+    "action" : "lock-30-seconds",
+    "event" : "action-required",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:48:53Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:48:53Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:00Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:49:00Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "protected-data-unavailable",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:00Z"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:02Z"
+  },
+  {
+    "event" : "app-background",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:02Z"
+  },
+  {
+    "event" : "protected-data-available",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:39Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:49:39Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:40Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:49:40Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "event" : "app-active",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:40Z"
+  },
+  {
+    "event" : "lock-interval",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "seconds" : 39.016201124999498,
+    "time" : "2026-10-04T19:49:40Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:40Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.76573700000153622,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:41Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.76397949999955017,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:42Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:42Z"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:49:43Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75493154166542809,
+    "host" : "v07-probe-5767ab5f9e44.test",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:43Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:43Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.24655875000098604,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:43Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:43Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.24951054166376707,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:43Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:43Z"
+  },
+  {
+    "activeRecoverySeconds" : 3.0849103750006179,
+    "event" : "transition-recovered",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "retries" : 0,
+    "secondsSincePathOrUnlock" : 4.1546665416681208,
+    "stage" : "after-unlock",
+    "time" : "2026-10-04T19:49:44Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27575.315274250002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27575.517195583336"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27575.838682333335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27582.433897833336"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "27582.53663966667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "27582.758746791667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27583.29047379167"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27585.40071366667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.485732083336"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.649937958337"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.858490333336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27598.555641833336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27598.757659458333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27598.958055291667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27599.08571679167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27601.788388333334"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27602.310439083336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27608.653771875"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27615.609400333335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27616.360083000003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27620.364165458333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27622.30886775"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27645.60779941667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27651.134455625"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "after-unlock",
+    "time" : "2026-10-04T19:49:44Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4114056,
+    "inboundPackets" : 967,
+    "outboundPackets" : 815,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 30015488,
+    "runtime" : "a6cc9ac9-f84c-4067-8f6c-dae4cf336e57",
+    "stage" : "after-unlock",
+    "tcp" : 2,
+    "threads" : 9,
+    "time" : "2026-10-04T19:49:44Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      20,
+      21,
+      26,
+      27,
+      28,
+      29
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:44Z"
+  },
+  {
+    "availableInterfaces" : [
+      "wifi",
+      "wifi"
+    ],
+    "event" : "carrier-path-detail",
+    "interface" : "wifi",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T19:49:45Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:49:45Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "closedIDs" : [
+      20,
+      21,
+      26,
+      27,
+      28,
+      29
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "seconds" : 2.132617625000421,
+    "time" : "2026-10-04T19:49:46Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27575.315274250002"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27575.517195583336"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27575.838682333335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27582.433897833336"
+      },
+      {
+        "interface" : "",
+        "kind" : "offline",
+        "uptime" : "27582.53663966667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "scheduled",
+        "uptime" : "27582.758746791667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27583.29047379167"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27585.40071366667"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.485732083336"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.649937958337"
+      },
+      {
+        "interface" : "pdp_ip0",
+        "kind" : "unchanged",
+        "uptime" : "27597.858490333336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27598.555641833336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27598.757659458333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27598.958055291667"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27599.08571679167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "27601.788388333334"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "27602.310439083336"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27608.653771875"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27615.609400333335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27616.360083000003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27620.364165458333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27622.30886775"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27645.60779941667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27651.134455625"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "27653.37843604167"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-10-04T19:49:46Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4032136,
+    "inboundPackets" : 979,
+    "outboundPackets" : 829,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 30162944,
+    "runtime" : "a6cc9ac9-f84c-4067-8f6c-dae4cf336e57",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 9,
+    "time" : "2026-10-04T19:49:46Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "availableInterfaces" : [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event" : "system-path",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "status" : "satisfied",
+    "supportsIPv4" : true,
+    "supportsIPv6" : true,
+    "time" : "2026-10-04T19:49:46Z",
+    "unsatisfiedReason" : "notAvailable"
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:46Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T19:49:46Z"
+  }
+]

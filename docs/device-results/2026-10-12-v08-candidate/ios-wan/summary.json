@@ -1,0 +1,285 @@
+{
+  "allDefaultCasesPassed": false,
+  "cases": [
+    {
+      "connectionClosureVerified": true,
+      "lockIntervalsSeconds": [
+        16.918912624998484
+      ],
+      "protocol": "trojan",
+      "raw": "ios-wan/trojan/transitions/result.json",
+      "result": "passed",
+      "retryEvents": [],
+      "sameRuntime": true,
+      "serverSocketPolicy": "default",
+      "stages": [
+        {
+          "activeRecoverySeconds": 5.187874916649889,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 8.647460166655947,
+          "stage": "wifi-baseline",
+          "time": "2026-10-12T17:40:09Z"
+        },
+        {
+          "activeRecoverySeconds": 5.344719416694716,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 5.483092874987051,
+          "stage": "cellular",
+          "time": "2026-10-12T17:40:22Z"
+        },
+        {
+          "activeRecoverySeconds": 4.430419416690711,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.5128560833400115,
+          "stage": "wifi",
+          "time": "2026-10-12T17:41:01Z"
+        },
+        {
+          "activeRecoverySeconds": 4.673519374977332,
+          "event": "transition-recovered",
+          "protocol": "trojan",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 5.5473437500186265,
+          "stage": "after-unlock",
+          "time": "2026-10-12T17:43:48Z"
+        }
+      ]
+    },
+    {
+      "connectionClosureVerified": true,
+      "lockIntervalsSeconds": [
+        21.40231550001772
+      ],
+      "protocol": "vmess",
+      "raw": "ios-wan/vmess/transitions/result.json",
+      "result": "passed",
+      "retryEvents": [],
+      "sameRuntime": true,
+      "serverSocketPolicy": "default",
+      "stages": [
+        {
+          "activeRecoverySeconds": 3.6222307916614227,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 6.97310454165563,
+          "stage": "wifi-baseline",
+          "time": "2026-10-12T17:44:23Z"
+        },
+        {
+          "activeRecoverySeconds": 3.990499750012532,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.031686541624367,
+          "stage": "cellular",
+          "time": "2026-10-12T17:45:09Z"
+        },
+        {
+          "activeRecoverySeconds": 3.487656000012066,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.5287408749572933,
+          "stage": "wifi",
+          "time": "2026-10-12T17:46:26Z"
+        },
+        {
+          "activeRecoverySeconds": 3.301956875016913,
+          "event": "transition-recovered",
+          "protocol": "vmess",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.369130291684996,
+          "stage": "after-unlock",
+          "time": "2026-10-12T17:47:00Z"
+        }
+      ]
+    },
+    {
+      "connectionClosureVerified": false,
+      "lockIntervalsSeconds": [],
+      "protocol": "shadowsocks2022",
+      "raw": "ios-wan/shadowsocks2022/transitions/result.json",
+      "result": "failed",
+      "retryEvents": [
+        {
+          "attempt": 1,
+          "event": "recovery-retry",
+          "protocol": "shadowsocks2022",
+          "stage": "wifi-baseline",
+          "time": "2026-10-12T17:47:48Z"
+        },
+        {
+          "attempt": 2,
+          "event": "recovery-retry",
+          "protocol": "shadowsocks2022",
+          "stage": "wifi-baseline",
+          "time": "2026-10-12T17:48:02Z"
+        },
+        {
+          "attempt": 3,
+          "event": "recovery-retry",
+          "protocol": "shadowsocks2022",
+          "stage": "wifi-baseline",
+          "time": "2026-10-12T17:48:16Z"
+        }
+      ],
+      "sameRuntime": true,
+      "serverSocketPolicy": "default",
+      "stages": []
+    },
+    {
+      "connectionClosureVerified": true,
+      "lockIntervalsSeconds": [
+        25.701771708321758
+      ],
+      "protocol": "shadowsocks2022",
+      "raw": "ios-wan-pmtu/shadowsocks2022/transitions/result.json",
+      "result": "passed",
+      "retryEvents": [],
+      "sameRuntime": true,
+      "serverSocketPolicy": "IP_PMTUDISC_DONT on the owned native IPv4 UDP listener",
+      "stages": [
+        {
+          "activeRecoverySeconds": 3.4872992916498333,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 6.83834450005088,
+          "stage": "wifi-baseline",
+          "time": "2026-10-12T17:49:46Z"
+        },
+        {
+          "activeRecoverySeconds": 3.6526032083202153,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.735867708339356,
+          "stage": "cellular",
+          "time": "2026-10-12T17:49:54Z"
+        },
+        {
+          "activeRecoverySeconds": 3.2918857083423063,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 3.333069208310917,
+          "stage": "wifi",
+          "time": "2026-10-12T17:50:24Z"
+        },
+        {
+          "activeRecoverySeconds": 3.1505371250095777,
+          "event": "transition-recovered",
+          "protocol": "shadowsocks2022",
+          "result": "passed",
+          "retries": 0,
+          "secondsSincePathOrUnlock": 4.166555708332453,
+          "stage": "after-unlock",
+          "time": "2026-10-12T17:51:40Z"
+        }
+      ]
+    }
+  ],
+  "cleanup": [
+    {
+      "after": {
+        "x-ui.service": {
+          "ActiveState": "active",
+          "MainPID": "3463711"
+        },
+        "xray-apple-device-probe-server.service": {
+          "ActiveState": "active",
+          "MainPID": "3470371"
+        },
+        "xray-xhttp-device-test.service": {
+          "ActiveState": "active",
+          "MainPID": "3470369"
+        },
+        "xray-xhttp-memory-probe.service": {
+          "ActiveState": "active",
+          "MainPID": "3333378"
+        }
+      },
+      "before": {
+        "x-ui.service": {
+          "ActiveState": "active",
+          "MainPID": "3463711"
+        },
+        "xray-apple-device-probe-server.service": {
+          "ActiveState": "active",
+          "MainPID": "3383065"
+        },
+        "xray-xhttp-device-test.service": {
+          "ActiveState": "active",
+          "MainPID": "3383064"
+        },
+        "xray-xhttp-memory-probe.service": {
+          "ActiveState": "active",
+          "MainPID": "3333378"
+        }
+      },
+      "controlServicesUnchanged": true,
+      "testServicesActive": true
+    },
+    {
+      "after": {
+        "x-ui.service": {
+          "ActiveState": "active",
+          "MainPID": "3463711"
+        },
+        "xray-apple-device-probe-server.service": {
+          "ActiveState": "active",
+          "MainPID": "3471747"
+        },
+        "xray-xhttp-device-test.service": {
+          "ActiveState": "active",
+          "MainPID": "3471746"
+        },
+        "xray-xhttp-memory-probe.service": {
+          "ActiveState": "active",
+          "MainPID": "3333378"
+        }
+      },
+      "before": {
+        "x-ui.service": {
+          "ActiveState": "active",
+          "MainPID": "3463711"
+        },
+        "xray-apple-device-probe-server.service": {
+          "ActiveState": "active",
+          "MainPID": "3470371"
+        },
+        "xray-xhttp-device-test.service": {
+          "ActiveState": "active",
+          "MainPID": "3470369"
+        },
+        "xray-xhttp-memory-probe.service": {
+          "ActiveState": "active",
+          "MainPID": "3333378"
+        }
+      },
+      "controlServicesUnchanged": true,
+      "testServicesActive": true
+    }
+  ],
+  "limitation": "Default-policy SS2022 failed before cellular transitions on the large logical IPv6 UDP baseline. The separately recorded native-socket workaround passes the transitions; it does not fix the original failure or establish production-path reliability.",
+  "scope": "Fresh-flow physical iPhone Wi-Fi/cellular/Wi-Fi and lock/wake. Same signed candidate, single fixed invocation per protocol/policy; no established-flow continuity or calibrated performance claim.",
+  "testedDeploymentCasesPassed": true
+}

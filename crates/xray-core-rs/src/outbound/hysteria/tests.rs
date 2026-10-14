@@ -147,6 +147,92 @@ mod rebind_reference;
 
 #[tokio::test]
 #[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
+async fn hysteria_stream_budgets_reject_overflow_and_release_slots_without_reconnecting() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_addr = listener.local_addr().unwrap();
+        let _echo = rebind_reference::Task(tokio::spawn(async move {
+            let mut tasks = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let (mut stream, _) = accepted.unwrap();
+                        tasks.spawn(async move {
+                            let (mut read, mut write) = stream.split();
+                            let _ = tokio::io::copy(&mut read, &mut write).await;
+                        });
+                    },
+                    _ = tasks.join_next(), if !tasks.is_empty() => {}
+                }
+            }
+        }));
+        let server = rebind_reference::ReferenceServer::start().await;
+        let mut config = configured();
+        let OutboundSettings::Hysteria(settings) = &mut config.settings else {
+            panic!()
+        };
+        settings.server = TargetAddr::Ip(server.address.ip());
+        settings.port = server.address.port();
+        let StreamSecurity::Tls(tls) = &mut config.stream.security else {
+            panic!()
+        };
+        tls.server_name = Some("localhost".into());
+        let StreamTransport::Hysteria(auth) = &mut config.stream.transport else {
+            panic!()
+        };
+        auth.auth = zeroize::Zeroizing::new(rebind_reference::AUTH.into());
+        let dialer = TransportDialer::with_tls_connector(server.connector.clone());
+        let dns = PendingDns::default();
+        let target = Target::new(
+            RoutingTargetAddr::Ip(target_addr.ip()),
+            target_addr.port(),
+            RoutingNetwork::Tcp,
+        );
+        for limits in [
+            crate::HysteriaStreamLimits::default(),
+            crate::HysteriaStreamLimits::new(80, 48).unwrap(),
+        ] {
+            let outbound = HysteriaOutbound::with_stream_limits(&config, limits).unwrap();
+            let mut streams = Vec::new();
+            for _ in 0..limits.max_tcp_streams() {
+                streams.push(outbound.open_tcp(&target, &dns, &dialer).await.unwrap());
+            }
+            assert!(matches!(
+                outbound.open_tcp(&target, &dns, &dialer).await,
+                Err(CoreError::Hysteria(HysteriaError::SessionLimit))
+            ));
+            drop(streams.pop());
+            streams.push(outbound.open_tcp(&target, &dns, &dialer).await.unwrap());
+            let mut sessions = Vec::new();
+            for _ in 0..limits.max_udp_sessions() {
+                sessions.push(outbound.open_udp(&dns, &dialer).await.unwrap());
+            }
+            assert!(matches!(
+                outbound.open_udp(&dns, &dialer).await,
+                Err(CoreError::Hysteria(HysteriaError::SessionLimit))
+            ));
+            drop(sessions.pop());
+            sessions.push(outbound.open_udp(&dns, &dialer).await.unwrap());
+            streams[0].write_all(b"still live").await.unwrap();
+            let mut reply = [0; 10];
+            streams[0].read_exact(&mut reply).await.unwrap();
+            assert_eq!(&reply, b"still live");
+            let client = outbound.client(&dns, &dialer).await.unwrap();
+            assert_eq!(
+                client.active_udp_sessions(),
+                limits.max_udp_sessions() as usize
+            );
+            outbound.close();
+            assert!(!client.is_live());
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray/native Hysteria; use the interop scripts"]
 async fn hysteria_rebind_during_auth_is_not_lost_and_idle_clients_stay_lazy() {
     struct DuringProtect {
         owner: std::sync::Weak<SessionOwner>,

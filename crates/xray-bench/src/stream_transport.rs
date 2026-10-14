@@ -23,6 +23,7 @@ const BENCH_SERVER_NAME: &str = "vless.test";
 const BENCH_PATH: &str = "/bench";
 const BENCH_GRPC_SERVICE: &str = "bench";
 const READY_BYTE: u8 = 0x52;
+const PREFACE_BYTE: u8 = 0x50;
 const COMPLETE_BYTE: u8 = 0x43;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -491,6 +492,17 @@ pub(super) async fn run_workload_on(
     phase: BenchmarkPhaseTracker,
     origin_ip: Ipv4Addr,
 ) -> Result<WorkloadOutcome, BenchError> {
+    run_workload_with_preface_on(socks_addr, options, scenario, phase, origin_ip, false).await
+}
+
+pub(super) async fn run_workload_with_preface_on(
+    socks_addr: SocketAddr,
+    options: &BenchOptions,
+    scenario: StreamBenchScenario,
+    phase: BenchmarkPhaseTracker,
+    origin_ip: Ipv4Addr,
+    client_preface: bool,
+) -> Result<WorkloadOutcome, BenchError> {
     scenario.validate_max_post_bytes(options.payload_size, options.xhttp_max_post_bytes)?;
     let template = Arc::new(bulk_pattern_template(options.payload_size));
     let listener = TcpListener::bind((origin_ip, 0))
@@ -508,14 +520,22 @@ pub(super) async fn run_workload_on(
     let iterations = options.iterations;
     let traffic = scenario.traffic;
     let server_task = tokio::spawn(async move {
-        run_target_server(listener, traffic, server_template, iterations, connections).await
+        run_target_server_with_preface(
+            listener,
+            traffic,
+            server_template,
+            iterations,
+            connections,
+            client_preface,
+        )
+        .await
     });
 
     phase.set(BenchmarkPhase::Opening);
     if scenario.traffic == StreamBenchTraffic::HeldOpen {
         let mut clients = JoinSet::new();
         for _ in 0..options.connections {
-            clients.spawn(connect_client_flow(socks_addr, target_addr));
+            clients.spawn(connect_client_flow(socks_addr, target_addr, client_preface));
         }
         let mut held_clients = Vec::with_capacity(options.connections);
         let mut outcome = WorkloadOutcome::empty();
@@ -563,6 +583,7 @@ pub(super) async fn run_workload_on(
             template,
             options.iterations,
             phase.clone(),
+            client_preface,
         ));
     }
 
@@ -604,6 +625,18 @@ pub(super) async fn run_target_server(
     iterations: usize,
     connections: usize,
 ) -> Result<(), BenchError> {
+    run_target_server_with_preface(listener, traffic, template, iterations, connections, false)
+        .await
+}
+
+async fn run_target_server_with_preface(
+    listener: TcpListener,
+    traffic: StreamBenchTraffic,
+    template: Arc<Vec<u8>>,
+    iterations: usize,
+    connections: usize,
+    client_preface: bool,
+) -> Result<(), BenchError> {
     let mut workers = JoinSet::new();
     for _ in 0..connections {
         let (stream, _) = listener.accept().await.map_err(|source| BenchError::Io {
@@ -611,7 +644,25 @@ pub(super) async fn run_target_server(
             source,
         })?;
         let template = Arc::clone(&template);
-        workers.spawn(async move { run_target_flow(stream, traffic, &template, iterations).await });
+        workers.spawn(async move {
+            let mut stream = stream;
+            if client_preface {
+                let mut preface = [0];
+                stream
+                    .read_exact(&mut preface)
+                    .await
+                    .map_err(|source| BenchError::Io {
+                        action: "reading stream-transport client preface".to_owned(),
+                        source,
+                    })?;
+                if preface[0] != PREFACE_BYTE {
+                    return Err(BenchError::InvalidArguments(
+                        "invalid stream-transport client preface".to_owned(),
+                    ));
+                }
+            }
+            run_target_flow(stream, traffic, &template, iterations).await
+        });
     }
     while let Some(result) = workers.join_next().await {
         result.map_err(|error| {
@@ -731,8 +782,10 @@ async fn run_client_flow(
     template: Arc<Vec<u8>>,
     iterations: usize,
     phase: BenchmarkPhaseTracker,
+    client_preface: bool,
 ) -> Result<WorkloadOutcome, BenchError> {
-    let (client, setup_sample) = connect_client_flow(socks_addr, target_addr).await?;
+    let (client, setup_sample) =
+        connect_client_flow(socks_addr, target_addr, client_preface).await?;
     phase.set(BenchmarkPhase::Traffic);
     run_connected_client_flow(client, setup_sample, traffic, template, iterations).await
 }
@@ -740,6 +793,7 @@ async fn run_client_flow(
 async fn connect_client_flow(
     socks_addr: SocketAddr,
     target_addr: SocketAddr,
+    client_preface: bool,
 ) -> Result<(TcpStream, FlowSetupSample), BenchError> {
     let setup_started = Instant::now();
     let tcp_started = Instant::now();
@@ -751,6 +805,15 @@ async fn connect_client_flow(
         })?;
     let tcp_connect_us = tcp_started.elapsed().as_micros();
     let socks = socks5_connect_measured(&mut client, target_addr).await?;
+    if client_preface {
+        client
+            .write_all(&[PREFACE_BYTE])
+            .await
+            .map_err(|source| BenchError::Io {
+                action: "writing stream-transport client preface".to_owned(),
+                source,
+            })?;
+    }
     let mut ready = [0_u8; 1];
     client
         .read_exact(&mut ready)
@@ -1282,6 +1345,7 @@ mod tests {
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll, Waker};
+    use std::time::Duration;
 
     use tokio::io::ReadBuf;
 
@@ -1397,6 +1461,63 @@ mod tests {
             .unwrap();
 
         assert!(!state.lock().unwrap().write_shutdown);
+    }
+
+    #[tokio::test]
+    async fn client_preface_precedes_ready_and_is_not_counted_as_payload() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(run_target_server_with_preface(
+            listener,
+            StreamBenchTraffic::Upload,
+            Arc::new(vec![1, 2, 3]),
+            1,
+            1,
+            true,
+        ));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            let mut client = TcpStream::connect(address).await.unwrap();
+            let mut marker = [0];
+            assert!(tokio::time::timeout(
+                Duration::from_millis(30),
+                client.read_exact(&mut marker)
+            )
+            .await
+            .is_err());
+            client.write_all(&[PREFACE_BYTE]).await.unwrap();
+            client.read_exact(&mut marker).await.unwrap();
+            assert_eq!(marker, [READY_BYTE]);
+            client.write_all(&[1, 2, 3]).await.unwrap();
+            client.read_exact(&mut marker).await.unwrap();
+            assert_eq!(marker, [COMPLETE_BYTE]);
+            server.await.unwrap().unwrap();
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn incorrect_client_preface_is_rejected() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(run_target_server_with_preface(
+            listener,
+            StreamBenchTraffic::Upload,
+            Arc::new(vec![1]),
+            1,
+            1,
+            true,
+        ));
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client.write_all(&[0]).await.unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid stream-transport client preface"));
     }
 
     #[tokio::test]

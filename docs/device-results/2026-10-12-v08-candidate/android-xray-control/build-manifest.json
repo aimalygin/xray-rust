@@ -1,0 +1,10 @@
+{
+  "canonicalHostRestored": true,
+  "go": "1.26.5",
+  "sha256": {
+    "android-reference-probe": "e71bc52293cb95974d51323c526980571ec63f57a311c283e1fc2b16df1c4e76",
+    "xray-android-control": "c0a89df37bd223d38a6f8a56315d052fce6a7da7d888b7dd7eb035f326988a92"
+  },
+  "source": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "time": 1791824963.809354
+}

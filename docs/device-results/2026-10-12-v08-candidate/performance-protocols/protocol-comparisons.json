@@ -1,0 +1,268 @@
+[
+  {
+    "candidate": {
+      "cpuMs": 310,
+      "cpuMsPerMiB": 0.60546875,
+      "peakRSSMiB": 7.703125,
+      "throughputMiBs": 1950.4594722521426
+    },
+    "case": "trojan-tls-socks-full-duplex-1",
+    "profile": "trojan-tls",
+    "throughputVsXrayPct": 116.06311641138315,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 410,
+      "cpuMsPerMiB": 0.80078125,
+      "peakRSSMiB": 33.65625,
+      "throughputMiBs": 1680.5161989092057
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 184,
+      "peakRSSMiB": 7.21875,
+      "throughputMiBs": 20.208417290415472
+    },
+    "case": "trojan-tls-socks-tcp-latency-1",
+    "profile": "trojan-tls",
+    "throughputVsXrayPct": 102.89630269953001,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 177,
+      "peakRSSMiB": 30.375,
+      "throughputMiBs": 19.639595165461447
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 320,
+      "cpuMsPerMiB": 0.625,
+      "peakRSSMiB": 5.59375,
+      "throughputMiBs": 1843.2189895793183
+    },
+    "case": "ss2022-aes128-socks-full-duplex-1",
+    "profile": "ss2022-aes128",
+    "throughputVsXrayPct": 83.71611747692872,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 310,
+      "cpuMsPerMiB": 0.60546875,
+      "peakRSSMiB": 33.109375,
+      "throughputMiBs": 2201.7492510773573
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 224,
+      "peakRSSMiB": 5.203125,
+      "throughputMiBs": 19.765004182009246
+    },
+    "case": "ss2022-aes128-socks-tcp-latency-1",
+    "profile": "ss2022-aes128",
+    "throughputVsXrayPct": 102.96089249848507,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 50,
+      "cpuMsPerMiB": 25.6,
+      "p95Us": 230,
+      "peakRSSMiB": 29.953125,
+      "throughputMiBs": 19.196613104631023
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 330,
+      "cpuMsPerMiB": 0.64453125,
+      "peakRSSMiB": 5.59375,
+      "throughputMiBs": 1876.4003714319877
+    },
+    "case": "ss2022-aes256-socks-full-duplex-1",
+    "profile": "ss2022-aes256",
+    "throughputVsXrayPct": 88.88296914704868,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 340,
+      "cpuMsPerMiB": 0.6640625,
+      "peakRSSMiB": 33.34375,
+      "throughputMiBs": 2111.0910103910414
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 206,
+      "peakRSSMiB": 5.25,
+      "throughputMiBs": 19.42176794037865
+    },
+    "case": "ss2022-aes256-socks-tcp-latency-1",
+    "profile": "ss2022-aes256",
+    "throughputVsXrayPct": 97.25277830845297,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 216,
+      "peakRSSMiB": 30.109375,
+      "throughputMiBs": 19.970399075674074
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 610,
+      "cpuMsPerMiB": 1.19140625,
+      "peakRSSMiB": 5.546875,
+      "throughputMiBs": 923.1851082770005
+    },
+    "case": "ss2022-chacha20-socks-full-duplex-1",
+    "profile": "ss2022-chacha20",
+    "throughputVsXrayPct": 71.35353904372595,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 830,
+      "cpuMsPerMiB": 1.62109375,
+      "peakRSSMiB": 33.65625,
+      "throughputMiBs": 1293.8182473489735
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 197,
+      "peakRSSMiB": 5.140625,
+      "throughputMiBs": 19.16895671802925
+    },
+    "case": "ss2022-chacha20-socks-tcp-latency-1",
+    "profile": "ss2022-chacha20",
+    "throughputVsXrayPct": 96.9173863970949,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 185,
+      "peakRSSMiB": 30.171875,
+      "throughputMiBs": 19.778656266574515
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 320,
+      "cpuMsPerMiB": 0.625,
+      "peakRSSMiB": 5.5625,
+      "throughputMiBs": 1930.8796014543825
+    },
+    "case": "vmess-aes128-socks-full-duplex-1",
+    "profile": "vmess-aes128",
+    "throughputVsXrayPct": 75.48315595105485,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 310,
+      "cpuMsPerMiB": 0.60546875,
+      "peakRSSMiB": 33.3125,
+      "throughputMiBs": 2558.0271215824796
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 187,
+      "peakRSSMiB": 5.328125,
+      "throughputMiBs": 20.520887013784865
+    },
+    "case": "vmess-aes128-socks-tcp-latency-1",
+    "profile": "vmess-aes128",
+    "throughputVsXrayPct": 98.56570596537313,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 198,
+      "peakRSSMiB": 30.0,
+      "throughputMiBs": 20.81949985829149
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 570,
+      "cpuMsPerMiB": 1.11328125,
+      "peakRSSMiB": 5.828125,
+      "throughputMiBs": 1279.9281384346675
+    },
+    "case": "vmess-chacha20-socks-full-duplex-1",
+    "profile": "vmess-chacha20",
+    "throughputVsXrayPct": 96.0309208439492,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 750,
+      "cpuMsPerMiB": 1.46484375,
+      "peakRSSMiB": 34.078125,
+      "throughputMiBs": 1332.8291837527602
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 30,
+      "cpuMsPerMiB": 15.36,
+      "p95Us": 181,
+      "peakRSSMiB": 5.453125,
+      "throughputMiBs": 20.784604907926155
+    },
+    "case": "vmess-chacha20-socks-tcp-latency-1",
+    "profile": "vmess-chacha20",
+    "throughputVsXrayPct": 107.82294803845046,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 190,
+      "peakRSSMiB": 30.0625,
+      "throughputMiBs": 19.27660603428707
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 310,
+      "cpuMsPerMiB": 0.60546875,
+      "peakRSSMiB": 5.59375,
+      "throughputMiBs": 2011.7611406921424
+    },
+    "case": "vmess-auto-socks-full-duplex-1",
+    "profile": "vmess-auto",
+    "throughputVsXrayPct": 78.41521747992537,
+    "traffic": "full-duplex",
+    "xray": {
+      "cpuMs": 310,
+      "cpuMsPerMiB": 0.60546875,
+      "peakRSSMiB": 33.515625,
+      "throughputMiBs": 2565.5238936334795
+    }
+  },
+  {
+    "candidate": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 185,
+      "peakRSSMiB": 5.34375,
+      "throughputMiBs": 20.274803058673008
+    },
+    "case": "vmess-auto-socks-tcp-latency-1",
+    "profile": "vmess-auto",
+    "throughputVsXrayPct": 100.82037835053285,
+    "traffic": "tcp-latency",
+    "xray": {
+      "cpuMs": 40,
+      "cpuMsPerMiB": 20.48,
+      "p95Us": 192,
+      "peakRSSMiB": 30.03125,
+      "throughputMiBs": 20.109826396585678
+    }
+  }
+]

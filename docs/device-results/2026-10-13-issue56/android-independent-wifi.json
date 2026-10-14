@@ -1,0 +1,59 @@
+{
+  "plan": {
+    "coreSource": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "go": "1.26.5",
+    "transport": "Wi-Fi TCP",
+    "ingress": "Android Go SOCKS, no Rust/VpnService/TUN",
+    "rounds": 2,
+    "httpPerRound": 240,
+    "udpPerRound": 480,
+    "workers": 32,
+    "deadlineSeconds": 5,
+    "pauseSeconds": 20,
+    "sha256": {
+      "xray-android-control": "8583ce78c9093fde0ae5bb58afedd4db88c038ceb3c194c9b9a4ed5893a80fe5",
+      "android-reference-probe": "539bf5bc85325b70a53342703d4854b70985a6f5663d4763b956af7d3ef2a667"
+    }
+  },
+  "results": [
+    {
+      "error": "read udp4 127.0.0.1:56800: i/o timeout",
+      "event": "udp-failure",
+      "localPort": 56800,
+      "tag": "d9640ec51c49b8da",
+      "time": 1791924036.5910466
+    },
+    {
+      "error": "read udp4 127.0.0.1:56800: i/o timeout",
+      "event": "failure",
+      "kind": "udp",
+      "time": 1791924036.5919282
+    },
+    {
+      "counts": {
+        "httpPassed": 240,
+        "udpFailed": 1,
+        "udpPassed": 479
+      },
+      "durationSeconds": 5.4196451119999995,
+      "event": "round",
+      "round": 0,
+      "time": 1791924036.5921738
+    },
+    {
+      "counts": {
+        "httpPassed": 240,
+        "udpPassed": 480
+      },
+      "durationSeconds": 0.917407691,
+      "event": "round",
+      "round": 1,
+      "time": 1791924057.5140986
+    }
+  ],
+  "cleanup": {
+    "time": 1791924058.2355719,
+    "ownedServerStopped": true,
+    "ownedDeviceDirectoryRemoved": true
+  }
+}

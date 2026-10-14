@@ -1,0 +1,621 @@
+{
+  "baseline_runtime": "9198a8f2770496199022b531b01b3a2b35ec1bcc",
+  "baseline_sha256": "528e6532d6919bc867dc0c7993bc090125ed3a725c0ebbc12db02791f60ff8e8",
+  "campaigns": {
+    "adaptive-cycles": {
+      "kind": "diagnostic",
+      "runs": 8,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "adaptive2"
+      }
+    },
+    "adaptive-duplex": {
+      "kind": "ordinary",
+      "runs": 32,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "adaptive2"
+      }
+    },
+    "adaptive-idle": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "adaptive2"
+      }
+    },
+    "chacha-broad-attempt-1": {
+      "kind": "ordinary",
+      "runs": 128,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha"
+      }
+    },
+    "chacha-confirmation-attempt-1": {
+      "kind": "ordinary",
+      "runs": 72,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha",
+        "control": "baseline"
+      }
+    },
+    "chacha-cycles-attempt-1": {
+      "kind": "diagnostic",
+      "runs": 36,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha",
+        "control": "baseline"
+      }
+    },
+    "chacha-held-large-vmess-aes128-attempt-2": {
+      "kind": "held",
+      "runs": 4,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha"
+      }
+    },
+    "chacha-held-large-vmess-chacha20-attempt-1": {
+      "kind": "held",
+      "runs": 4,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha"
+      }
+    },
+    "chacha-held-small-vmess-aes128-attempt-1": {
+      "kind": "held",
+      "runs": 4,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha"
+      }
+    },
+    "chacha-held-small-vmess-chacha20-attempt-1": {
+      "kind": "held",
+      "runs": 4,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha"
+      }
+    },
+    "chacha-idle-attempt-1": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha"
+      }
+    },
+    "chacha-latency-confirmation-attempt-1": {
+      "kind": "ordinary",
+      "runs": 144,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "chacha",
+        "control": "baseline"
+      }
+    },
+    "chacha-reference-attempt-1": {
+      "kind": "ordinary",
+      "runs": 72,
+      "status": "pass",
+      "versions": {
+        "candidate": "chacha",
+        "singbox": "singbox",
+        "xray": "xray"
+      }
+    },
+    "deferred-broad-attempt-1": {
+      "kind": "ordinary",
+      "runs": 39,
+      "status": "fail",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred"
+      }
+    },
+    "deferred-broad-attempt-2": {
+      "kind": "ordinary",
+      "runs": 128,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred"
+      }
+    },
+    "deferred-clean-1-attempt-1": {
+      "kind": "ordinary",
+      "runs": 11,
+      "status": "fail",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "deferred-clean-1-attempt-2": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "deferred-clean-2-attempt-1": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "deferred-clean-3-attempt-1": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "deferred-clean-4-attempt-1": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "deferred-clean-5-attempt-1": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "deferred-confirmation-attempt-1": {
+      "kind": "ordinary",
+      "runs": 72,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline"
+      }
+    },
+    "deferred-cycles-attempt-1": {
+      "kind": "diagnostic",
+      "runs": 36,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline"
+      }
+    },
+    "deferred-pilot-1": {
+      "kind": "ordinary",
+      "runs": 4,
+      "status": "fail",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "deferred",
+        "control": "baseline",
+        "prior": "selected"
+      }
+    },
+    "final-broad": {
+      "kind": "ordinary",
+      "runs": 70,
+      "status": "fail",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "final"
+      }
+    },
+    "quota-confirm": {
+      "kind": "ordinary",
+      "runs": 72,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "cap1": "cap1",
+        "cap2": "cap2"
+      }
+    },
+    "quota-cycles-aes": {
+      "kind": "diagnostic",
+      "runs": 18,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "cap1": "cap1",
+        "cap2": "cap2"
+      }
+    },
+    "quota-long-aes": {
+      "kind": "ordinary",
+      "runs": 1,
+      "status": "fail",
+      "versions": {
+        "baseline": "baseline"
+      }
+    },
+    "quota-pilot": {
+      "kind": "ordinary",
+      "runs": 36,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "cap1": "cap1",
+        "cap2": "cap2"
+      }
+    },
+    "selected-broad": {
+      "kind": "ordinary",
+      "runs": 128,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "selected"
+      }
+    },
+    "selected-confirm": {
+      "kind": "ordinary",
+      "runs": 48,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "selected"
+      }
+    },
+    "selected-cycles": {
+      "kind": "diagnostic",
+      "runs": 24,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "selected"
+      }
+    },
+    "selected-held-large": {
+      "kind": "held",
+      "runs": 8,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "selected"
+      }
+    },
+    "selected-held-small": {
+      "kind": "held",
+      "runs": 8,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "selected"
+      }
+    },
+    "selected-idle": {
+      "kind": "ordinary",
+      "runs": 16,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "candidate": "selected"
+      }
+    },
+    "separate-cycles-aes": {
+      "kind": "diagnostic",
+      "runs": 18,
+      "status": "pass",
+      "versions": {
+        "baseline": "baseline",
+        "cap2": "cap2",
+        "separate": "separate-activity"
+      }
+    },
+    "serial-cycles": {
+      "kind": "diagnostic",
+      "runs": 9,
+      "status": "pass",
+      "versions": {
+        "adaptive": "adaptive2",
+        "baseline": "baseline",
+        "serial": "serial"
+      }
+    },
+    "serial-duplex": {
+      "kind": "ordinary",
+      "runs": 36,
+      "status": "pass",
+      "versions": {
+        "adaptive": "adaptive2",
+        "baseline": "baseline",
+        "serial": "serial"
+      }
+    },
+    "wide-cycles": {
+      "kind": "diagnostic",
+      "runs": 9,
+      "status": "pass",
+      "versions": {
+        "adaptive": "adaptive2",
+        "baseline": "baseline",
+        "wide": "adaptive-wide"
+      }
+    },
+    "wide-duplex": {
+      "kind": "ordinary",
+      "runs": 36,
+      "status": "pass",
+      "versions": {
+        "adaptive": "adaptive2",
+        "baseline": "baseline",
+        "wide": "adaptive-wide"
+      }
+    }
+  },
+  "harness": {
+    "build_arguments": [
+      "build",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-bench",
+      "--bin",
+      "xray-bench"
+    ],
+    "commit": "2d8afb6e6d9f601f0446aa74382f6e24dac9a7dd",
+    "incremental": false,
+    "path": "/Users/antonmalygin/xray-rust/target/v08-io-final/bin/harness",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+    "sha256": "98995b304613f27bd5040221bcb1462f2c85a8eaff264eb2a4b18962714454ce",
+    "tree": "394221c9efac31d9a57de15c9153add9182d528a"
+  },
+  "singbox": {
+    "build_info": "/Users/antonmalygin/xray-rust/target/v08-cpu-final/bin/singbox: go1.26.0\n\tpath\tgithub.com/sagernet/sing-box/cmd/sing-box\n\tmod\tgithub.com/sagernet/sing-box\t(devel)\t\n\tdep\tgithub.com/ajg/form\tv1.5.1\th1:t9c7v8JUKu/XxOGBU0yjNpaMloxGEJhUkqFRq0ibGeU=\n\tdep\tgithub.com/andybalholm/brotli\tv1.1.0\th1:eLKJA0d02Lf0mVpIDgYnqXcUn0GqVmEFny3VuID1U3M=\n\tdep\tgithub.com/anytls/sing-anytls\tv0.0.11\th1:w8e9Uj1oP3m4zxkyZDewPk0EcQbvVxb7Nn+rapEx4fc=\n\tdep\tgithub.com/cretz/bine\tv0.2.0\th1:8GiDRGlTgz+o8H9DSnsl+5MeBK4HsExxgl6WgzOCuZo=\n\tdep\tgithub.com/database64128/netx-go\tv0.1.1\th1:dT5LG7Gs7zFZBthFBbzWE6K8wAHjSNAaK7wCYZT7NzM=\n\tdep\tgithub.com/database64128/tfo-go/v2\tv2.3.2\th1:UhZMKiMq3swZGUiETkLBDzQnZBPSAeBMClpJGlnJ5Fw=\n\tdep\tgithub.com/fsnotify/fsnotify\tv1.9.0\th1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=\n\tdep\tgithub.com/go-chi/chi/v5\tv5.2.5\th1:Eg4myHZBjyvJmAFjFvWgrqDTXFyOzjj7YIm3L3mu6Ug=\n\tdep\tgithub.com/go-chi/render\tv1.0.3\th1:AsXqd2a1/INaIfUSKq3G5uA8weYx20FOsM7uSoCyyt4=\n\tdep\tgithub.com/gobwas/httphead\tv0.1.0\th1:exrUm0f4YX0L7EBwZHuCF4GDp8aJfVeBrlLQrs6NqWU=\n\tdep\tgithub.com/gobwas/pool\tv0.2.1\th1:xfeeEhW7pwmX8nuLVlqbzVc7udMDrwetjEv+TZIz1og=\n\tdep\tgithub.com/gofrs/uuid/v5\tv5.4.0\th1:EfbpCTjqMuGyq5ZJwxqzn3Cbr2d0rUZU7v5ycAk/e/0=\n\tdep\tgithub.com/google/btree\tv1.1.3\th1:CVpQJjYgC4VbzxeGVHfvZrv1ctoYCAI8vbl07Fcxlyg=\n\tdep\tgithub.com/hashicorp/yamux\tv0.1.2\th1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8=\n\tdep\tgithub.com/klauspost/compress\tv1.18.0\th1:c/Cqfb0r+Yi+JtIEq73FWXVkRonBlf0CRNYc8Zttxdo=\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.3.0\th1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=\n\tdep\tgithub.com/logrusorgru/aurora\tv2.0.3+incompatible\th1:tOpm7WcpBTn4fjmVfgpQq0EfczGlG91VSDkswnjF5A8=\n\tdep\tgithub.com/metacubex/utls\tv1.8.4\th1:HmL9nUApDdWSkgUyodfwF6hSjtiwCGGdyhaSpEejKpg=\n\tdep\tgithub.com/miekg/dns\tv1.1.72\th1:vhmr+TF2A3tuoGNkLDFK9zi36F2LS+hKTRW0Uf8kbzI=\n\tdep\tgithub.com/oschwald/maxminddb-golang\tv1.13.1\th1:G3wwjdN9JmIK2o/ermkHM+98oX5fS+k5MbwsmL4MRQE=\n\tdep\tgithub.com/quic-go/qpack\tv0.6.0\th1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=\n\tdep\tgithub.com/sagernet/bbolt\tv0.0.0-20231014093535-ea5cb2fe9f0a\th1:+NkI2670SQpQWvkkD2QgdTuzQG263YZ+2emfpeyGqW0=\n\tdep\tgithub.com/sagernet/fswatch\tv0.1.2\th1:/TT7k4mkce1qFPxamLO842WjqBgbTBiXP2mlUjp9PFk=\n\tdep\tgithub.com/sagernet/gvisor\tv0.0.0-20250811.0-sing-box-mod.1\th1:AzCE2RhBjLJ4WIWc/GejpNh+z30d5H1hwaB0nD9eY3o=\n\tdep\tgithub.com/sagernet/quic-go\tv0.59.0-sing-box-mod.4\th1:6qvrUW79S+CrPwWz6cMePXohgjHoKxLo3c+MDhNwc3o=\n\tdep\tgithub.com/sagernet/sing\tv0.8.14\th1:S6Netv4F61uNAuD/sUbHnGuNUEPwtL08Ouk0//CVYgM=\n\tdep\tgithub.com/sagernet/sing-mux\tv0.3.5\th1:RHnhVEc+SFqkrK4xMygYjDwwLhzp2Bj3lztSukONfhI=\n\tdep\tgithub.com/sagernet/sing-quic\tv0.6.5\th1:DVH4mgPkWhNoc47JK6Q2ePCBXqIG5oJnTB+Fw9laL/M=\n\tdep\tgithub.com/sagernet/sing-shadowsocks\tv0.2.8\th1:PURj5PRoAkqeHh2ZW205RWzN9E9RtKCVCzByXruQWfE=\n\tdep\tgithub.com/sagernet/sing-shadowsocks2\tv0.2.1\th1:dWV9OXCeFPuYGHb6IRqlSptVnSzOelnqqs2gQ2/Qioo=\n\tdep\tgithub.com/sagernet/sing-shadowtls\tv0.2.1\th1:ZiHZdnEnP+YS73NMsxiZmIFCwNd0M4k7PkGCKNXhbaM=\n\tdep\tgithub.com/sagernet/sing-tun\tv0.8.14\th1:Vz1HpGCWhG92pHUjhOqNoyn4zVCcd5bXXsdIKDYWM8k=\n\tdep\tgithub.com/sagernet/sing-vmess\tv0.2.8-0.20250909125414-3aed155119a1\th1:aSwUNYUkVyVvdmBSufR8/nRFonwJeKSIROxHcm5br9o=\n\tdep\tgithub.com/sagernet/smux\tv1.5.50-sing-box-mod.1\th1:XkJcivBC9V4wBjiGXIXZ229aZCU1hzcbp6kSkkyQ478=\n\tdep\tgithub.com/sagernet/wireguard-go\tv0.0.4\th1:w/vHtk7AzMG37+D/uQROBL72Gj/Gj+FHMY5kg4q0CQ4=\n\tdep\tgithub.com/sagernet/ws\tv0.0.0-20231204124109-acfe8907c854\th1:6uUiZcDRnZSAegryaUGwPC/Fj13JSHwiTftrXhMmYOc=\n\tdep\tgithub.com/spf13/cobra\tv1.10.2\th1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=\n\tdep\tgithub.com/spf13/pflag\tv1.0.9\th1:9exaQaMOCwffKiiiYk6/BndUBv+iRViNW+4lEMi0PvY=\n\tdep\tgithub.com/vishvananda/netns\tv0.0.5\th1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zdEY=\n\tdep\tgo4.org/netipx\tv0.0.0-20231129151722-fdeea329fbba\th1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=\n\tdep\tgolang.org/x/crypto\tv0.48.0\th1:/VRzVqiRSggnhY7gNRxPauEQ5Drw9haKdM0jqfcCFts=\n\tdep\tgolang.org/x/exp\tv0.0.0-20251219203646-944ab1f22d93\th1:fQsdNF2N+/YewlRZiricy4P1iimyPKZ/xwniHj8Q2a0=\n\tdep\tgolang.org/x/mod\tv0.33.0\th1:tHFzIWbBifEmbwtGz65eaWyGiGZatSrT9prnU8DbVL8=\n\tdep\tgolang.org/x/net\tv0.50.0\th1:ucWh9eiCGyDR3vtzso0WMQinm2Dnt8cFMuQa9K33J60=\n\tdep\tgolang.org/x/sync\tv0.19.0\th1:vV+1eWNmZ5geRlYjzm2adRgW2/mcpevXNg50YZtPCE4=\n\tdep\tgolang.org/x/sys\tv0.41.0\th1:Ivj+2Cp/ylzLiEU89QhWblYnOE9zerudt9Ftecq2C6k=\n\tdep\tgolang.org/x/text\tv0.34.0\th1:oL/Qq0Kdaqxa1KbNeMKwQq0reLCCaFtqu2eNuSeNHbk=\n\tdep\tgolang.org/x/time\tv0.11.0\th1:/bpjEDfN9tkoN/ryeYHnv5hcMlc8ncjMcM4XBk5NWV0=\n\tdep\tgolang.zx2c4.com/wireguard/wgctrl\tv0.0.0-20241231184526-a9ab2273dd10\th1:3GDAcqdIg1ozBNLgPy4SLT84nfcBjr6rhGtXYtrkWLU=\n\tdep\tlukechampine.com/blake3\tv1.3.0\th1:sJ3XhFINmHSrYCgl958hscfIa3bw8x4DqMP3u1YvoYE=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\t-tags=with_utls,with_gvisor,with_quic,with_wireguard\n\tbuild\t-trimpath=true\n\tbuild\tDefaultGODEBUG=containermaxprocs=0,cryptocustomrand=1,decoratemappings=0,tlssecpmlkem=0,tlssha1=1,updatemaxprocs=0,urlstrictcolons=0,x509sha256skid=0\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n",
+    "commit": "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778",
+    "module_archive_sha256": "6396a254f9da65c54b775fdb5086781c797069b98fb94807275f6679a17fa774",
+    "module_identity": {
+      "GoModSum": "h1:QkfLSGwPZB5adT5zF6PL6bPKRBVkS4tCIVv/zbM9WHA=",
+      "Origin": {
+        "Hash": "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778",
+        "Ref": "refs/heads/stable",
+        "URL": "https://github.com/sagernet/sing-box",
+        "VCS": "git"
+      },
+      "Path": "github.com/sagernet/sing-box",
+      "Sum": "h1:2PfQuwVsV3rbvvOqoJOc1K2CY5xe5b9BL/TmIlGoCPE=",
+      "Version": "v1.13.20"
+    },
+    "path": "/Users/antonmalygin/xray-rust/target/v08-io-final/bin/singbox",
+    "sha256": "5d17d2b91fb5b022be50fc49c74cb6aed84dcae9e94011159a31da3f211412ff",
+    "version": "1.13.20"
+  },
+  "variants": {
+    "adaptive-wide": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/adaptive-wide.json",
+      "incremental": false,
+      "patch": "investigation/adaptive-wide.patch",
+      "patch_sha256": "f334bfd58bea0b432244ff61b416572e82cd5572a1b74d84d31246e5238c0ef9",
+      "sha256": "694bb4dacdf79d8dae713cebfaa2b614517e431ef19ef926997bdd514887f7d1"
+    },
+    "adaptive2": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/adaptive2.json",
+      "incremental": false,
+      "patch": "investigation/adaptive2.patch",
+      "patch_sha256": "46dcd8c824b0d6f3d357103cd7b3e6dc9dc9622719791a34b00ece867e7d2d47",
+      "sha256": "98e1670ea669175080e9420531f009ca776bfa1832853427e1618941f2faefda"
+    },
+    "cap1": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/cap1.json",
+      "incremental": false,
+      "limit": 1,
+      "patch": "investigation/cap1.patch",
+      "patch_sha256": "02aa54c834cc8985921b099cb45dc57ed1b77b6c47bc4fc6df4f58be07191440",
+      "sha256": "f67b1123a5a76ccde8ae9f8ca23ccacbc9a7f3c565248962a3ed8b1fe794f21f"
+    },
+    "cap2": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/cap2.json",
+      "incremental": false,
+      "limit": 2,
+      "patch": "investigation/cap2.patch",
+      "patch_sha256": "c65de7c78cb0a3512c49a64f199b7de7b5c7cf3227893013ce2b65e1896162f1",
+      "sha256": "bb94ec9b95f31aa53edc472b83c3b2de683a35d362629f10b08d6c56850fcf55"
+    },
+    "chacha": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/chacha.json",
+      "incremental": false,
+      "patch": "investigation/chacha.patch",
+      "patch_sha256": "17377c67b97d3342355efa42444f720d9a8f4e39ee0f8a9db53858413b6855e7",
+      "sha256": "67ab56775c772481f0ec715afdcc47065e796f0b34dae05cc75b766f5abf8ad9"
+    },
+    "deferred": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/deferred.json",
+      "incremental": false,
+      "patch": "investigation/deferred.patch",
+      "patch_sha256": "ff4daac8d667ce848da72d2e0cd1c60eb9f9d7b2be3cbb385ce304b3fafc1b40",
+      "sha256": "c371c4d3bff9636341fdb19a00ba793154012ac93d3893aef8abc6841381ad7a"
+    },
+    "final": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/final.json",
+      "incremental": false,
+      "patch": "investigation/final.patch",
+      "patch_sha256": "edeaabc634ccce45c9bceb2d77e1ba087e4919fc3ab39a1cbead8ef65f8eb73c",
+      "sha256": "11d9f263f5fc18a0a511c756a3a615cc449cf34e62478a7ce1ca604fffa02fe1"
+    },
+    "selected": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/selected.json",
+      "incremental": false,
+      "patch": "investigation/selected.patch",
+      "patch_sha256": "f2ae2c44e0f3dc9a500633da7acfb185e2553a58d93926737b59a1d4dc75ad5a",
+      "sha256": "1c389d4f69e6bd4ce5228a2404f5ee813f9edde32ab522a464d49c534fcbf7c5"
+    },
+    "separate-activity": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/separate-activity.json",
+      "incremental": false,
+      "patch": "investigation/separate-activity.patch",
+      "patch_sha256": "2ebc218da657fa6a773f233e9d24f3ca6b0c89020bf5eef6e28ae3a5c2d2c58f",
+      "sha256": "02a693be92e514d4e03d05a7b1c6e228c5a5d4c8e93856acf93bbe6fa7b89a4e"
+    },
+    "serial": {
+      "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc",
+      "build_args": [
+        "cargo",
+        "build",
+        "--locked",
+        "--offline",
+        "--release",
+        "-p",
+        "xray-cli"
+      ],
+      "compiler": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "identity": "investigation/serial.json",
+      "incremental": false,
+      "patch": "investigation/serial.patch",
+      "patch_sha256": "ad12f9fc74c520d283149c071be739315b97c708cdf9062e9731ac2173a4c15a",
+      "sha256": "898cf66001e8411ba158478d692e5c1023fb9018bac889cc501e9c45728d1029"
+    }
+  },
+  "xray": {
+    "build_info": "/Users/antonmalygin/xray-rust/target/v08-cpu-final/bin/xray: go1.26.0\n\tpath\tgithub.com/xtls/xray-core/main\n\tmod\tgithub.com/xtls/xray-core\tv1.260327.1-0.20260728075948-5ca6f4b7d4dc\t\n\tdep\tgithub.com/andybalholm/brotli\tv1.0.6\th1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=\n\tdep\tgithub.com/apernet/quic-go\tv0.59.1-0.20260425001925-6c6cc9bcb716\th1:J1O+xpLuJWkdYbw5JPGwBqIHs2J8tiEP7Py9lPqkN2I=\n\tdep\tgithub.com/cloudflare/circl\tv1.6.4\th1:pOXuDTCEYyzydgUpQ0CQz3LsinKjiSk6nNP5Lt5K64U=\n\tdep\tgithub.com/ghodss/yaml\tv1.0.1-0.20220118164431-d8423dcdf344\th1:Arcl6UOIS/kgO2nW3A65HN+7CMjSDP/gofXL4CZt1V4=\n\tdep\tgithub.com/google/btree\tv1.1.2\th1:xf4v41cLI2Z6FxbKm+8Bu+m8ifhj15JuZ9sa0jZCMUU=\n\tdep\tgithub.com/google/uuid\tv1.6.0\th1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\n\tdep\tgithub.com/gorilla/websocket\tv1.5.3\th1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=\n\tdep\tgithub.com/juju/ratelimit\tv1.0.2\th1:sRxmtRiajbvrcLQT7S+JbqU0ntsb9W2yhSdNN8tWfaI=\n\tdep\tgithub.com/klauspost/compress\tv1.17.4\th1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.4.0\th1:S6Hrbc7+ywsr0r+RLapfGBHfyefhCTwEh3A0tV913Dw=\n\tdep\tgithub.com/miekg/dns\tv1.1.72\th1:vhmr+TF2A3tuoGNkLDFK9zi36F2LS+hKTRW0Uf8kbzI=\n\tdep\tgithub.com/pelletier/go-toml\tv1.9.5\th1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=\n\tdep\tgithub.com/pion/dtls/v3\tv3.1.4\th1:QhvtMflMfu9Kf0RcDC5BJBle4caPskByrKQR6uuYqpY=\n\tdep\tgithub.com/pion/logging\tv0.2.4\th1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=\n\tdep\tgithub.com/pion/stun/v3\tv3.1.6\th1:WnhsD0eHCiwCfKNkVx0VJJwr2Y3eV4Ueih3KJ+dfZy8=\n\tdep\tgithub.com/pion/transport/v4\tv4.0.2\th1:ifYlPqNwsy6aKQ9y8yzxXlHae5431ZrH2avkD/Rn6Tk=\n\tdep\tgithub.com/pires/go-proxyproto\tv0.15.0\th1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=\n\tdep\tgithub.com/quic-go/qpack\tv0.6.0\th1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=\n\tdep\tgithub.com/refraction-networking/utls\tv1.8.3-0.20260301010127-aa6edf4b11af\th1:er2acxbi3N1nvEq6HXHUAR1nTWEJmQfqiGR8EVT9rfs=\n\tdep\tgithub.com/robfig/cron/v3\tv3.0.1\th1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=\n\tdep\tgithub.com/sagernet/sing\tv0.5.1\th1:mhL/MZVq0TjuvHcpYcFtmSD1BFOxZ/+8ofbNZcg1k1Y=\n\tdep\tgithub.com/sagernet/sing-shadowsocks\tv0.2.7\th1:zaopR1tbHEw5Nk6FAkM05wCslV6ahVegEZaKMv9ipx8=\n\tdep\tgithub.com/wlynxg/anet\tv0.0.5\th1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=\n\tdep\tgithub.com/xtls/reality\tv0.0.0-20260322125925-9234c772ba8f\th1:iy2JRioxmUpoJ3SzbFPyTxHZMbR/rSHP7dOOgYaq1O8=\n\tdep\tgo4.org/netipx\tv0.0.0-20231129151722-fdeea329fbba\th1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=\n\tdep\tgolang.org/x/crypto\tv0.54.0\th1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=\n\tdep\tgolang.org/x/exp\tv0.0.0-20240506185415-9bf2ced13842\th1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=\n\tdep\tgolang.org/x/net\tv0.57.0\th1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=\n\tdep\tgolang.org/x/sync\tv0.22.0\th1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=\n\tdep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\n\tdep\tgolang.org/x/text\tv0.40.0\th1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=\n\tdep\tgolang.org/x/time\tv0.14.0\th1:MRx4UaLrDotUKUdCIqzPC48t1Y9hANFKIRpNx+Te8PI=\n\tdep\tgolang.zx2c4.com/wireguard\tv0.0.0-20250521234502-f333402bd9cb\th1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=\n\tdep\tgoogle.golang.org/genproto/googleapis/rpc\tv0.0.0-20260414002931-afd174a4e478\th1:RmoJA1ujG+/lRGNfUnOMfhCy5EipVMyvUE+KNbPbTlw=\n\tdep\tgoogle.golang.org/grpc\tv1.82.1\th1:NnAxzGRA0677vCa4BUkOAnO5+FfQqVl9iUXeD0IqcGE=\n\tdep\tgoogle.golang.org/protobuf\tv1.36.11\th1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=\n\tdep\tgopkg.in/yaml.v2\tv2.4.0\th1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=\n\tdep\tgvisor.dev/gvisor\tv0.0.0-20260122175437-89a5d21be8f0\th1:Lk6hARj5UPY47dBep70OD/TIMwikJ5fGUGX0Rm3Xigk=\n\tdep\tlukechampine.com/blake3\tv1.4.1\th1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=5ca6f4b7d4dc20a881d4330e498892697627ec0c\n\tbuild\tvcs.time=2026-07-28T07:59:48Z\n\tbuild\tvcs.modified=false\n",
+    "commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-io-final/bin/xray",
+    "sha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+    "version": "26.7.28"
+  }
+}

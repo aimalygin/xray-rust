@@ -1,0 +1,8220 @@
+{
+  "kernel": {
+    "vmess-aes128-socks-download-1": {
+      "candidate": {
+        "context_switches": {
+          "max": 7122,
+          "median": 6670.0,
+          "min": 5259,
+          "samples": [
+            6305,
+            7122,
+            7035,
+            5259
+          ]
+        },
+        "cpu_ms": {
+          "max": 156.799375,
+          "median": 150.0868955,
+          "min": 139.535333,
+          "samples": [
+            143.696458,
+            156.477333,
+            156.799375,
+            139.535333
+          ]
+        },
+        "mach_calls": {
+          "max": 2,
+          "median": 1.0,
+          "min": 0,
+          "samples": [
+            2,
+            2,
+            0,
+            0
+          ]
+        },
+        "system_ms": {
+          "max": 97.935875,
+          "median": 90.8223955,
+          "min": 82.697208,
+          "samples": [
+            84.026458,
+            97.618333,
+            97.935875,
+            82.697208
+          ]
+        },
+        "unix_calls": {
+          "max": 38939,
+          "median": 36729.0,
+          "min": 34856,
+          "samples": [
+            35461,
+            38939,
+            37997,
+            34856
+          ]
+        },
+        "unix_calls_per_mib": {
+          "max": 152.10546875,
+          "median": 143.47265625,
+          "min": 136.15625,
+          "samples": [
+            138.51953125,
+            152.10546875,
+            148.42578125,
+            136.15625
+          ]
+        },
+        "user_ms": {
+          "max": 59.67,
+          "median": 58.86125,
+          "min": 56.838125,
+          "samples": [
+            59.67,
+            58.859,
+            58.8635,
+            56.838125
+          ]
+        }
+      },
+      "xray": {
+        "context_switches": {
+          "max": 4782,
+          "median": 2731.5,
+          "min": 2530,
+          "samples": [
+            2658,
+            2530,
+            2805,
+            4782
+          ]
+        },
+        "cpu_ms": {
+          "max": 135.174375,
+          "median": 121.38722899999999,
+          "min": 120.611291,
+          "samples": [
+            120.886291,
+            120.611291,
+            121.888167,
+            135.174375
+          ]
+        },
+        "mach_calls": {
+          "max": 6,
+          "median": 2.0,
+          "min": 2,
+          "samples": [
+            2,
+            2,
+            6,
+            2
+          ]
+        },
+        "system_ms": {
+          "max": 72.198167,
+          "median": 61.55975,
+          "min": 60.74375,
+          "samples": [
+            61.315083,
+            60.74375,
+            61.804417,
+            72.198167
+          ]
+        },
+        "unix_calls": {
+          "max": 18151,
+          "median": 14803.0,
+          "min": 14381,
+          "samples": [
+            14599,
+            14381,
+            15007,
+            18151
+          ]
+        },
+        "unix_calls_per_mib": {
+          "max": 70.90234375,
+          "median": 57.82421875,
+          "min": 56.17578125,
+          "samples": [
+            57.02734375,
+            56.17578125,
+            58.62109375,
+            70.90234375
+          ]
+        },
+        "user_ms": {
+          "max": 62.976208,
+          "median": 59.9756455,
+          "min": 59.571208,
+          "samples": [
+            59.571208,
+            59.867541,
+            60.08375,
+            62.976208
+          ]
+        }
+      }
+    },
+    "vmess-aes128-socks-full-duplex-1": {
+      "candidate": {
+        "context_switches": {
+          "max": 14380,
+          "median": 14248.0,
+          "min": 12522,
+          "samples": [
+            12522,
+            14325,
+            14380,
+            14171
+          ]
+        },
+        "cpu_ms": {
+          "max": 315.947458,
+          "median": 311.67487500000004,
+          "min": 310.970541,
+          "samples": [
+            310.970541,
+            311.173083,
+            315.947458,
+            312.176667
+          ]
+        },
+        "mach_calls": {
+          "max": 3,
+          "median": 2.5,
+          "min": 1,
+          "samples": [
+            2,
+            1,
+            3,
+            3
+          ]
+        },
+        "system_ms": {
+          "max": 201.18025,
+          "median": 198.9034795,
+          "min": 196.916375,
+          "samples": [
+            196.916375,
+            198.675667,
+            201.18025,
+            199.131292
+          ]
+        },
+        "unix_calls": {
+          "max": 69029,
+          "median": 68559.5,
+          "min": 66000,
+          "samples": [
+            66000,
+            68790,
+            69029,
+            68329
+          ]
+        },
+        "unix_calls_per_mib": {
+          "max": 134.822265625,
+          "median": 133.9052734375,
+          "min": 128.90625,
+          "samples": [
+            128.90625,
+            134.35546875,
+            134.822265625,
+            133.455078125
+          ]
+        },
+        "user_ms": {
+          "max": 114.767208,
+          "median": 113.5497705,
+          "min": 112.497416,
+          "samples": [
+            114.054166,
+            112.497416,
+            114.767208,
+            113.045375
+          ]
+        }
+      },
+      "xray": {
+        "context_switches": {
+          "max": 6983,
+          "median": 5953.5,
+          "min": 5566,
+          "samples": [
+            6020,
+            6983,
+            5566,
+            5887
+          ]
+        },
+        "cpu_ms": {
+          "max": 344.068249,
+          "median": 336.006042,
+          "min": 327.916042,
+          "samples": [
+            327.916042,
+            337.0815,
+            334.930584,
+            344.068249
+          ]
+        },
+        "mach_calls": {
+          "max": 6,
+          "median": 5.0,
+          "min": 4,
+          "samples": [
+            6,
+            4,
+            4,
+            6
+          ]
+        },
+        "system_ms": {
+          "max": 180.16225,
+          "median": 175.485104,
+          "min": 165.881917,
+          "samples": [
+            171.185417,
+            180.16225,
+            165.881917,
+            179.784791
+          ]
+        },
+        "unix_calls": {
+          "max": 28036,
+          "median": 27243.0,
+          "min": 23982,
+          "samples": [
+            26572,
+            28036,
+            23982,
+            27914
+          ]
+        },
+        "unix_calls_per_mib": {
+          "max": 54.7578125,
+          "median": 53.208984375,
+          "min": 46.83984375,
+          "samples": [
+            51.8984375,
+            54.7578125,
+            46.83984375,
+            54.51953125
+          ]
+        },
+        "user_ms": {
+          "max": 169.048667,
+          "median": 160.60135400000001,
+          "min": 156.730625,
+          "samples": [
+            156.730625,
+            156.91925,
+            169.048667,
+            164.283458
+          ]
+        }
+      }
+    },
+    "vmess-aes128-socks-upload-1": {
+      "candidate": {
+        "context_switches": {
+          "max": 5793,
+          "median": 5718.0,
+          "min": 5559,
+          "samples": [
+            5644,
+            5559,
+            5793,
+            5792
+          ]
+        },
+        "cpu_ms": {
+          "max": 153.555958,
+          "median": 152.6171885,
+          "min": 151.930875,
+          "samples": [
+            151.930875,
+            152.996668,
+            152.237709,
+            153.555958
+          ]
+        },
+        "mach_calls": {
+          "max": 3,
+          "median": 2.0,
+          "min": 1,
+          "samples": [
+            1,
+            3,
+            1,
+            3
+          ]
+        },
+        "system_ms": {
+          "max": 99.951209,
+          "median": 99.64039600000001,
+          "min": 99.118375,
+          "samples": [
+            99.118375,
+            99.951209,
+            99.543875,
+            99.736917
+          ]
+        },
+        "unix_calls": {
+          "max": 28681,
+          "median": 28466.0,
+          "min": 28318,
+          "samples": [
+            28407,
+            28318,
+            28525,
+            28681
+          ]
+        },
+        "unix_calls_per_mib": {
+          "max": 112.03515625,
+          "median": 111.1953125,
+          "min": 110.6171875,
+          "samples": [
+            110.96484375,
+            110.6171875,
+            111.42578125,
+            112.03515625
+          ]
+        },
+        "user_ms": {
+          "max": 53.819041,
+          "median": 52.9289795,
+          "min": 52.693834,
+          "samples": [
+            52.8125,
+            53.045459,
+            52.693834,
+            53.819041
+          ]
+        }
+      },
+      "xray": {
+        "context_switches": {
+          "max": 5744,
+          "median": 5310.0,
+          "min": 5204,
+          "samples": [
+            5261,
+            5744,
+            5204,
+            5359
+          ]
+        },
+        "cpu_ms": {
+          "max": 156.350624,
+          "median": 155.493146,
+          "min": 154.118417,
+          "samples": [
+            156.350624,
+            155.802709,
+            154.118417,
+            155.183583
+          ]
+        },
+        "mach_calls": {
+          "max": 4,
+          "median": 4.0,
+          "min": 4,
+          "samples": [
+            4,
+            4,
+            4,
+            4
+          ]
+        },
+        "system_ms": {
+          "max": 80.036041,
+          "median": 79.5477085,
+          "min": 79.196708,
+          "samples": [
+            80.036041,
+            79.322792,
+            79.196708,
+            79.772625
+          ]
+        },
+        "unix_calls": {
+          "max": 17357,
+          "median": 16119.5,
+          "min": 16025,
+          "samples": [
+            16123,
+            17357,
+            16025,
+            16116
+          ]
+        },
+        "unix_calls_per_mib": {
+          "max": 67.80078125,
+          "median": 62.966796875,
+          "min": 62.59765625,
+          "samples": [
+            62.98046875,
+            67.80078125,
+            62.59765625,
+            62.953125
+          ]
+        },
+        "user_ms": {
+          "max": 76.479917,
+          "median": 75.8627705,
+          "min": 74.921709,
+          "samples": [
+            76.314583,
+            76.479917,
+            74.921709,
+            75.410958
+          ]
+        }
+      }
+    }
+  },
+  "libc": {
+    "vmess-aes128-socks-download-1": {
+      "candidate": {
+        "arc4random_buf_calls": {
+          "max": 2,
+          "median": 2.0,
+          "min": 2,
+          "samples": [
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "arc4random_buf_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_requested": {
+          "max": 91,
+          "median": 52.0,
+          "min": 34,
+          "samples": [
+            34,
+            91,
+            46,
+            58
+          ]
+        },
+        "arc4random_buf_returned": {
+          "max": 91,
+          "median": 52.0,
+          "min": 34,
+          "samples": [
+            34,
+            91,
+            46,
+            58
+          ]
+        },
+        "arc4random_buf_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "deduplicated_write_bytes": {
+          "max": 268435717,
+          "median": 268435673.0,
+          "min": 268435660,
+          "samples": [
+            268435661,
+            268435717,
+            268435660,
+            268435685
+          ]
+        },
+        "deduplicated_write_calls": {
+          "max": 9320,
+          "median": 9310.0,
+          "min": 9308,
+          "samples": [
+            9308,
+            9310,
+            9310,
+            9320
+          ]
+        },
+        "getentropy_calls": {
+          "max": 5,
+          "median": 4.0,
+          "min": 4,
+          "samples": [
+            4,
+            4,
+            4,
+            5
+          ]
+        },
+        "getentropy_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_requested": {
+          "max": 92,
+          "median": 60.0,
+          "min": 60,
+          "samples": [
+            60,
+            60,
+            60,
+            92
+          ]
+        },
+        "getentropy_returned": {
+          "max": 92,
+          "median": 60.0,
+          "min": 60,
+          "samples": [
+            60,
+            60,
+            60,
+            92
+          ]
+        },
+        "getentropy_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_calls": {
+          "max": 11084,
+          "median": 10404.0,
+          "min": 10072,
+          "samples": [
+            10213,
+            11084,
+            10595,
+            10072
+          ]
+        },
+        "kevent_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_returned": {
+          "max": 12067,
+          "median": 11540.0,
+          "min": 10916,
+          "samples": [
+            11482,
+            12067,
+            11598,
+            10916
+          ]
+        },
+        "kevent_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_zero": {
+          "max": 4,
+          "median": 2.5,
+          "min": 1,
+          "samples": [
+            3,
+            2,
+            4,
+            1
+          ]
+        },
+        "mean_write_bytes": {
+          "max": 28839.24162011173,
+          "median": 28833.049248120304,
+          "min": 28802.112124463518,
+          "samples": [
+            28839.24162011173,
+            28833.052309344792,
+            28833.046186895812,
+            28802.112124463518
+          ]
+        },
+        "read_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_calls": {
+          "max": 18504,
+          "median": 18475.0,
+          "min": 18463,
+          "samples": [
+            18472,
+            18463,
+            18478,
+            18504
+          ]
+        },
+        "recv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_requested": {
+          "max": 271024104,
+          "median": 270586169.0,
+          "min": 270411122,
+          "samples": [
+            270679190,
+            270411122,
+            270493148,
+            271024104
+          ]
+        },
+        "recv_returned": {
+          "max": 270262235,
+          "median": 270261052.0,
+          "min": 270256358,
+          "samples": [
+            270256358,
+            270260307,
+            270261797,
+            270262235
+          ]
+        },
+        "recv_would_block": {
+          "max": 3,
+          "median": 2.0,
+          "min": 2,
+          "samples": [
+            2,
+            3,
+            2,
+            2
+          ]
+        },
+        "recv_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "recvfrom_calls": {
+          "max": 18504,
+          "median": 18475.0,
+          "min": 18463,
+          "samples": [
+            18472,
+            18463,
+            18478,
+            18504
+          ]
+        },
+        "recvfrom_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_requested": {
+          "max": 271024104,
+          "median": 270586169.0,
+          "min": 270411122,
+          "samples": [
+            270679190,
+            270411122,
+            270493148,
+            271024104
+          ]
+        },
+        "recvfrom_returned": {
+          "max": 270262235,
+          "median": 270261052.0,
+          "min": 270256358,
+          "samples": [
+            270256358,
+            270260307,
+            270261797,
+            270262235
+          ]
+        },
+        "recvfrom_would_block": {
+          "max": 3,
+          "median": 2.0,
+          "min": 2,
+          "samples": [
+            2,
+            3,
+            2,
+            2
+          ]
+        },
+        "recvfrom_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "recvmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_calls": {
+          "max": 9320,
+          "median": 9310.0,
+          "min": 9308,
+          "samples": [
+            9308,
+            9310,
+            9310,
+            9320
+          ]
+        },
+        "send_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_requested": {
+          "max": 268579349,
+          "median": 268435673.0,
+          "min": 268435660,
+          "samples": [
+            268435661,
+            268579349,
+            268435660,
+            268435685
+          ]
+        },
+        "send_returned": {
+          "max": 268435717,
+          "median": 268435673.0,
+          "min": 268435660,
+          "samples": [
+            268435661,
+            268435717,
+            268435660,
+            268435685
+          ]
+        },
+        "send_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_calls": {
+          "max": 9320,
+          "median": 9310.0,
+          "min": 9308,
+          "samples": [
+            9308,
+            9310,
+            9310,
+            9320
+          ]
+        },
+        "sendto_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_requested": {
+          "max": 268579349,
+          "median": 268435673.0,
+          "min": 268435660,
+          "samples": [
+            268435661,
+            268579349,
+            268435660,
+            268435685
+          ]
+        },
+        "sendto_returned": {
+          "max": 268435717,
+          "median": 268435673.0,
+          "min": 268435660,
+          "samples": [
+            268435661,
+            268435717,
+            268435660,
+            268435685
+          ]
+        },
+        "sendto_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "xray": {
+        "arc4random_buf_calls": {
+          "max": 6,
+          "median": 5.5,
+          "min": 5,
+          "samples": [
+            5,
+            6,
+            5,
+            6
+          ]
+        },
+        "arc4random_buf_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_requested": {
+          "max": 137,
+          "median": 120.5,
+          "min": 77,
+          "samples": [
+            116,
+            125,
+            77,
+            137
+          ]
+        },
+        "arc4random_buf_returned": {
+          "max": 137,
+          "median": 120.5,
+          "min": 77,
+          "samples": [
+            116,
+            125,
+            77,
+            137
+          ]
+        },
+        "arc4random_buf_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "deduplicated_write_bytes": {
+          "max": 268435790,
+          "median": 268435773.5,
+          "min": 268435730,
+          "samples": [
+            268435769,
+            268435778,
+            268435730,
+            268435790
+          ]
+        },
+        "deduplicated_write_calls": {
+          "max": 5574,
+          "median": 5503.5,
+          "min": 5378,
+          "samples": [
+            5378,
+            5466,
+            5541,
+            5574
+          ]
+        },
+        "getentropy_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_calls": {
+          "max": 2274,
+          "median": 1942.0,
+          "min": 1708,
+          "samples": [
+            2274,
+            1708,
+            1915,
+            1969
+          ]
+        },
+        "kevent_errors": {
+          "max": 2,
+          "median": 1.5,
+          "min": 0,
+          "samples": [
+            2,
+            2,
+            0,
+            1
+          ]
+        },
+        "kevent_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_returned": {
+          "max": 2243,
+          "median": 1951.5,
+          "min": 1686,
+          "samples": [
+            2243,
+            1686,
+            1940,
+            1963
+          ]
+        },
+        "kevent_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_zero": {
+          "max": 387,
+          "median": 316.0,
+          "min": 274,
+          "samples": [
+            387,
+            274,
+            310,
+            322
+          ]
+        },
+        "mean_write_bytes": {
+          "max": 49913.679620676834,
+          "median": 48777.72650311984,
+          "min": 48158.55579476139,
+          "samples": [
+            49913.679620676834,
+            49110.09476765459,
+            48445.35823858509,
+            48158.55579476139
+          ]
+        },
+        "read_calls": {
+          "max": 248,
+          "median": 238.5,
+          "min": 201,
+          "samples": [
+            201,
+            245,
+            248,
+            232
+          ]
+        },
+        "read_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_requested": {
+          "max": 2023425,
+          "median": 1945601.0,
+          "min": 1638401,
+          "samples": [
+            1638401,
+            1998849,
+            2023425,
+            1892353
+          ]
+        },
+        "read_returned": {
+          "max": 1237006,
+          "median": 1171638.0,
+          "min": 991246,
+          "samples": [
+            991246,
+            1188100,
+            1237006,
+            1155176
+          ]
+        },
+        "read_would_block": {
+          "max": 93,
+          "median": 88.5,
+          "min": 75,
+          "samples": [
+            75,
+            93,
+            92,
+            85
+          ]
+        },
+        "read_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "readv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_calls": {
+          "max": 210,
+          "median": 195.0,
+          "min": 168,
+          "samples": [
+            168,
+            192,
+            210,
+            198
+          ]
+        },
+        "write_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_requested": {
+          "max": 1288878,
+          "median": 1216077.0,
+          "min": 1044777,
+          "samples": [
+            1044777,
+            1239946,
+            1288878,
+            1192208
+          ]
+        },
+        "write_returned": {
+          "max": 1288878,
+          "median": 1216077.0,
+          "min": 1044777,
+          "samples": [
+            1044777,
+            1239946,
+            1288878,
+            1192208
+          ]
+        },
+        "write_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_calls": {
+          "max": 5376,
+          "median": 5302.5,
+          "min": 5210,
+          "samples": [
+            5210,
+            5274,
+            5331,
+            5376
+          ]
+        },
+        "writev_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_calls": {
+          "max": 5376,
+          "median": 5302.5,
+          "min": 5210,
+          "samples": [
+            5210,
+            5274,
+            5331,
+            5376
+          ]
+        },
+        "writev_iov_count_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_requested": {
+          "max": 36720,
+          "median": 36708.5,
+          "min": 36687,
+          "samples": [
+            36720,
+            36716,
+            36687,
+            36701
+          ]
+        },
+        "writev_iov_count_returned": {
+          "max": 36720,
+          "median": 36708.5,
+          "min": 36687,
+          "samples": [
+            36720,
+            36716,
+            36687,
+            36701
+          ]
+        },
+        "writev_iov_count_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested": {
+          "max": 267407212,
+          "median": 267386479.0,
+          "min": 267146852,
+          "samples": [
+            267407212,
+            267368572,
+            267146852,
+            267404386
+          ]
+        },
+        "writev_requested_segments_calls": {
+          "max": 36720,
+          "median": 36708.5,
+          "min": 36687,
+          "samples": [
+            36720,
+            36716,
+            36687,
+            36701
+          ]
+        },
+        "writev_requested_segments_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_requested": {
+          "max": 267407212,
+          "median": 267386479.0,
+          "min": 267146852,
+          "samples": [
+            267407212,
+            267368572,
+            267146852,
+            267404386
+          ]
+        },
+        "writev_requested_segments_returned": {
+          "max": 267407212,
+          "median": 267386479.0,
+          "min": 267146852,
+          "samples": [
+            267407212,
+            267368572,
+            267146852,
+            267404386
+          ]
+        },
+        "writev_requested_segments_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_returned": {
+          "max": 267390992,
+          "median": 267219707.0,
+          "min": 267146852,
+          "samples": [
+            267390992,
+            267195832,
+            267146852,
+            267243582
+          ]
+        },
+        "writev_would_block": {
+          "max": 5,
+          "median": 3.0,
+          "min": 0,
+          "samples": [
+            1,
+            5,
+            0,
+            5
+          ]
+        },
+        "writev_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "vmess-aes128-socks-full-duplex-1": {
+      "candidate": {
+        "arc4random_buf_calls": {
+          "max": 34309,
+          "median": 34291.0,
+          "min": 34278,
+          "samples": [
+            34299,
+            34278,
+            34283,
+            34309
+          ]
+        },
+        "arc4random_buf_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_requested": {
+          "max": 1099801,
+          "median": 1096977.0,
+          "min": 1091335,
+          "samples": [
+            1091335,
+            1099801,
+            1095748,
+            1098206
+          ]
+        },
+        "arc4random_buf_returned": {
+          "max": 1099801,
+          "median": 1096977.0,
+          "min": 1091335,
+          "samples": [
+            1091335,
+            1099801,
+            1095748,
+            1098206
+          ]
+        },
+        "arc4random_buf_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "deduplicated_write_bytes": {
+          "max": 538598045,
+          "median": 538594951.5,
+          "min": 538589507,
+          "samples": [
+            538589507,
+            538598045,
+            538593736,
+            538596167
+          ]
+        },
+        "deduplicated_write_calls": {
+          "max": 27815,
+          "median": 27811.0,
+          "min": 27800,
+          "samples": [
+            27800,
+            27812,
+            27815,
+            27810
+          ]
+        },
+        "getentropy_calls": {
+          "max": 5,
+          "median": 4.0,
+          "min": 4,
+          "samples": [
+            4,
+            4,
+            5,
+            4
+          ]
+        },
+        "getentropy_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_requested": {
+          "max": 92,
+          "median": 60.0,
+          "min": 60,
+          "samples": [
+            60,
+            60,
+            92,
+            60
+          ]
+        },
+        "getentropy_returned": {
+          "max": 92,
+          "median": 60.0,
+          "min": 60,
+          "samples": [
+            60,
+            60,
+            92,
+            60
+          ]
+        },
+        "getentropy_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_calls": {
+          "max": 21155,
+          "median": 19918.0,
+          "min": 17332,
+          "samples": [
+            21155,
+            17332,
+            21138,
+            18698
+          ]
+        },
+        "kevent_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_returned": {
+          "max": 23054,
+          "median": 21895.0,
+          "min": 18932,
+          "samples": [
+            23054,
+            18932,
+            22944,
+            20846
+          ]
+        },
+        "kevent_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_zero": {
+          "max": 6,
+          "median": 6.0,
+          "min": 3,
+          "samples": [
+            6,
+            6,
+            6,
+            3
+          ]
+        },
+        "mean_write_bytes": {
+          "max": 19373.723273381296,
+          "median": 19366.333704742425,
+          "min": 19363.427503145784,
+          "samples": [
+            19373.723273381296,
+            19365.671113188553,
+            19363.427503145784,
+            19366.996296296296
+          ]
+        },
+        "read_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_calls": {
+          "max": 20592,
+          "median": 20566.0,
+          "min": 20555,
+          "samples": [
+            20558,
+            20574,
+            20555,
+            20592
+          ]
+        },
+        "recv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_requested": {
+          "max": 543022754,
+          "median": 542728961.0,
+          "min": 541247201,
+          "samples": [
+            543022754,
+            543020461,
+            541247201,
+            542437461
+          ]
+        },
+        "recv_returned": {
+          "max": 538700743,
+          "median": 538698223.0,
+          "min": 538688777,
+          "samples": [
+            538688777,
+            538700743,
+            538697653,
+            538698793
+          ]
+        },
+        "recv_would_block": {
+          "max": 5,
+          "median": 3.5,
+          "min": 2,
+          "samples": [
+            3,
+            4,
+            5,
+            2
+          ]
+        },
+        "recv_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "recvfrom_calls": {
+          "max": 20592,
+          "median": 20566.0,
+          "min": 20555,
+          "samples": [
+            20558,
+            20574,
+            20555,
+            20592
+          ]
+        },
+        "recvfrom_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_requested": {
+          "max": 543022754,
+          "median": 542728961.0,
+          "min": 541247201,
+          "samples": [
+            543022754,
+            543020461,
+            541247201,
+            542437461
+          ]
+        },
+        "recvfrom_returned": {
+          "max": 538700743,
+          "median": 538698223.0,
+          "min": 538688777,
+          "samples": [
+            538688777,
+            538700743,
+            538697653,
+            538698793
+          ]
+        },
+        "recvfrom_would_block": {
+          "max": 5,
+          "median": 3.5,
+          "min": 2,
+          "samples": [
+            3,
+            4,
+            5,
+            2
+          ]
+        },
+        "recvfrom_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "recvmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_calls": {
+          "max": 27815,
+          "median": 27811.0,
+          "min": 27800,
+          "samples": [
+            27800,
+            27812,
+            27815,
+            27810
+          ]
+        },
+        "send_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_requested": {
+          "max": 539106901,
+          "median": 538960705.5,
+          "min": 538856294,
+          "samples": [
+            538961394,
+            538960017,
+            539106901,
+            538856294
+          ]
+        },
+        "send_returned": {
+          "max": 538598045,
+          "median": 538594951.5,
+          "min": 538589507,
+          "samples": [
+            538589507,
+            538598045,
+            538593736,
+            538596167
+          ]
+        },
+        "send_would_block": {
+          "max": 8,
+          "median": 4.5,
+          "min": 3,
+          "samples": [
+            6,
+            3,
+            3,
+            8
+          ]
+        },
+        "send_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_calls": {
+          "max": 27815,
+          "median": 27811.0,
+          "min": 27800,
+          "samples": [
+            27800,
+            27812,
+            27815,
+            27810
+          ]
+        },
+        "sendto_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_requested": {
+          "max": 539106901,
+          "median": 538960705.5,
+          "min": 538856294,
+          "samples": [
+            538961394,
+            538960017,
+            539106901,
+            538856294
+          ]
+        },
+        "sendto_returned": {
+          "max": 538598045,
+          "median": 538594951.5,
+          "min": 538589507,
+          "samples": [
+            538589507,
+            538598045,
+            538593736,
+            538596167
+          ]
+        },
+        "sendto_would_block": {
+          "max": 8,
+          "median": 4.5,
+          "min": 3,
+          "samples": [
+            6,
+            3,
+            3,
+            8
+          ]
+        },
+        "sendto_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "xray": {
+        "arc4random_buf_calls": {
+          "max": 36338,
+          "median": 36315.0,
+          "min": 36248,
+          "samples": [
+            36313,
+            36338,
+            36317,
+            36248
+          ]
+        },
+        "arc4random_buf_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_requested": {
+          "max": 1162553,
+          "median": 1159812.0,
+          "min": 1158699,
+          "samples": [
+            1159824,
+            1162553,
+            1159800,
+            1158699
+          ]
+        },
+        "arc4random_buf_returned": {
+          "max": 1162553,
+          "median": 1159812.0,
+          "min": 1158699,
+          "samples": [
+            1159824,
+            1162553,
+            1159800,
+            1158699
+          ]
+        },
+        "arc4random_buf_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "deduplicated_write_bytes": {
+          "max": 538697629,
+          "median": 538694879.0,
+          "min": 538693451,
+          "samples": [
+            538694774,
+            538697629,
+            538694984,
+            538693451
+          ]
+        },
+        "deduplicated_write_calls": {
+          "max": 9492,
+          "median": 9236.5,
+          "min": 8765,
+          "samples": [
+            8765,
+            9492,
+            9332,
+            9141
+          ]
+        },
+        "getentropy_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_calls": {
+          "max": 5682,
+          "median": 5244.5,
+          "min": 3889,
+          "samples": [
+            5682,
+            4896,
+            5593,
+            3889
+          ]
+        },
+        "kevent_errors": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "kevent_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_returned": {
+          "max": 9722,
+          "median": 9131.0,
+          "min": 7000,
+          "samples": [
+            9351,
+            8911,
+            9722,
+            7000
+          ]
+        },
+        "kevent_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_zero": {
+          "max": 808,
+          "median": 590.5,
+          "min": 503,
+          "samples": [
+            808,
+            510,
+            671,
+            503
+          ]
+        },
+        "mean_write_bytes": {
+          "max": 61459.75744438106,
+          "median": 58328.56645067632,
+          "min": 56752.80541508639,
+          "samples": [
+            61459.75744438106,
+            56752.80541508639,
+            57725.56622374625,
+            58931.56667760639
+          ]
+        },
+        "read_calls": {
+          "max": 239,
+          "median": 197.0,
+          "min": 97,
+          "samples": [
+            97,
+            239,
+            216,
+            178
+          ]
+        },
+        "read_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_requested": {
+          "max": 1949697,
+          "median": 1605633.0,
+          "min": 786433,
+          "samples": [
+            786433,
+            1949697,
+            1761281,
+            1449985
+          ]
+        },
+        "read_returned": {
+          "max": 1082087,
+          "median": 827548.0,
+          "min": 352525,
+          "samples": [
+            352525,
+            1082087,
+            884986,
+            770110
+          ]
+        },
+        "read_would_block": {
+          "max": 101,
+          "median": 86.5,
+          "min": 44,
+          "samples": [
+            44,
+            101,
+            94,
+            79
+          ]
+        },
+        "read_zero": {
+          "max": 1,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            1,
+            0
+          ]
+        },
+        "readv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_calls": {
+          "max": 220,
+          "median": 165.0,
+          "min": 71,
+          "samples": [
+            71,
+            220,
+            173,
+            157
+          ]
+        },
+        "write_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_requested": {
+          "max": 1199019,
+          "median": 895467.0,
+          "min": 433428,
+          "samples": [
+            433428,
+            1199019,
+            954244,
+            836690
+          ]
+        },
+        "write_returned": {
+          "max": 1199019,
+          "median": 895467.0,
+          "min": 425318,
+          "samples": [
+            425318,
+            1199019,
+            954244,
+            836690
+          ]
+        },
+        "write_would_block": {
+          "max": 1,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            1,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_calls": {
+          "max": 9272,
+          "median": 9071.5,
+          "min": 8694,
+          "samples": [
+            8694,
+            9272,
+            9159,
+            8984
+          ]
+        },
+        "writev_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_calls": {
+          "max": 9272,
+          "median": 9071.5,
+          "min": 8694,
+          "samples": [
+            8694,
+            9272,
+            9159,
+            8984
+          ]
+        },
+        "writev_iov_count_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_requested": {
+          "max": 74924,
+          "median": 74331.0,
+          "min": 73810,
+          "samples": [
+            74924,
+            73810,
+            74765,
+            73897
+          ]
+        },
+        "writev_iov_count_returned": {
+          "max": 74924,
+          "median": 74331.0,
+          "min": 73810,
+          "samples": [
+            74924,
+            73810,
+            74765,
+            73897
+          ]
+        },
+        "writev_iov_count_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested": {
+          "max": 545510087,
+          "median": 542050318.0,
+          "min": 538735473,
+          "samples": [
+            545510087,
+            538735473,
+            544447058,
+            539653578
+          ]
+        },
+        "writev_requested_segments_calls": {
+          "max": 74924,
+          "median": 74331.0,
+          "min": 73810,
+          "samples": [
+            74924,
+            73810,
+            74765,
+            73897
+          ]
+        },
+        "writev_requested_segments_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_requested": {
+          "max": 545510087,
+          "median": 542050318.0,
+          "min": 538735473,
+          "samples": [
+            545510087,
+            538735473,
+            544447058,
+            539653578
+          ]
+        },
+        "writev_requested_segments_returned": {
+          "max": 545510087,
+          "median": 542050318.0,
+          "min": 538735473,
+          "samples": [
+            545510087,
+            538735473,
+            544447058,
+            539653578
+          ]
+        },
+        "writev_requested_segments_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_returned": {
+          "max": 538269456,
+          "median": 537798750.5,
+          "min": 537498610,
+          "samples": [
+            538269456,
+            537498610,
+            537740740,
+            537856761
+          ]
+        },
+        "writev_would_block": {
+          "max": 132,
+          "median": 71.0,
+          "min": 27,
+          "samples": [
+            132,
+            27,
+            115,
+            27
+          ]
+        },
+        "writev_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    "vmess-aes128-socks-upload-1": {
+      "candidate": {
+        "arc4random_buf_calls": {
+          "max": 34312,
+          "median": 34281.0,
+          "min": 34273,
+          "samples": [
+            34273,
+            34288,
+            34274,
+            34312
+          ]
+        },
+        "arc4random_buf_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_requested": {
+          "max": 1098129,
+          "median": 1095895.5,
+          "min": 1093834,
+          "samples": [
+            1098129,
+            1096385,
+            1093834,
+            1095406
+          ]
+        },
+        "arc4random_buf_returned": {
+          "max": 1098129,
+          "median": 1095895.5,
+          "min": 1093834,
+          "samples": [
+            1098129,
+            1096385,
+            1093834,
+            1095406
+          ]
+        },
+        "arc4random_buf_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "deduplicated_write_bytes": {
+          "max": 270160729,
+          "median": 270158317.0,
+          "min": 270156235,
+          "samples": [
+            270160729,
+            270158768,
+            270156235,
+            270157866
+          ]
+        },
+        "deduplicated_write_calls": {
+          "max": 18469,
+          "median": 18462.0,
+          "min": 18457,
+          "samples": [
+            18469,
+            18465,
+            18459,
+            18457
+          ]
+        },
+        "getentropy_calls": {
+          "max": 5,
+          "median": 4.0,
+          "min": 4,
+          "samples": [
+            5,
+            4,
+            4,
+            4
+          ]
+        },
+        "getentropy_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_requested": {
+          "max": 92,
+          "median": 60.0,
+          "min": 60,
+          "samples": [
+            92,
+            60,
+            60,
+            60
+          ]
+        },
+        "getentropy_returned": {
+          "max": 92,
+          "median": 60.0,
+          "min": 60,
+          "samples": [
+            92,
+            60,
+            60,
+            60
+          ]
+        },
+        "getentropy_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_calls": {
+          "max": 8191,
+          "median": 8108.0,
+          "min": 7417,
+          "samples": [
+            8191,
+            7417,
+            8063,
+            8153
+          ]
+        },
+        "kevent_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_returned": {
+          "max": 8560,
+          "median": 8454.5,
+          "min": 7712,
+          "samples": [
+            8560,
+            7712,
+            8424,
+            8485
+          ]
+        },
+        "kevent_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_zero": {
+          "max": 2,
+          "median": 1.5,
+          "min": 1,
+          "samples": [
+            2,
+            1,
+            1,
+            2
+          ]
+        },
+        "mean_write_bytes": {
+          "max": 14637.149374221162,
+          "median": 14633.165877352883,
+          "min": 14627.79408738968,
+          "samples": [
+            14627.79408738968,
+            14630.856647711887,
+            14635.475106993877,
+            14637.149374221162
+          ]
+        },
+        "read_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_calls": {
+          "max": 2082,
+          "median": 2073.5,
+          "min": 2071,
+          "samples": [
+            2082,
+            2073,
+            2071,
+            2074
+          ]
+        },
+        "recv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_requested": {
+          "max": 270930169,
+          "median": 269750578.0,
+          "min": 269488377,
+          "samples": [
+            270930169,
+            269619577,
+            269488377,
+            269881579
+          ]
+        },
+        "recv_returned": {
+          "max": 268435710,
+          "median": 268435657.0,
+          "min": 268435607,
+          "samples": [
+            268435659,
+            268435710,
+            268435655,
+            268435607
+          ]
+        },
+        "recv_would_block": {
+          "max": 3,
+          "median": 2.0,
+          "min": 2,
+          "samples": [
+            3,
+            2,
+            2,
+            2
+          ]
+        },
+        "recv_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "recvfrom_calls": {
+          "max": 2082,
+          "median": 2073.5,
+          "min": 2071,
+          "samples": [
+            2082,
+            2073,
+            2071,
+            2074
+          ]
+        },
+        "recvfrom_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_requested": {
+          "max": 270930169,
+          "median": 269750578.0,
+          "min": 269488377,
+          "samples": [
+            270930169,
+            269619577,
+            269488377,
+            269881579
+          ]
+        },
+        "recvfrom_returned": {
+          "max": 268435710,
+          "median": 268435657.0,
+          "min": 268435607,
+          "samples": [
+            268435659,
+            268435710,
+            268435655,
+            268435607
+          ]
+        },
+        "recvfrom_would_block": {
+          "max": 3,
+          "median": 2.0,
+          "min": 2,
+          "samples": [
+            3,
+            2,
+            2,
+            2
+          ]
+        },
+        "recvfrom_zero": {
+          "max": 1,
+          "median": 1.0,
+          "min": 1,
+          "samples": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "recvmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_calls": {
+          "max": 18469,
+          "median": 18462.0,
+          "min": 18457,
+          "samples": [
+            18469,
+            18465,
+            18459,
+            18457
+          ]
+        },
+        "send_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_requested": {
+          "max": 270252416,
+          "median": 270195923.5,
+          "min": 270182939,
+          "samples": [
+            270252416,
+            270196715,
+            270195132,
+            270182939
+          ]
+        },
+        "send_returned": {
+          "max": 270160729,
+          "median": 270158317.0,
+          "min": 270156235,
+          "samples": [
+            270160729,
+            270158768,
+            270156235,
+            270157866
+          ]
+        },
+        "send_would_block": {
+          "max": 1,
+          "median": 0.5,
+          "min": 0,
+          "samples": [
+            1,
+            0,
+            1,
+            0
+          ]
+        },
+        "send_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_calls": {
+          "max": 18469,
+          "median": 18462.0,
+          "min": 18457,
+          "samples": [
+            18469,
+            18465,
+            18459,
+            18457
+          ]
+        },
+        "sendto_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_requested": {
+          "max": 270252416,
+          "median": 270195923.5,
+          "min": 270182939,
+          "samples": [
+            270252416,
+            270196715,
+            270195132,
+            270182939
+          ]
+        },
+        "sendto_returned": {
+          "max": 270160729,
+          "median": 270158317.0,
+          "min": 270156235,
+          "samples": [
+            270160729,
+            270158768,
+            270156235,
+            270157866
+          ]
+        },
+        "sendto_would_block": {
+          "max": 1,
+          "median": 0.5,
+          "min": 0,
+          "samples": [
+            1,
+            0,
+            1,
+            0
+          ]
+        },
+        "sendto_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "xray": {
+        "arc4random_buf_calls": {
+          "max": 36369,
+          "median": 36323.0,
+          "min": 36310,
+          "samples": [
+            36317,
+            36310,
+            36369,
+            36329
+          ]
+        },
+        "arc4random_buf_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_requested": {
+          "max": 1165555,
+          "median": 1162243.0,
+          "min": 1159836,
+          "samples": [
+            1160947,
+            1163539,
+            1165555,
+            1159836
+          ]
+        },
+        "arc4random_buf_returned": {
+          "max": 1165555,
+          "median": 1162243.0,
+          "min": 1159836,
+          "samples": [
+            1160947,
+            1163539,
+            1165555,
+            1159836
+          ]
+        },
+        "arc4random_buf_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "arc4random_buf_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "deduplicated_write_bytes": {
+          "max": 270265139,
+          "median": 270261692.0,
+          "min": 270259330,
+          "samples": [
+            270260351,
+            270263033,
+            270265139,
+            270259330
+          ]
+        },
+        "deduplicated_write_calls": {
+          "max": 4138,
+          "median": 4129.0,
+          "min": 4121,
+          "samples": [
+            4121,
+            4132,
+            4138,
+            4126
+          ]
+        },
+        "getentropy_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "getentropy_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent64_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_calls": {
+          "max": 8922,
+          "median": 7556.5,
+          "min": 7034,
+          "samples": [
+            8922,
+            7034,
+            7535,
+            7578
+          ]
+        },
+        "kevent_errors": {
+          "max": 1,
+          "median": 0.5,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            1,
+            1
+          ]
+        },
+        "kevent_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_returned": {
+          "max": 7287,
+          "median": 6112.0,
+          "min": 5692,
+          "samples": [
+            7287,
+            5692,
+            6088,
+            6136
+          ]
+        },
+        "kevent_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "kevent_zero": {
+          "max": 1868,
+          "median": 1655.0,
+          "min": 1547,
+          "samples": [
+            1868,
+            1547,
+            1664,
+            1646
+          ]
+        },
+        "mean_write_bytes": {
+          "max": 65581.25479252609,
+          "median": 65454.425484637126,
+          "min": 65312.986708554854,
+          "samples": [
+            65581.25479252609,
+            65407.31679574056,
+            65312.986708554854,
+            65501.53417353369
+          ]
+        },
+        "read_calls": {
+          "max": 20,
+          "median": 13.0,
+          "min": 13,
+          "samples": [
+            13,
+            13,
+            20,
+            13
+          ]
+        },
+        "read_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "read_requested": {
+          "max": 155649,
+          "median": 98305.0,
+          "min": 98305,
+          "samples": [
+            98305,
+            98305,
+            155649,
+            98305
+          ]
+        },
+        "read_returned": {
+          "max": 41163,
+          "median": 16594.5,
+          "min": 8352,
+          "samples": [
+            16606,
+            16583,
+            41163,
+            8352
+          ]
+        },
+        "read_would_block": {
+          "max": 8,
+          "median": 5.0,
+          "min": 5,
+          "samples": [
+            5,
+            5,
+            8,
+            5
+          ]
+        },
+        "read_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "readv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recv_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvfrom_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "recvmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "send_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendmsg_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_calls": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_requested": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_returned": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "sendto_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_calls": {
+          "max": 11,
+          "median": 8.0,
+          "min": 7,
+          "samples": [
+            8,
+            8,
+            11,
+            7
+          ]
+        },
+        "write_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_requested": {
+          "max": 30708,
+          "median": 6674.5,
+          "min": 355,
+          "samples": [
+            7512,
+            5837,
+            30708,
+            355
+          ]
+        },
+        "write_returned": {
+          "max": 30708,
+          "median": 6674.5,
+          "min": 355,
+          "samples": [
+            7512,
+            5837,
+            30708,
+            355
+          ]
+        },
+        "write_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "write_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_calls": {
+          "max": 4127,
+          "median": 4121.5,
+          "min": 4113,
+          "samples": [
+            4113,
+            4124,
+            4127,
+            4119
+          ]
+        },
+        "writev_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_calls": {
+          "max": 4127,
+          "median": 4121.5,
+          "min": 4113,
+          "samples": [
+            4113,
+            4124,
+            4127,
+            4119
+          ]
+        },
+        "writev_iov_count_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_requested": {
+          "max": 36897,
+          "median": 36880.5,
+          "min": 36878,
+          "samples": [
+            36878,
+            36881,
+            36897,
+            36880
+          ]
+        },
+        "writev_iov_count_returned": {
+          "max": 36897,
+          "median": 36880.5,
+          "min": 36878,
+          "samples": [
+            36878,
+            36881,
+            36897,
+            36880
+          ]
+        },
+        "writev_iov_count_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_iov_count_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested": {
+          "max": 270334041,
+          "median": 270260155.5,
+          "min": 270256611,
+          "samples": [
+            270256611,
+            270261336,
+            270334041,
+            270258975
+          ]
+        },
+        "writev_requested_segments_calls": {
+          "max": 36897,
+          "median": 36880.5,
+          "min": 36878,
+          "samples": [
+            36878,
+            36881,
+            36897,
+            36880
+          ]
+        },
+        "writev_requested_segments_errors": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_requested": {
+          "max": 270334041,
+          "median": 270260155.5,
+          "min": 270256611,
+          "samples": [
+            270256611,
+            270261336,
+            270334041,
+            270258975
+          ]
+        },
+        "writev_requested_segments_returned": {
+          "max": 270334041,
+          "median": 270260155.5,
+          "min": 270256611,
+          "samples": [
+            270256611,
+            270261336,
+            270334041,
+            270258975
+          ]
+        },
+        "writev_requested_segments_would_block": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_requested_segments_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "writev_returned": {
+          "max": 270258975,
+          "median": 270255017.5,
+          "min": 270234431,
+          "samples": [
+            270252839,
+            270257196,
+            270234431,
+            270258975
+          ]
+        },
+        "writev_would_block": {
+          "max": 1,
+          "median": 1.0,
+          "min": 0,
+          "samples": [
+            1,
+            1,
+            1,
+            0
+          ]
+        },
+        "writev_zero": {
+          "max": 0,
+          "median": 0.0,
+          "min": 0,
+          "samples": [
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    }
+  },
+  "ordinary": {
+    "vmess-aes128-socks-download-1": {
+      "candidate": {
+        "cpu_millis": {
+          "max": 170,
+          "median": 170.0,
+          "min": 170,
+          "samples": [
+            170,
+            170,
+            170,
+            170,
+            170,
+            170
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 680.0,
+          "median": 680.0,
+          "min": 680.0,
+          "samples": [
+            680.0,
+            680.0,
+            680.0,
+            680.0,
+            680.0,
+            680.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 5440,
+          "median": 5408.0,
+          "min": 5408,
+          "samples": [
+            5408,
+            5408,
+            5408,
+            5408,
+            5440,
+            5408
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1990.3985196908611,
+          "median": 1953.155429134245,
+          "min": 1937.3520144014878,
+          "samples": [
+            1990.3985196908611,
+            1980.8639106179728,
+            1950.3467914677326,
+            1937.3520144014878,
+            1955.9640668007573,
+            1942.2963481414463
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.132139125,
+          "median": 0.13107022899999998,
+          "min": 0.128617459,
+          "samples": [
+            0.128617459,
+            0.129236541,
+            0.131258708,
+            0.132139125,
+            0.13088175,
+            0.13180275
+          ]
+        }
+      },
+      "singbox": {
+        "cpu_millis": {
+          "max": 290,
+          "median": 280.0,
+          "min": 280,
+          "samples": [
+            280,
+            280,
+            280,
+            290,
+            280,
+            280
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 1160.0,
+          "median": 1120.0,
+          "min": 1120.0,
+          "samples": [
+            1120.0,
+            1120.0,
+            1120.0,
+            1160.0,
+            1120.0,
+            1120.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 27824,
+          "median": 27584.0,
+          "min": 27168,
+          "samples": [
+            27824,
+            27168,
+            27760,
+            27472,
+            27520,
+            27648
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1226.4892961284768,
+          "median": 1215.6046238269107,
+          "min": 1200.100090222681,
+          "samples": [
+            1223.6979158674988,
+            1200.100090222681,
+            1226.1534703495975,
+            1203.626866268122,
+            1226.4892961284768,
+            1207.5113317863227
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.213315541,
+          "median": 0.210604125,
+          "min": 0.208725833,
+          "samples": [
+            0.209201958,
+            0.213315541,
+            0.208783,
+            0.2126905,
+            0.208725833,
+            0.212006292
+          ]
+        }
+      },
+      "xray": {
+        "cpu_millis": {
+          "max": 140,
+          "median": 130.0,
+          "min": 120,
+          "samples": [
+            130,
+            140,
+            120,
+            130,
+            130,
+            120
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 560.0,
+          "median": 520.0,
+          "min": 480.0,
+          "samples": [
+            520.0,
+            560.0,
+            480.0,
+            520.0,
+            520.0,
+            480.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 33824,
+          "median": 33520.0,
+          "min": 33264,
+          "samples": [
+            33824,
+            33600,
+            33440,
+            33472,
+            33264,
+            33568
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2203.348552733946,
+          "median": 2115.0625271975123,
+          "min": 2101.6272218191593,
+          "samples": [
+            2108.2271241174744,
+            2105.2054551827127,
+            2203.348552733946,
+            2160.198552624778,
+            2101.6272218191593,
+            2121.8979302775506
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.121810375,
+          "median": 0.121037875,
+          "min": 0.116186792,
+          "samples": [
+            0.121429042,
+            0.121603333,
+            0.116186792,
+            0.118507625,
+            0.121810375,
+            0.120646708
+          ]
+        }
+      }
+    },
+    "vmess-aes128-socks-full-duplex-1": {
+      "candidate": {
+        "cpu_millis": {
+          "max": 310,
+          "median": 295.0,
+          "min": 280,
+          "samples": [
+            290,
+            310,
+            280,
+            310,
+            300,
+            280
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 620.0,
+          "median": 590.0,
+          "min": 560.0,
+          "samples": [
+            580.0,
+            620.0,
+            560.0,
+            620.0,
+            600.0,
+            560.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 5616,
+          "median": 5584.0,
+          "min": 5536,
+          "samples": [
+            5600,
+            5584,
+            5536,
+            5552,
+            5616,
+            5584
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2263.173902132351,
+          "median": 2215.265823047362,
+          "min": 2144.8211563081063,
+          "samples": [
+            2225.693424893434,
+            2145.130064975738,
+            2240.3664483385805,
+            2144.8211563081063,
+            2204.8382212012903,
+            2263.173902132351
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.238714542,
+          "median": 0.23112862550000002,
+          "min": 0.226230958,
+          "samples": [
+            0.230040667,
+            0.238680166,
+            0.228534042,
+            0.238714542,
+            0.232216584,
+            0.226230958
+          ]
+        }
+      },
+      "singbox": {
+        "cpu_millis": {
+          "max": 410,
+          "median": 400.0,
+          "min": 400,
+          "samples": [
+            400,
+            400,
+            400,
+            410,
+            400,
+            400
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 820.0,
+          "median": 800.0,
+          "min": 800.0,
+          "samples": [
+            800.0,
+            800.0,
+            800.0,
+            820.0,
+            800.0,
+            800.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 28192,
+          "median": 28056.0,
+          "min": 27712,
+          "samples": [
+            27888,
+            28160,
+            28192,
+            27984,
+            28128,
+            27712
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1911.5702737755053,
+          "median": 1871.1847178485905,
+          "min": 1813.5475922688652,
+          "samples": [
+            1878.7528638872025,
+            1911.5702737755053,
+            1813.5475922688652,
+            1863.6165718099783,
+            1839.95533077195,
+            1903.7983759722322
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.282319583,
+          "median": 0.2736279165,
+          "min": 0.267842625,
+          "samples": [
+            0.272521208,
+            0.267842625,
+            0.282319583,
+            0.274734625,
+            0.278267625,
+            0.268936042
+          ]
+        }
+      },
+      "xray": {
+        "cpu_millis": {
+          "max": 270,
+          "median": 265.0,
+          "min": 250,
+          "samples": [
+            250,
+            270,
+            260,
+            260,
+            270,
+            270
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 540.0,
+          "median": 530.0,
+          "min": 500.0,
+          "samples": [
+            500.0,
+            540.0,
+            520.0,
+            520.0,
+            540.0,
+            540.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 34512,
+          "median": 34248.0,
+          "min": 33888,
+          "samples": [
+            34240,
+            33952,
+            34512,
+            34432,
+            33888,
+            34256
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2897.591783172211,
+          "median": 2845.542691982042,
+          "min": 2628.360920915859,
+          "samples": [
+            2861.2643071947246,
+            2641.776181704668,
+            2829.8210767693595,
+            2871.913096582802,
+            2628.360920915859,
+            2897.591783172211
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.194798209,
+          "median": 0.179936021,
+          "min": 0.176698458,
+          "samples": [
+            0.178941875,
+            0.193809,
+            0.180930167,
+            0.178278375,
+            0.194798209,
+            0.176698458
+          ]
+        }
+      }
+    },
+    "vmess-aes128-socks-upload-1": {
+      "candidate": {
+        "cpu_millis": {
+          "max": 170,
+          "median": 160.0,
+          "min": 140,
+          "samples": [
+            150,
+            160,
+            160,
+            160,
+            170,
+            140
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 680.0,
+          "median": 640.0,
+          "min": 560.0,
+          "samples": [
+            600.0,
+            640.0,
+            640.0,
+            640.0,
+            680.0,
+            560.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 5600,
+          "median": 5528.0,
+          "min": 5504,
+          "samples": [
+            5520,
+            5520,
+            5568,
+            5600,
+            5504,
+            5536
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2185.8771196540083,
+          "median": 1960.713161083733,
+          "min": 1899.071050108399,
+          "samples": [
+            1969.133569768329,
+            1899.071050108399,
+            1952.292752399137,
+            1973.7888397985157,
+            1952.235686581616,
+            2185.8771196540083
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.13480275,
+          "median": 0.13056714600000002,
+          "min": 0.117115458,
+          "samples": [
+            0.130006417,
+            0.13480275,
+            0.131127875,
+            0.129699791,
+            0.131131708,
+            0.117115458
+          ]
+        }
+      },
+      "singbox": {
+        "cpu_millis": {
+          "max": 190,
+          "median": 180.0,
+          "min": 150,
+          "samples": [
+            180,
+            180,
+            190,
+            180,
+            180,
+            150
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 760.0,
+          "median": 720.0,
+          "min": 600.0,
+          "samples": [
+            720.0,
+            720.0,
+            760.0,
+            720.0,
+            720.0,
+            600.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 27712,
+          "median": 27408.0,
+          "min": 27248,
+          "samples": [
+            27712,
+            27376,
+            27360,
+            27440,
+            27440,
+            27248
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2004.2060926690876,
+          "median": 1786.901404441789,
+          "min": 1779.7243512869977,
+          "samples": [
+            1861.2998335038214,
+            1784.0493182036007,
+            1779.7243512869977,
+            1789.7534906799774,
+            1779.9078949114846,
+            2004.2060926690876
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.1438425,
+          "median": 0.1432651245,
+          "min": 0.127731375,
+          "samples": [
+            0.137538292,
+            0.143493791,
+            0.1438425,
+            0.143036458,
+            0.143827667,
+            0.127731375
+          ]
+        }
+      },
+      "xray": {
+        "cpu_millis": {
+          "max": 170,
+          "median": 160.0,
+          "min": 150,
+          "samples": [
+            170,
+            170,
+            160,
+            150,
+            160,
+            160
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 680.0,
+          "median": 640.0,
+          "min": 600.0,
+          "samples": [
+            680.0,
+            680.0,
+            640.0,
+            600.0,
+            640.0,
+            640.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 33872,
+          "median": 33368.0,
+          "min": 32832,
+          "samples": [
+            33376,
+            33872,
+            33360,
+            33360,
+            32832,
+            33472
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2135.9387336010905,
+          "median": 1993.592780735698,
+          "min": 1953.86164841522,
+          "samples": [
+            1996.779288606507,
+            1953.86164841522,
+            2003.6511846783296,
+            2135.9387336010905,
+            1990.0065601810009,
+            1990.4062728648892
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.131022583,
+          "median": 0.128411708,
+          "min": 0.119853625,
+          "samples": [
+            0.128206458,
+            0.131022583,
+            0.12776675,
+            0.119853625,
+            0.128642792,
+            0.128616958
+          ]
+        }
+      }
+    }
+  },
+  "ordinary_confirmation": {
+    "vmess-aes128-socks-full-duplex-1": {
+      "candidate": {
+        "cpu_millis": {
+          "max": 320,
+          "median": 310.0,
+          "min": 310,
+          "samples": [
+            310,
+            320,
+            310,
+            320,
+            310,
+            310
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 640.0,
+          "median": 620.0,
+          "min": 620.0,
+          "samples": [
+            620.0,
+            640.0,
+            620.0,
+            640.0,
+            620.0,
+            620.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 5648,
+          "median": 5584.0,
+          "min": 5552,
+          "samples": [
+            5600,
+            5552,
+            5648,
+            5568,
+            5632,
+            5568
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1969.4393934606717,
+          "median": 1915.750690534293,
+          "min": 1872.9985665927336,
+          "samples": [
+            1931.7483501614583,
+            1886.5546312616957,
+            1922.044271872231,
+            1872.9985665927336,
+            1969.4393934606717,
+            1909.457109196355
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.273358458,
+          "median": 0.267261042,
+          "min": 0.259972458,
+          "samples": [
+            0.265044875,
+            0.271394208,
+            0.266383042,
+            0.273358458,
+            0.259972458,
+            0.268139042
+          ]
+        }
+      },
+      "singbox": {
+        "cpu_millis": {
+          "max": 530,
+          "median": 510.0,
+          "min": 490,
+          "samples": [
+            530,
+            520,
+            530,
+            490,
+            490,
+            500
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 1060.0,
+          "median": 1020.0,
+          "min": 980.0,
+          "samples": [
+            1060.0,
+            1040.0,
+            1060.0,
+            980.0,
+            980.0,
+            1000.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 29152,
+          "median": 28472.0,
+          "min": 28128,
+          "samples": [
+            29152,
+            28224,
+            28512,
+            28576,
+            28432,
+            28128
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 1683.5413573919811,
+          "median": 1654.9782888676946,
+          "min": 1632.04481748073,
+          "samples": [
+            1659.294500062588,
+            1651.8702326363693,
+            1646.9494277897772,
+            1658.08634509902,
+            1683.5413573919811,
+            1632.04481748073
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.313716875,
+          "median": 0.30937070850000004,
+          "min": 0.304120833,
+          "samples": [
+            0.308564875,
+            0.309951708,
+            0.310877791,
+            0.308789709,
+            0.304120833,
+            0.313716875
+          ]
+        }
+      },
+      "xray": {
+        "cpu_millis": {
+          "max": 360,
+          "median": 345.0,
+          "min": 310,
+          "samples": [
+            340,
+            350,
+            350,
+            310,
+            320,
+            360
+          ]
+        },
+        "cpu_ms_per_gib": {
+          "max": 720.0,
+          "median": 690.0,
+          "min": 620.0,
+          "samples": [
+            680.0,
+            700.0,
+            700.0,
+            620.0,
+            640.0,
+            720.0
+          ]
+        },
+        "peak_rss_kib": {
+          "max": 34768,
+          "median": 34584.0,
+          "min": 33840,
+          "samples": [
+            34448,
+            34640,
+            34608,
+            33840,
+            34560,
+            34768
+          ]
+        },
+        "throughput_mib_s": {
+          "max": 2699.0962376733473,
+          "median": 2540.6462973521566,
+          "min": 2397.114566977289,
+          "samples": [
+            2554.1865692010356,
+            2527.1060255032776,
+            2470.153823667133,
+            2397.114566977289,
+            2699.0962376733473,
+            2575.0285101423183
+          ]
+        },
+        "transfer_seconds": {
+          "max": 0.213590125,
+          "median": 0.20152925,
+          "min": 0.189693125,
+          "samples": [
+            0.200455208,
+            0.202603292,
+            0.207274541,
+            0.213590125,
+            0.189693125,
+            0.19883275
+          ]
+        }
+      }
+    }
+  },
+  "profiles": {
+    "individual": {
+      "rust-duplex-1": {
+        "active_threads": 2,
+        "aes_gcm_assembly_pct": 21.442938347179712,
+        "kernel_pct": 56.95671184958461,
+        "kevent_inclusive_pct": 16.14341932662877,
+        "memory_copy_pct": 5.177087888062965,
+        "other_pct": 11.508526453869699,
+        "padding_rng_inclusive_pct": 2.8683865325754265,
+        "read_syscall_or_readv_path_inclusive_pct": 14.062090074333188,
+        "sampled_cpu_ms": 11435.0,
+        "samples": 11435,
+        "vmess_poll_read_pct": 4.914735461303017,
+        "write_syscall_inclusive_pct": 28.85002186270223
+      },
+      "rust-duplex-2": {
+        "active_threads": 2,
+        "aes_gcm_assembly_pct": 21.29438124784557,
+        "kernel_pct": 56.69596690796277,
+        "kevent_inclusive_pct": 16.34781109962082,
+        "memory_copy_pct": 5.032747328507411,
+        "other_pct": 12.056187521544295,
+        "padding_rng_inclusive_pct": 2.611168562564633,
+        "read_syscall_or_readv_path_inclusive_pct": 15.184419165804895,
+        "sampled_cpu_ms": 11604.0,
+        "samples": 11604,
+        "vmess_poll_read_pct": 4.920716994139951,
+        "write_syscall_inclusive_pct": 27.94725956566701
+      },
+      "rust-duplex-3": {
+        "active_threads": 2,
+        "aes_gcm_assembly_pct": 20.236483437133316,
+        "kernel_pct": 58.88618106327286,
+        "kevent_inclusive_pct": 15.21797996209044,
+        "memory_copy_pct": 4.675512230345699,
+        "other_pct": 11.905406625146673,
+        "padding_rng_inclusive_pct": 2.9154255799259863,
+        "read_syscall_or_readv_path_inclusive_pct": 16.526762343171768,
+        "sampled_cpu_ms": 11079.0,
+        "samples": 11079,
+        "vmess_poll_read_pct": 4.296416644101453,
+        "write_syscall_inclusive_pct": 29.72289917862623
+      },
+      "rust-duplex-4": {
+        "active_threads": 2,
+        "aes_gcm_assembly_pct": 18.591246580695586,
+        "kernel_pct": 61.20554904259476,
+        "kevent_inclusive_pct": 12.88589292692458,
+        "memory_copy_pct": 4.562329034779211,
+        "other_pct": 11.723329425556859,
+        "padding_rng_inclusive_pct": 2.2567409144196953,
+        "read_syscall_or_readv_path_inclusive_pct": 18.962485345838218,
+        "sampled_cpu_ms": 10236.0,
+        "samples": 10236,
+        "vmess_poll_read_pct": 3.9175459163735833,
+        "write_syscall_inclusive_pct": 30.79327862446268
+      },
+      "xray-duplex-1": {
+        "active_threads": 14,
+        "aes_gcm_assembly_pct": 29.240641711229948,
+        "kernel_pct": 43.94295900178253,
+        "kevent_inclusive_pct": 4.606060606060606,
+        "memory_copy_pct": 4.720142602495543,
+        "other_pct": 22.09625668449198,
+        "padding_rng_inclusive_pct": 2.9590017825311943,
+        "read_syscall_or_readv_path_inclusive_pct": 16.705882352941178,
+        "sampled_cpu_ms": 14025.0,
+        "samples": 14025,
+        "vmess_poll_read_pct": 0.0,
+        "write_syscall_inclusive_pct": 22.97326203208556
+      },
+      "xray-duplex-2": {
+        "active_threads": 14,
+        "aes_gcm_assembly_pct": 27.57821552723059,
+        "kernel_pct": 46.14716106604867,
+        "kevent_inclusive_pct": 4.8957126303592124,
+        "memory_copy_pct": 4.59154113557358,
+        "other_pct": 21.68308227114716,
+        "padding_rng_inclusive_pct": 2.846176129779838,
+        "read_syscall_or_readv_path_inclusive_pct": 17.504345307068366,
+        "sampled_cpu_ms": 13808.0,
+        "samples": 13808,
+        "vmess_poll_read_pct": 0.0,
+        "write_syscall_inclusive_pct": 23.95712630359212
+      },
+      "xray-duplex-3": {
+        "active_threads": 13,
+        "aes_gcm_assembly_pct": 26.88451273173195,
+        "kernel_pct": 46.00735771478035,
+        "kevent_inclusive_pct": 4.869075957584938,
+        "memory_copy_pct": 4.4723364351150545,
+        "other_pct": 22.635793118372646,
+        "padding_rng_inclusive_pct": 2.8998052369616967,
+        "read_syscall_or_readv_path_inclusive_pct": 17.384404530044,
+        "sampled_cpu_ms": 13863.0,
+        "samples": 13863,
+        "vmess_poll_read_pct": 0.0,
+        "write_syscall_inclusive_pct": 24.28045877515689
+      },
+      "xray-duplex-4": {
+        "active_threads": 13,
+        "aes_gcm_assembly_pct": 26.138822291094087,
+        "kernel_pct": 48.447459212911525,
+        "kevent_inclusive_pct": 4.958774340681831,
+        "memory_copy_pct": 4.257060990585346,
+        "other_pct": 21.15665750540904,
+        "padding_rng_inclusive_pct": 2.6138822291094086,
+        "read_syscall_or_readv_path_inclusive_pct": 18.835155838839835,
+        "sampled_cpu_ms": 17101.0,
+        "samples": 17101,
+        "vmess_poll_read_pct": 0.0,
+        "write_syscall_inclusive_pct": 24.706157534647097
+      }
+    },
+    "pilot_excluded": [
+      "rust-duplex-1",
+      "xray-duplex-1"
+    ],
+    "repeated": {
+      "rust": {
+        "active_threads": {
+          "max": 2,
+          "median": 2,
+          "min": 2,
+          "samples": [
+            2,
+            2,
+            2
+          ]
+        },
+        "aes_gcm_assembly_pct": {
+          "max": 21.29438124784557,
+          "median": 20.236483437133316,
+          "min": 18.591246580695586,
+          "samples": [
+            21.29438124784557,
+            20.236483437133316,
+            18.591246580695586
+          ]
+        },
+        "kernel_pct": {
+          "max": 61.20554904259476,
+          "median": 58.88618106327286,
+          "min": 56.69596690796277,
+          "samples": [
+            56.69596690796277,
+            58.88618106327286,
+            61.20554904259476
+          ]
+        },
+        "kevent_inclusive_pct": {
+          "max": 16.34781109962082,
+          "median": 15.21797996209044,
+          "min": 12.88589292692458,
+          "samples": [
+            16.34781109962082,
+            15.21797996209044,
+            12.88589292692458
+          ]
+        },
+        "memory_copy_pct": {
+          "max": 5.032747328507411,
+          "median": 4.675512230345699,
+          "min": 4.562329034779211,
+          "samples": [
+            5.032747328507411,
+            4.675512230345699,
+            4.562329034779211
+          ]
+        },
+        "other_pct": {
+          "max": 12.056187521544295,
+          "median": 11.905406625146673,
+          "min": 11.723329425556859,
+          "samples": [
+            12.056187521544295,
+            11.905406625146673,
+            11.723329425556859
+          ]
+        },
+        "padding_rng_inclusive_pct": {
+          "max": 2.9154255799259863,
+          "median": 2.611168562564633,
+          "min": 2.2567409144196953,
+          "samples": [
+            2.611168562564633,
+            2.9154255799259863,
+            2.2567409144196953
+          ]
+        },
+        "read_syscall_or_readv_path_inclusive_pct": {
+          "max": 18.962485345838218,
+          "median": 16.526762343171768,
+          "min": 15.184419165804895,
+          "samples": [
+            15.184419165804895,
+            16.526762343171768,
+            18.962485345838218
+          ]
+        },
+        "sampled_cpu_ms": {
+          "max": 11604.0,
+          "median": 11079.0,
+          "min": 10236.0,
+          "samples": [
+            11604.0,
+            11079.0,
+            10236.0
+          ]
+        },
+        "samples": {
+          "max": 11604,
+          "median": 11079,
+          "min": 10236,
+          "samples": [
+            11604,
+            11079,
+            10236
+          ]
+        },
+        "vmess_poll_read_pct": {
+          "max": 4.920716994139951,
+          "median": 4.296416644101453,
+          "min": 3.9175459163735833,
+          "samples": [
+            4.920716994139951,
+            4.296416644101453,
+            3.9175459163735833
+          ]
+        },
+        "write_syscall_inclusive_pct": {
+          "max": 30.79327862446268,
+          "median": 29.72289917862623,
+          "min": 27.94725956566701,
+          "samples": [
+            27.94725956566701,
+            29.72289917862623,
+            30.79327862446268
+          ]
+        }
+      },
+      "xray": {
+        "active_threads": {
+          "max": 14,
+          "median": 13,
+          "min": 13,
+          "samples": [
+            14,
+            13,
+            13
+          ]
+        },
+        "aes_gcm_assembly_pct": {
+          "max": 27.57821552723059,
+          "median": 26.88451273173195,
+          "min": 26.138822291094087,
+          "samples": [
+            27.57821552723059,
+            26.88451273173195,
+            26.138822291094087
+          ]
+        },
+        "kernel_pct": {
+          "max": 48.447459212911525,
+          "median": 46.14716106604867,
+          "min": 46.00735771478035,
+          "samples": [
+            46.14716106604867,
+            46.00735771478035,
+            48.447459212911525
+          ]
+        },
+        "kevent_inclusive_pct": {
+          "max": 4.958774340681831,
+          "median": 4.8957126303592124,
+          "min": 4.869075957584938,
+          "samples": [
+            4.8957126303592124,
+            4.869075957584938,
+            4.958774340681831
+          ]
+        },
+        "memory_copy_pct": {
+          "max": 4.59154113557358,
+          "median": 4.4723364351150545,
+          "min": 4.257060990585346,
+          "samples": [
+            4.59154113557358,
+            4.4723364351150545,
+            4.257060990585346
+          ]
+        },
+        "other_pct": {
+          "max": 22.635793118372646,
+          "median": 21.68308227114716,
+          "min": 21.15665750540904,
+          "samples": [
+            21.68308227114716,
+            22.635793118372646,
+            21.15665750540904
+          ]
+        },
+        "padding_rng_inclusive_pct": {
+          "max": 2.8998052369616967,
+          "median": 2.846176129779838,
+          "min": 2.6138822291094086,
+          "samples": [
+            2.846176129779838,
+            2.8998052369616967,
+            2.6138822291094086
+          ]
+        },
+        "read_syscall_or_readv_path_inclusive_pct": {
+          "max": 18.835155838839835,
+          "median": 17.504345307068366,
+          "min": 17.384404530044,
+          "samples": [
+            17.504345307068366,
+            17.384404530044,
+            18.835155838839835
+          ]
+        },
+        "sampled_cpu_ms": {
+          "max": 17101.0,
+          "median": 13863.0,
+          "min": 13808.0,
+          "samples": [
+            13808.0,
+            13863.0,
+            17101.0
+          ]
+        },
+        "samples": {
+          "max": 17101,
+          "median": 13863,
+          "min": 13808,
+          "samples": [
+            13808,
+            13863,
+            17101
+          ]
+        },
+        "vmess_poll_read_pct": {
+          "max": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "samples": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "write_syscall_inclusive_pct": {
+          "max": 24.706157534647097,
+          "median": 24.28045877515689,
+          "min": 23.95712630359212,
+          "samples": [
+            23.95712630359212,
+            24.28045877515689,
+            24.706157534647097
+          ]
+        }
+      }
+    }
+  }
+}

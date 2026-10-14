@@ -168,19 +168,23 @@ class ProbeService : Service() {
         try {
             repeat(stress.httpAttempts) {
                 workers.execute {
-                    if (executeHttpProbe(endpoints.httpUrl).isSuccess) {
+                    val result = executeHttpProbe(endpoints.httpUrl)
+                    if (result.isSuccess) {
                         httpPassed.incrementAndGet()
                     } else {
                         httpFailed.incrementAndGet()
+                        logStressFailure(stress.cycle, "http", result.exceptionOrNull())
                     }
                 }
             }
             repeat(stress.udpAttempts) {
                 workers.execute {
-                    if (executeUdpProbe(endpoints.udpHost, endpoints.udpPort).isSuccess) {
+                    val result = executeUdpProbe(endpoints.udpHost, endpoints.udpPort)
+                    if (result.isSuccess) {
                         udpPassed.incrementAndGet()
                     } else {
                         udpFailed.incrementAndGet()
+                        logStressFailure(stress.cycle, "udp", result.exceptionOrNull())
                     }
                 }
             }
@@ -258,15 +262,24 @@ class ProbeService : Service() {
     private fun executeUdpProbe(host: String, port: Int): Result<Unit> = runCatching {
         val query = UdpDnsOracle.makeQuery()
         DatagramSocket().use { socket ->
-            socket.soTimeout = PROBE_TIMEOUT_MILLISECONDS
-            socket.send(
-                DatagramPacket(query, query.size, InetAddress.getByName(host), port),
-            )
-            val response = ByteArray(MAX_UDP_RESPONSE_BYTES)
-            val packet = DatagramPacket(response, response.size)
-            socket.receive(packet)
-            check(UdpDnsOracle.isValidResponse(response.copyOf(packet.length), query)) {
-                "udp-response-mismatch"
+            try {
+                socket.soTimeout = PROBE_TIMEOUT_MILLISECONDS
+                socket.send(
+                    DatagramPacket(query, query.size, InetAddress.getByName(host), port),
+                )
+                val response = ByteArray(MAX_UDP_RESPONSE_BYTES)
+                val packet = DatagramPacket(response, response.size)
+                socket.receive(packet)
+                check(UdpDnsOracle.isValidResponse(response.copyOf(packet.length), query)) {
+                    "udp-response-mismatch"
+                }
+            } catch (error: Exception) {
+                // Correlate one failed synthetic query without recording its contents.
+                val queryTag = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(query).take(8).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+                Log.w(LOG_TAG, "XRAY_ANDROID_UDP_FAILURE queryTag=$queryTag " +
+                    "localPort=${socket.localPort} errorCode=${safeFailure(error)}")
+                throw error
             }
         }
     }
@@ -288,6 +301,10 @@ class ProbeService : Service() {
         null -> error?.javaClass?.simpleName ?: "unknown"
         else -> message.takeIf { it.matches(Regex("(?:http-[1-5][0-9]{2}|udp-response-mismatch)")) }
             ?: error.javaClass.simpleName
+    }
+
+    private fun logStressFailure(cycle: Int, kind: String, error: Throwable?) {
+        Log.w(LOG_TAG, "XRAY_ANDROID_STRESS_FAILURE cycle=$cycle kind=$kind errorCode=${safeFailure(error)}")
     }
 
     private fun persistStatus(running: Boolean) {

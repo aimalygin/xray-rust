@@ -1,0 +1,875 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 8,
+    "protocol" : "setup",
+    "time" : "2026-10-04T20:14:30Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:30Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29139.161477250003"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "udp-sweep-start",
+    "time" : "2026-10-04T20:14:31Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4179592,
+    "inboundPackets" : 8,
+    "outboundPackets" : 0,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 27279360,
+    "runtime" : "f025b643-1789-4ce4-9ed7-d5a51823bf36",
+    "stage" : "udp-sweep-start",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-10-04T20:14:31Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 7
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:31Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.19923133333577425,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:31Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:31Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.19807016666527488,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:31Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:31Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.19095229166487115,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:31Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:31Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.22242454166917014,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:32Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:32Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25657537499864702,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:32Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:32Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25553691666573286,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:32Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:32Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25414787499903468,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:33Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:33Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.19368708333422546,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:33Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:33Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.1956910416665778,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:33Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:33Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.29381650000141235,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:33Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:33Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25663895832985872,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:34Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:34Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.2561714583353023,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:34Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:34Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25711645833143848,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:34Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:34Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35619520833279239,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:35Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:35Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.24005987499913317,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:35Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:35Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.37243441666578292,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:35Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:36Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35820720833362429,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:36Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:36Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.24723716666630935,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:36Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:36Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.26423266666461132,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:37Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:37Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.2635826250007085,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:37Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:37Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25619133333020727,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:37Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:37Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25404241666910821,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:37Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:37Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25528291666341829,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:38Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:38Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25657037500059232,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:38Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:38Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25436654166696826,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:38Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:38Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.2550198333337903,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:39Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:39Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.26355570833402453,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:39Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:39Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25305945833315491,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:39Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:39Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25675458333353163,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:40Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:40Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.19376345833370578,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:40Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:40Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.22348183333451743,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:40Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:40Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25712237500192714,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:40Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:40Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25561358333288808,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:41Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:41Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35764195833326085,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:41Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:41Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.3539325000019744,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:42Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:42Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35732487499990384,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:42Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:42Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35702270833280636,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:42Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:42Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.26592637499925331,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:43Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:43Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.34704391666673473,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:43Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:43Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35916233333409764,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:43Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29139.161477250003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29139.308658833335"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29139.430983333335"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29139.693744833334"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29143.57314725"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29150.035777250003"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "stage" : "udp-sweep-end",
+    "time" : "2026-10-04T20:14:44Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5424776,
+    "inboundPackets" : 77,
+    "outboundPackets" : 69,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "rss" : 30113792,
+    "runtime" : "f025b643-1789-4ce4-9ed7-d5a51823bf36",
+    "stage" : "udp-sweep-end",
+    "tcp" : 0,
+    "threads" : 9,
+    "time" : "2026-10-04T20:14:44Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 40
+  },
+  {
+    "attempts" : 40,
+    "event" : "udp-sweep-complete",
+    "failures" : 0,
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "time" : "2026-10-04T20:14:44Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "shadowsocks2022:2022-blake3-chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-10-04T20:14:44Z"
+  }
+]

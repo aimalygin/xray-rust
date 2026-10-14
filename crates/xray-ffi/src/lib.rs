@@ -1,3 +1,5 @@
+mod tun_admission;
+pub use tun_admission::*;
 mod profile_import;
 pub use profile_import::xray_profile_import_json;
 
@@ -18,8 +20,9 @@ use xray_config::{
 };
 use xray_core_rs::{
     ConnectionId, ConnectionState, Core, DnsBootstrapMode, OutboundHealthFailure,
-    OutboundHealthState, RuntimeLogConfig, RuntimeLogger, StartupProbeOptions, TunFdClosePolicy,
-    TunFdConfig, TunFdPacketFormat, TunFdRuntime, TunRuntimeOptions, TunRuntimeProfile,
+    OutboundHealthState, OutboundProbeError, OutboundProbeOutcome, RuntimeLogConfig, RuntimeLogger,
+    StartupProbeOptions, TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime,
+    TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_routing::{Network, TargetAddr};
 use xray_transport::{SocketHandle, SocketProtector, TransportDialer};
@@ -27,7 +30,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 7;
+pub const XRAY_FFI_ABI_MINOR: u32 = 11;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -49,6 +52,12 @@ pub const XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE: u64 = 1 << 15;
 pub const XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND: u64 = 1 << 16;
 pub const XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND: u64 = 1 << 17;
 pub const XRAY_FFI_CAPABILITY_PROFILE_IMPORT: u64 = 1 << 18;
+pub const XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND: u64 = 1 << 19;
+pub const XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND: u64 = 1 << 20;
+pub const XRAY_FFI_CAPABILITY_VMESS_OUTBOUND: u64 = 1 << 21;
+pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE: u64 = 1 << 22;
+pub const XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS: u64 = 1 << 23;
+pub const XRAY_FFI_CAPABILITY_TUN_ADMISSION: u64 = 1 << 24;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -68,7 +77,13 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE
     | XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND
     | XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND
-    | XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
+    | XRAY_FFI_CAPABILITY_PROFILE_IMPORT
+    | XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND
+    | XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND
+    | XRAY_FFI_CAPABILITY_VMESS_OUTBOUND
+    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE
+    | XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS
+    | XRAY_FFI_CAPABILITY_TUN_ADMISSION;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +131,35 @@ pub enum XrayTunRuntimeProfile {
 pub enum XrayDnsBootstrapMode {
     System = 0,
     StaticOnly = 1,
+}
+
+/// Outcome category written by [`xray_core_probe_outbound_url`] (ABI 1.9).
+///
+/// The values other than `None` mirror the `lastFailureKind` categories of the
+/// outbound health snapshot. The C ABI transports them as `int32_t`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrayOutboundProbeFailureKind {
+    None = 0,
+    Timeout = 1,
+    Transport = 2,
+    Tls = 3,
+    Io = 4,
+    MalformedHttpResponse = 5,
+    HttpStatus = 6,
+}
+
+impl From<OutboundHealthFailure> for XrayOutboundProbeFailureKind {
+    fn from(value: OutboundHealthFailure) -> Self {
+        match value {
+            OutboundHealthFailure::Timeout => Self::Timeout,
+            OutboundHealthFailure::Transport => Self::Transport,
+            OutboundHealthFailure::Tls => Self::Tls,
+            OutboundHealthFailure::Io => Self::Io,
+            OutboundHealthFailure::MalformedHttpResponse => Self::MalformedHttpResponse,
+            OutboundHealthFailure::HttpStatus(_) => Self::HttpStatus,
+        }
+    }
 }
 
 #[repr(C)]
@@ -474,6 +518,7 @@ pub struct XrayCoreHandle {
     tun_fd_config: Option<TunFdConfig>,
     tun_fd_runtime: Option<TunFdRuntime>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<xray_core_rs::TunAdmissionPolicy>,
     config_warnings: String,
 }
 
@@ -600,6 +645,7 @@ unsafe fn xray_core_new_inner(error: *mut *mut XrayError) -> *mut XrayCoreHandle
         tun_fd_config: None,
         tun_fd_runtime: None,
         tun_runtime_options: TunRuntimeOptions::default(),
+        tun_admission: None,
         config_warnings: String::new(),
     }))
 }
@@ -943,6 +989,8 @@ unsafe fn xray_core_load_config_json_inner(
             return XrayStatus::ConfigError;
         }
     };
+    core.set_tun_admission((*handle).tun_admission.clone())
+        .expect("new core is not running");
     if let Some(options) = unsafe { (*handle).startup_probe_options.clone() } {
         core.set_startup_probe(Some(options));
     }
@@ -1559,6 +1607,177 @@ pub unsafe extern "C" fn xray_core_rebind_hysteria(
     }
 }
 
+/// Cancels current and future on-demand probes before exclusive teardown
+/// (ABI 1.9, `OUTBOUND_PROBE`). Nonblocking, idempotent, and a no-op before
+/// start or when no config is loaded. Normal traffic and health are unaffected.
+/// Creating a new handle and loading its config enables probes again.
+///
+/// # Safety
+///
+/// `handle` must be null or a live core handle. This is a shared call: it may
+/// overlap probes and other shared calls, but not lifecycle/free. After this
+/// returns, drain all shared calls before calling stop/load/free. If `error`
+/// is non-null it must point to an initialized, library-owned error pointer
+/// or null, exclusively accessible by this call.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_cancel_outbound_probes(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            if let Some(core) = handle.core.as_ref() {
+                core.cancel_outbound_probes();
+            }
+            XrayStatus::Ok
+        })
+    }
+}
+
+/// Sends one HTTP(S) GET through a leaf outbound of a running core and
+/// reports its latency or typed failure (ABI 1.9, `OUTBOUND_PROBE`).
+///
+/// `outbound_tag` may be null or empty to use the default outbound; otherwise
+/// it must name a configured leaf outbound. Routing rules, balancers, and
+/// selector overrides are bypassed. The caller blocks for at most `timeout_ms`
+/// (1..=60000). `XRAY_STATUS_OK` means the probe ran: `failure_kind` is
+/// `XRAY_OUTBOUND_PROBE_FAILURE_NONE` with `delay_ms` set for a 2xx/3xx status
+/// line, or another kind with `delay_ms` zero; `http_status` is nonzero only
+/// for `HTTP_STATUS`. Unsupported URLs, out-of-range timeouts, and unknown tags
+/// return `INVALID_ARGUMENT` without network activity; a loaded core that is
+/// not running or a probe cancelled for teardown returns `RUNTIME_ERROR`.
+/// Outputs are zeroed on entry. The probe
+/// does not update health snapshots, selector state, or accounting.
+///
+/// # Safety
+///
+/// `handle` must be null or a live core handle. `url` must be null or point to
+/// a NUL-terminated string, and `outbound_tag` may be null or point to one.
+/// `delay_ms`, `failure_kind`, and `http_status` must each be null or writable.
+/// If `error` is non-null, it must point to an initialized `*mut XrayError`
+/// value that is either null or a live error pointer returned by this library.
+/// This function may run concurrently with data-path, snapshot, and other
+/// shared calls, but not lifecycle calls or `xray_core_free`. It must not be
+/// called from a runtime worker thread such as the socket-protect callback.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn xray_core_probe_outbound_url(
+    handle: *mut XrayCoreHandle,
+    url: *const c_char,
+    timeout_ms: u64,
+    outbound_tag: *const c_char,
+    delay_ms: *mut u64,
+    failure_kind: *mut i32,
+    http_status: *mut u16,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_result_status(error, || {
+            xray_core_probe_outbound_url_inner(
+                handle,
+                url,
+                timeout_ms,
+                outbound_tag,
+                delay_ms,
+                failure_kind,
+                http_status,
+                error,
+            )
+        })
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn xray_core_probe_outbound_url_inner(
+    handle: *mut XrayCoreHandle,
+    url: *const c_char,
+    timeout_ms: u64,
+    outbound_tag: *const c_char,
+    delay_ms: *mut u64,
+    failure_kind: *mut i32,
+    http_status: *mut u16,
+    error: *mut *mut XrayError,
+) -> FfiResult {
+    unsafe {
+        clear_error(error);
+        ensure_non_null(delay_ms, error, "outbound probe delay output is null")?;
+        ensure_non_null(
+            failure_kind,
+            error,
+            "outbound probe failure kind output is null",
+        )?;
+        ensure_non_null(
+            http_status,
+            error,
+            "outbound probe HTTP status output is null",
+        )?;
+        *delay_ms = 0;
+        *failure_kind = XrayOutboundProbeFailureKind::None as i32;
+        *http_status = 0;
+    }
+    let handle = unsafe { shared_handle(handle, error) }?;
+    let url = unsafe { required_utf8_argument(url, "outbound probe URL", error) }?;
+    let outbound_tag = if outbound_tag.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(outbound_tag) }.to_str() {
+            Ok("") => None,
+            Ok(tag) => Some(tag.to_owned()),
+            Err(source) => unsafe {
+                set_error(
+                    error,
+                    XrayStatus::InvalidUtf8,
+                    format!("outbound probe tag is not valid UTF-8: {source}"),
+                );
+                return Err(XrayStatus::InvalidUtf8);
+            },
+        }
+    };
+    let core = unsafe { loaded_core(handle, error) }?;
+    let options = StartupProbeOptions {
+        url: url.to_owned(),
+        timeout: Duration::from_millis(timeout_ms),
+        outbound_tag,
+    };
+    match handle.runtime.block_on(core.probe_outbound_url(options)) {
+        Ok(OutboundProbeOutcome::Reachable { delay }) => {
+            unsafe {
+                *delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX);
+            }
+            Ok(XrayStatus::Ok)
+        }
+        Ok(OutboundProbeOutcome::Failed(failure)) => {
+            unsafe {
+                *failure_kind = XrayOutboundProbeFailureKind::from(failure) as i32;
+                if let OutboundHealthFailure::HttpStatus(status) = failure {
+                    *http_status = status;
+                }
+            }
+            Ok(XrayStatus::Ok)
+        }
+        Err(source) => {
+            let status = match source {
+                OutboundProbeError::NotRunning | OutboundProbeError::Cancelled => {
+                    XrayStatus::RuntimeError
+                }
+                OutboundProbeError::UnsupportedUrl
+                | OutboundProbeError::InvalidTimeout
+                | OutboundProbeError::UnknownOutbound
+                | OutboundProbeError::NoDefaultOutbound => XrayStatus::InvalidArgument,
+            };
+            unsafe {
+                set_error(error, status, source.to_string());
+            }
+            Err(status)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum SnapshotKind {
     RoutingPolicy,
@@ -1976,6 +2195,53 @@ unsafe fn xray_core_set_tun_collect_tcp_timings_inner(
 
     handle.tun_runtime_options.collect_tcp_timings = collect_tcp_timings != 0;
     XrayStatus::Ok
+}
+
+/// Sets per-outbound Hysteria concurrency before config load (ABI 1.10).
+/// TCP must be 1..=256 and UDP 1..=128. Defaults remain 64/32. Rejection
+/// preserves previous settings; no sockets or sessions are created here.
+///
+/// # Safety
+/// `handle` must be null or a live handle. This lifecycle call must not race
+/// other handle calls. `error`, when non-null, must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_hysteria_stream_limits(
+    handle: *mut XrayCoreHandle,
+    max_tcp_streams: u32,
+    max_udp_sessions: u32,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let Some(handle) = handle.as_mut() else {
+                set_error(error, XrayStatus::NullArgument, "core handle is null");
+                return XrayStatus::NullArgument;
+            };
+            let limits =
+                match xray_core_rs::HysteriaStreamLimits::new(max_tcp_streams, max_udp_sessions) {
+                    Ok(limits) => limits,
+                    Err(_) => {
+                        set_error(
+                            error,
+                            XrayStatus::InvalidArgument,
+                            "Hysteria limits require TCP 1..256 and UDP 1..128",
+                        );
+                        return XrayStatus::InvalidArgument;
+                    }
+                };
+            if handle.core.is_some() {
+                set_error(
+                    error,
+                    XrayStatus::RuntimeError,
+                    "Hysteria stream limits must be set before config load",
+                );
+                return XrayStatus::RuntimeError;
+            }
+            handle.tun_runtime_options.hysteria_stream_limits = limits;
+            XrayStatus::Ok
+        })
+    }
 }
 
 /// Selects the TUN runtime performance profile.
@@ -4014,6 +4280,52 @@ mod tests {
         xray_core_routing_policy_snapshot_json, xray_core_set_dns_bootstrap_mode, DnsBootstrapMode,
         OutStrArgs, OutStrBuf, XrayCoreHandle, XrayDnsBootstrapMode, XrayError, XrayStatus,
     };
+
+    #[test]
+    fn hysteria_limits_are_validated_atomically_and_frozen_at_config_load() {
+        use super::xray_core_set_hysteria_stream_limits as set;
+        unsafe {
+            let mut error = ptr::null_mut();
+            assert_eq!(
+                set(ptr::null_mut(), 64, 32, &mut error),
+                XrayStatus::NullArgument
+            );
+            free_error(error);
+            error = ptr::null_mut();
+            let handle = xray_core_new(&mut error);
+            assert!(!handle.is_null());
+            assert_eq!(
+                (*handle).tun_runtime_options.hysteria_stream_limits,
+                xray_core_rs::HysteriaStreamLimits::new(64, 32).unwrap()
+            );
+            assert_eq!(set(handle, 256, 128, &mut error), XrayStatus::Ok);
+            let selected = (*handle).tun_runtime_options.hysteria_stream_limits;
+            for (tcp, udp) in [(0, 32), (257, 32), (64, 0), (64, 129), (u32::MAX, 32)] {
+                assert_eq!(
+                    set(handle, tcp, udp, &mut error),
+                    XrayStatus::InvalidArgument
+                );
+                assert_eq!(
+                    (*handle).tun_runtime_options.hysteria_stream_limits,
+                    selected
+                );
+                free_error(error);
+                error = ptr::null_mut();
+            }
+            let config = CString::new(r#"{"outbounds":[{"protocol":"freedom"}]}"#).unwrap();
+            assert_eq!(
+                xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!(set(handle, 64, 32, &mut error), XrayStatus::RuntimeError);
+            assert_eq!(
+                (*handle).tun_runtime_options.hysteria_stream_limits,
+                selected
+            );
+            free_error(error);
+            xray_core_free(handle);
+        }
+    }
 
     unsafe fn loaded_routing_test_core() -> *mut XrayCoreHandle {
         let mut error = ptr::null_mut();

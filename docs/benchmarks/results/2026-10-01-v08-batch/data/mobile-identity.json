@@ -1,0 +1,9 @@
+{
+  "repository": "aimalygin/xray-rust-mobile",
+  "commit": "a67a60c52f82de8d77b175ad3246ca2b08a18b80",
+  "core_commit": "1804e17890baf4c3a587fbd86d6a17a0787ce9dd",
+  "core_tree": "8501825d7a40170ca192269b9ec7657fbb721663",
+  "abi": "1.8",
+  "version": "0.8.0-rc.1",
+  "artifacts": "unprepared"
+}

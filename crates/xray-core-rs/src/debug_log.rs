@@ -19,8 +19,13 @@ pub(crate) fn log_route_decision(logger: &RuntimeLogger, event: RouteDecisionLog
 
 pub(crate) fn tcp_outbound_label(outbound: &TcpOutbound) -> &'static str {
     match outbound.primary() {
-        TcpOutbound::Freedom | TcpOutbound::FreedomHappyEyeballs(_) => "freedom",
+        TcpOutbound::Freedom
+        | TcpOutbound::FreedomHappyEyeballs(_)
+        | TcpOutbound::FreedomFragment(_) => "freedom",
         TcpOutbound::Vless(_) => "vless",
+        TcpOutbound::Trojan(_) => "trojan",
+        TcpOutbound::Vmess(_) => "vmess",
+        TcpOutbound::Shadowsocks2022(_) => "shadowsocks-2022",
         TcpOutbound::Hysteria(_) => "hysteria",
         TcpOutbound::Wireguard(_) => "wireguard",
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
@@ -31,6 +36,9 @@ pub(crate) fn udp_outbound_label(outbound: &UdpOutbound) -> &'static str {
     match outbound {
         UdpOutbound::Freedom => "freedom",
         UdpOutbound::Vless(_) => "vless",
+        UdpOutbound::Trojan(_) => "trojan",
+        UdpOutbound::Vmess(_) => "vmess",
+        UdpOutbound::Shadowsocks2022(_) => "shadowsocks-2022",
         UdpOutbound::Hysteria(_) => "hysteria",
         UdpOutbound::Wireguard(_) => "wireguard",
     }
@@ -99,8 +107,8 @@ pub(crate) fn configured_tag_label(tag: Option<&str>) -> &'static str {
 
 fn safe_outbound_label(label: &str) -> &str {
     match label {
-        "freedom" | "vless" | "hysteria" | "wireguard" | "untagged" | "unselected"
-        | "<configured>" => label,
+        "freedom" | "vless" | "hysteria" | "wireguard" | "blackhole" | "untagged"
+        | "unselected" | "<configured>" => label,
         _ => "<configured>",
     }
 }

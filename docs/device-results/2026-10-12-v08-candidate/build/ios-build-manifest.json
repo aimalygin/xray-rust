@@ -1,0 +1,40 @@
+{
+  "canonicalDistributionArtifact": false,
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "hostProfile": "Debug",
+  "inputs": [
+    {
+      "bytes": 109466832,
+      "path": "build/cargo-ios/aarch64-apple-ios/release/libxray_ffi.a",
+      "sha256": "009620607322e40944ef798660935569516d4e3752749fe745ecf8314c607a43"
+    },
+    {
+      "bytes": 41918048,
+      "path": "build/ios-slice/libxray_ffi.a",
+      "sha256": "721964484cb6713b12be9542bb423520e4418593a67e4ce6f58db04b9220274c"
+    },
+    {
+      "bytes": 92656,
+      "path": "ios/derived/Build/Products/Debug-iphoneos/XrayClient.app/XrayClient",
+      "sha256": "c340c263e44d42c37f313cd69a6ec86731992c38613189f2e96c8a45385957e1"
+    },
+    {
+      "bytes": 90032,
+      "path": "ios/derived/Build/Products/Debug-iphoneos/XrayClient.app/PlugIns/Tunnel.appex/Tunnel",
+      "sha256": "f7192874eede3e14cc50bb09d1cfbaa0d52ca5d032183c458e29171c09f2f7c1"
+    },
+    {
+      "bytes": 3325,
+      "path": "ios/sdk/Package.swift",
+      "sha256": "00f92f14860fdcc99098a00044bb7055685de98e45ec2209ccca4e6001e01993"
+    },
+    {
+      "bytes": 2197,
+      "path": "ios/harness-keep-manager.patch",
+      "sha256": "08b83d661fd86ef3e3dcbba902c3be359678c8d7a1883d1a83f935449b780dee"
+    }
+  ],
+  "nativeProfile": "release",
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7",
+  "xcode": "Xcode 27.0\nBuild version 27A266a"
+}

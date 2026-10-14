@@ -1,0 +1,12 @@
+{
+  "issue": "https://github.com/aimalygin/xray-rust/issues/56",
+  "measurementStatus": "preserve-original-failures",
+  "otherReleaseRequirementsUnchanged": true,
+  "ownerInstruction": "\u0412\u044b\u043f\u0443\u0441\u043a\u0430\u0442\u044c \u0441 \u043e\u0442\u043a\u0440\u044b\u0442\u044b\u043c #56 \u0438 \u043e\u043f\u0438\u0441\u0430\u043d\u043d\u044b\u043c \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0435\u043c",
+  "productFixClaimed": false,
+  "publicationWithOpenIssueAuthorized": true,
+  "recordedDate": "2026-10-12",
+  "release": "0.8.0",
+  "rootCauseEstablished": false,
+  "scope": "Android VMess AES intermittent UDP timeout; Rust 3/13440, independent Android Xray-core 1/960; distinct workloads as documented"
+}

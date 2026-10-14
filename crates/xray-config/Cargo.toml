@@ -9,6 +9,7 @@ publish.workspace = true
 description = "Bounded Xray JSON and geodata parser for xray-rust"
 
 [dependencies]
+base64.workspace = true
 libc.workspace = true
 prost.workspace = true
 serde.workspace = true

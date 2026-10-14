@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.7`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.11`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -17,6 +17,9 @@ symbols. Profile import requires minor >=5, `PROFILE_IMPORT` and the selected
 `HYSTERIA2_OUTBOUND` or `WIREGUARD_OUTBOUND` capability.
 WireGuard carrier rebind requires minor >=6 and `WIREGUARD_OUTBOUND`.
 Hysteria carrier rebind requires minor >=7 and `HYSTERIA2_OUTBOUND`.
+Hysteria stream limits require minor >=10 and `HYSTERIA_STREAM_LIMITS` (bit 23).
+TUN flow admission requires minor >=11 and `TUN_ADMISSION` (bit 24).
+The on-demand outbound probe requires minor >=9 and `OUTBOUND_PROBE`.
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -79,6 +82,33 @@ create a new session on the next flow. Lazy outbounds stay lazy, and notificatio
 racing initial authentication are retained. Endpoints and DNS pins are unchanged;
 this is not DNS64/NAT64 rebootstrap or Android network-callback integration.
 Calls share the WireGuard method's lifecycle and pointer ownership rules.
+
+The development 0.8 Kotlin adapter now exposes both `rebindHysteria()` and
+`rebindWireGuard()`, using the same version/capability gates and shared-call
+lifecycle protection as Swift. Android hosts own `ConnectivityManager` registration,
+usable-network selection, event coalescing and callback teardown; see the
+[Android integration notes](../platform/android/README.md#network-changes-and-hysteria-limits).
+
+### Hysteria concurrency limits
+
+ABI 1.10 adds `xray_core_set_hysteria_stream_limits(handle, tcp, udp, error)`
+and capability bit 23, `HYSTERIA_STREAM_LIMITS`. Call before config load;
+accepted ranges are TCP 1..256 and UDP 1..128. Defaults stay 64/32 for every
+runtime profile. Invalid values leave the previous policy intact. A loaded
+handle rejects changes, including after stop; create a new core to change them.
+
+These are per-outbound concurrent-flow limits shared by SOCKS, HTTP, TUN, DNS
+and probes using that node, not Xray JSON fields or a device-wide guarantee.
+All flows still share one lazy QUIC connection. Queue sizes, byte budgets,
+timeouts and wire protocol are unchanged; admitting more simultaneous flows
+can increase memory use. TUN and peer-advertised QUIC limits independently
+apply. Exhaustion fails the new flow without closing existing flows or opening
+extra carrier connections; closing a flow releases its slot.
+
+Swift and Kotlin constructors accept optional `XrayHysteriaStreamLimits`.
+Omission preserves the existing defaults. An explicit value
+requires ABI 1.10 and the new capability. Rust hosts set
+`TunRuntimeOptions.hysteria_stream_limits` using validated `HysteriaStreamLimits`.
 
 ### Core lifecycle
 
@@ -200,6 +230,67 @@ errors, or credentials. Consumers must reject an unsupported `schemaVersion`
 rather than guessing its meaning. The checked-in Swift and Kotlin models do
 this decoding and expose equivalent public operations.
 
+## On-demand outbound probe
+
+ABI 1.9 adds `XRAY_FFI_CAPABILITY_OUTBOUND_PROBE` (bit 22) and
+`xray_core_probe_outbound_url(handle, url, timeout_ms, outbound_tag, delay_ms,
+failure_kind, http_status, error)`. It lets a host measure one outbound when its
+own scheduler decides, for example a VPN tunnel heartbeat with immediate
+retries or a check after the device wakes. The configured observatory remains
+schedule-driven with a fixed 5-second probe timeout, and the startup probe runs
+only inside `xray_core_start` without reporting its delay. Bits 19–21 and ABI
+1.8 remain reserved for the separate v0.8 client-protocol branch, so merging
+that work later cannot reinterpret the probe capability.
+
+The call sends one HTTP(S) `GET` through the startup probe's parser and dial
+path: only `http` and `https` URLs without userinfo, fragments, or IPv6
+literals are accepted, HTTPS verifies the certificate against the system roots,
+and an HTTP 2xx/3xx status line counts as reachable. A null or empty
+`outbound_tag` selects the default outbound; otherwise the tag must name a
+configured leaf outbound. Routing rules, balancers, and selector overrides are
+bypassed, and DNS uses the running core's resolvers, as for the observatory.
+`timeout_ms` must be 1 through 60000 and bounds the whole call.
+
+| Status | Meaning | Outputs |
+| --- | --- | --- |
+| `OK` | The probe ran | `failure_kind` is `NONE` and `delay_ms` is set for a 2xx/3xx status line; otherwise `failure_kind` names the failure, `delay_ms` is 0, and `http_status` is set only for `HTTP_STATUS` |
+| `INVALID_ARGUMENT` | Empty or unsupported URL, timeout outside 1..=60000, unknown tag, or no default outbound; no network activity | Zero |
+| `RUNTIME_ERROR` | The loaded core is not running, or teardown cancelled the probe | Zero |
+| `NULL_ARGUMENT` / `INVALID_UTF8` / `CORE_NOT_LOADED` | Caller contract violation | Zero when the output pointers are valid |
+
+`delay_ms`, `failure_kind`, and `http_status` are required and zeroed on entry.
+`failure_kind` is an `int32_t` carrying an `XrayOutboundProbeFailureKind`:
+`NONE` (0), `TIMEOUT` (1), `TRANSPORT` (2), `TLS` (3), `IO` (4),
+`MALFORMED_HTTP_RESPONSE` (5), or `HTTP_STATUS` (6). The non-zero values match
+the health snapshot's `lastFailureKind` categories. `TRANSPORT` includes
+outbound construction, dial, and proxy or transport handshake failures, while
+`TLS` refers to the probe's own HTTPS handshake. `delay_ms` covers the outbound
+dial, optional TLS handshake, request write, and status line, as the health
+snapshot's `delayMs` does.
+
+Probe sockets pass through the registered socket-protect callback like other
+outbound dials. The probe does not update health snapshots, selector state, the
+connection inventory, or outbound accounting. Error messages and runtime debug
+log lines never contain the URL host, path, query, or transport error strings.
+
+`xray_core_cancel_outbound_probes(handle, error)` is a nonblocking shared
+teardown step in the same capability. It cancels all current and future probes
+on that running core. Cancellation returns `RUNTIME_ERROR` with zero outputs,
+without publishing a health failure. It is idempotent and a no-op before start
+or before config load. Create a new handle and load its config to enable probes again. Raw C hosts must
+cancel, drain shared callers, then acquire exclusive access for stop/load/free;
+cancellation alone does not make lifecycle calls safe to overlap a probe.
+
+It is a shared call: it may overlap packet, statistics, snapshot, and other
+shared calls, including other probes, but not load/start/stop/free. Each
+in-flight call blocks its caller and holds at most one outbound connection, so
+hosts should run one heartbeat at a time. Do not call it from a thread that
+drives the core runtime, such as the socket-protect callback. The Swift
+`probeOutboundURL(_:timeoutMs:outboundTag:)` and Kotlin
+`probeOutboundUrl(url, timeoutMs, outboundTag)` methods check the capability,
+run under the adapters' data-path gate; lifecycle calls cancel probes before
+waiting for shared calls, and return typed results with the health failure kinds.
+
 ## Routing-policy replacement
 
 ABI 1.4 adds `XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE`. When present,
@@ -308,11 +399,11 @@ Serialize all configuration and lifecycle calls for a handle:
 - every pre-load `xray_core_set_*` call;
 - `xray_core_free`.
 
-Routing-policy replacement, selector override/clear, and connection close are
-the exceptions: they use the shared runtime gate and may overlap
-packet/statistics calls, snapshot reads, and each other. All five snapshot
-calls have the same shared-call behavior. None of these shared calls may
-overlap load/start/stop/free.
+Routing-policy replacement, selector override/clear, connection close, and the
+on-demand outbound probe are the exceptions: they use the shared runtime gate
+and may overlap packet/statistics calls, snapshot reads, and each other. All
+five snapshot calls have the same shared-call behavior. None of these shared
+calls may overlap load/start/stop/free.
 
 The header explicitly permits `xray_tun_poll_packets` to run concurrently with
 `xray_tun_push_packet`, `xray_tun_poll_packet`, and `xray_tun_stats` on the same
@@ -420,3 +511,38 @@ The ABI currently defines:
 Use the numeric constants from the header rather than duplicating them in a
 foreign-language adapter. The checked-in Swift and JNI wrappers demonstrate
 the intended mapping.
+
+## Optional TUN flow admission (ABI 1.11)
+
+`xray_core_set_tun_admission` installs an owned host callback before config load.
+With no callback the existing TUN behavior is preserved. With one installed,
+TCP is checked after its local handshake and before outbound opening; UDP is
+checked before routing, DNS interception and FakeDNS answers. The callback sees
+the original source and destination, including fake IPs. TCP denial resets the
+local flow; UDP denial is cached until 60 seconds without datagrams. Allowed UDP
+entries are checked again when the associated runtime flow is replaced or closed.
+DNS-only UDP tuples use the same idle expiry. Policy replacement requires a new
+core; a host callback may read its own atomic policy for subsequent new flows.
+
+The callback returns exactly `1` to allow and any other value to deny. A timeout
+of 1–5000 ms and explicit `fail_open` choose the response to a timeout or an
+unavailable worker. Explicit denials, Java exceptions and Rust callback panics
+always deny. Unsupported IP protocols (including local ICMP), IPv4 fragments
+and IPv6 extension/fragment chains are dropped when this policy is enabled;
+they cannot reach an unchecked local responder or reassembly path.
+
+Four process-wide blocking workers and 64 queued jobs bound host work. A timeout
+cancels the decision, not arbitrary host execution. Stop/free do not wait for a
+blocked callback: its owned context is retained until that callback returns.
+The mandatory release callback runs exactly once after all references retire,
+on any thread, possibly after core free. Registration failure retains ownership
+with the caller. Callbacks/release must return promptly, must not unwind across
+C, and must not call core lifecycle methods. Clear before config load by passing
+null callback, release and context. Code/context must remain valid until release.
+
+UDP admission has at most 64 pending decisions, four retained packets per pending
+flow, 1 MiB of retained packet data, and a cache bounded by the TUN profile's UDP
+flow budget. Overflow drops packets even with fail-open configured. Established
+TCP does not call the policy again; enabled UDP uses a bounded tuple lookup.
+There are no per-packet host/JNI calls. `XrayTunAdmissionOptions` exposes the same
+optional policy in Kotlin and Swift.

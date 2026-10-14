@@ -1,0 +1,10 @@
+{"event": "abi", "major": 1, "minor": 8, "protocol": "setup", "time": "2026-10-04T18:23:33Z"}
+{"event": "import", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:23:33Z"}
+{"cycle": 1, "event": "startup-cancelled", "protocol": "trojan", "result": "passed", "seconds": 1.1581198333333305, "time": "2026-10-04T18:23:34Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "trojan", "time": "2026-10-04T18:23:34Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 1.294288916666119, "host": "198.51.100.7", "protocol": "trojan", "result": "passed", "time": "2026-10-04T18:23:36Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "trojan", "time": "2026-10-04T18:23:36Z"}
+{"code": 0, "domain": "XrayProtocolDeviceProbe.Network", "event": "failure", "protocol": "trojan", "time": "2026-10-04T18:23:59Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "22482.91040225"}, {"interface": "en0", "kind": "unchanged", "uptime": "22483.04850466667"}, {"interface": "", "kind": "applied", "uptime": "22483.440513458336"}, {"interface": "en0", "kind": "unchanged", "uptime": "22488.358633166667"}, {"interface": "en0", "kind": "unchanged", "uptime": "22496.39956416667"}, {"interface": "en0", "kind": "unchanged", "uptime": "22498.325437291667"}], "protocol": "trojan", "stage": "failure", "time": "2026-10-04T18:23:59Z"}
+{"cycle": 0, "droppedPackets": 0, "event": "sample", "footprint": 4720264, "inboundPackets": 326, "outboundPackets": 227, "protocol": "trojan", "rss": 36225024, "runtime": "9c169bcf-5762-411a-b3c3-439bad53a5a6", "stage": "failure", "tcp": 0, "threads": 8, "time": "2026-10-04T18:23:59Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"event": "complete", "protocol": "trojan", "result": "failed", "time": "2026-10-04T18:23:59Z"}

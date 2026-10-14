@@ -15,7 +15,7 @@ tokio = { version = "1.52.3", features = ["io-util", "rt"] }
 xray-config = { path = "../crates/xray-config" }
 xray-core-rs = { path = "../crates/xray-core-rs", features = ["fuzzing"] }
 xray-ffi = { path = "../crates/xray-ffi" }
-xray-proxy = { path = "../crates/xray-proxy" }
+xray-proxy = { path = "../crates/xray-proxy", features = ["fuzzing"] }
 xray-transport = { path = "../crates/xray-transport" }
 xray-tun = { path = "../crates/xray-tun" }
 xray-vless-encryption = { path = "../crates/xray-vless-encryption", features = ["fuzzing"] }
@@ -51,6 +51,13 @@ bench = false
 [[bin]]
 name = "profile_import"
 path = "fuzz_targets/profile_import.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "v08_protocols"
+path = "fuzz_targets/v08_protocols.rs"
 test = false
 doc = false
 bench = false

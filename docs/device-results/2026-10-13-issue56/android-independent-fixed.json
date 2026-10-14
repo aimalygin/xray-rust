@@ -1,0 +1,92 @@
+{
+  "plan": {
+    "coreSource": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "go": "1.26.5",
+    "transport": "USB reverse TCP",
+    "ingress": "Android Go SOCKS, no Rust/VpnService/TUN",
+    "rounds": 2,
+    "httpPerRound": 240,
+    "udpPerRound": 480,
+    "workers": 32,
+    "deadlineSeconds": 5,
+    "pauseSeconds": 20,
+    "sha256": {
+      "xray-android-control": "8583ce78c9093fde0ae5bb58afedd4db88c038ceb3c194c9b9a4ed5893a80fe5",
+      "android-reference-probe": "539bf5bc85325b70a53342703d4854b70985a6f5663d4763b956af7d3ef2a667"
+    }
+  },
+  "results": [
+    {
+      "error": "read tcp 127.0.0.1:56534->127.0.0.1:10856: i/o timeout",
+      "event": "failure",
+      "kind": "http",
+      "time": 1791923546.3873274
+    },
+    {
+      "error": "read tcp 127.0.0.1:56628->127.0.0.1:10856: i/o timeout",
+      "event": "failure",
+      "kind": "http",
+      "time": 1791923546.3915124
+    },
+    {
+      "error": "read tcp 127.0.0.1:56594->127.0.0.1:10856: i/o timeout",
+      "event": "failure",
+      "kind": "http",
+      "time": 1791923546.3919888
+    },
+    {
+      "error": "read udp4 127.0.0.1:55306: i/o timeout",
+      "event": "udp-failure",
+      "localPort": 55306,
+      "tag": "6623225ab896e6d0",
+      "time": 1791923547.432706
+    },
+    {
+      "error": "read udp4 127.0.0.1:55306: i/o timeout",
+      "event": "failure",
+      "kind": "udp",
+      "time": 1791923547.4337847
+    },
+    {
+      "counts": {
+        "httpFailed": 3,
+        "httpPassed": 237,
+        "udpFailed": 1,
+        "udpPassed": 479
+      },
+      "durationSeconds": 6.061927534,
+      "event": "round",
+      "round": 0,
+      "time": 1791923547.434064
+    },
+    {
+      "error": "read udp4 127.0.0.1:44788: i/o timeout",
+      "event": "udp-failure",
+      "localPort": 44788,
+      "tag": "3f4fc2c21555aa98",
+      "time": 1791923573.726077
+    },
+    {
+      "error": "read udp4 127.0.0.1:44788: i/o timeout",
+      "event": "failure",
+      "kind": "udp",
+      "time": 1791923573.7273428
+    },
+    {
+      "counts": {
+        "httpPassed": 240,
+        "udpFailed": 1,
+        "udpPassed": 479
+      },
+      "durationSeconds": 6.292446842,
+      "event": "round",
+      "round": 1,
+      "time": 1791923573.727654
+    }
+  ],
+  "cleanup": {
+    "time": 1791923574.542511,
+    "ownedServerStopped": true,
+    "ownedDeviceDirectoryRemoved": true
+  }
+}

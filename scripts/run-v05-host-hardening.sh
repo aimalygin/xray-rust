@@ -21,6 +21,8 @@ run_miri() {
       domain_host_index::tests::exact_names_win_over_earlier_broader_matchers
   MIRIFLAGS="-Zmiri-strict-provenance" \
     cargo "+$NIGHTLY" miri test --locked -p xray-config --test model_tests
+  MIRIFLAGS="-Zmiri-strict-provenance" \
+    cargo "+$NIGHTLY" miri test --locked -p xray-proxy --lib erase::tests
 }
 
 run_asan() {
@@ -80,6 +82,7 @@ run_fuzz() (
     dns_wire \
     vless_wire \
     v07_protocols \
+    v08_protocols \
     inbound_wire \
     quic_sniff \
     xhttp_framing \

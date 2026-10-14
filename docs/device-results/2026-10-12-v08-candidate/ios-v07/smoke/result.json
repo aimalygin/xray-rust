@@ -1,0 +1,1947 @@
+[
+  {
+    "event": "abi",
+    "major": 1,
+    "minor": 11,
+    "protocol": "setup",
+    "time": "2026-10-12T16:37:35Z"
+  },
+  {
+    "event": "import",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:35Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "wireguard",
+    "seconds": 0.25600600242614746,
+    "time": "2026-10-12T16:37:35Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:35Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 5.575763083354104,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09807095833821222,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.19442470837384462,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.052100875007454306,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05099408334353939,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379765.5382595"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:37:41Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4753032,
+    "inboundPackets": 228,
+    "outboundPackets": 187,
+    "protocol": "wireguard",
+    "rss": 30375936,
+    "runtime": "a876428c-36dd-44d1-bfc9-b435aae77453",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 9,
+    "time": "2026-10-12T16:37:41Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:42Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 1,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "wireguard",
+    "seconds": 2.160924374999013,
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379765.5382595"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-close",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4195976,
+    "inboundPackets": 228,
+    "outboundPackets": 190,
+    "protocol": "wireguard",
+    "rss": 30638080,
+    "runtime": "a876428c-36dd-44d1-bfc9-b435aae77453",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 9,
+    "time": "2026-10-12T16:37:44Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11036266665905714,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10438937495928258,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.2176191249745898,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.05251558334566653,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:44Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.04892766661942005,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "cycle": 1,
+    "event": "traffic-after-close",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379765.5382595"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4359816,
+    "inboundPackets": 440,
+    "outboundPackets": 366,
+    "protocol": "wireguard",
+    "rss": 31014912,
+    "runtime": "a876428c-36dd-44d1-bfc9-b435aae77453",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 9,
+    "time": "2026-10-12T16:37:45Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "disconnected",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "cycle": 2,
+    "event": "connected",
+    "protocol": "wireguard",
+    "seconds": 0.20030701160430908,
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:45Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10413454164518043,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09221324999816716,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.176603541651275,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.05039337498601526,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05096516665071249,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379775.77079854166"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379776.12609725003"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4900488,
+    "inboundPackets": 214,
+    "outboundPackets": 180,
+    "protocol": "wireguard",
+    "rss": 30507008,
+    "runtime": "d37bbccd-26ba-467f-b0dc-e8716be9492c",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:37:46Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "connection-close-request",
+    "ids": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:46Z"
+  },
+  {
+    "closedIDs": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle": 2,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "wireguard",
+    "seconds": 2.1244998750044033,
+    "time": "2026-10-12T16:37:48Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379775.77079854166"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379776.12609725003"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-close",
+    "time": "2026-10-12T16:37:48Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4277896,
+    "inboundPackets": 215,
+    "outboundPackets": 183,
+    "protocol": "wireguard",
+    "rss": 30736384,
+    "runtime": "d37bbccd-26ba-467f-b0dc-e8716be9492c",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:37:48Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09549754165345803,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09081562503706664,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.23973899998236448,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.05292862496571615,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.0516814166912809,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "cycle": 2,
+    "event": "traffic-after-close",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379775.77079854166"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379776.12609725003"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:37:49Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4523656,
+    "inboundPackets": 424,
+    "outboundPackets": 358,
+    "protocol": "wireguard",
+    "rss": 31227904,
+    "runtime": "d37bbccd-26ba-467f-b0dc-e8716be9492c",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:37:49Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "disconnected",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "cycle": 3,
+    "event": "connected",
+    "protocol": "wireguard",
+    "seconds": 0.215844988822937,
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11081920831929892,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08889320836169645,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:50Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.16984549997141585,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.05074212502222508,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.04897308337967843,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379780.4978495417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379780.720972375"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 5080712,
+    "inboundPackets": 209,
+    "outboundPackets": 175,
+    "protocol": "wireguard",
+    "rss": 30523392,
+    "runtime": "5db7f003-b58a-4140-a476-479b7d21d762",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:37:51Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 3,
+    "event": "connection-close-request",
+    "ids": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:51Z"
+  },
+  {
+    "closedIDs": [
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle": 3,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "wireguard",
+    "seconds": 2.1611938750138506,
+    "time": "2026-10-12T16:37:53Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379780.4978495417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379780.720972375"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-close",
+    "time": "2026-10-12T16:37:53Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4458120,
+    "inboundPackets": 210,
+    "outboundPackets": 178,
+    "protocol": "wireguard",
+    "rss": 30736384,
+    "runtime": "5db7f003-b58a-4140-a476-479b7d21d762",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:37:53Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:53Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09250433335546404,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:53Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:53Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09253808332141489,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:53Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.21313179162098095,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.05292300001019612,
+    "host": "198.51.100.7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.051331750000827014,
+    "host": "2001:db8::7",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "cycle": 3,
+    "event": "traffic-after-close",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379780.4978495417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379780.720972375"
+      }
+    ],
+    "protocol": "wireguard",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:37:54Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4654728,
+    "inboundPackets": 412,
+    "outboundPackets": 354,
+    "protocol": "wireguard",
+    "rss": 31178752,
+    "runtime": "5db7f003-b58a-4140-a476-479b7d21d762",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:37:54Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 3,
+    "event": "disconnected",
+    "protocol": "wireguard",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "event": "import",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "hysteria2",
+    "seconds": 0.19830501079559326,
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10384541662642732,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.07398433331400156,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.12609570834320039,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.051438583293929696,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.050294541637413204,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:55Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:56Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379785.24605091667"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:37:56Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4621960,
+    "inboundPackets": 186,
+    "outboundPackets": 172,
+    "protocol": "hysteria2",
+    "rss": 31981568,
+    "runtime": "b668764d-37f4-4387-9552-9194f0ec25f8",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:37:56Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:56Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 1,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "hysteria2",
+    "seconds": 2.1499194583157077,
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379785.24605091667"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-close",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4359816,
+    "inboundPackets": 190,
+    "outboundPackets": 178,
+    "protocol": "hysteria2",
+    "rss": 32260096,
+    "runtime": "b668764d-37f4-4387-9552-9194f0ec25f8",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:37:58Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.07346683333162218,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.07244954170892015,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.0745311250211671,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.1281053749844432,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:58Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.054585249978117645,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "cycle": 1,
+    "event": "traffic-after-close",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379785.24605091667"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4343432,
+    "inboundPackets": 385,
+    "outboundPackets": 344,
+    "protocol": "hysteria2",
+    "rss": 32391168,
+    "runtime": "b668764d-37f4-4387-9552-9194f0ec25f8",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:37:59Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "disconnected",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "cycle": 2,
+    "event": "connected",
+    "protocol": "hysteria2",
+    "seconds": 0.2030099630355835,
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:37:59Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.12652916664956138,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.0695890833158046,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08363087504403666,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.13614491664338857,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05146008334122598,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379789.78684533335"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4654728,
+    "inboundPackets": 193,
+    "outboundPackets": 175,
+    "protocol": "hysteria2",
+    "rss": 32047104,
+    "runtime": "404db6a8-4fd8-496f-a927-7f18df5b5fe2",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:38:00Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:00Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 2,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "hysteria2",
+    "seconds": 2.0709055416518822,
+    "time": "2026-10-12T16:38:02Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379789.78684533335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379790.85873312503"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-close",
+    "time": "2026-10-12T16:38:02Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4458120,
+    "inboundPackets": 193,
+    "outboundPackets": 178,
+    "protocol": "hysteria2",
+    "rss": 32374784,
+    "runtime": "404db6a8-4fd8-496f-a927-7f18df5b5fe2",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:38:02Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:02Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.1664441666798666,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.07351425004890189,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08463783335173503,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.04889666667440906,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.12314566661370918,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "cycle": 2,
+    "event": "traffic-after-close",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379789.78684533335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379790.85873312503"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:38:03Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4507272,
+    "inboundPackets": 400,
+    "outboundPackets": 349,
+    "protocol": "hysteria2",
+    "rss": 32571392,
+    "runtime": "404db6a8-4fd8-496f-a927-7f18df5b5fe2",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:38:03Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "disconnected",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "cycle": 3,
+    "event": "connected",
+    "protocol": "hysteria2",
+    "seconds": 0.22582995891571045,
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.13002487499034032,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.06851583329262212,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.07813350000651553,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:04Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.04939412500243634,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:05Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:05Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.1331874166498892,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:05Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:05Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.4242455"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.49100050004"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.63506370835"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:38:05Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4785800,
+    "inboundPackets": 202,
+    "outboundPackets": 176,
+    "protocol": "hysteria2",
+    "rss": 32096256,
+    "runtime": "b47ce251-eccf-4758-9e52-36a7a69d4b92",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:38:05Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 3
+  },
+  {
+    "cycle": 3,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:05Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle": 3,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "hysteria2",
+    "seconds": 2.1036384166800417,
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.4242455"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.49100050004"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.63506370835"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-close",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4376200,
+    "inboundPackets": 202,
+    "outboundPackets": 179,
+    "protocol": "hysteria2",
+    "rss": 32440320,
+    "runtime": "b47ce251-eccf-4758-9e52-36a7a69d4b92",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 11,
+    "time": "2026-10-12T16:38:07Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08032312500290573,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10346679168287665,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.07305454165907577,
+    "host": "v07-probe-5a7b6b0ca69b.test",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:07Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.04897654167143628,
+    "host": "198.51.100.7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05174125003395602,
+    "host": "2001:db8::7",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "cycle": 3,
+    "event": "traffic-after-close",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.4242455"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.49100050004"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379794.63506370835"
+      }
+    ],
+    "protocol": "hysteria2",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4343432,
+    "inboundPackets": 391,
+    "outboundPackets": 348,
+    "protocol": "hysteria2",
+    "rss": 32571392,
+    "runtime": "b47ce251-eccf-4758-9e52-36a7a69d4b92",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:38:08Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 3,
+    "event": "disconnected",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:08Z"
+  },
+  {
+    "event": "complete",
+    "protocol": "hysteria2",
+    "result": "passed",
+    "time": "2026-10-12T16:38:08Z"
+  }
+]

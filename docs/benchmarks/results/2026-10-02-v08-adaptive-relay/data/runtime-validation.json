@@ -1,0 +1,37 @@
+{
+  "chacha-core-tests": {
+    "archive_path": "investigation/chacha-core-tests.log",
+    "sha256": "d1e4bf966af284abdbe65de02ddbb9eb7e7ea401c261c46e598c6805c4a3f899",
+    "passed": true
+  },
+  "chacha-interop-xray": {
+    "archive_path": "investigation/chacha-interop-xray.log",
+    "sha256": "bc5a2c082c4ace54185979f3b8f91b95672f9b95167b3a6cca83cfa6f5c49dc7",
+    "passed": true
+  },
+  "chacha-interop-sing-box": {
+    "archive_path": "investigation/chacha-interop-sing-box.log",
+    "sha256": "192599db09e071997ab91082c2bf895d723ffd5cb8f27487f8c06c23cd44ce15",
+    "passed": true
+  },
+  "chacha-stop-tests": {
+    "archive_path": "investigation/chacha-stop-tests.log",
+    "sha256": "30b163a493baa466cc8573421daaa94add181e12530126012ab8b9d2def5c34f",
+    "passed": true
+  },
+  "chacha-clippy-validation": {
+    "archive_path": "investigation/chacha-clippy-validation.log",
+    "sha256": "261763aed893c51b82bffe51bde84777cebcc57fb6fa61b0dba5b16563efc1ce",
+    "passed": true
+  },
+  "source_matches_measured_patch": {
+    "patch_sha256": "17377c67b97d3342355efa42444f720d9a8f4e39ee0f8a9db53858413b6855e7",
+    "base_commit": "5a42b627e12b0783567027f55e8e96d64d1e4abc"
+  },
+  "gitleaks": {
+    "scoped_archive_and_source_findings": 0,
+    "narrow_exception_tests": 16
+  },
+  "collector_tests": 11,
+  "formatting": "pass"
+}

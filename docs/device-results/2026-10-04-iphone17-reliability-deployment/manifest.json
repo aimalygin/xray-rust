@@ -1,0 +1,1041 @@
+{
+  "app": {
+    "abi": "1.8",
+    "artifacts": [
+      {
+        "path": "PlugIns/Tunnel.appex/Tunnel",
+        "sha256": "ad62e833e11b687e3ee6121ecbb5e178c6cf23fa4ce279d21f4e2c23d8224b3c"
+      },
+      {
+        "path": "PlugIns/Tunnel.appex/Tunnel.debug.dylib",
+        "sha256": "2e90ccaacbc2f7f0f5c42b1e3dd1c2173e793a12f54100edd47d7ddf5cc33d59"
+      },
+      {
+        "path": "XrayClient",
+        "sha256": "1c9c80be41d466837b4e59a2b6271277695ada75bb54c42e2f27bd7c3c2a4b34"
+      },
+      {
+        "path": "XrayClient.debug.dylib",
+        "sha256": "5e1d67c5af0e006c06cd4f5405b5a450ebcc9fac17fa0935f04c8c53cdf4f869"
+      }
+    ],
+    "configuration": "Debug",
+    "deploymentTarget": "15.0",
+    "nativeRuntimeChanged": false,
+    "probeSourceSha256": "fcddf1fcc2bdd16e8fa29be4d4897f7af4f4ca48bd9dbaca3d1e2147a5cea2d5"
+  },
+  "coreParent": "753acd1b2ec018a97a167a5ce2c057bd078ce287",
+  "device": {
+    "build": "24A446",
+    "model": "iPhone18,2",
+    "os": "27.0.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "3b20b9b545c11c2e20f45936730775c887c6c9cb69b78989465426a6296a4a75"
+    },
+    {
+      "path": "cap-aes128-go-correlation.json",
+      "sha256": "ab562551f8ea629edfcbfa8d59bdc83ef7445c53a854074790d47e52adfa6534"
+    },
+    {
+      "path": "cap-aes128-go.jsonl",
+      "sha256": "6edd4ea8f7be350f8dcc0c49b2d19d5f0dd3790138d20511452422d45139cb66"
+    },
+    {
+      "path": "cap-aes128-ip-metadata.json",
+      "sha256": "9ca0f5f250713618d5e83029537304b8933dcb33632b46feb31a61545e6b2d6d"
+    },
+    {
+      "path": "cap-aes128-server.json",
+      "sha256": "c21f54761e96a8d1b00a4fd58aae9249a3bcb9e0a65500ff65e9281ce4d26f6d"
+    },
+    {
+      "path": "cap-aes128-smoke-go-correlation.json",
+      "sha256": "43327bc74148c64e57f087adfe7a8d2abe5bf4f5abae9b1662ed62eb9fec187a"
+    },
+    {
+      "path": "cap-aes128-smoke-go.jsonl",
+      "sha256": "4526f0123d3673a424a6e06c41c79a0b7ce03e1cae7a84a09540f93c746a5020"
+    },
+    {
+      "path": "cap-aes128-smoke-ip-metadata.json",
+      "sha256": "81d3e88a032de5dcc234b61201faacb7ca0aa666240abafcf64358726b3f60a7"
+    },
+    {
+      "path": "cap-aes128-smoke-server.json",
+      "sha256": "e07731942edcc21f9146cf643c60c39cec61b1e24638d5a571422da01a064632"
+    },
+    {
+      "path": "cap-aes128-smoke-startup.json",
+      "sha256": "f8d97d7440f26c41de71b9ba65a8313bf760f638378e902f0bc182927662b497"
+    },
+    {
+      "path": "cap-aes128-startup.json",
+      "sha256": "bae9bb26cbeac33976b1dd126835cd8b899419118e0bc983a201f1a5fe3c74d1"
+    },
+    {
+      "path": "cap-aes256-go-correlation.json",
+      "sha256": "5f55126558ab006d98e5c7024e83438b7fae46a5b0b1b9588f566c38b8c26e20"
+    },
+    {
+      "path": "cap-aes256-go.jsonl",
+      "sha256": "f290b8a5339e2a224ed90e8ec5ce4a13aa68fd6e67760eb4d148bcdb8c62103f"
+    },
+    {
+      "path": "cap-aes256-ip-metadata.json",
+      "sha256": "a8889f1fbe0d5ee34f87b93ad097b60a0612a44fd5b1ff69b0a6ce3c377400d7"
+    },
+    {
+      "path": "cap-aes256-server.json",
+      "sha256": "738db0bbb05ce02293cfeba41e675c6eacdda0bdc9dd47c3be6eb9c9ddcb10ec"
+    },
+    {
+      "path": "cap-aes256-startup.json",
+      "sha256": "dd23e760db6255c99ff4114de3129fe8b42ef0c6c618144a5b17443fbfaf772e"
+    },
+    {
+      "path": "cap-chacha-go-correlation.json",
+      "sha256": "b3ecb1c678ed2429159b0f8f29717e1456bbffe193afe89d06183bcfa06df565"
+    },
+    {
+      "path": "cap-chacha-go.jsonl",
+      "sha256": "f49da25407e2af1f3340ba23edf916b2c95741950990832fb8752a298836b6ed"
+    },
+    {
+      "path": "cap-chacha-ip-metadata.json",
+      "sha256": "c0f9a7aedad605906d044776d127d217f3080efd97be91b157aef7fc3bc2d398"
+    },
+    {
+      "path": "cap-chacha-server.json",
+      "sha256": "a99bbd4f2a7622bbedead091f5ef13c46d1d88cbd70881bd8a3be6f68b86c848"
+    },
+    {
+      "path": "cap-chacha-startup.json",
+      "sha256": "ae4a80811e83b469b1abceb2d4d7db41ce1503c206fd6e871f51b43bc466e2e7"
+    },
+    {
+      "path": "chacha-go.jsonl",
+      "sha256": "3732e25fba50122a2021ebcc2350868bd833fda8078c0035fa3e1fa3768ba6cf"
+    },
+    {
+      "path": "chacha-server.json",
+      "sha256": "fba250f78c3ff827870b7654eab6f1ee7f37decaa27b51b3b1422ebd75ce5f83"
+    },
+    {
+      "path": "chacha-startup.json",
+      "sha256": "3e824e449d55aef03fe40c419219701124fc29ba6f1587cb9c97384695f79e67"
+    },
+    {
+      "path": "cleanup.json",
+      "sha256": "7ea3fcdb770bfcc56c9b5cf863774ff824ff88b0a6a0236a24e0517646fde5a6"
+    },
+    {
+      "path": "negative-control.json",
+      "sha256": "7616a070af946bb03cb91e277023aa674c45c7e75d644be6be8a6a92ce8671f9"
+    },
+    {
+      "path": "service-fixture-capture.py",
+      "sha256": "f4faff543b9e34717960d0d58b3c9eb3a67deccf87a29133d993bc3c9a00d6c3"
+    },
+    {
+      "path": "service-fixture.py",
+      "sha256": "055de27c5ffd33006923c8fb0768373fce34855a243ed48c045066d51955a362"
+    },
+    {
+      "path": "ss-cap-aes128-smoke-sweep/device-events.json",
+      "sha256": "1171874c8d793816bda3f3ad17631c7ba13e9d51e3d152acc778004328ac748f"
+    },
+    {
+      "path": "ss-cap-aes128-smoke-sweep/events.jsonl",
+      "sha256": "7799f4ee4fe7a80ce983856f86c63686a0efa8d14351669f9ad022d422f0eb5f"
+    },
+    {
+      "path": "ss-cap-aes128-sweep/device-events.json",
+      "sha256": "1f7543e8e2590d3ffcc16d6e67225ef73f7f38b2e5f9b43fa708e232c5cb9600"
+    },
+    {
+      "path": "ss-cap-aes128-sweep/events.jsonl",
+      "sha256": "1e6a2160daf233835a2b0c7d43de5bddd150d72fc085d93a41d312f48e9f4a85"
+    },
+    {
+      "path": "ss-cap-aes256-sweep/device-events.json",
+      "sha256": "47d2835f55706d907822ab97848e5b868dbde5b6689d1b8f66720196a64c254a"
+    },
+    {
+      "path": "ss-cap-aes256-sweep/events.jsonl",
+      "sha256": "59bd0b0035976cd7e3ba31f2e3757667c4bb0a451c8b02e1337b5624e1e2457d"
+    },
+    {
+      "path": "ss-cap-chacha-sweep/device-events.json",
+      "sha256": "097d4f87d64fa75f12b45c76cc6ea30fb8449026696026a30c124f9522f575a9"
+    },
+    {
+      "path": "ss-cap-chacha-sweep/events.jsonl",
+      "sha256": "55c926000f094e41709fef9cfda08f896046ff10439692490ee67bb88220bd38"
+    },
+    {
+      "path": "ss-chacha-sweep/device-events.json",
+      "sha256": "4429968f1d672724d9c404971edfe79446c439757735459ac73a6b6de084e8bc"
+    },
+    {
+      "path": "ss-chacha-sweep/events.jsonl",
+      "sha256": "6305baa920bfdcb5698e9d5d91577189c02bd355892fe912075d4d9b67b09fbe"
+    },
+    {
+      "path": "test-fixture-badpin.service",
+      "sha256": "9d1c601f2261496264d5b980be59cd7f2db559da554848bdbcab40419026b009"
+    },
+    {
+      "path": "test-fixture.service",
+      "sha256": "cde6183d0850c5743de50af23eca7ea9c359fac602685634be601016358155d4"
+    },
+    {
+      "path": "trojan-1/backend-metadata.json",
+      "sha256": "d3ce64ddc0c6e685a22fc18ba3df5bbe9782b9ec17d55da17fb65f753e5f586b"
+    },
+    {
+      "path": "trojan-1/device-events.json",
+      "sha256": "c507da48e0535cdd7e84fd8fca76130188e4b04948831b0f96cfba0cf1a8e66c"
+    },
+    {
+      "path": "trojan-1/events.jsonl",
+      "sha256": "7e327332c6e8bc67f1ba9ee1450e15eb093859e2616d0a7d4c4972a94a2a5894"
+    },
+    {
+      "path": "trojan-2/backend-metadata.json",
+      "sha256": "bf2c54baba3e814edd4bd265e8b57514bb31e1458f09f9fdab7b7934b1d57012"
+    },
+    {
+      "path": "trojan-2/device-events.json",
+      "sha256": "6a91f7c4dd2a57c556e2c0796597429062e32ff39bcce58be39a173001133b33"
+    },
+    {
+      "path": "trojan-2/events.jsonl",
+      "sha256": "fc3ae16f1021a34da19fa124f15426235e5a4f2ce79df08586d23e0df1d978de"
+    },
+    {
+      "path": "trojan-3/backend-metadata.json",
+      "sha256": "751b7a9675dc99d62a661f3f35cc44aa32884dfe2c19d4a09bfc559e4dc67b95"
+    },
+    {
+      "path": "trojan-3/device-events.json",
+      "sha256": "aefc1575b509d069c2b79f1146e372b07e1328020170e3d65097f9551d094b2b"
+    },
+    {
+      "path": "trojan-3/events.jsonl",
+      "sha256": "6cfc88ce75dc65982acbbe1651cbe1c9081505f78bf14c209bc6a39d8fc0a21e"
+    },
+    {
+      "path": "trojan-4/backend-metadata.json",
+      "sha256": "a15fff3b003df57e00c4f9b21e2b5320fcb58b15f75dc1e078d95782c1e88286"
+    },
+    {
+      "path": "trojan-4/device-events.json",
+      "sha256": "2885fcd613bf163a349d3f2c02307ab228b5b11b3deb89e0faaa8027c4ae2cdc"
+    },
+    {
+      "path": "trojan-4/events.jsonl",
+      "sha256": "4b9a9325d2aa2bd47419032f60b9fc953857df4d5064c4b5fec0b36784f215d2"
+    },
+    {
+      "path": "trojan-5/backend-metadata.json",
+      "sha256": "81137325e1135872c90f98e88108fd5ce168026dd0f18e25c755d0132dc8de1f"
+    },
+    {
+      "path": "trojan-5/device-events.json",
+      "sha256": "caddaa3acfcc24cbc4331e5be05f8db3c9c51c898755f8ea35d3182d360ad9c3"
+    },
+    {
+      "path": "trojan-5/events.jsonl",
+      "sha256": "7c5cd22f202ee9426c683cfa2a544b0c0d9d1024508caeeab97e4f681d6ee07f"
+    },
+    {
+      "path": "verify-evidence.py",
+      "sha256": "3369a65c5472a682a63d1047f12749d42ef00f5b2a98bd55f3d234ef4e0b4cdf"
+    },
+    {
+      "path": "vps-before.json",
+      "sha256": "f2069f25a20c5e9c743a31b1878df30ebad40689bf55d5cae639b675d5f3d993"
+    },
+    {
+      "path": "vps-cleanup.json",
+      "sha256": "f39ecc0b2503d8e0cbbc041fbe63de23ce15d6e7549a8dbb1b767fc82bf491e3"
+    },
+    {
+      "path": "wireguard-1/backend-metadata.json",
+      "sha256": "e50ace9ef6b28f3c341ab5b9fbfaba55944728055b1fe3a2b8bbaee654e9bab3"
+    },
+    {
+      "path": "wireguard-1/device-events.json",
+      "sha256": "a707c58286edbd2225f4678079f67b81335a11785f412b5cefcc2a4dcf372678"
+    },
+    {
+      "path": "wireguard-1/events.jsonl",
+      "sha256": "90d6519952525a2e8a38e40b695a4d58da7d572d671a939967e8349bc865ef37"
+    },
+    {
+      "path": "wireguard-2/backend-metadata.json",
+      "sha256": "d0476d9ff80e6f5b95ab5071ebdac77f4b7849ec47752193373798bf6d2d8d05"
+    },
+    {
+      "path": "wireguard-2/device-events.json",
+      "sha256": "641f43fa8762ece32c62b212afac620c5f35753101e4581dd712eb3d610be272"
+    },
+    {
+      "path": "wireguard-2/events.jsonl",
+      "sha256": "01b6850145e4a5dfc97a0cf5f521eca552bf5010b83c577cf8b264a093aa0af7"
+    },
+    {
+      "path": "wireguard-3/backend-metadata.json",
+      "sha256": "ec36267cced6a7821004063f86ce3121e5e0839bac957146b88657951c5300d6"
+    },
+    {
+      "path": "wireguard-3/device-events.json",
+      "sha256": "345c58b7e6ee7bd95381e9029fe78ec82ec2bb7ffbfe6659ac57123ba506a0e6"
+    },
+    {
+      "path": "wireguard-3/events.jsonl",
+      "sha256": "462dd8ca1a5ad5ce4fd0f8c09ac85ffaf42a2d0305cf70df77acad06f3c07013"
+    },
+    {
+      "path": "wireguard-4/backend-metadata.json",
+      "sha256": "bc9710e7cfeed31655919be0215e3c5aa3180c035e68420ed6316a398f6487ca"
+    },
+    {
+      "path": "wireguard-4/device-events.json",
+      "sha256": "30b4f10cc9c63cdffa8d612dcbfbd12abdf11ce9f276c52316adfed4a89fdeb3"
+    },
+    {
+      "path": "wireguard-4/events.jsonl",
+      "sha256": "317d3656fae61289aed3f1ea51e35912086019c08b56a9fcff6ed8ee46047d3a"
+    },
+    {
+      "path": "wireguard-5/backend-metadata.json",
+      "sha256": "fe67585c048de910dee800b8dc4a65609acb033ee83989acf34e932aa3c84692"
+    },
+    {
+      "path": "wireguard-5/device-events.json",
+      "sha256": "2c7587f75c4d971bd80fc4f2d98312fb8820bdd4378e7f6422da21d8a6a65af6"
+    },
+    {
+      "path": "wireguard-5/events.jsonl",
+      "sha256": "157d280094f59067acaa4d39939c228c032f38dc878056b6cf0cbfa76b5d30e2"
+    }
+  ],
+  "privateArtifacts": [
+    {
+      "path": "wireguard-1/private/server.log",
+      "sha256": "32aa272bb5525d260085e853d9f2e618056d0d4432dca6ca08eb3833636ceb41"
+    },
+    {
+      "path": "trojan-1/private/server.log",
+      "sha256": "e224771bf17708b073c3e5175ca43b1c87e368b20f3ca61d9ba727edbffb737c"
+    },
+    {
+      "path": "wireguard-2/private/server.log",
+      "sha256": "a9cdb0cad39f181c35aa07fdf4cdec1d0bfef9ef2c47359f81eaf7208f1d5948"
+    },
+    {
+      "path": "trojan-2/private/server.log",
+      "sha256": "9b5d9edf888564ee625710633cce4f3eb37248692e17305b88c3067da81dd3d3"
+    },
+    {
+      "path": "wireguard-3/private/server.log",
+      "sha256": "74033b4e7cf7345607beada8646c2e961852f402046fd61cef448f76f5f6c38c"
+    },
+    {
+      "path": "trojan-3/private/server.log",
+      "sha256": "26ecb9f466363bda3ea2875cee306427c828debf71e79a2b53b46262d6ff2dca"
+    },
+    {
+      "path": "wireguard-4/private/server.log",
+      "sha256": "c0882c1eb4fd0b53af7af298ae03095c47f5e186809fb955b477885687b63faa"
+    },
+    {
+      "path": "trojan-4/private/server.log",
+      "sha256": "1b06afa0b99c64ae9036d112c1a7105d4da2e09adbe88f61e5ea3c9403905545"
+    },
+    {
+      "path": "wireguard-5/private/server.log",
+      "sha256": "36588d8955f6b9cb24747225d469103fe894bcd09fe6f1bce1068b2c1e7b50cd"
+    },
+    {
+      "path": "trojan-5/private/server.log",
+      "sha256": "17d8f3d90a2a314af8d44dd9118a9970ed1f06bb2e77e5f2111939220929759d"
+    }
+  ],
+  "purpose": "Bounded legacy repeats and server startup/restart policy; not release qualification",
+  "reference": {
+    "fullCleanVcsStampVerified": false,
+    "goControlSha256": "379d220215792fc1e253453dd5597b1252ced244ead68e5159a9b3b57d0e5fd4",
+    "localStep1BinarySha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+    "methods": [
+      "2022-blake3-chacha20-poly1305",
+      "2022-blake3-aes-128-gcm",
+      "2022-blake3-aes-256-gcm"
+    ],
+    "publicPort": 53053,
+    "relayUsed": false,
+    "reportedVersion": "26.7.28 / 5ca6f4b",
+    "revision": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "serverInterfaceMTU": 1500,
+    "vpsBinarySha256": "64d46afb80adea1bf97a0d467e83f4a9ac1ebd0995891e84bca3f1a1d1affb1d"
+  },
+  "runtime": {
+    "canonicalSdkSourcesIdentity": "0148543fef8736e01625bc678ca321cc483e1e12",
+    "commit": "de33998158e84c03f280f979ba2d4212072e5bc4",
+    "librarySha256": "94e80251e1e4f867c23339455c5cfcad4cb429aafe3e2739fb5e9b1d0da6ab2d"
+  },
+  "schema": 1,
+  "sdkParent": "7b481a2531e3c0df62cecfea6195ec510fbc1205",
+  "sources": [
+    {
+      "path": "../../../scripts/set-xray-ss2022-udp-pmtu.py",
+      "sha256": "3dc212a704b7dc236b3e0201c7a6854b3215b16cc61e5e139464ab06cd5d3a98"
+    },
+    {
+      "path": "../../../scripts/run-v07-apple-protocol-fixture.py",
+      "sha256": "139b3f2563d93f05f9cc977e167c99338150cc366010ecf4e901489c2800df80"
+    },
+    {
+      "path": "../../../docs/device-results/2026-10-04-iphone17-wg-baseline/diagnostic-fixture.py",
+      "sha256": "66814a8438fb9614051c77fe2386be145bb56a0f864409fd862db660edcd2505"
+    },
+    {
+      "path": "../../../docs/device-results/2026-10-04-iphone17-ss2022-mtu/ss2022-size-control.go",
+      "sha256": "36f78f85c86d94bbaecc1834c61a61534b63cef78999568c4aac4edba9228c99"
+    }
+  ],
+  "step1": [
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "connected": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "dns-anchor": 6,
+        "import": 1,
+        "network-observer": 9,
+        "sample": 9,
+        "tcp": 18,
+        "tcp-start": 18,
+        "traffic-after-close": 3,
+        "udp": 12,
+        "udp-start": 12
+      },
+      "end": "2026-10-04T20:03:01Z",
+      "longestTCPSeconds": 5.732050291666383,
+      "name": "wireguard-1",
+      "privateConsoleSha256": "677a887eecb9da27536b3792268cce61273b72a2c7476a174043869e4456e3bf",
+      "result": "passed",
+      "start": "2026-10-04T20:02:41Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T20:03:01Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 102,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "dns-anchor": 8,
+        "import": 1,
+        "network-observer": 8,
+        "rapid-restart": 5,
+        "sample": 8,
+        "startup-cancelled": 3,
+        "tcp": 24,
+        "tcp-start": 24,
+        "udp": 16,
+        "udp-start": 16
+      },
+      "end": "2026-10-04T20:03:22Z",
+      "longestTCPSeconds": 0.8089127916682628,
+      "name": "trojan-1",
+      "privateConsoleSha256": "cd5a3d9dc722c8ce9dabf4b871f4001dce6b9a8de1ea51e529b2fc3c32c03ec8",
+      "result": "passed",
+      "start": "2026-10-04T20:03:03Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T20:03:22Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 115,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "connected": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "dns-anchor": 6,
+        "import": 1,
+        "network-observer": 9,
+        "sample": 9,
+        "tcp": 18,
+        "tcp-start": 18,
+        "traffic-after-close": 3,
+        "udp": 12,
+        "udp-start": 12
+      },
+      "end": "2026-10-04T20:03:38Z",
+      "longestTCPSeconds": 0.23601583333220333,
+      "name": "wireguard-2",
+      "privateConsoleSha256": "c948f99ca98551625c0c4de03da5441491753303f1e7b83f2d36c7503da5cc18",
+      "result": "passed",
+      "start": "2026-10-04T20:03:24Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T20:03:38Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 102,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "dns-anchor": 8,
+        "import": 1,
+        "network-observer": 8,
+        "rapid-restart": 5,
+        "sample": 8,
+        "startup-cancelled": 3,
+        "tcp": 24,
+        "tcp-start": 24,
+        "udp": 16,
+        "udp-start": 16
+      },
+      "end": "2026-10-04T20:04:00Z",
+      "longestTCPSeconds": 2.195585208333796,
+      "name": "trojan-2",
+      "privateConsoleSha256": "b2625c42081d06377014d0576d72927d0c4f800fc557bef9eac741d8db79edd1",
+      "result": "passed",
+      "start": "2026-10-04T20:03:41Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T20:04:00Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 115,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "connected": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "dns-anchor": 6,
+        "import": 1,
+        "network-observer": 9,
+        "sample": 9,
+        "tcp": 18,
+        "tcp-start": 18,
+        "traffic-after-close": 3,
+        "udp": 12,
+        "udp-start": 12
+      },
+      "end": "2026-10-04T20:04:17Z",
+      "longestTCPSeconds": 0.24978079166612588,
+      "name": "wireguard-3",
+      "privateConsoleSha256": "07a3cc00932c6297a3d586035649d4b3f68ae5581551c15f19a5012ee43dc46a",
+      "result": "passed",
+      "start": "2026-10-04T20:04:03Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T20:04:17Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 102,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "dns-anchor": 8,
+        "import": 1,
+        "network-observer": 8,
+        "rapid-restart": 5,
+        "sample": 8,
+        "startup-cancelled": 3,
+        "tcp": 24,
+        "tcp-start": 24,
+        "udp": 16,
+        "udp-start": 16
+      },
+      "end": "2026-10-04T20:04:39Z",
+      "longestTCPSeconds": 2.1432510416670993,
+      "name": "trojan-3",
+      "privateConsoleSha256": "c73379db48dfbd61d382d58167f6e9a14af29ba34ae7df63ee4f21d741695421",
+      "result": "passed",
+      "start": "2026-10-04T20:04:20Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T20:04:39Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 115,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "connected": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "dns-anchor": 6,
+        "import": 1,
+        "network-observer": 9,
+        "sample": 9,
+        "tcp": 18,
+        "tcp-start": 18,
+        "traffic-after-close": 3,
+        "udp": 12,
+        "udp-start": 12
+      },
+      "end": "2026-10-04T20:04:55Z",
+      "longestTCPSeconds": 0.20902600000044913,
+      "name": "wireguard-4",
+      "privateConsoleSha256": "241afeabc2e9829a35aa7c9891be1af4c39983f3a6e8643b5ef827531c00a1d4",
+      "result": "passed",
+      "start": "2026-10-04T20:04:41Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T20:04:55Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 102,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "dns-anchor": 8,
+        "import": 1,
+        "network-observer": 8,
+        "rapid-restart": 5,
+        "sample": 8,
+        "startup-cancelled": 3,
+        "tcp": 24,
+        "tcp-start": 24,
+        "udp": 16,
+        "udp-start": 16
+      },
+      "end": "2026-10-04T20:05:15Z",
+      "longestTCPSeconds": 0.3426486249991285,
+      "name": "trojan-4",
+      "privateConsoleSha256": "abae608293243aa08b7743911413a609be0a01359208f47946e4380122671384",
+      "result": "passed",
+      "start": "2026-10-04T20:04:58Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T20:05:15Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 115,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "connected": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "dns-anchor": 6,
+        "import": 1,
+        "network-observer": 9,
+        "sample": 9,
+        "tcp": 18,
+        "tcp-start": 18,
+        "traffic-after-close": 3,
+        "udp": 12,
+        "udp-start": 12
+      },
+      "end": "2026-10-04T20:05:32Z",
+      "longestTCPSeconds": 0.21277912499863305,
+      "name": "wireguard-5",
+      "privateConsoleSha256": "0eb7a09ad6a18eb2b5120fe15844ff5993bef30acc4148f82ad4773ff1c77e1f",
+      "result": "passed",
+      "start": "2026-10-04T20:05:18Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T20:05:32Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 102,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "dns-anchor": 8,
+        "import": 1,
+        "network-observer": 8,
+        "rapid-restart": 5,
+        "sample": 8,
+        "startup-cancelled": 3,
+        "tcp": 24,
+        "tcp-start": 24,
+        "udp": 16,
+        "udp-start": 16
+      },
+      "end": "2026-10-04T20:05:52Z",
+      "longestTCPSeconds": 0.2500642083323328,
+      "name": "trojan-5",
+      "privateConsoleSha256": "5948f154bdba8059a375b3dc792a00f99822dbae6484cba2fda3bdbeb3ecd028",
+      "result": "passed",
+      "start": "2026-10-04T20:05:35Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T20:05:52Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 115,
+        "validConsoleEventsMatchDevice": true
+      }
+    }
+  ],
+  "step2": [
+    {
+      "action": "start",
+      "backendEchoes": 80,
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "import": 1,
+        "network-observer": 2,
+        "sample": 2,
+        "udp-size-result": 40,
+        "udp-size-start": 40,
+        "udp-sweep-complete": 1
+      },
+      "end": "2026-10-04T20:11:47Z",
+      "generation": 2,
+      "go": {
+        "attempts": 44,
+        "passed": 40
+      },
+      "label": "chacha",
+      "name": "ss-chacha-sweep",
+      "privateConsoleSha256": "056d423f81b0f35daec8d29543366a43c10fc35cfabb29d2a8312b84551c769e",
+      "result": "passed",
+      "start": "2026-10-04T20:11:35Z",
+      "udpSweep": {
+        "attempts": 40,
+        "passed": 40
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "shadowsocks2022:2022-blake3-chacha20-poly1305",
+          "result": "passed",
+          "time": "2026-10-04T20:11:47Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 88,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "action": "start",
+      "backendEchoes": 80,
+      "captureStatistics": [
+        "240 packets captured",
+        "242 packets received by filter",
+        "0 packets dropped by kernel"
+      ],
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "import": 1,
+        "network-observer": 2,
+        "sample": 2,
+        "udp-size-result": 40,
+        "udp-size-start": 40,
+        "udp-sweep-complete": 1
+      },
+      "end": "2026-10-04T20:14:44Z",
+      "generation": 3,
+      "go": {
+        "attempts": 44,
+        "passed": 40
+      },
+      "label": "cap-chacha",
+      "name": "ss-cap-chacha-sweep",
+      "privateCaptureSha256": "bd24f1642911782b5d77cd7e34ab2bac5f0a93b29501de7671ae914ed65ff8bb",
+      "privateConsoleSha256": "95762b7eec5b26dd519b0ccf33b51eba46f1bcc5caaa5dab2d1384bf0fb0b2d4",
+      "result": "passed",
+      "start": "2026-10-04T20:14:30Z",
+      "udpSweep": {
+        "attempts": 40,
+        "passed": 40
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "shadowsocks2022:2022-blake3-chacha20-poly1305",
+          "result": "passed",
+          "time": "2026-10-04T20:14:44Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 88,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "action": "restart",
+      "backendEchoes": 82,
+      "captureStatistics": [
+        "240 packets captured",
+        "246 packets received by filter",
+        "0 packets dropped by kernel"
+      ],
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "failure": 1,
+        "import": 1,
+        "network-observer": 2,
+        "sample": 2,
+        "udp-size-result": 40,
+        "udp-size-start": 40,
+        "udp-sweep-complete": 1
+      },
+      "end": "2026-10-04T20:15:24Z",
+      "generation": 4,
+      "go": {
+        "attempts": 44,
+        "passed": 44
+      },
+      "label": "cap-aes128",
+      "name": "ss-cap-aes128-sweep",
+      "privateCaptureSha256": "913e045d4f918cdc2e0d3ff58e9f45b15e3a0ddd0cd5495486621680d67250ff",
+      "privateConsoleSha256": "744fbfbb7f32a02285b0c74bb8a1c0c3b73fb36103c9bd9836ef0c2d98e7dc74",
+      "result": "failed",
+      "start": "2026-10-04T20:15:06Z",
+      "udpSweep": {
+        "attempts": 40,
+        "passed": 38
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "shadowsocks2022:2022-blake3-aes-128-gcm",
+          "result": "failed",
+          "time": "2026-10-04T20:15:24Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 89,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "action": "start",
+      "backendEchoes": 84,
+      "captureStatistics": [
+        "222 packets captured",
+        "224 packets received by filter",
+        "0 packets dropped by kernel"
+      ],
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "import": 1,
+        "network-observer": 2,
+        "sample": 2,
+        "udp-size-result": 40,
+        "udp-size-start": 40,
+        "udp-sweep-complete": 1
+      },
+      "end": "2026-10-04T20:18:32Z",
+      "generation": 5,
+      "go": {
+        "attempts": 44,
+        "passed": 44
+      },
+      "label": "cap-aes256",
+      "name": "ss-cap-aes256-sweep",
+      "privateCaptureSha256": "63bb3bc05eaac7b33a5efee39f0eb7cf27caf392b12d1f75e32b12387129fd05",
+      "privateConsoleSha256": "31a6cac0bb4dd14d7a6d5ea073df6f844c8a9d529fa65e65a29526ecd54c6244",
+      "result": "passed",
+      "start": "2026-10-04T20:18:18Z",
+      "udpSweep": {
+        "attempts": 40,
+        "passed": 40
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "shadowsocks2022:2022-blake3-aes-256-gcm",
+          "result": "passed",
+          "time": "2026-10-04T20:18:32Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 88,
+        "validConsoleEventsMatchDevice": true
+      }
+    },
+    {
+      "action": "restart",
+      "backendEchoes": 56,
+      "captureStatistics": [
+        "239 packets captured",
+        "241 packets received by filter",
+        "0 packets dropped by kernel"
+      ],
+      "counts": {
+        "abi": 1,
+        "complete": 1,
+        "connected": 3,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "disconnected": 3,
+        "dns-anchor": 6,
+        "import": 1,
+        "network-observer": 9,
+        "sample": 9,
+        "tcp": 18,
+        "tcp-start": 18,
+        "traffic-after-close": 3,
+        "udp": 12,
+        "udp-start": 12
+      },
+      "end": "2026-10-04T20:19:25Z",
+      "generation": 6,
+      "go": {
+        "attempts": 44,
+        "passed": 43
+      },
+      "label": "cap-aes128-smoke",
+      "longestTCPSeconds": 1.2774037500021223,
+      "name": "ss-cap-aes128-smoke-sweep",
+      "privateCaptureSha256": "16b6cd2fd113b9b9df1abf9512c97edaad146e2e7e319e845dca4e222cff8e13",
+      "privateConsoleSha256": "73254df0d4a600ddd2fac0ba52376f11f11035b4cc73381f4eba2ac2570a9d77",
+      "result": "passed",
+      "start": "2026-10-04T20:18:54Z",
+      "udpSweep": {
+        "attempts": 0,
+        "passed": 0
+      },
+      "verification": {
+        "complete": {
+          "event": "complete",
+          "protocol": "shadowsocks2022:2022-blake3-aes-128-gcm",
+          "result": "passed",
+          "time": "2026-10-04T20:19:25Z"
+        },
+        "consoleEqualsDevice": true,
+        "rows": 102,
+        "validConsoleEventsMatchDevice": true
+      }
+    }
+  ],
+  "validation": {
+    "changedPublicFileSecretScan": "passed, no added exceptions",
+    "helperSelectorTests": 7,
+    "publicFixtureTests": 13,
+    "runtimeRebuild": "not required; unchanged native inputs and app hashes",
+    "secretScannerPolicyTests": 18,
+    "sourcePrivacyCheck": "VPS host/password, device identifier and private LAN address absent"
+  }
+}

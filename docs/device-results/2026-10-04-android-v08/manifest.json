@@ -1,0 +1,1686 @@
+{
+  "date": "2026-10-04",
+  "scope": "Bounded Android LAN protocol/path/lifecycle and request-stress observations; not complete release acceptance",
+  "nativeRevision": "de33998158e84c03f280f979ba2d4212072e5bc4",
+  "nativeTree": "3d628e533f68671721ecf2e6ad786c15ce6f7291",
+  "nativeSourceClean": true,
+  "harnessBaseCommit": "2c04d987fdc9a1312d0d7a799d6fcd3c1e2c6478",
+  "harnessDirtyAtBuild": true,
+  "sdkCommit": "f18254a6571a0165c6ecb557d57bc87ad688818e",
+  "runtimeAndSdkSourcesChanged": false,
+  "referenceRevision": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "referenceSha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+  "device": {
+    "model": "SM-A145F",
+    "manufacturer": "samsung",
+    "android": "15",
+    "api": "35",
+    "abi": "arm64-v8a",
+    "build": "A145FXXSEDZF1",
+    "securityPatch": "2026-05-05",
+    "usbConnected": true
+  },
+  "conditions": {
+    "battery": [
+      "USB powered: true",
+      "status: 5",
+      "level: 100",
+      "temperature: 282"
+    ],
+    "thermal": [
+      "Thermal Status: 0"
+    ]
+  },
+  "eventCounts": {
+    "consent-requested": 1,
+    "matrix-start": 1,
+    "case-start": 14,
+    "share-link-import": 14,
+    "running": 14,
+    "traffic": 42,
+    "close-recovery": 14,
+    "cancel-start-recovery": 14,
+    "case-pass": 14,
+    "matrix-pass": 1,
+    "resources-start": 3,
+    "resource-case-start": 15,
+    "resource-warmup": 15,
+    "resource-case-fail": 2,
+    "resource-burst": 27,
+    "resource-cycle": 26,
+    "resource-recovery": 13,
+    "resource-post-traffic": 13,
+    "resource-case-pass": 1,
+    "udp-diagnostic-start": 10,
+    "udp-diagnostic-complete": 10,
+    "udp-diagnostic-series-complete": 2,
+    "resource-case-complete": 12,
+    "resources-complete": 1,
+    "invalid-import-control": 3,
+    "vpn-off-negative-control": 1,
+    "controls-complete": 1,
+    "idle-cpu-control": 2
+  },
+  "functionalHttpPassed": 182,
+  "functionalUdpPassed": 182,
+  "functionalFailed": 0,
+  "stressHttpPassed": 6240,
+  "stressUdpPassed": 12478,
+  "stressUdpFailed": 2,
+  "failedTrials": [
+    {
+      "hostTime": 1791160748.9752939,
+      "kind": "resource-case-fail",
+      "case": "trojan-tls",
+      "backend": "file-descriptor",
+      "error": "stress failure: {\"httpPassed\": 240, \"httpFailed\": 0, \"udpPassed\": 479, \"udpFailed\": 1, \"durationMillis\": 6449}"
+    },
+    {
+      "hostTime": 1791161077.286308,
+      "kind": "resource-burst",
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "cycle": 1,
+      "id": 103,
+      "before": {
+        "time": 1791161070.008378,
+        "cpuTicks": 2267,
+        "rssBytes": 173555712,
+        "threads": 37
+      },
+      "load": [
+        {
+          "time": 1791161070.434803,
+          "cpuTicks": 2346,
+          "rssBytes": 170471424,
+          "threads": 37
+        },
+        {
+          "time": 1791161071.545624,
+          "cpuTicks": 2683,
+          "rssBytes": 175333376,
+          "threads": 37
+        },
+        {
+          "time": 1791161072.665714,
+          "cpuTicks": 2908,
+          "rssBytes": 186392576,
+          "threads": 37
+        },
+        {
+          "time": 1791161073.696644,
+          "cpuTicks": 3012,
+          "rssBytes": 182435840,
+          "threads": 37
+        },
+        {
+          "time": 1791161074.717092,
+          "cpuTicks": 3115,
+          "rssBytes": 183255040,
+          "threads": 37
+        },
+        {
+          "time": 1791161075.754516,
+          "cpuTicks": 3229,
+          "rssBytes": 185581568,
+          "threads": 37
+        },
+        {
+          "time": 1791161076.776308,
+          "cpuTicks": 3331,
+          "rssBytes": 186118144,
+          "threads": 37
+        }
+      ],
+      "after": {
+        "time": 1791161077.2862809,
+        "cpuTicks": 3381,
+        "rssBytes": 183422976,
+        "threads": 37
+      },
+      "completion": {
+        "httpPassed": 240,
+        "httpFailed": 0,
+        "udpPassed": 479,
+        "udpFailed": 1,
+        "durationMillis": 6263
+      }
+    },
+    {
+      "hostTime": 1791161077.2869482,
+      "kind": "resource-case-fail",
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "error": "stress failure: {\"httpPassed\": 240, \"httpFailed\": 0, \"udpPassed\": 479, \"udpFailed\": 1, \"durationMillis\": 6263}"
+    },
+    {
+      "hostTime": 1791161438.89698,
+      "kind": "udp-diagnostic-complete",
+      "id": 202,
+      "backend": "packet-pump",
+      "completion": {
+        "httpPassed": 240,
+        "httpFailed": 0,
+        "udpPassed": 479,
+        "udpFailed": 1,
+        "durationMillis": 6241
+      },
+      "failures": [
+        {
+          "deviceTime": 1791161433.493,
+          "queryTag": "8ab4cea4cc04ac88",
+          "localPort": "36973",
+          "errorCode": "SocketTimeoutException",
+          "backendReplies": [
+            {
+              "backend": "udp",
+              "requestBytes": 67,
+              "time": 1791161428.394426,
+              "queryTag": "8ab4cea4cc04ac88",
+              "responseBytes": 83
+            }
+          ]
+        }
+      ],
+      "samples": [
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 6,
+          "residentMemoryBytes": 171917312,
+          "threadCount": 28,
+          "processCpuMillis": 11806,
+          "elapsedRealtimeMillis": 1886864,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 6,
+          "residentMemoryBytes": 171917312,
+          "threadCount": 28,
+          "processCpuMillis": 11806,
+          "elapsedRealtimeMillis": 1886864,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": false,
+          "runtimeGeneration": 6,
+          "residentMemoryBytes": 171798528,
+          "threadCount": 28,
+          "processCpuMillis": 11867,
+          "elapsedRealtimeMillis": 1888172,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 7,
+          "residentMemoryBytes": 172507136,
+          "threadCount": 37,
+          "processCpuMillis": 11948,
+          "elapsedRealtimeMillis": 1888238,
+          "activeConnections": 0,
+          "tunInboundPackets": 3,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 7,
+          "residentMemoryBytes": 177156096,
+          "threadCount": 37,
+          "processCpuMillis": 26017,
+          "elapsedRealtimeMillis": 1898282,
+          "activeConnections": 478,
+          "tunInboundPackets": 1937,
+          "tunOutboundPackets": 1682,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 478,
+          "udpRemoteWrittenBytes": 32227,
+          "udpRemoteReadBytes": 39840,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 7,
+          "residentMemoryBytes": 175955968,
+          "threadCount": 37,
+          "processCpuMillis": 26808,
+          "elapsedRealtimeMillis": 1898678,
+          "activeConnections": 0,
+          "tunInboundPackets": 1937,
+          "tunOutboundPackets": 1682,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 478,
+          "udpRemoteWrittenBytes": 32227,
+          "udpRemoteReadBytes": 39840,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        }
+      ],
+      "ordinaryProbes": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "1",
+        "udp-passed": "1"
+      }
+    },
+    {
+      "hostTime": 1791161469.952703,
+      "kind": "udp-diagnostic-complete",
+      "id": 204,
+      "backend": "packet-pump",
+      "completion": {
+        "httpPassed": 240,
+        "httpFailed": 0,
+        "udpPassed": 479,
+        "udpFailed": 1,
+        "durationMillis": 6122
+      },
+      "failures": [
+        {
+          "deviceTime": 1791161464.29,
+          "queryTag": "c751875770ccfba6",
+          "localPort": "53277",
+          "errorCode": "SocketTimeoutException",
+          "backendReplies": [
+            {
+              "backend": "udp",
+              "requestBytes": 67,
+              "time": 1791161459.234015,
+              "queryTag": "c751875770ccfba6",
+              "responseBytes": 83
+            }
+          ]
+        }
+      ],
+      "samples": [
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 8,
+          "residentMemoryBytes": 173367296,
+          "threadCount": 28,
+          "processCpuMillis": 36213,
+          "elapsedRealtimeMillis": 1917798,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 8,
+          "residentMemoryBytes": 173367296,
+          "threadCount": 28,
+          "processCpuMillis": 36219,
+          "elapsedRealtimeMillis": 1917801,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": false,
+          "runtimeGeneration": 8,
+          "residentMemoryBytes": 173137920,
+          "threadCount": 28,
+          "processCpuMillis": 36283,
+          "elapsedRealtimeMillis": 1919111,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 9,
+          "residentMemoryBytes": 174714880,
+          "threadCount": 37,
+          "processCpuMillis": 36351,
+          "elapsedRealtimeMillis": 1919172,
+          "activeConnections": 0,
+          "tunInboundPackets": 3,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 9,
+          "residentMemoryBytes": 173015040,
+          "threadCount": 37,
+          "processCpuMillis": 50374,
+          "elapsedRealtimeMillis": 1929220,
+          "activeConnections": 479,
+          "tunInboundPackets": 1938,
+          "tunOutboundPackets": 1689,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 479,
+          "udpRemoteWrittenBytes": 32227,
+          "udpRemoteReadBytes": 39840,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 9,
+          "residentMemoryBytes": 176775168,
+          "threadCount": 37,
+          "processCpuMillis": 51731,
+          "elapsedRealtimeMillis": 1930198,
+          "activeConnections": 1,
+          "tunInboundPackets": 1938,
+          "tunOutboundPackets": 1689,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 479,
+          "udpRemoteWrittenBytes": 32227,
+          "udpRemoteReadBytes": 39840,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        }
+      ],
+      "ordinaryProbes": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "1",
+        "udp-passed": "1"
+      }
+    },
+    {
+      "hostTime": 1791161500.7671628,
+      "kind": "udp-diagnostic-complete",
+      "id": 206,
+      "backend": "packet-pump",
+      "completion": {
+        "httpPassed": 240,
+        "httpFailed": 0,
+        "udpPassed": 479,
+        "udpFailed": 1,
+        "durationMillis": 7651
+      },
+      "failures": [
+        {
+          "deviceTime": 1791161493.912,
+          "queryTag": "41903c8673bcbb60",
+          "localPort": "34242",
+          "errorCode": "SocketTimeoutException",
+          "backendReplies": [
+            {
+              "backend": "udp",
+              "requestBytes": 67,
+              "time": 1791161488.846842,
+              "queryTag": "41903c8673bcbb60",
+              "responseBytes": 83
+            }
+          ]
+        }
+      ],
+      "samples": [
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 10,
+          "residentMemoryBytes": 176226304,
+          "threadCount": 28,
+          "processCpuMillis": 60601,
+          "elapsedRealtimeMillis": 1945846,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 10,
+          "residentMemoryBytes": 176226304,
+          "threadCount": 28,
+          "processCpuMillis": 60606,
+          "elapsedRealtimeMillis": 1945848,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "file-descriptor",
+          "probeOnly": false,
+          "runtimeRunning": false,
+          "runtimeGeneration": 10,
+          "residentMemoryBytes": 176234496,
+          "threadCount": 28,
+          "processCpuMillis": 60670,
+          "elapsedRealtimeMillis": 1947225,
+          "activeConnections": 0,
+          "tunInboundPackets": 0,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 11,
+          "residentMemoryBytes": 174305280,
+          "threadCount": 37,
+          "processCpuMillis": 60740,
+          "elapsedRealtimeMillis": 1947291,
+          "activeConnections": 0,
+          "tunInboundPackets": 3,
+          "tunOutboundPackets": 0,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 0,
+          "udpRemoteWrittenBytes": 0,
+          "udpRemoteReadBytes": 0,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 11,
+          "residentMemoryBytes": 174051328,
+          "threadCount": 37,
+          "processCpuMillis": 74910,
+          "elapsedRealtimeMillis": 1957333,
+          "activeConnections": 476,
+          "tunInboundPackets": 1937,
+          "tunOutboundPackets": 1689,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 476,
+          "udpRemoteWrittenBytes": 32227,
+          "udpRemoteReadBytes": 39840,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        },
+        {
+          "tunBackend": "packet-pump",
+          "probeOnly": true,
+          "runtimeRunning": true,
+          "runtimeGeneration": 11,
+          "residentMemoryBytes": 176455680,
+          "threadCount": 37,
+          "processCpuMillis": 79086,
+          "elapsedRealtimeMillis": 1961138,
+          "activeConnections": 0,
+          "tunInboundPackets": 1938,
+          "tunOutboundPackets": 1689,
+          "tunDroppedPackets": 0,
+          "udpRemoteOpenEvents": 476,
+          "udpRemoteWrittenBytes": 32227,
+          "udpRemoteReadBytes": 39840,
+          "fatalTunErrors": 0,
+          "unrecoveredTransitions": 0
+        }
+      ],
+      "ordinaryProbes": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "1",
+        "udp-passed": "1"
+      }
+    },
+    {
+      "hostTime": 1791161812.69762,
+      "kind": "resource-burst",
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "cycle": 1,
+      "id": 403,
+      "before": {
+        "time": 1791161806.473065,
+        "cpuTicks": 14310,
+        "rssBytes": 169222144,
+        "threads": 37
+      },
+      "load": [
+        {
+          "time": 1791161806.896508,
+          "cpuTicks": 14404,
+          "rssBytes": 167276544,
+          "threads": 37
+        },
+        {
+          "time": 1791161807.992265,
+          "cpuTicks": 14761,
+          "rssBytes": 171810816,
+          "threads": 37
+        },
+        {
+          "time": 1791161809.075418,
+          "cpuTicks": 14942,
+          "rssBytes": 181788672,
+          "threads": 37
+        },
+        {
+          "time": 1791161810.088543,
+          "cpuTicks": 15043,
+          "rssBytes": 182337536,
+          "threads": 37
+        },
+        {
+          "time": 1791161811.141464,
+          "cpuTicks": 15158,
+          "rssBytes": 183984128,
+          "threads": 37
+        },
+        {
+          "time": 1791161812.159234,
+          "cpuTicks": 15260,
+          "rssBytes": 184553472,
+          "threads": 37
+        }
+      ],
+      "after": {
+        "time": 1791161812.6976058,
+        "cpuTicks": 15314,
+        "rssBytes": 181870592,
+        "threads": 37
+      },
+      "completion": {
+        "httpPassed": 240,
+        "httpFailed": 0,
+        "udpPassed": 479,
+        "udpFailed": 1,
+        "durationMillis": 5817
+      }
+    },
+    {
+      "hostTime": 1791162081.614621,
+      "kind": "resource-burst",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "cycle": 1,
+      "id": 411,
+      "before": {
+        "time": 1791162074.105991,
+        "cpuTicks": 29591,
+        "rssBytes": 165298176,
+        "threads": 37
+      },
+      "load": [
+        {
+          "time": 1791162074.520161,
+          "cpuTicks": 29675,
+          "rssBytes": 156385280,
+          "threads": 37
+        },
+        {
+          "time": 1791162075.5989618,
+          "cpuTicks": 29933,
+          "rssBytes": 172937216,
+          "threads": 37
+        },
+        {
+          "time": 1791162076.5897431,
+          "cpuTicks": 30032,
+          "rssBytes": 176336896,
+          "threads": 37
+        },
+        {
+          "time": 1791162077.6656902,
+          "cpuTicks": 30139,
+          "rssBytes": 177156096,
+          "threads": 37
+        },
+        {
+          "time": 1791162078.7704902,
+          "cpuTicks": 30260,
+          "rssBytes": 173735936,
+          "threads": 37
+        },
+        {
+          "time": 1791162079.935411,
+          "cpuTicks": 30377,
+          "rssBytes": 175673344,
+          "threads": 37
+        },
+        {
+          "time": 1791162081.048343,
+          "cpuTicks": 30489,
+          "rssBytes": 176840704,
+          "threads": 37
+        }
+      ],
+      "after": {
+        "time": 1791162081.6145651,
+        "cpuTicks": 30546,
+        "rssBytes": 174280704,
+        "threads": 37
+      },
+      "completion": {
+        "httpPassed": 240,
+        "httpFailed": 0,
+        "udpPassed": 479,
+        "udpFailed": 1,
+        "durationMillis": 6050
+      }
+    }
+  ],
+  "backendResponses": {
+    "http": 9396,
+    "udp": 18516
+  },
+  "limits": {
+    "rssGrowthBytes": 8388608,
+    "rssGrowthFraction": 0.25,
+    "threadGrowth": 4,
+    "cycles": 2,
+    "httpAttempts": 240,
+    "udpAttempts": 480,
+    "workers": 32,
+    "settleSeconds": 20
+  },
+  "resources": [
+    {
+      "case": "trojan-tls",
+      "backend": "file-descriptor",
+      "runId": "isolated-first",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        167.27,
+        177.332
+      ],
+      "rssGrowthMiB": 10.062,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        34,
+        33
+      ],
+      "cpuSeconds": [
+        3.77,
+        3.7
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.26,
+        2.2
+      ],
+      "wallSeconds": [
+        2.112,
+        2.07
+      ],
+      "cpuPercentOneCore": [
+        178.54,
+        178.73
+      ],
+      "stressDurationMillis": [
+        1625,
+        1663
+      ],
+      "sampledPeakRssMiB": 171.648,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0
+    },
+    {
+      "case": "trojan-tls",
+      "backend": "file-descriptor",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        154.234,
+        173.695
+      ],
+      "rssGrowthMiB": 19.461,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        35,
+        34
+      ],
+      "cpuSeconds": [
+        3.63,
+        3.65
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.09,
+        2.03
+      ],
+      "wallSeconds": [
+        3.386,
+        1.967
+      ],
+      "cpuPercentOneCore": [
+        107.21,
+        185.53
+      ],
+      "stressDurationMillis": [
+        1899,
+        1571
+      ],
+      "sampledPeakRssMiB": 167.766,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 27984,
+          "heapSizeKiB": 36164,
+          "allocatedKiB": 18493,
+          "freeKiB": 17670
+        },
+        {
+          "rssKiB": 42124,
+          "heapSizeKiB": 50804,
+          "allocatedKiB": 18267,
+          "freeKiB": 32536
+        }
+      ]
+    },
+    {
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        162.426,
+        163.223
+      ],
+      "rssGrowthMiB": 0.797,
+      "threadGrowth": 0,
+      "recoveredThreads": [
+        36,
+        36
+      ],
+      "cpuSeconds": [
+        10.04,
+        7.07
+      ],
+      "recoveryCpuPercentOneCore": [
+        101.62,
+        101.11
+      ],
+      "wallSeconds": [
+        6.225,
+        3.455
+      ],
+      "cpuPercentOneCore": [
+        161.3,
+        204.61
+      ],
+      "stressDurationMillis": [
+        5817,
+        2112
+      ],
+      "sampledPeakRssMiB": 176.004,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 959,
+      "stressUdpFailed": 1,
+      "nativeHeap": [
+        {
+          "rssKiB": 29716,
+          "heapSizeKiB": 37556,
+          "allocatedKiB": 18771,
+          "freeKiB": 18784
+        },
+        {
+          "rssKiB": 30172,
+          "heapSizeKiB": 38868,
+          "allocatedKiB": 18196,
+          "freeKiB": 20671
+        }
+      ]
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        167.637,
+        166.348
+      ],
+      "rssGrowthMiB": -1.289,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        35,
+        34
+      ],
+      "cpuSeconds": [
+        1.8,
+        1.75
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.28,
+        2.08
+      ],
+      "wallSeconds": [
+        2.018,
+        1.921
+      ],
+      "cpuPercentOneCore": [
+        89.21,
+        91.09
+      ],
+      "stressDurationMillis": [
+        959,
+        962
+      ],
+      "sampledPeakRssMiB": 165.258,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 35316,
+          "heapSizeKiB": 71108,
+          "allocatedKiB": 26572,
+          "freeKiB": 44535
+        },
+        {
+          "rssKiB": 34328,
+          "heapSizeKiB": 68780,
+          "allocatedKiB": 26398,
+          "freeKiB": 42381
+        }
+      ]
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        153.09,
+        160.426
+      ],
+      "rssGrowthMiB": 7.336,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        37,
+        36
+      ],
+      "cpuSeconds": [
+        3.87,
+        3.88
+      ],
+      "recoveryCpuPercentOneCore": [
+        100.95,
+        101.5
+      ],
+      "wallSeconds": [
+        1.944,
+        1.923
+      ],
+      "cpuPercentOneCore": [
+        199.06,
+        201.82
+      ],
+      "stressDurationMillis": [
+        1118,
+        1120
+      ],
+      "sampledPeakRssMiB": 167.047,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 18968,
+          "heapSizeKiB": 31416,
+          "allocatedKiB": 27171,
+          "freeKiB": 4244
+        },
+        {
+          "rssKiB": 26216,
+          "heapSizeKiB": 49244,
+          "allocatedKiB": 25025,
+          "freeKiB": 24218
+        }
+      ]
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        166.168,
+        168.047
+      ],
+      "rssGrowthMiB": 1.879,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        35,
+        34
+      ],
+      "cpuSeconds": [
+        1.85,
+        1.83
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.05,
+        2.04
+      ],
+      "wallSeconds": [
+        1.936,
+        2.024
+      ],
+      "cpuPercentOneCore": [
+        95.56,
+        90.42
+      ],
+      "stressDurationMillis": [
+        923,
+        864
+      ],
+      "sampledPeakRssMiB": 165.684,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 34944,
+          "heapSizeKiB": 69856,
+          "allocatedKiB": 27469,
+          "freeKiB": 42386
+        },
+        {
+          "rssKiB": 35388,
+          "heapSizeKiB": 70100,
+          "allocatedKiB": 26218,
+          "freeKiB": 43881
+        }
+      ]
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        161.035,
+        160.207
+      ],
+      "rssGrowthMiB": -0.828,
+      "threadGrowth": 0,
+      "recoveredThreads": [
+        36,
+        36
+      ],
+      "cpuSeconds": [
+        9.55,
+        3.89
+      ],
+      "recoveryCpuPercentOneCore": [
+        100.53,
+        101.41
+      ],
+      "wallSeconds": [
+        7.509,
+        2.021
+      ],
+      "cpuPercentOneCore": [
+        127.19,
+        192.49
+      ],
+      "stressDurationMillis": [
+        6050,
+        1232
+      ],
+      "sampledPeakRssMiB": 168.949,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 959,
+      "stressUdpFailed": 1,
+      "nativeHeap": [
+        {
+          "rssKiB": 26688,
+          "heapSizeKiB": 49516,
+          "allocatedKiB": 26442,
+          "freeKiB": 23073
+        },
+        {
+          "rssKiB": 26932,
+          "heapSizeKiB": 50248,
+          "allocatedKiB": 26216,
+          "freeKiB": 24031
+        }
+      ]
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        165.746,
+        167.121
+      ],
+      "rssGrowthMiB": 1.375,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        35,
+        34
+      ],
+      "cpuSeconds": [
+        1.86,
+        1.84
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.38,
+        2.59
+      ],
+      "wallSeconds": [
+        1.932,
+        1.984
+      ],
+      "cpuPercentOneCore": [
+        96.28,
+        92.72
+      ],
+      "stressDurationMillis": [
+        863,
+        1082
+      ],
+      "sampledPeakRssMiB": 164.953,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 35224,
+          "heapSizeKiB": 70252,
+          "allocatedKiB": 26626,
+          "freeKiB": 43625
+        },
+        {
+          "rssKiB": 26572,
+          "heapSizeKiB": 49408,
+          "allocatedKiB": 25530,
+          "freeKiB": 23877
+        }
+      ]
+    },
+    {
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        159.828,
+        152.137
+      ],
+      "rssGrowthMiB": -7.691,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        37,
+        36
+      ],
+      "cpuSeconds": [
+        3.93,
+        3.95
+      ],
+      "recoveryCpuPercentOneCore": [
+        100.93,
+        100.78
+      ],
+      "wallSeconds": [
+        2.007,
+        2.03
+      ],
+      "cpuPercentOneCore": [
+        195.86,
+        194.57
+      ],
+      "stressDurationMillis": [
+        1136,
+        1113
+      ],
+      "sampledPeakRssMiB": 167.184,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 26760,
+          "heapSizeKiB": 50456,
+          "allocatedKiB": 27351,
+          "freeKiB": 23104
+        },
+        {
+          "rssKiB": 17988,
+          "heapSizeKiB": 29872,
+          "allocatedKiB": 25848,
+          "freeKiB": 4023
+        }
+      ]
+    },
+    {
+      "case": "vmess-aes-128-gcm",
+      "backend": "file-descriptor",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        151.184,
+        157.59
+      ],
+      "rssGrowthMiB": 6.406,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        35,
+        34
+      ],
+      "cpuSeconds": [
+        2.24,
+        2.2
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.03,
+        2.23
+      ],
+      "wallSeconds": [
+        1.951,
+        2.068
+      ],
+      "cpuPercentOneCore": [
+        114.81,
+        106.41
+      ],
+      "stressDurationMillis": [
+        1123,
+        1163
+      ],
+      "sampledPeakRssMiB": 156.852,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 20520,
+          "heapSizeKiB": 27344,
+          "allocatedKiB": 17277,
+          "freeKiB": 10066
+        },
+        {
+          "rssKiB": 25188,
+          "heapSizeKiB": 31784,
+          "allocatedKiB": 17145,
+          "freeKiB": 14638
+        }
+      ]
+    },
+    {
+      "case": "vmess-aes-128-gcm",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        150.555,
+        154.145
+      ],
+      "rssGrowthMiB": 3.59,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        37,
+        36
+      ],
+      "cpuSeconds": [
+        4.42,
+        4.33
+      ],
+      "recoveryCpuPercentOneCore": [
+        101.19,
+        101.22
+      ],
+      "wallSeconds": [
+        2.135,
+        2.035
+      ],
+      "cpuPercentOneCore": [
+        207.0,
+        212.76
+      ],
+      "stressDurationMillis": [
+        1379,
+        1629
+      ],
+      "sampledPeakRssMiB": 157.035,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 16228,
+          "heapSizeKiB": 22784,
+          "allocatedKiB": 17394,
+          "freeKiB": 5389
+        },
+        {
+          "rssKiB": 19104,
+          "heapSizeKiB": 25648,
+          "allocatedKiB": 16833,
+          "freeKiB": 8814
+        }
+      ]
+    },
+    {
+      "case": "vmess-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        152.41,
+        158.844
+      ],
+      "rssGrowthMiB": 6.434,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        35,
+        34
+      ],
+      "cpuSeconds": [
+        2.18,
+        2.18
+      ],
+      "recoveryCpuPercentOneCore": [
+        2.23,
+        2.22
+      ],
+      "wallSeconds": [
+        1.911,
+        1.938
+      ],
+      "cpuPercentOneCore": [
+        114.06,
+        112.47
+      ],
+      "stressDurationMillis": [
+        1285,
+        1283
+      ],
+      "sampledPeakRssMiB": 156.414,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 19960,
+          "heapSizeKiB": 26624,
+          "allocatedKiB": 17144,
+          "freeKiB": 9479
+        },
+        {
+          "rssKiB": 19424,
+          "heapSizeKiB": 26280,
+          "allocatedKiB": 16950,
+          "freeKiB": 9329
+        }
+      ]
+    },
+    {
+      "case": "vmess-chacha20-poly1305",
+      "backend": "packet-pump",
+      "runId": "all-cipher-diagnostic",
+      "resourcePassed": true,
+      "recoveredRssMiB": [
+        153.375,
+        153.969
+      ],
+      "rssGrowthMiB": 0.594,
+      "threadGrowth": -1,
+      "recoveredThreads": [
+        37,
+        36
+      ],
+      "cpuSeconds": [
+        4.3,
+        4.26
+      ],
+      "recoveryCpuPercentOneCore": [
+        101.26,
+        101.09
+      ],
+      "wallSeconds": [
+        2.001,
+        2.016
+      ],
+      "cpuPercentOneCore": [
+        214.85,
+        211.29
+      ],
+      "stressDurationMillis": [
+        1365,
+        1364
+      ],
+      "sampledPeakRssMiB": 155.73,
+      "stressHttpPassed": 480,
+      "stressHttpFailed": 0,
+      "stressUdpPassed": 960,
+      "stressUdpFailed": 0,
+      "nativeHeap": [
+        {
+          "rssKiB": 16760,
+          "heapSizeKiB": 23396,
+          "allocatedKiB": 17593,
+          "freeKiB": 5802
+        },
+        {
+          "rssKiB": 19184,
+          "heapSizeKiB": 25808,
+          "allocatedKiB": 16755,
+          "freeKiB": 9052
+        }
+      ]
+    }
+  ],
+  "releaseAcceptanceComplete": false,
+  "cleanup": {
+    "complete": true,
+    "ownedServicesStopped": true,
+    "ownedAppProcessesStopped": true,
+    "ownedProfileAndPendingImportsRemoved": true,
+    "fixtureCredentialsRemoved": true,
+    "previousAppPackagesUntouched": true,
+    "stateBeforeForceStop": {
+      "host": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "14",
+        "fatal-tun-errors": "0"
+      },
+      "probe": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "0",
+        "udp-passed": "0"
+      }
+    },
+    "finalConditions": {
+      "battery": [
+        "USB powered: true",
+        "status: 5",
+        "level: 100",
+        "temperature: 290"
+      ],
+      "thermal": [
+        "Thermal Status: 0"
+      ]
+    },
+    "performedAfterFollowup": true
+  },
+  "limitations": [
+    "Local Wi-Fi carrier to pinned Xray-core; synthetic IPv4/IPv6 destinations redirect to local backends.",
+    "HTTP 204 is availability, not TCP byte integrity. UDP nonce query/response is 67/83 bytes, not an MTU sweep.",
+    "Resource loads are finite request bursts, not sustained bulk transfer, five-sample calibrated gates or Go/sing-box performance comparisons.",
+    "RSS is sampled and CPU is the full host process; no continuous peak, energy or formal Perfetto claim.",
+    "Connecting cancellation is not complete cancel-active-flow coverage. Close/recovery is independently probed.",
+    "No Android WAN transitions, lock/wake, shared legacy matrix or formal schema-4 archive in this report.",
+    "Trojan and SS2022 AES-128 UDP request stress have retained timeouts. Correlated backend replies precede the client timeout; the core decoded-UDP counter misses one response. The exact cause is unresolved; reordered controls pass on both paths.",
+    "Initial full-VPN resource attempt includes background app traffic. Controlled resource observations use the separate probe UID only, with distinct APK identities.",
+    "PacketPump consumes about one core at idle: xray-tun-in spins on zero-byte nonblocking reads. This baseline is not acceptable idle CPU behavior; see the separate readiness-wait follow-up.",
+    "The hard-coded unrecoveredTransitions telemetry value is not used as evidence of real recovery.",
+    "Historical SS2022 WAN losses are deferred, not fixed or erased."
+  ],
+  "artifacts": [
+    {
+      "path": "backend-events.jsonl",
+      "sha256": "c3066bbb493f76e3606b1ec4ce0481bee9a3559908650c331dc02435c70af116"
+    },
+    {
+      "path": "build-identity.json",
+      "sha256": "1d409822bc6c72cdf723effa5e9396c1ef98985d3e011a39b56571f162e7b455"
+    },
+    {
+      "path": "diagnostic-harness.patch",
+      "sha256": "97fda195e536b6ac4ab437a52cb80721bf8e469001f65864800a984e68b67946"
+    },
+    {
+      "path": "events.jsonl",
+      "sha256": "678c214061a146f6abefc2cc18695479e9795f95b89dbcdc85bc4b0ec09735e3"
+    },
+    {
+      "path": "full-vpn-harness.patch",
+      "sha256": "aaa7b3e2e257616bb3b054a6c61a6ad6358b49d4dd930e69f4500b978feafc9b"
+    },
+    {
+      "path": "identity-full-vpn.json",
+      "sha256": "b0d76c287470832266f34f4193909a348afeaef986f727875527b96e9f4f6da5"
+    },
+    {
+      "path": "identity-isolated-first.json",
+      "sha256": "11d56c9b9591340a597490715d0cbd1e6ead7c230ed8099703f526d943962958"
+    },
+    {
+      "path": "isolated-first-harness.patch",
+      "sha256": "eca172d4df2d43f86514331882afd466d78821274164154b3ae8807a3e31fd7a"
+    },
+    {
+      "path": "reproduce/README.md",
+      "sha256": "3c584ccddc67c6d78c103a8afb4212e89cf8c9a316019ec5e887ea6493679fb0"
+    },
+    {
+      "path": "reproduce/build-native.sh",
+      "sha256": "6a0745843cba2061e48ae7ac5b87d36b79ab3fedad56802ed17f0d23732b3a57"
+    },
+    {
+      "path": "reproduce/controls.py",
+      "sha256": "1530962452e803c2142033f7d6bc8d74eeef3830a342d20a376b017c2a229b2e"
+    },
+    {
+      "path": "reproduce/drive.py",
+      "sha256": "e40825a4341e63b9598c2a60f7279101723419df044bc8dd4b9fcb0f3dcf880a"
+    },
+    {
+      "path": "reproduce/idle-cpu.py",
+      "sha256": "08480cbc33d32cd047514773803dddcf47a3dc7b8349be318edc1e24774f7184"
+    },
+    {
+      "path": "reproduce/resources-all.py",
+      "sha256": "5b36a985f007975cfda70020d1578296b445609cd39a77a4543465df15fe747d"
+    },
+    {
+      "path": "sanitized-log.txt",
+      "sha256": "64948b2f7f982ae4be5e31ffd77c7733fe62d2e42514bec16adedd688b2c5b2f"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "905e6e7fca1d146d7fcf85acbf0344d7530b36ce94a0dfd4193e7e28b1c298af"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "7a02c9fe5afe60b7c90d3c5e97f685bdb26f4969d90169ad72328ea3dde1a13e"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-packet-pump-cycle1-meminfo.txt",
+      "sha256": "d8b8e8fd0fa7af5aa28cd7d56018b89d856d1dfe61f15ce006533bf5c4988288"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-128-gcm-packet-pump-cycle2-meminfo.txt",
+      "sha256": "55d9f5ba92fbc136f5abc1e9928ec51614dc825495d545df7f77bae3e687610b"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "258c02149dd1627b7572e3e7fb52405aac0893cab12e0c421bf61fde1ba1f7ce"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "79400cbde9bc18b5dfd289193750cd352d6b816852a45fda810b90d9874e43e6"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-packet-pump-cycle1-meminfo.txt",
+      "sha256": "25ecccd3256f236fa69bbf98222bc08c09d17ee094d3000b9b8edd6b3205c95b"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-aes-256-gcm-packet-pump-cycle2-meminfo.txt",
+      "sha256": "01e0c1d0e890d455d6a49ab214ee5fd8efa7e11311def92fa11e5342ad65a009"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "079b86e2c700badf7530fb693aa4b90ee62c9a16f09965c7e491201b479e5385"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "eb00ea37297cdd07df1de0e65da7ecc67e257432ef8ba1c91e87d69cdef0bc82"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-packet-pump-cycle1-meminfo.txt",
+      "sha256": "9cc4b6c7ab80bf6ba07e54fc56b9827c5c2949e7901141151c777ab3cd4d6af8"
+    },
+    {
+      "path": "shadowsocks2022-2022-blake3-chacha20-poly1305-packet-pump-cycle2-meminfo.txt",
+      "sha256": "51a0368d1fb123fdede889c288eaed2f655a47281f00284cf74be66fcf96e19d"
+    },
+    {
+      "path": "trojan-tls-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "b88f80e2a7d78f2aa75d7fe3ae8c4ed3b9fa0cd03445e0cef9cd3e34c97181dd"
+    },
+    {
+      "path": "trojan-tls-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "a8db329694f9de0610fe7d4c33114b2365fde44f8c3fdc118930d07f63d95e32"
+    },
+    {
+      "path": "trojan-tls-packet-pump-cycle1-meminfo.txt",
+      "sha256": "1fc7e664849f3dc1b3d99674ba21526410d61648aef1ea32592711bad8bd6784"
+    },
+    {
+      "path": "trojan-tls-packet-pump-cycle2-meminfo.txt",
+      "sha256": "2e2b2a4dd736a39c3d5fa795a62cdaff8d1c0c66cd260d6dd1e65891228027c1"
+    },
+    {
+      "path": "udp-correlation.json",
+      "sha256": "580aa07994a34ed34de17c40594bcb9a87c42530adf4f6474db6bbd9912f3b4f"
+    },
+    {
+      "path": "verify.py",
+      "sha256": "81a70ff00ab17abe74546b2d04ff38931b9197aa2b8592fcb3a3e28f1fb6680c"
+    },
+    {
+      "path": "vmess-aes-128-gcm-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "958f42a728e46486972a01c881bf36bc78c5279caa6d158a521a61340b4f2e51"
+    },
+    {
+      "path": "vmess-aes-128-gcm-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "3bdce531769cf4f5324473b1e1a8409cc48cca1a739eb7fc5d1d34dd918c2958"
+    },
+    {
+      "path": "vmess-aes-128-gcm-packet-pump-cycle1-meminfo.txt",
+      "sha256": "3ab951524299df64818e5f7956d05a78a58de9e4fe1c54a56fbcca99c594c853"
+    },
+    {
+      "path": "vmess-aes-128-gcm-packet-pump-cycle2-meminfo.txt",
+      "sha256": "a248318b8427286857f0b78810a3a18ba3685de0d346d3e06405fe8d107fc60c"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-file-descriptor-cycle1-meminfo.txt",
+      "sha256": "1e9f73028c47d9f8969d09f32aaeaaccb9aab029ff161d26e7bc4ea0b41eb6ef"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-file-descriptor-cycle2-meminfo.txt",
+      "sha256": "3678156422211215cb0bf956434e70f359557ea402de80eb387ffae716644bb3"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-packet-pump-cycle1-meminfo.txt",
+      "sha256": "e455bbb4c2851b603c57cb75584506d0f16dc7133324bccc95cff450b0d3b7fb"
+    },
+    {
+      "path": "vmess-chacha20-poly1305-packet-pump-cycle2-meminfo.txt",
+      "sha256": "1ee3c9b7ddf0a02d86ba1676ac42a912a93b9e157d17121bd11581595d48fa73"
+    }
+  ]
+}

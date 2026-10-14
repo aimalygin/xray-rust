@@ -1,0 +1,14 @@
+{
+  "closeBetweenRounds": true,
+  "core": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "ffiSha256": "1df0de22c805a86eb72d97a9fbdeddf0222268e23c1d55f963250163b63280c4",
+  "fixedSourcePorts": [
+    40000,
+    40031
+  ],
+  "flowsPerRound": 32,
+  "replyDeadlineSeconds": 5,
+  "result": "pending",
+  "rounds": 20,
+  "scope": "TUN packet pump on macOS, Xray-core and backend on 127.0.0.1; no Wi-Fi data path"
+}

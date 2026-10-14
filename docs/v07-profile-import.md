@@ -81,9 +81,15 @@ within the implemented runtime subset:
   `+`; percent decoding happens once. Bracketed IPv6 is supported.
 - `sni` and `insecure=0`. TLS certificate verification and ALPN `h3` are retained.
   Missing SNI uses the endpoint host. Duplicate decoded keys are errors.
-- `insecure=1`, certificate-pin parameters, ECH, obfuscation/Salamander,
-  multi-port/hopping, bandwidth parameters and every unknown query field fail
-  explicitly. Settings are never silently dropped to weaken verification or
+- The v0.8 development branch additionally accepts `obfs=salamander` with
+  `obfs-password` (4..4096 UTF-8 bytes), plus comma-separated/range ports in the
+  authority or the `mport` query extension. An authority range and `mport`
+  cannot both be supplied. At most 65535 expanded ports are retained, including
+  duplicate weights. The default hop interval is 30 seconds. These options map
+  to Xray `finalmask.udp` and `finalmask.quicParams.udpHop`; they are not part of
+  the published v0.7 importer.
+- `insecure=1`, certificate-pin parameters, ECH, other obfuscation modes,
+  bandwidth parameters and every unknown query field fail explicitly. Settings are never silently dropped to weaken verification or
   change the transport. Scoped IPv6 and nontrivial URL paths are unsupported.
 
 WireGuard syntax follows [wg(8)](https://git.zx2c4.com/wireguard-tools/tree/src/man/wg.8)

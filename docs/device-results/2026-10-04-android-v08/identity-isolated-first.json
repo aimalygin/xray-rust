@@ -1,0 +1,248 @@
+{
+  "coreCommit": "de33998158e84c03f280f979ba2d4212072e5bc4",
+  "coreTree": "3d628e533f68671721ecf2e6ad786c15ce6f7291",
+  "nativeSha256": "470eae963080b245b782c6f16a72f6af66b12e4d4f5cd23b417309b0eb900f67",
+  "ffiHeaderSha256": "fa9a20d0694066e51b6d81b236923d06f6105f879006f3ea62388a5d2e3f8e58",
+  "ndk": "26.3.11579264",
+  "api": 24,
+  "rust": "1.96.0",
+  "abi": "arm64-v8a",
+  "apks": {
+    "devicehost": {
+      "sha256": "fb67fbbf7677e9ab6193cf13a36a14347eceb4fea1391464d2c1386d5d2d99df",
+      "nativeEntries": [
+        "lib/arm64-v8a/libxray_ffi.so",
+        "lib/arm64-v8a/libxray_mobile_jni.so"
+      ]
+    },
+    "deviceprobe": {
+      "sha256": "e0cf1ecf308ee2fef22f8c13faf6e6e4cd4a2c104044b799372841331f790021",
+      "nativeEntries": []
+    }
+  },
+  "unitTests": {
+    "devicehost": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "deviceprobe": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "sourceHashes": [
+    {
+      "path": "platform/android/devicehost/src/main/AndroidManifest.xml",
+      "sha256": "851c08445227c0fa0553f4c97afda9a4e6ae9d14785c6d4f186c78f093588555"
+    },
+    {
+      "path": "platform/android/devicehost/src/test/java/org/xrayrust/devicehost/ProfileCipherEnvelopeTest.kt",
+      "sha256": "ada7bcf0729a26efdf5118229c3f439cfecddcaea71defac9d7fad16174ec0cd"
+    },
+    {
+      "path": "platform/android/devicehost/src/test/java/org/xrayrust/devicehost/DeviceGateOptionsTest.kt",
+      "sha256": "54e416a5d3477e2a2cccc1e8d6ea926e4ea73cd8fb8edb9aeca7fcfc01f4ca53"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/res/drawable/ic_device_gate.xml",
+      "sha256": "ce285fe9b701c12cfd1d6c7bd1193caf62a17d25550cbc2e983843c1e3cb55cf"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/res/values/styles.xml",
+      "sha256": "c31edd60ce8a10e120888155dd745db953c42c30d68a17228e1c65232350200b"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/res/xml/backup_rules.xml",
+      "sha256": "df0caf5a169e312492ceaa3d7e6e053c831da3fc2038b99d83967c444549621f"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/res/xml/data_extraction_rules.xml",
+      "sha256": "9ccf53e8c648736adbf95a27d70ace297c7e3b56d6e48e878194f98c51b36b21"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/java/org/xrayrust/devicehost/DeviceGateOptions.kt",
+      "sha256": "4f5e0c6c5f3b933e8efb3857ae40077feef993873afb1d3d7a86fc24b0c4097f"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/java/org/xrayrust/devicehost/EncryptedProfileStore.kt",
+      "sha256": "40da2f6167f51c3166f11bbf5e6f126995fbef0aa88e472212112cfc7366aab3"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/java/org/xrayrust/devicehost/MainActivity.kt",
+      "sha256": "a380fe92dd593813c5b68c0a573726cc345c072e2b470afab55b4470ae9ff82d"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/java/org/xrayrust/devicehost/DeviceGateVpnService.kt",
+      "sha256": "38e20d82de011e2d1de1b600e3d07c184352c0dd5fe666a1bb07c6513021d809"
+    },
+    {
+      "path": "platform/android/devicehost/src/main/java/org/xrayrust/devicehost/DeviceGateStatus.kt",
+      "sha256": "cc22c782b1b5552a11384e3799379c2e0c04475607cb5bc505b38665c0c18a82"
+    },
+    {
+      "path": "platform/android/devicehost/build.gradle.kts",
+      "sha256": "3b0f1905b5ab366476850c2212fba1de27d9b1f38f6b351e7dd3a49d8a8fdc16"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/AndroidManifest.xml",
+      "sha256": "75d8872718bf1751955a3d8d3aab05e505f7a03f60654de86da888e5f4214f0f"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/test/java/org/xrayrust/deviceprobe/UdpDnsOracleTest.kt",
+      "sha256": "eb6a3d8897b93b306e95085632faa98a168d68236219d889eb18d0093c1ed59e"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/test/java/org/xrayrust/deviceprobe/ProbeConfigurationTest.kt",
+      "sha256": "b89d0cb1c7666b3fab4fa6f7ffff9808c66bfed6a1d9a0757503d42e2996b34c"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/test/java/org/xrayrust/deviceprobe/StressConfigurationTest.kt",
+      "sha256": "888eb907356918990d701a09e9a56cb0ec3795ae357f6f000f57315eddd215ca"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/res/drawable/ic_device_probe.xml",
+      "sha256": "1c272a90f64c4ecf877c88329b83f7bf5797dfbae21ad227b55c7aa40671c892"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/res/values/styles.xml",
+      "sha256": "c80dfb226d0aadeed604c51d84cf12e2b5d9d6c959c665d88c3e5b13478e81db"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/res/xml/backup_rules.xml",
+      "sha256": "df0caf5a169e312492ceaa3d7e6e053c831da3fc2038b99d83967c444549621f"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/res/xml/data_extraction_rules.xml",
+      "sha256": "9ccf53e8c648736adbf95a27d70ace297c7e3b56d6e48e878194f98c51b36b21"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/java/org/xrayrust/deviceprobe/ProbeService.kt",
+      "sha256": "0f30fbc719b3b3fa0a5c5e95d640dac3de243c5728a07b0d524c8a153de93cd8"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/java/org/xrayrust/deviceprobe/ProbeActivity.kt",
+      "sha256": "e0e0d2c090a0d147ffa7652789ad162079f30142367b934d72774e85117951ae"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/java/org/xrayrust/deviceprobe/ProbeConfiguration.kt",
+      "sha256": "0dfadc933ad55dc0ac4fd043539b9ad101835a576af8e217c9fc6c106d16d99b"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/java/org/xrayrust/deviceprobe/ProbeStatus.kt",
+      "sha256": "e7a191b060a62f552687dbfdd1242ef42b430d0e310074f0b0dbe73752916514"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/java/org/xrayrust/deviceprobe/StressConfiguration.kt",
+      "sha256": "d8809c1d211ecc639f63371b251075a62079b1e06b2116b8adf0b6c3690a55c8"
+    },
+    {
+      "path": "platform/android/deviceprobe/src/main/java/org/xrayrust/deviceprobe/UdpDnsOracle.kt",
+      "sha256": "77f539fa6a9eb2a01ecc9289d0c3b222e27b51d6590ded5b57757753a0252d6e"
+    },
+    {
+      "path": "platform/android/deviceprobe/build.gradle.kts",
+      "sha256": "09e0ca7da0f3bc9145bbf62f32a91ac0721a68cc7bec66c2c9183159de2506c2"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/AndroidManifest.xml",
+      "sha256": "80e565c7a4b04832ba2ec91ddfaa39d634f781f3de43bbe169229d5b34ff73fc"
+    },
+    {
+      "path": "platform/android/xraymobile/src/test/java/org/xrayrust/mobile/XrayVlessEncryptionTest.kt",
+      "sha256": "abb883fce9c3be5e7092fc82d904cbe4305582a1ccf22b86d2105cae573e8510"
+    },
+    {
+      "path": "platform/android/xraymobile/src/test/java/org/xrayrust/mobile/XrayV07DnsBootstrapTest.kt",
+      "sha256": "2cecd4c21cf00a511873f1977a9c6bd01774d7b52fac9df0210b5b2e0e50ceb4"
+    },
+    {
+      "path": "platform/android/xraymobile/src/test/java/org/xrayrust/mobile/XrayTunBackendTest.kt",
+      "sha256": "b028c05287168daf0a8b7ea533763e05241506603243f1f6be3ad567a3dd746a"
+    },
+    {
+      "path": "platform/android/xraymobile/src/test/java/org/xrayrust/mobile/XrayProfileImporterTest.kt",
+      "sha256": "baa6b91272b92330a27c3aa56453a0c203ce7a05bffe6b118e8592ab6c999ec1"
+    },
+    {
+      "path": "platform/android/xraymobile/src/test/java/org/xrayrust/mobile/XrayVlessUrlImporterTest.kt",
+      "sha256": "0581816ae0c5e338806d778c858990f3531e2e0b7e850c439f4a6395b12c27a8"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/cpp/CMakeLists.txt",
+      "sha256": "744fb3a5cb809aa9dd7723a5ead7b5040f93831ade82777993172938b42c29aa"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/cpp/xray_mobile_jni.cpp",
+      "sha256": "0b9648661f723dc24d3dd8811abc8464a2b2a4516f36fe56c0f75cf4ba5faf49"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayAndroidDnsBootstrap.kt",
+      "sha256": "be8dfd11c83e03a20ba3bf336c37db469fdb080df182907d881d61340b41ee03"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVlessUrlImporter.kt",
+      "sha256": "249de8b8a32e5d556ad4dd358a0bedbba9b8ee89c8c4d16122cee5e5f478be74"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVlessEncryption.kt",
+      "sha256": "3b49d406e0ad0de9b47b58ad2ab177fbde816674fc4d25f931a2e3623d112a8a"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayCore.kt",
+      "sha256": "358f38d8a628ad8f90791be7218ee55aabe6d1928e6462e584731e67ba502693"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVpnService.kt",
+      "sha256": "c7549d0064aba4917232204da294bea3597b0ff6a7e593423b2bfb431a1aa94e"
+    },
+    {
+      "path": "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayProfileImporter.kt",
+      "sha256": "9205a514a9a681505181820245f51fc6a8c3c046e3dcfe918b3d11acd9e20bb4"
+    },
+    {
+      "path": "platform/android/xraymobile/build.gradle.kts",
+      "sha256": "e1e5ac289ba6e3fad78bdcd7c12c30136fabef1f957b123f34b06243eb184b7d"
+    },
+    {
+      "path": "scripts/run-v08-android-protocol-fixture.py",
+      "sha256": "11c7e89bfe0faea3f7c5ca7f3fac0c7dc78ddff308d4ac34efd1a928a4e22ad9"
+    },
+    {
+      "path": "scripts/run-v07-apple-protocol-fixture.py",
+      "sha256": "139b3f2563d93f05f9cc977e167c99338150cc366010ecf4e901489c2800df80"
+    }
+  ],
+  "jniSha256": "37e2eab2b97d4dbe334c2757d5017a2599c8cf1222710f5694e7e54c168a67b7",
+  "device": {
+    "model": "SM-A145F",
+    "manufacturer": "samsung",
+    "android": "15",
+    "api": "35",
+    "abi": "arm64-v8a",
+    "build": "A145FXXSEDZF1",
+    "securityPatch": "2026-05-05",
+    "usbConnected": true
+  },
+  "clockTicksPerSecond": 100,
+  "conditions": {
+    "battery": [
+      "USB powered: true",
+      "status: 5",
+      "level: 100",
+      "temperature: 282"
+    ],
+    "thermal": [
+      "Thermal Status: 0"
+    ]
+  },
+  "privateDriverHashes": {
+    "drive.py": "678b7c5aa377206868974a316cd3006cb4cd183d50ee350841112a389b6a469b",
+    "resources.py": "cc7247fffba12dd5b856cc9a070948adf74d134e6d704d71e443c8b484f24819",
+    "build-native.sh": "35475bb81279658dd0980b4b00c11fc192d4c20a9ed0db7626e6b7223cec73ce"
+  },
+  "harnessGeneration": "probe-only diagnostics; previous full-VPN matrix identity retained separately"
+}

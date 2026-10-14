@@ -1,0 +1,12 @@
+{
+  "HTTPPerRound": 240,
+  "UDPPerRound": 480,
+  "deadlineSeconds": 5,
+  "engine": "pinned Xray-core v26.7.28 on Android",
+  "pauseSeconds": 20,
+  "protocol": "VMess AES128 raw/XUDP",
+  "rounds": 2,
+  "scope": "same phone, Wi-Fi and reference/backend; SOCKS ingress from native Go probe, no Android VpnService/TUN, no 5% or whole-path parity claim",
+  "source": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "workers": 32
+}

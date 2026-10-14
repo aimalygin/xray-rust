@@ -28,7 +28,7 @@ final class XrayPacketTunnelNetworkObserverTests: XCTestCase {
                   _ addresses: [String] = ["192.0.2.1", "2001:db8::1"]) -> XrayPacketTunnelCarrierSignature {
             .init(interfaceName: name, interfaceIndex: index, addresses: addresses)
         }
-        XCTAssertTrue(tracker.update(path()))
+        XCTAssertFalse(tracker.update(path()), "initial snapshot must not migrate fresh sockets")
         for _ in 0..<100 {
             XCTAssertFalse(tracker.update(path("en0", 4, ["2001:db8::1", "192.0.2.1", "192.0.2.1"])))
         }
@@ -42,10 +42,22 @@ final class XrayPacketTunnelNetworkObserverTests: XCTestCase {
     func testOfflineThenSameCarrierStillRebinds() {
         var tracker = XrayPacketTunnelCarrierTracker()
         let path = XrayPacketTunnelCarrierSignature(interfaceName: "en0", interfaceIndex: 4, addresses: ["192.0.2.1"])
-        XCTAssertTrue(tracker.update(path))
+        XCTAssertFalse(tracker.update(path))
         XCTAssertFalse(tracker.update(nil))
         XCTAssertFalse(tracker.update(nil))
         XCTAssertTrue(tracker.update(path))
+        XCTAssertFalse(tracker.update(path))
+    }
+
+    func testInitiallyOfflineStillRebindsWhenFirstUsablePathArrives() {
+        var tracker = XrayPacketTunnelCarrierTracker()
+        XCTAssertFalse(tracker.hasObservedPath)
+        XCTAssertFalse(tracker.update(nil))
+        XCTAssertTrue(tracker.hasObservedPath)
+        let path = XrayPacketTunnelCarrierSignature(
+            interfaceName: "en0", interfaceIndex: 4, addresses: ["192.0.2.1"]
+        )
+        XCTAssertTrue(tracker.update(path), "recovery is a transition, even without a prior usable path")
         XCTAssertFalse(tracker.update(path))
     }
 

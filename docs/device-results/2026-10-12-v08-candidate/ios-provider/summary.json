@@ -1,0 +1,667 @@
+{
+  "cases": 22,
+  "failures": [
+    {
+      "callbackDecisions": 0,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-hysteria-default",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2005.693249986507,
+          "ok": false,
+          "startedUptime": 382674.5168394167,
+          "udp": false
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2003.3715416793711,
+          "ok": false,
+          "startedUptime": 382676.52260075003,
+          "udp": true
+        }
+      ],
+      "passed": false,
+      "trafficPassed": false
+    }
+  ],
+  "negativeImportFormats": [
+    "trojan",
+    "shadowsocks2022",
+    "vmess"
+  ],
+  "passed": 21,
+  "positiveImportFormats": [
+    "hysteria2",
+    "trojan",
+    "shadowsocks2022",
+    "vmess"
+  ],
+  "releaseAcceptanceComplete": false,
+  "results": [
+    {
+      "callbackDecisions": 0,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-hysteria-default",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2005.693249986507,
+          "ok": false,
+          "startedUptime": 382674.5168394167,
+          "udp": false
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2003.3715416793711,
+          "ok": false,
+          "startedUptime": 382676.52260075003,
+          "udp": true
+        }
+      ],
+      "passed": false,
+      "trafficPassed": false
+    },
+    {
+      "callbackDecisions": 7,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-hysteria-allow",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 39.6936250035651,
+          "ok": true,
+          "startedUptime": 382681.5750065417,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 36.350833310279995,
+          "ok": true,
+          "startedUptime": 382681.61480700003,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 0,
+      "expected": "first-only-existing-survives",
+      "hooksPassed": true,
+      "name": "fd-hysteria-limits-one",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 302.0474999793805,
+          "ok": true,
+          "startedUptime": 382684.8163705834,
+          "udp": false
+        },
+        {
+          "error": "receive n=0 errno=36",
+          "index": 1,
+          "latencyMs": 2.6000416837632656,
+          "ok": false,
+          "startedUptime": 382685.118438375,
+          "udp": false
+        },
+        {
+          "error": "receive n=0 errno=36",
+          "index": 2,
+          "latencyMs": 1.5525000053457916,
+          "ok": false,
+          "startedUptime": 382685.121052125,
+          "udp": false
+        },
+        {
+          "existingSurvives": true,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 36.707833292894065,
+          "ok": true,
+          "startedUptime": 382685.13047075004,
+          "udp": true
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 1,
+          "latencyMs": 2002.5288749602623,
+          "ok": false,
+          "startedUptime": 382685.1671891667,
+          "udp": true
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 2,
+          "latencyMs": 2002.9547916492447,
+          "ok": false,
+          "startedUptime": 382687.16975162504,
+          "udp": true
+        },
+        {
+          "existingSurvives": true,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 10,
+      "expected": "both-denied",
+      "hooksPassed": true,
+      "name": "fd-hysteria-deny",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=54",
+          "index": 0,
+          "latencyMs": 4.044083354528993,
+          "ok": false,
+          "startedUptime": 382692.2877935417,
+          "udp": false
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2002.0977083477192,
+          "ok": false,
+          "startedUptime": 382692.291860125,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 7,
+      "expected": "tcp-denied-udp-pass",
+      "hooksPassed": true,
+      "name": "fd-hysteria-deny-tcp",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=54",
+          "index": 0,
+          "latencyMs": 3.003624966368079,
+          "ok": false,
+          "startedUptime": 382697.28984362504,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 37.73487498983741,
+          "ok": true,
+          "startedUptime": 382697.29285900004,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 6,
+      "expected": "both-denied",
+      "hooksPassed": true,
+      "name": "fd-hysteria-timeout-closed",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=54",
+          "index": 0,
+          "latencyMs": 56.34237499907613,
+          "ok": false,
+          "startedUptime": 382700.382612875,
+          "udp": false
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2002.5401249877177,
+          "ok": false,
+          "startedUptime": 382700.4389799167,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 5,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-hysteria-timeout-open",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 139.61866666795686,
+          "ok": true,
+          "startedUptime": 382705.43543195835,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 84.20370833482593,
+          "ok": true,
+          "startedUptime": 382705.5751612917,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 0,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-hysteria-recovery",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 87.42470829747617,
+          "ok": true,
+          "startedUptime": 382708.68906545837,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 25.8309583296068,
+          "ok": true,
+          "startedUptime": 382708.7766015417,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 2,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-trojan-projection",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 151.0137083241716,
+          "ok": true,
+          "startedUptime": 382711.91069695837,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 50.64991669496521,
+          "ok": true,
+          "startedUptime": 382712.06176770834,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 2,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-shadowsocks2022-projection",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 59.88383333897218,
+          "ok": true,
+          "startedUptime": 382715.1238705,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 40.32349999761209,
+          "ok": true,
+          "startedUptime": 382715.183859875,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 2,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "fd-vmess-projection",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 63.70512500870973,
+          "ok": true,
+          "startedUptime": 382718.22641912504,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 37.96533332206309,
+          "ok": true,
+          "startedUptime": 382718.2902285417,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 0,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-default",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 92.03145833453164,
+          "ok": true,
+          "startedUptime": 382721.4614550417,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 30.212500016205013,
+          "ok": true,
+          "startedUptime": 382721.55360029166,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 2,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-allow",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 229.69591669971123,
+          "ok": true,
+          "startedUptime": 382724.74763629166,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 60.26412500068545,
+          "ok": true,
+          "startedUptime": 382724.97744341666,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 0,
+      "expected": "first-only-existing-survives",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-limits-one",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 102.00183332199231,
+          "ok": true,
+          "startedUptime": 382728.29042512504,
+          "udp": false
+        },
+        {
+          "error": "receive n=0 errno=36",
+          "index": 1,
+          "latencyMs": 2.7296249754726887,
+          "ok": false,
+          "startedUptime": 382728.39249450003,
+          "udp": false
+        },
+        {
+          "error": "receive n=0 errno=36",
+          "index": 2,
+          "latencyMs": 1.4683332992717624,
+          "ok": false,
+          "startedUptime": 382728.39523633337,
+          "udp": false
+        },
+        {
+          "existingSurvives": true,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 28.573499992489815,
+          "ok": true,
+          "startedUptime": 382728.40455204167,
+          "udp": true
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 1,
+          "latencyMs": 2002.4845416774042,
+          "ok": false,
+          "startedUptime": 382728.433134625,
+          "udp": true
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 2,
+          "latencyMs": 2003.7601250223815,
+          "ok": false,
+          "startedUptime": 382730.43564829166,
+          "udp": true
+        },
+        {
+          "existingSurvives": true,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 10,
+      "expected": "both-denied",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-deny",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=54",
+          "index": 0,
+          "latencyMs": 4.092374991159886,
+          "ok": false,
+          "startedUptime": 382735.60817150003,
+          "udp": false
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2002.0989583572373,
+          "ok": false,
+          "startedUptime": 382735.61227525,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 7,
+      "expected": "tcp-denied-udp-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-deny-tcp",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=54",
+          "index": 0,
+          "latencyMs": 3.5441250074654818,
+          "ok": false,
+          "startedUptime": 382740.798915875,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 30.623541679233313,
+          "ok": true,
+          "startedUptime": 382740.8024702917,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 6,
+      "expected": "both-denied",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-timeout-closed",
+      "observations": [
+        {
+          "error": "receive n=-1 errno=54",
+          "index": 0,
+          "latencyMs": 56.4791249926202,
+          "ok": false,
+          "startedUptime": 382743.9283822917,
+          "udp": false
+        },
+        {
+          "error": "receive n=-1 errno=35",
+          "index": 0,
+          "latencyMs": 2002.7331250021234,
+          "ok": false,
+          "startedUptime": 382743.9848828334,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 5,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-timeout-open",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 101.52179165743291,
+          "ok": true,
+          "startedUptime": 382749.1081662084,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 81.76100003765896,
+          "ok": true,
+          "startedUptime": 382749.2098145,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 0,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-hysteria-recovery",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 89.03137495508417,
+          "ok": true,
+          "startedUptime": 382752.3558247917,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 27.810500003397465,
+          "ok": true,
+          "startedUptime": 382752.44497350004,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 6,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-trojan-projection",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 60.928374994546175,
+          "ok": true,
+          "startedUptime": 382755.5472486667,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 53.70574997505173,
+          "ok": true,
+          "startedUptime": 382755.6083259167,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 6,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-shadowsocks2022-projection",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 68.08641669340432,
+          "ok": true,
+          "startedUptime": 382758.75602433336,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 73.14141670940444,
+          "ok": true,
+          "startedUptime": 382758.8241839167,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    },
+    {
+      "callbackDecisions": 2,
+      "expected": "both-pass",
+      "hooksPassed": true,
+      "name": "packet-pump-vmess-projection",
+      "observations": [
+        {
+          "index": 0,
+          "latencyMs": 62.04833334777504,
+          "ok": true,
+          "startedUptime": 382762.2907899167,
+          "udp": false
+        },
+        {
+          "index": 0,
+          "latencyMs": 42.04929171828553,
+          "ok": true,
+          "startedUptime": 382762.3529535,
+          "udp": true
+        }
+      ],
+      "passed": true,
+      "trafficPassed": true
+    }
+  ],
+  "scope": "both provider backends; production Swift/FFI/core with signed diagnostic subclass; hook invocation and traffic semantics; no PID/UID entitlement claim"
+}

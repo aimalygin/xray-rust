@@ -1,0 +1,5035 @@
+{
+  "binaries": {
+    "candidate": {
+      "path": "<campaign>/build/cargo-host/release/xray-rust",
+      "sha256": "879751ac43a741e7826a9266cc1efb609907eb8ede3ea2cf9953bebdc887c5f7"
+    },
+    "harness": {
+      "path": "<campaign>/build/cargo-host/release/xray-bench",
+      "sha256": "b73975ce26203636c21b322e0fa6555a095778c9da4ab2a15a5a738190351dc9"
+    },
+    "xray": {
+      "path": "<prior-control>/work/reference-xray-core",
+      "sha256": "34cd2ff77efc0280505c000d6095de6b0f7313d3c445c9925c67c1512e7431f1"
+    }
+  },
+  "buildLog": "../build/native-host.log",
+  "candidateCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "candidateDirty": false,
+  "candidateTree": "820cbdc251861d02c93ed007015e5c6109baa3c0",
+  "cases": [
+    {
+      "connections": 1,
+      "id": "trojan-tls-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "trojan-tls",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "trojan-tls-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "trojan-tls",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "ss2022-aes128-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "ss2022-aes128",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "ss2022-aes128-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "ss2022-aes128",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "ss2022-aes256-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "ss2022-aes256",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "ss2022-aes256-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "ss2022-aes256",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "ss2022-chacha20-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "ss2022-chacha20",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "ss2022-chacha20-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "ss2022-chacha20",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "vmess-aes128-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "vmess-aes128",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "vmess-aes128-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "vmess-aes128",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "vmess-chacha20-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "vmess-chacha20",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "vmess-chacha20-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "vmess-chacha20",
+      "traffic": "tcp-latency"
+    },
+    {
+      "connections": 1,
+      "id": "vmess-auto-socks-full-duplex-1",
+      "iterations": 4096,
+      "path": "socks",
+      "payload_size": 65536,
+      "profile": "vmess-auto",
+      "traffic": "full-duplex"
+    },
+    {
+      "connections": 1,
+      "id": "vmess-auto-socks-tcp-latency-1",
+      "iterations": 1000,
+      "path": "socks",
+      "payload_size": 1024,
+      "profile": "vmess-auto",
+      "traffic": "tcp-latency"
+    }
+  ],
+  "finished": 1791825700.497432,
+  "predeclaredBudget": {
+    "latency": "at most 2 times matched Xray median p95 microseconds",
+    "memory": "at most 64 MiB sampled peak RSS",
+    "throughput": "at least 0.5 times matched Xray median MiB/s"
+  },
+  "profile": "release",
+  "referenceCommit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "repeats": 5,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825380.8969002
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825381.930754
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825382.977692
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.4817721843719482,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825383.424155
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825384.457155
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825385.4993489
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825386.530669
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.295788049697876,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825387.883512
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825388.924586
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825389.958314
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.075829029083252,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825390.99787
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825392.0273778
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8872718811035156,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825394.014434
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825395.05106
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9442479610443115,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825396.00115
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825397.0382762
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825398.0760372
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.0833580493927,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825400.269876
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825401.304617
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825402.341397
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.0675418376922607,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825403.37296
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825404.4045062
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.9076871871948242,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825406.408926
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825407.438785
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9134058952331543,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825408.359945
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825409.390304
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825410.430529
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.026000738143921,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825412.5495949
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825413.6040041
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825414.64711
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.34232497215271,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825414.9208472
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825415.9497159
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2544450759887695,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825417.334507
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825418.370261
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2643547058105469,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825418.6419961
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825419.675336
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825420.719062
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.3338451385498047,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825422.144341
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825423.179687
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825424.218157
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.3207850456237793,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825424.500163
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825425.530179
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2591118812561035,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825426.909211
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825427.9569979
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.264112949371338,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825428.209068
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825429.242072
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825430.273474
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.3217601776123047,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825431.6909828
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825432.734733
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825433.781287
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.3918581008911133,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825434.1276531
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825435.1589901
+          }
+        ]
+      },
+      "case": "trojan-tls-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/trojan-tls-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "trojan-tls-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2448318004608154,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825436.496379
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825437.5482502
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9935448169708252,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825438.5411
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825439.5757709
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9884631633758545,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825441.6407402
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825442.7017548
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.967264175415039,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825443.654371
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825444.689933
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8876049518585205,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825446.6665862
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825447.7171881
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9006609916687012,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825448.616224
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825449.648911
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.958570957183838,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825451.698483
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825452.749234
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.0032870769500732,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825453.75182
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825454.78435
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.9010319709777832,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825456.738388
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825457.782395
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9539289474487305,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825458.7269802
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825459.7626
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9994361400604248,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825461.8388312
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825462.891797
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3229691982269287,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825463.2076008
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825464.236885
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.1953797340393066,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825465.504707
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825466.5431738
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.215602159500122,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825466.763904
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825467.795222
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.319631814956665,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825469.1984901
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825470.247029
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.318721055984497,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825470.5622258
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825471.5986738
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.187229871749878,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825472.859423
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825473.899241
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2045350074768066,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825474.108821
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825475.1447191
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.366729974746704,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825476.5945542
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825477.633937
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3093371391296387,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825477.947983
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825478.988292
+          }
+        ]
+      },
+      "case": "ss2022-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes128-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes128-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2613849639892578,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825480.332562
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825481.372206
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.8963849544525146,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825482.26932
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825483.304839
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9961252212524414,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825485.3826401
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825486.46533
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.0279879570007324,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825487.445926
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825488.475528
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8572437763214111,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825490.433316
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825491.4811342
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9045302867889404,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825492.382833
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825493.420037
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.953387975692749,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825495.460001
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825496.49952
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.0365288257598877,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825497.5302699
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825498.5631979
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.899841070175171,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825500.547897
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825501.587803
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.003124237060547,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825502.5931149
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825503.6280189
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9470651149749756,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825505.6330209
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825506.6713622
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3093838691711426,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825506.97562
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825508.0096252
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2071759700775146,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825509.306048
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825510.3587399
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3010773658752441,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825510.659369
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825511.7148302
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.295490026473999,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825513.0501199
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825514.099778
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3303618431091309,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825514.424684
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825515.4596531
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2030208110809326,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825516.746113
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825517.796326
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.213559865951538,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825518.0023098
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825519.034582
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3082780838012695,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825520.4146078
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825521.474129
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3675041198730469,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825521.8231091
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825522.859769
+          }
+        ]
+      },
+      "case": "ss2022-aes256-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-aes256-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-aes256-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.243666172027588,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825524.2075222
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825525.248192
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825526.285569
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.161715030670166,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825526.410523
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825527.442716
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825528.472947
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.1492488384246826,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825529.665479
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825530.7132952
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825531.749902
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.153780937194824,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825531.852791
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825532.882716
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825533.91433
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.1450748443603516,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825535.103628
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825536.1446972
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825537.1787899
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.1823549270629883,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825537.32364
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825538.354733
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825539.383232
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.0644359588623047,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825540.51497
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825541.5662148
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825542.598672
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.117663860321045,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825542.681128
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825543.708402
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825544.742261
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.165281057357788,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825545.95694
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825546.997877
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825548.030056
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.159311056137085,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825548.1448698
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825549.171635
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825550.215355
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.204603910446167,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825551.4394612
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825552.481877
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.315532922744751,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825552.7971861
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825553.8298528
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2209861278533936,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825555.130087
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825556.178396
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2568368911743164,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825556.424864
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825557.457723
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3045308589935303,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825558.837506
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825559.878913
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3153882026672363,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825560.196523
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825561.2337651
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.202118158340454,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825562.506751
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825563.558332
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2636477947235107,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825563.8092859
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825564.844436
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.3570632934570312,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825566.276803
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825567.3298838
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3574090003967285,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825567.68141
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825568.71438
+          }
+        ]
+      },
+      "case": "ss2022-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/ss2022-chacha20-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "ss2022-chacha20-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.20888090133667,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825570.0115662
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825571.056127
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.8992931842803955,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825571.948534
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825572.980627
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9537668228149414,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825575.023912
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825576.066714
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.9581549167633057,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825577.0319
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825578.0657449
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8856103420257568,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825580.025743
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825581.069639
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.8838748931884766,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825581.954064
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825582.98837
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9394938945770264,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825585.00568
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825586.049155
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.93721604347229,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825586.989409
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825588.0238662
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8392541408538818,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825589.942066
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825590.986999
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8846070766448975,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825591.869625
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825592.899324
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9301230907440186,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825594.9161978
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825595.9619358
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3117692470550537,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825596.2739892
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825597.308851
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.1901659965515137,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825598.5721989
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825599.6163409
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.1998090744018555,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825599.814347
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825600.846773
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3094861507415771,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825602.233145
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825603.283679
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3145418167114258,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825603.58193
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825604.6151738
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2010769844055176,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825605.9061172
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825606.9505558
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2062339782714844,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825607.149811
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825608.180801
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.30413818359375,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825609.558113
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825610.595372
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.3025999069213867,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825610.895157
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825611.9263911
+          }
+        ]
+      },
+      "case": "vmess-aes128-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-aes128-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-aes128-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1995291709899902,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825613.1910641
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825614.232664
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.047924041748047,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825615.2835891
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825616.313559
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825617.346532
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.1089038848876953,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825618.490975
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825619.531837
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825620.568983
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.108820915222168,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825620.6343539
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825621.6720388
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.0313780307769775,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825623.772655
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825624.8280692
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.993678092956543,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825625.800668
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825626.828854
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825627.8626912
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.1006572246551514,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825629.004014
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825630.047343
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825631.079985
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.106834888458252,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825631.169323
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825632.202914
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.044529914855957,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825634.3344152
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825635.376176
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825636.406485
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.0785419940948486,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825636.477472
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825637.5070531
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825638.538103
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.141658067703247,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825639.7385411
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825640.782851
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.347048282623291,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825641.124662
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825642.157279
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.208287000656128,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825643.4340632
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825644.478442
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.215414047241211,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825644.6955168
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825645.732085
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3165390491485596,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825647.1299589
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825648.1680021
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.3001110553741455,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825648.465915
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825649.496392
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2127702236175537,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825650.776577
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825651.823643
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2113137245178223,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825652.022986
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825653.054601
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.304246187210083,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825654.427385
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825655.4691
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.313812017440796,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825655.781597
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825656.812959
+          }
+        ]
+      },
+      "case": "vmess-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-chacha20-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-chacha20-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2026212215423584,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825658.080857
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825659.1259189
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9078876972198486,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825660.0343301
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825661.0653892
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9374220371246338,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825663.0906508
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825664.1336472
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.9471149444580078,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825665.0774689
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825666.10546
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.878957986831665,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825668.06112
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825669.1047812
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9000351428985596,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825670.009776
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825671.041116
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.9386801719665527,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825673.0845408
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825674.1211698
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.989893913269043,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825675.11803
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825676.149494
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8815102577209473,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825678.1150029
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825679.156836
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.880101203918457,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825680.040263
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825681.075318
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-full-duplex-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-full-duplex-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9067180156707764,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825683.042727
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825684.080359
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-xray-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.3230230808258057,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825684.4130712
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825685.4477298
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-candidate-1",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.235292911529541,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825686.7496839
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825687.794915
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-candidate-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2164061069488525,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825688.006287
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825689.041918
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-xray-2",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.3436617851257324,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825690.463806
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825691.5035882
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-xray-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.300325870513916,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825691.804383
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825692.83635
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-candidate-3",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2105910778045654,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825694.11601
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825695.1646342
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-candidate-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2074389457702637,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825695.362537
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825696.401592
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-xray-4",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.354400396347046,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825697.8479402
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825698.8899488
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-xray-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.31101393699646,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825699.195528
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1791825700.228033
+          }
+        ]
+      },
+      "case": "vmess-auto-socks-tcp-latency-1",
+      "command": [
+        "<campaign>/build/cargo-host/release/xray-bench",
+        "protocol-run",
+        "<campaign>/performance-protocols/vmess-auto-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "output": "vmess-auto-socks-tcp-latency-1-candidate-5",
+      "process_group_empty_after_run": true,
+      "remaining": [],
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.2011771202087402,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2",
+  "scope": "single-flow SOCKS localhost, all seven cipher profiles, bounded operational comparison; not old-version or calibrated 5% parity; CPU and startup retained",
+  "started": 1791825379.807967,
+  "status": "pass"
+}

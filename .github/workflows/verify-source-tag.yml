@@ -1,0 +1,83 @@
+name: Verify source tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing annotated release tag (never moved by this workflow)
+        required: true
+        type: string
+      tag_ci_run:
+        description: Completed CI run for that exact tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out current scanner policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: policy
+
+      - name: Check out immutable source tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: candidate
+
+      - name: Install checksum-verified scanner
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 --retry 3 \
+            --output "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          chmod 0755 "$RUNNER_TEMP/gitleaks"
+
+      - name: Verify policy and scan all current branches
+        working-directory: policy
+        run: |
+          python3 -m unittest scripts.tests.test_source_tag_ci
+          GITLEAKS_BINARY="$RUNNER_TEMP/gitleaks" python3 scripts/tests/check-gitleaks-allowlists.test.py
+          "$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact=100 --no-banner --log-opts=--all .
+
+      - name: Scan complete release ancestry with its unchanged policy
+        working-directory: candidate
+        env:
+          SOURCE_TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]
+          test "$(git cat-file -t "refs/tags/$SOURCE_TAG")" = tag
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$SOURCE_TAG^{commit}")"
+          bash scripts/check-release-version.sh "$SOURCE_TAG"
+          XRAY_FIXTURE_SCAN_HISTORY=1 bash scripts/tests/check-public-fixtures.test.sh
+          "$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact=100 --no-banner --log-opts=HEAD .
+
+      - name: Verify all other exact-tag CI gates and record identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_TAG: ${{ inputs.tag }}
+          TAG_CI_RUN: ${{ inputs.tag_ci_run }}
+        run: python3 policy/scripts/verify-source-tag-ci.py candidate "$SOURCE_TAG" "$TAG_CI_RUN" "$RUNNER_TEMP/source-tag-validation.json"
+
+      - name: Retain source verification record
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: source-tag-validation
+          path: ${{ runner.temp }}/source-tag-validation.json
+          if-no-files-found: error
+          retention-days: 30

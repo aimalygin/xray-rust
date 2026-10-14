@@ -1,0 +1,48 @@
+{
+  "allPassed": true,
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "protocols": [
+    {
+      "activeRecoverySeconds": 0.8301862500375137,
+      "closedActiveConnections": 8,
+      "dnsPassed": 2,
+      "observedLockSeconds": 24.760755208320916,
+      "passed": true,
+      "protocol": "trojan",
+      "retries": 0,
+      "sameRuntime": true,
+      "secondsSinceUnlock": 1.8905713750282302,
+      "tcpPassed": 6,
+      "udpPassed": 4
+    },
+    {
+      "activeRecoverySeconds": 0.7336941249668598,
+      "closedActiveConnections": 13,
+      "dnsPassed": 2,
+      "observedLockSeconds": 24.51023758330848,
+      "passed": true,
+      "protocol": "shadowsocks2022",
+      "retries": 0,
+      "sameRuntime": true,
+      "secondsSinceUnlock": 1.6289615000132471,
+      "tcpPassed": 6,
+      "udpPassed": 4
+    },
+    {
+      "activeRecoverySeconds": 0.7867001666454598,
+      "closedActiveConnections": 23,
+      "dnsPassed": 2,
+      "observedLockSeconds": 21.90093879168853,
+      "passed": true,
+      "protocol": "vmess",
+      "retries": 0,
+      "sameRuntime": true,
+      "secondsSinceUnlock": 1.8272592916619033,
+      "tcpPassed": 6,
+      "udpPassed": 4
+    }
+  ],
+  "rawSHA256": "a2503cbc39795312f1eced5c4e15d931e93a091c317d96561fc2b6ae3ed14a7a",
+  "scope": "Physical signed iPhone on LAN Wi-Fi; no cellular transition coverage. Debug harness, unchanged release native slice. Requested lock 30 seconds; existing harness accepts observed protected-data interval >=15 seconds, exact observed intervals retained.",
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7"
+}

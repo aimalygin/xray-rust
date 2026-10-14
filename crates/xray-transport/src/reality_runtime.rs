@@ -63,6 +63,22 @@ impl PreparedRealityTlsConnection for DeferredRuntimeRealityConnection {
         self: Box<Self>,
         tcp_stream: tokio::net::TcpStream,
     ) -> Result<BoxedTransportStream, TransportError> {
+        self.complete_inner(tcp_stream, None).await
+    }
+    async fn complete_fragmented(
+        self: Box<Self>,
+        tcp_stream: tokio::net::TcpStream,
+        fragment: Arc<crate::TcpFragmentConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        self.complete_inner(tcp_stream, Some(fragment)).await
+    }
+}
+impl DeferredRuntimeRealityConnection {
+    async fn complete_inner(
+        self: Box<Self>,
+        tcp_stream: tokio::net::TcpStream,
+        fragment: Option<Arc<crate::TcpFragmentConfig>>,
+    ) -> Result<BoxedTransportStream, TransportError> {
         let Self {
             mut config,
             session_provider,
@@ -79,9 +95,18 @@ impl PreparedRealityTlsConnection for DeferredRuntimeRealityConnection {
             connector.prepare_handshake_with_client_hello(prepared_client_hello, context)?;
         let mldsa65_verify = config.mldsa65_verify.take();
 
-        session
-            .complete(tcp_stream, prepared_handshake, mldsa65_verify)
-            .await
+        match fragment {
+            Some(fragment) => {
+                session
+                    .complete_fragmented(tcp_stream, prepared_handshake, mldsa65_verify, fragment)
+                    .await
+            }
+            None => {
+                session
+                    .complete(tcp_stream, prepared_handshake, mldsa65_verify)
+                    .await
+            }
+        }
     }
 }
 

@@ -1,0 +1,51 @@
+{
+  "release": "0.8.0",
+  "recordedDate": "2026-10-11",
+  "ownerInstruction": "пока пропусакаем, нужно делать релиз и апдейтить каждый issue на github, как обычно это делается",
+  "annotatedScope": "на iPhone воспроизведён сбой запуска Hysteria2, а отсутствие регрессии более 5% не подтверждено.",
+  "publicationRequested": true,
+  "issueUpdatesRequested": true,
+  "decisions": [
+    {
+      "id": "v08-iphone-hysteria-startup-owner-deferral",
+      "releaseRequirement": "waived-by-owner-for-0.8.0",
+      "rootCauseEstablished": false,
+      "productFixClaimed": false,
+      "measurementStatus": "preserve-original-failures",
+      "scope": "Further diagnosis of the reproduced iPhone Hysteria startup EOF/timeout."
+    },
+    {
+      "id": "v08-five-percent-owner-deferral",
+      "releaseRequirement": "waived-by-owner-for-0.8.0",
+      "measurementStatus": "not-confirmed",
+      "regressionFreeClaim": false,
+      "scope": "The outstanding calibrated 5% performance-regression confirmation discussed with the owner."
+    },
+    {
+      "id": "v08-android-vmess-udp-owner-deferral",
+      "recordedDate": "2026-10-12",
+      "ownerInstruction": "Выпускать с открытым #56 и описанным ограничением",
+      "issue": "https://github.com/aimalygin/xray-rust/issues/56",
+      "releaseRequirement": "waived-by-owner-for-0.8.0",
+      "rootCauseEstablished": false,
+      "productFixClaimed": false,
+      "measurementStatus": "preserve-original-failures",
+      "scope": "Publish 0.8.0 with issue #56 open: exact Android Rust candidate has 3 timeouts among 13440 UDP stress attempts; independent Xray-core Android SOCKS control has 1 among 960. Different ingress/workload scheduling is retained; no Wi-Fi causation or regression-free claim."
+    }
+  ],
+  "unchangedRequirements": [
+    "Preserve all original measurements, failures and exact build identities.",
+    "CI, interoperability and all unrelated release requirements.",
+    "Verified immutable annotated tags and exact SDK/core pins.",
+    "Canonical Apple/Android artifacts, checksums and clean package-consumer checks."
+  ],
+  "priorDecisions": "Android network/lock checks remain separately owner-skipped; older limitations retain their recorded scope.",
+  "scopeExpansion": {
+    "ownerInstruction": "Сначала реализовать UDP noise и TPROXY, затем выпускать",
+    "requiredBeforePublication": [
+      "#52 FinalMask UDP noise on Hysteria2 and XHTTP H3",
+      "#47 Linux TPROXY inbound"
+    ],
+    "metadataOnlyPromotion": false
+  }
+}

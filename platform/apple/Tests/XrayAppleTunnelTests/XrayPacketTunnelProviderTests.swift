@@ -1963,12 +1963,72 @@ final class XrayPacketTunnelProviderTests: XCTestCase {
         XCTAssertFalse(summary.contains("203.0.113.10"))
     }
 
-    func testV07CanonicalProfilesPassCoreValidationAfterPinning() throws {
+    func testTrojanPinningPreservesBothConfigFormsAndCredentials() throws {
+        for settings in [
+            #"{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}"#,
+            #"{"servers":[{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}]}"#,
+        ] {
+            let json = "{\"outbounds\":[{\"protocol\":\"trojan\",\"settings\":\(settings)}]}"
+            let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json), resolveAddress: { domain in
+                    XCTAssertEqual(domain, "trojan.example")
+                    return ["192.0.2.8"]
+                }
+            )
+            let original = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? NSDictionary)
+            XCTAssertEqual(root["outbounds"] as? NSArray, original["outbounds"] as? NSArray)
+            XCTAssertEqual(prepared.excludedServerAddresses, ["192.0.2.8"])
+            XCTAssertFalse(XrayPacketTunnelProvider.configSummary(prepared.json).contains("synthetic-secret"))
+        }
+    }
+
+    func testVmessPinningPreservesBothConfigFormsAndCredentials() throws {
+        for settings in [
+            #"{"address":"Vmess.Example.","port":443,"id":"00112233-4455-6677-8899-aabbccddeeff"}"#,
+            #"{"vnext":[{"address":"Vmess.Example.","port":443,"users":[{"id":"00112233-4455-6677-8899-aabbccddeeff"}]}]}"#,
+        ] {
+            let json = "{\"outbounds\":[{\"protocol\":\"vmess\",\"settings\":\(settings)}]}"
+            let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json), resolveAddress: { domain in
+                    XCTAssertEqual(domain, "vmess.example")
+                    return ["192.0.2.8"]
+                }
+            )
+            let original = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? NSDictionary)
+            XCTAssertEqual(root["outbounds"] as? NSArray, original["outbounds"] as? NSArray)
+            XCTAssertEqual(prepared.excludedServerAddresses, ["192.0.2.8"])
+            XCTAssertFalse(XrayPacketTunnelProvider.configSummary(prepared.json).contains("00112233-4455-6677-8899-aabbccddeeff"))
+        }
+    }
+
+    func testShadowsocks2022PinningPreservesBothConfigFormsAndCredentials() throws {
+        for settings in [
+            #"{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}"#,
+            #"{"servers":[{"address":"Trojan.Example.","port":443,"password":"synthetic-secret"}]}"#,
+        ] {
+            let json = "{\"outbounds\":[{\"protocol\":\"shadowsocks\",\"settings\":\(settings)}]}"
+            let prepared = try XrayPacketTunnelProvider.configPinningOutboundServerAddresses(
+                resolvedConfig(json: json), resolveAddress: { domain in
+                    XCTAssertEqual(domain, "trojan.example")
+                    return ["192.0.2.8"]
+                }
+            )
+            let original = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? NSDictionary)
+            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(prepared.json.utf8)) as? NSDictionary)
+            XCTAssertEqual(root["outbounds"] as? NSArray, original["outbounds"] as? NSArray)
+            XCTAssertEqual(prepared.excludedServerAddresses, ["192.0.2.8"])
+            XCTAssertFalse(XrayPacketTunnelProvider.configSummary(prepared.json).contains("synthetic-secret"))
+        }
+    }
+
+    func testCanonicalProfilesPassCoreValidationAfterPinning() throws {
         // Follow the source symlink when running the package against a local
         // test-only XCFramework, and use the same fixtures as the Rust parser.
         var repository = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath()
         for _ in 0..<5 { repository.deleteLastPathComponent() }
-        for name in ["hysteria2", "wireguard", "wireguard-psk", "wireguard-multi-peer"] {
+        for name in ["vmess", "shadowsocks2022", "trojan", "hysteria2", "wireguard", "wireguard-psk", "wireguard-multi-peer"] {
             let fixture = repository.appendingPathComponent("tests/fixtures/configs/\(name).json")
             var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
             root["inbounds"] = [["tag": "tun-in", "protocol": "tun", "settings": [:]]]

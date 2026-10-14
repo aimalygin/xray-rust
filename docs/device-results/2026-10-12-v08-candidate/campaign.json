@@ -1,0 +1,11 @@
+{
+  "android": "SM-A145F/API35/arm64",
+  "androidNetworkAndLockChecks": "owner-skipped",
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "coreTree": "820cbdc251861d02c93ed007015e5c6109baa3c0",
+  "mainMergeCommit": "48df785d7ce1bed66379ed1ec1ebd596c0e5615c",
+  "mainTreeIdentical": true,
+  "physicalReleaseAcceptance": false,
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7",
+  "sourceChanges": false
+}

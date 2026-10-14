@@ -1,0 +1,24 @@
+{
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "files": {
+    "Info.plist": "68c916a2ec432856511f3f7688ac755c943ea991e9b23bd0833501641f355336",
+    "PkgInfo": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0",
+    "PlugIns/Tunnel.appex/Info.plist": "aa666ac057d3b26c2ac774464c97314291d55e6182251176a86d1a33b05c117b",
+    "PlugIns/Tunnel.appex/Tunnel": "b825a9ae22a522ccb6483a0d8a8446d95366cb7b64a957414b38d6b8b7cafe81",
+    "PlugIns/Tunnel.appex/Tunnel.debug.dylib": "33fdd2eb037c8db79db7d90e8ad142af5ed94c88c44cf1d3538046724cf35e12",
+    "PlugIns/Tunnel.appex/_CodeSignature/CodeResources": "35f9df0b017928b4732a5d5faf5ae5c03fccbe7ebe9945f23599bc066d9e4ffc",
+    "PlugIns/Tunnel.appex/__preview.dylib": "23ea287fbf84b01c87c420a420020451e429f450fe3844f3260005a5f5d478e4",
+    "PlugIns/Tunnel.appex/embedded.mobileprovision": "18902e8cc608d8a88c2a536018f4171ccaa156c863dbf7b00b8856e65c7a2dfc",
+    "PlugIns/Tunnel.appex/geoip.dat": "b71d1999439dde2de2d2b6844a2befa50c50211ff739785c005ca7c230a17d6a",
+    "PlugIns/Tunnel.appex/geosite.dat": "d6787cf3d08b86402640e8c2a7a18c8d64b31944ffa5274d8a6e154c8f3ddc07",
+    "XrayClient": "375ab7e2f80b018f3c71705785910afb4cbcb840536a6851f33ecdbda63309ce",
+    "XrayClient.debug.dylib": "c283741981079b678846719b4dea3356ce2295eca5155d05af7adf0714b76184",
+    "_CodeSignature/CodeResources": "a0cec18adb4fea459b8a507b09fa1334f7527572b8089f242a92a77af9b79384",
+    "__preview.dylib": "acc268d332094d4ed5c51e7deb3dbd8e0eda43ae7f9df5fc815f3fef6d7e9bb3",
+    "embedded.mobileprovision": "262810476c1453fb96c1e8acaf290e487db514e7130c2d95e87beb8fe75a82dc",
+    "geoip.dat": "b71d1999439dde2de2d2b6844a2befa50c50211ff739785c005ca7c230a17d6a",
+    "geosite.dat": "d6787cf3d08b86402640e8c2a7a18c8d64b31944ffa5274d8a6e154c8f3ddc07"
+  },
+  "nativeSHA256": "721964484cb6713b12be9542bb423520e4418593a67e4ce6f58db04b9220274c",
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7"
+}

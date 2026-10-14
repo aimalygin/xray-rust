@@ -1,0 +1,49 @@
+{
+  "limitations": [
+    "Sampled RSS/physical footprint and CPU; not energy or continuous peak capture",
+    "Local network workload; no calibrated 5% regression claim",
+    "Original invalid smoke-backend resource attempt retained separately"
+  ],
+  "passed": true,
+  "protocols": {
+    "shadowsocks2022": {
+      "echoedBytes": 722206720,
+      "loadCPUSeconds": 23.580683,
+      "loadIntervals": 4,
+      "maxRecoveryFootprintGrowthBytes": 278528,
+      "maxRecoveryThreadGrowth": 0,
+      "passed": true,
+      "sampledPeakFootprintBytes": 4687496,
+      "sampledPeakRSSBytes": 33062912,
+      "thermalStates": [
+        0
+      ]
+    },
+    "trojan": {
+      "echoedBytes": 761724928,
+      "loadCPUSeconds": 19.625212,
+      "loadIntervals": 4,
+      "maxRecoveryFootprintGrowthBytes": 196608,
+      "maxRecoveryThreadGrowth": 0,
+      "passed": true,
+      "sampledPeakFootprintBytes": 4818568,
+      "sampledPeakRSSBytes": 35618816,
+      "thermalStates": [
+        0
+      ]
+    },
+    "vmess": {
+      "echoedBytes": 707854336,
+      "loadCPUSeconds": 19.828379,
+      "loadIntervals": 4,
+      "maxRecoveryFootprintGrowthBytes": 278528,
+      "maxRecoveryThreadGrowth": 0,
+      "passed": true,
+      "sampledPeakFootprintBytes": 4687496,
+      "sampledPeakRSSBytes": 32538624,
+      "thermalStates": [
+        0
+      ]
+    }
+  }
+}

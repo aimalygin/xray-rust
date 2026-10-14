@@ -1,0 +1,28 @@
+{
+  "logChecks": [
+    {
+      "fatalMatches": 0,
+      "privateSHA256": "e570357043cf8fa90a903486e9a4640914b79dc167129e1ff8747cfb137253d7",
+      "source": "resource-logcat.log"
+    },
+    {
+      "fatalMatches": 0,
+      "privateSHA256": "fe1d832099bcc3c6bb831624f7d21177e8f093b3a5d2737f36b027712b7fb8b3",
+      "source": "android-vmess-diagnostic/resource-logcat.log"
+    },
+    {
+      "fatalMatches": 0,
+      "privateSHA256": "862c91e8f94878e0ebb15ee0f1d83c1dc069bc8bd84bb06950635f3e1313c50c",
+      "source": "device-logcat.log"
+    },
+    {
+      "fatalMatches": 0,
+      "privateSHA256": "43cad0c97c61ea5424c469d64f1056a59328aa028fe4572961ca8d45c80feec1",
+      "source": "android-vmess-observe-v2/resource-logcat.log"
+    }
+  ],
+  "pattern": "FATAL EXCEPTION|Fatal signal|thread .{0,100} panicked at|fatal runtime error:",
+  "resourceCycles": 24,
+  "resourceCyclesSameProcess": 24,
+  "scope": "Bounded owned-app evidence only. Hard-coded DeviceHost fatal/unrecovered zero fields are not used as proof; successful recovery traffic and external PID/startTicks observations are separate evidence."
+}

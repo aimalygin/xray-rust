@@ -1,0 +1,44 @@
+{
+  "classification": "controller-expected-negative-result-error",
+  "trialId": 4003,
+  "backendRows": [
+    {
+      "backend": "hold-open",
+      "id": 4003,
+      "time": 1791168257.917173
+    },
+    {
+      "backend": "hold-close",
+      "id": 4003,
+      "reason": "eof",
+      "time": 1791168258.159352
+    }
+  ],
+  "deviceRows": [
+    "1791168257.709 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=counters-reset",
+    "1791168257.973 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+    "1791168258.156 23960 15679 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+    "1791168258.257 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":152530944,\"threadCount\":30,\"processCpuMillis\":80017,\"elapsedRealtimeMillis\":8721086,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+    "1791168258.257 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped",
+    "1791168260.240 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=stopped",
+    "1791168263.168 23960 15679 W XrayDeviceProbe: XRAY_ANDROID_UDP_FAILURE queryTag=f433fd8b8d7b0cab localPort=45614 errorCode=SocketTimeoutException",
+    "1791168263.170 23960 15679 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=failed errorCode=SocketTimeoutException elapsedSeconds=5",
+    "1791168266.896 24006 15718 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":149639168,\"threadCount\":29,\"processCpuMillis\":80211,\"elapsedRealtimeMillis\":8729725,\"activeConnections\":0,\"tunInboundPackets\":0,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+    "1791168267.011 24006 15719 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=running generation=2 tunBackend=packet-pump",
+    "1791168267.017 24006 15719 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":2,\"residentMemoryBytes\":150999040,\"threadCount\":38,\"processCpuMillis\":80291,\"elapsedRealtimeMillis\":8729846,\"activeConnections\":0,\"tunInboundPackets\":4,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+    "1791168267.864 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=counters-reset",
+    "1791168268.164 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+    "1791168268.212 23960 15754 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=passed sequence=1 elapsedSeconds=0",
+    "1791168268.225 23960 15754 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0",
+    "1791168269.255 23960 15754 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=passed sequence=2 elapsedSeconds=1",
+    "1791168269.266 23960 15754 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=2 elapsedSeconds=1",
+    "1791168269.559 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=stopped",
+    "1791168271.033 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":2,\"residentMemoryBytes\":150925312,\"threadCount\":30,\"processCpuMillis\":80453,\"elapsedRealtimeMillis\":8733862,\"activeConnections\":0,\"tunInboundPackets\":4,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+    "1791168271.033 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped",
+    "1791168271.218 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=stopped",
+    "1791168272.536 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":false,\"runtimeRunning\":false,\"runtimeGeneration\":2,\"residentMemoryBytes\":151220224,\"threadCount\":29,\"processCpuMillis\":80583,\"elapsedRealtimeMillis\":8735366,\"activeConnections\":0,\"tunInboundPackets\":0,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+    "1791168272.536 24006 15801 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":false,\"runtimeRunning\":false,\"runtimeGeneration\":2,\"residentMemoryBytes\":151220224,\"threadCount\":29,\"processCpuMillis\":80583,\"elapsedRealtimeMillis\":8735366,\"activeConnections\":0,\"tunInboundPackets\":0,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+    "1791168272.537 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+  ],
+  "interpretation": "The initial supplemental driver incorrectly asserted that direct stop must reproduce a backend timeout. PacketPump instead delivered EOF in this trial, so the assertion stopped collection before emitting its control record. Local stop and recovery are visible in the raw device log, but this incomplete trial is not counted as one of the four complete paired controls. Preserve the original controller and run fresh PacketPump controls that record either EOF or timeout. This variability contradicts a deterministic teardown failure or unconditional fix claim."
+}

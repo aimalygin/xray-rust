@@ -1,0 +1,402 @@
+{"event": "abi", "major": 1, "minor": 8, "protocol": "setup", "time": "2026-10-04T18:39:33Z"}
+{"event": "import", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:33Z"}
+{"cycle": 1, "event": "connected", "protocol": "vless-reality", "seconds": 0.2839139699935913, "time": "2026-10-04T18:39:33Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:33Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 5.8157530416683585, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:39Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:39Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2188454166680458, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:39Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "time": "2026-10-04T18:39:40Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.38381462499819463, "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:40Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:40Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.2863936249996186, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:40Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:40Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.16084116666388582, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:40Z"}
+{"event": "dns-anchor", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:40Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23441.904634083334"}, {"interface": "", "kind": "applied", "uptime": "23442.429123125003"}, {"interface": "en0", "kind": "unchanged", "uptime": "23446.045062625002"}], "protocol": "vless-reality", "stage": "after-traffic", "time": "2026-10-04T18:39:41Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4343408, "inboundPackets": 244, "outboundPackets": 221, "protocol": "vless-reality", "rss": 32915456, "runtime": "75993489-ced2-4f77-ab25-efcfa078ac94", "stage": "after-traffic", "tcp": 1, "threads": 9, "time": "2026-10-04T18:39:41Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 1, "event": "connection-close-request", "ids": [5, 6, 7], "protocol": "vless-reality", "time": "2026-10-04T18:39:41Z"}
+{"closedIDs": [5, 6, 7], "cycle": 1, "event": "connection-close-verified", "newIDs": [], "protocol": "vless-reality", "seconds": 2.1430899583319842, "time": "2026-10-04T18:39:43Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23441.904634083334"}, {"interface": "", "kind": "applied", "uptime": "23442.429123125003"}, {"interface": "en0", "kind": "unchanged", "uptime": "23446.045062625002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23450.122615083335"}], "protocol": "vless-reality", "stage": "after-close", "time": "2026-10-04T18:39:43Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4179568, "inboundPackets": 244, "outboundPackets": 222, "protocol": "vless-reality", "rss": 33112064, "runtime": "75993489-ced2-4f77-ab25-efcfa078ac94", "stage": "after-close", "tcp": 0, "threads": 9, "time": "2026-10-04T18:39:43Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:43Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.18684524999844143, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:43Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:43Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.25278787500064936, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:43Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "time": "2026-10-04T18:39:43Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.23020016666851006, "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:44Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:44Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.22020204166619806, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:44Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:44Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.14108345833301428, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:44Z"}
+{"event": "dns-anchor", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:44Z"}
+{"cycle": 1, "event": "traffic-after-close", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:44Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23441.904634083334"}, {"interface": "", "kind": "applied", "uptime": "23442.429123125003"}, {"interface": "en0", "kind": "unchanged", "uptime": "23446.045062625002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23450.122615083335"}], "protocol": "vless-reality", "stage": "after-recovery", "time": "2026-10-04T18:39:44Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4294256, "inboundPackets": 440, "outboundPackets": 396, "protocol": "vless-reality", "rss": 33341440, "runtime": "75993489-ced2-4f77-ab25-efcfa078ac94", "stage": "after-recovery", "tcp": 2, "threads": 9, "time": "2026-10-04T18:39:44Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 1, "event": "disconnected", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:45Z"}
+{"cycle": 2, "event": "connected", "protocol": "vless-reality", "seconds": 0.23211002349853516, "time": "2026-10-04T18:39:45Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:45Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.23629287500079954, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:45Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:45Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.26953375000084634, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:46Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "time": "2026-10-04T18:39:46Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.6068088749998424, "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:46Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:46Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.2272590416650928, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:47Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:47Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.18013799999971525, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:47Z"}
+{"event": "dns-anchor", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:47Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23453.58344025"}, {"interface": "en0", "kind": "unchanged", "uptime": "23453.859821375"}, {"interface": "", "kind": "applied", "uptime": "23454.10307275"}], "protocol": "vless-reality", "stage": "after-traffic", "time": "2026-10-04T18:39:47Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4114056, "inboundPackets": 199, "outboundPackets": 176, "protocol": "vless-reality", "rss": 31604736, "runtime": "f74b2e74-4d10-43ce-a10b-d06a5e584908", "stage": "after-traffic", "tcp": 1, "threads": 10, "time": "2026-10-04T18:39:47Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "connection-close-request", "ids": [4, 5, 6], "protocol": "vless-reality", "time": "2026-10-04T18:39:47Z"}
+{"closedIDs": [4, 5, 6], "cycle": 2, "event": "connection-close-verified", "newIDs": [], "protocol": "vless-reality", "seconds": 2.0564630000008037, "time": "2026-10-04T18:39:49Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23453.58344025"}, {"interface": "en0", "kind": "unchanged", "uptime": "23453.859821375"}, {"interface": "", "kind": "applied", "uptime": "23454.10307275"}], "protocol": "vless-reality", "stage": "after-close", "time": "2026-10-04T18:39:49Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4081288, "inboundPackets": 207, "outboundPackets": 184, "protocol": "vless-reality", "rss": 32014336, "runtime": "f74b2e74-4d10-43ce-a10b-d06a5e584908", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:39:49Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:49Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2585323333332781, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:49Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:49Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2767667500011157, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:50Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "time": "2026-10-04T18:39:50Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.19765137500144192, "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:50Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:50Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.24383991666763905, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:50Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:50Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.14497266666512587, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:50Z"}
+{"event": "dns-anchor", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:51Z"}
+{"cycle": 2, "event": "traffic-after-close", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:51Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23453.58344025"}, {"interface": "en0", "kind": "unchanged", "uptime": "23453.859821375"}, {"interface": "", "kind": "applied", "uptime": "23454.10307275"}], "protocol": "vless-reality", "stage": "after-recovery", "time": "2026-10-04T18:39:51Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4081288, "inboundPackets": 390, "outboundPackets": 359, "protocol": "vless-reality", "rss": 32161792, "runtime": "f74b2e74-4d10-43ce-a10b-d06a5e584908", "stage": "after-recovery", "tcp": 2, "threads": 8, "time": "2026-10-04T18:39:51Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "disconnected", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:51Z"}
+{"cycle": 3, "event": "connected", "protocol": "vless-reality", "seconds": 0.2232910394668579, "time": "2026-10-04T18:39:51Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:51Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2409801666653948, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:52Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:52Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.23856374999741092, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:52Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "time": "2026-10-04T18:39:52Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.39183199999752105, "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:52Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:52Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.18606512500264216, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:53Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:53Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.23754866666786256, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:53Z"}
+{"event": "dns-anchor", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:53Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23459.944405208335"}, {"interface": "", "kind": "applied", "uptime": "23460.477823166668"}], "protocol": "vless-reality", "stage": "after-traffic", "time": "2026-10-04T18:39:53Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4163184, "inboundPackets": 209, "outboundPackets": 179, "protocol": "vless-reality", "rss": 31850496, "runtime": "c9cb38b0-8dc2-47be-88eb-3048f1a54aae", "stage": "after-traffic", "tcp": 1, "threads": 10, "time": "2026-10-04T18:39:53Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 3, "event": "connection-close-request", "ids": [3, 4, 5], "protocol": "vless-reality", "time": "2026-10-04T18:39:53Z"}
+{"closedIDs": [3, 4, 5], "cycle": 3, "event": "connection-close-verified", "newIDs": [], "protocol": "vless-reality", "seconds": 2.1617032083340746, "time": "2026-10-04T18:39:55Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23459.944405208335"}, {"interface": "", "kind": "applied", "uptime": "23460.477823166668"}], "protocol": "vless-reality", "stage": "after-close", "time": "2026-10-04T18:39:55Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4097648, "inboundPackets": 217, "outboundPackets": 187, "protocol": "vless-reality", "rss": 32112640, "runtime": "c9cb38b0-8dc2-47be-88eb-3048f1a54aae", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:39:55Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:55Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.19100600000092527, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:56Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:56Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.19061091666662833, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:56Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "time": "2026-10-04T18:39:56Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.21836387499934062, "host": "v07-probe-4b87f75a1457.test", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:56Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "vless-reality", "time": "2026-10-04T18:39:56Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.15321699999913108, "host": "198.51.100.7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:56Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "vless-reality", "time": "2026-10-04T18:39:56Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.2398938750011439, "host": "2001:db8::7", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:57Z"}
+{"event": "dns-anchor", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:57Z"}
+{"cycle": 3, "event": "traffic-after-close", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:57Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23459.944405208335"}, {"interface": "", "kind": "applied", "uptime": "23460.477823166668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23464.114883208335"}, {"interface": "en0", "kind": "unchanged", "uptime": "23464.8200035"}], "protocol": "vless-reality", "stage": "after-recovery", "time": "2026-10-04T18:39:57Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4163184, "inboundPackets": 404, "outboundPackets": 361, "protocol": "vless-reality", "rss": 32440320, "runtime": "c9cb38b0-8dc2-47be-88eb-3048f1a54aae", "stage": "after-recovery", "tcp": 2, "threads": 10, "time": "2026-10-04T18:39:57Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 3, "event": "disconnected", "protocol": "vless-reality", "result": "passed", "time": "2026-10-04T18:39:57Z"}
+{"event": "import", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:57Z"}
+{"cycle": 1, "event": "connected", "protocol": "xhttp-h1", "seconds": 0.19678199291229248, "time": "2026-10-04T18:39:58Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:39:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.26752404166472843, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:58Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:39:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.22476737499891897, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:58Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "time": "2026-10-04T18:39:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.18262304166637477, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:58Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:39:58Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.079876375002641, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:58Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:39:59Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.10446345833406667, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:59Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:39:59Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23466.0743845"}, {"interface": "en0", "kind": "unchanged", "uptime": "23466.23859466667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23466.43271566667"}, {"interface": "", "kind": "applied", "uptime": "23466.60541329167"}, {"interface": "en0", "kind": "unchanged", "uptime": "23467.17703175"}], "protocol": "xhttp-h1", "stage": "after-traffic", "time": "2026-10-04T18:39:59Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 5359240, "inboundPackets": 205, "outboundPackets": 182, "protocol": "xhttp-h1", "rss": 34226176, "runtime": "4cdd4800-e2cc-4b32-9e7c-f3944801390d", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:39:59Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h1", "time": "2026-10-04T18:39:59Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 1, "event": "connection-close-verified", "newIDs": [], "protocol": "xhttp-h1", "seconds": 2.1226486249979644, "time": "2026-10-04T18:40:01Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23466.0743845"}, {"interface": "en0", "kind": "unchanged", "uptime": "23466.23859466667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23466.43271566667"}, {"interface": "", "kind": "applied", "uptime": "23466.60541329167"}, {"interface": "en0", "kind": "unchanged", "uptime": "23467.17703175"}], "protocol": "xhttp-h1", "stage": "after-close", "time": "2026-10-04T18:40:01Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4753032, "inboundPackets": 208, "outboundPackets": 187, "protocol": "xhttp-h1", "rss": 34422784, "runtime": "4cdd4800-e2cc-4b32-9e7c-f3944801390d", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:40:01Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:01Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1970107499982987, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:01Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:01Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.15936666666675592, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:01Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:01Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.24105299999791896, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:02Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:02Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07697945833206177, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:02Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:02Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.08078525000018999, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:02Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:02Z"}
+{"cycle": 1, "event": "traffic-after-close", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:02Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23466.0743845"}, {"interface": "en0", "kind": "unchanged", "uptime": "23466.23859466667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23466.43271566667"}, {"interface": "", "kind": "applied", "uptime": "23466.60541329167"}, {"interface": "en0", "kind": "unchanged", "uptime": "23467.17703175"}], "protocol": "xhttp-h1", "stage": "after-recovery", "time": "2026-10-04T18:40:02Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4834952, "inboundPackets": 404, "outboundPackets": 358, "protocol": "xhttp-h1", "rss": 34668544, "runtime": "4cdd4800-e2cc-4b32-9e7c-f3944801390d", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:02Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 1, "event": "disconnected", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:03Z"}
+{"cycle": 2, "event": "connected", "protocol": "xhttp-h1", "seconds": 0.21466398239135742, "time": "2026-10-04T18:40:03Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:03Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.19760108333503013, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:03Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:03Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1847873333354073, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:03Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:03Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2112124583327386, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:04Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:04Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.17001633333347854, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:04Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:04Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07697779166846885, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:04Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:04Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23471.442185750002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23471.778177166667"}, {"interface": "", "kind": "applied", "uptime": "23471.974378208335"}], "protocol": "xhttp-h1", "stage": "after-traffic", "time": "2026-10-04T18:40:04Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 5162632, "inboundPackets": 218, "outboundPackets": 181, "protocol": "xhttp-h1", "rss": 33587200, "runtime": "28f9caf7-0042-41b9-accf-812b3c9b413e", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:04Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 2, "event": "connection-close-request", "ids": [1, 2, 4, 5, 6, 7], "protocol": "xhttp-h1", "time": "2026-10-04T18:40:04Z"}
+{"closedIDs": [1, 2, 4, 5, 6, 7], "cycle": 2, "event": "connection-close-verified", "newIDs": [8], "protocol": "xhttp-h1", "seconds": 2.1086480833328096, "time": "2026-10-04T18:40:06Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23471.442185750002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23471.778177166667"}, {"interface": "", "kind": "applied", "uptime": "23471.974378208335"}], "protocol": "xhttp-h1", "stage": "after-close", "time": "2026-10-04T18:40:06Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4671112, "inboundPackets": 224, "outboundPackets": 188, "protocol": "xhttp-h1", "rss": 33849344, "runtime": "28f9caf7-0042-41b9-accf-812b3c9b413e", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:40:06Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:06Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.16658074999941164, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:07Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.15015329166635638, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:07Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2406103333341889, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:07Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07857537500240142, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:07Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07948758333077421, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"cycle": 2, "event": "traffic-after-close", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:07Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23471.442185750002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23471.778177166667"}, {"interface": "", "kind": "applied", "uptime": "23471.974378208335"}], "protocol": "xhttp-h1", "stage": "after-recovery", "time": "2026-10-04T18:40:07Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4834952, "inboundPackets": 414, "outboundPackets": 357, "protocol": "xhttp-h1", "rss": 34242560, "runtime": "28f9caf7-0042-41b9-accf-812b3c9b413e", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:07Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 2, "event": "disconnected", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:08Z"}
+{"cycle": 3, "event": "connected", "protocol": "xhttp-h1", "seconds": 0.22206604480743408, "time": "2026-10-04T18:40:08Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:08Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.13910949999990407, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:08Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:08Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.24888562499836553, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:09Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:09Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1738826250002603, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:09Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:09Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.18378708333329996, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:09Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:09Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.07595887499701348, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:09Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:09Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23476.736897416667"}, {"interface": "", "kind": "applied", "uptime": "23477.262561416668"}], "protocol": "xhttp-h1", "stage": "after-traffic", "time": "2026-10-04T18:40:09Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4916848, "inboundPackets": 195, "outboundPackets": 172, "protocol": "xhttp-h1", "rss": 33144832, "runtime": "64e68e83-f74a-40b7-a9d6-4b03b4abf5fe", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:09Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h1", "time": "2026-10-04T18:40:09Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 3, "event": "connection-close-verified", "newIDs": [7], "protocol": "xhttp-h1", "seconds": 2.1077699166671664, "time": "2026-10-04T18:40:12Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23476.736897416667"}, {"interface": "", "kind": "applied", "uptime": "23477.262561416668"}], "protocol": "xhttp-h1", "stage": "after-close", "time": "2026-10-04T18:40:12Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4376176, "inboundPackets": 201, "outboundPackets": 179, "protocol": "xhttp-h1", "rss": 33423360, "runtime": "64e68e83-f74a-40b7-a9d6-4b03b4abf5fe", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:40:12Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2554575833346462, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:12Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11602816666709259, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:12Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.15581287499662722, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07564404166623717, "host": "198.51.100.7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h1", "time": "2026-10-04T18:40:12Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.08037874999718042, "host": "2001:db8::7", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:13Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:13Z"}
+{"cycle": 3, "event": "traffic-after-close", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:13Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23476.736897416667"}, {"interface": "", "kind": "applied", "uptime": "23477.262561416668"}], "protocol": "xhttp-h1", "stage": "after-recovery", "time": "2026-10-04T18:40:13Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4523632, "inboundPackets": 399, "outboundPackets": 347, "protocol": "xhttp-h1", "rss": 33751040, "runtime": "64e68e83-f74a-40b7-a9d6-4b03b4abf5fe", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:13Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "disconnected", "protocol": "xhttp-h1", "result": "passed", "time": "2026-10-04T18:40:13Z"}
+{"event": "import", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:13Z"}
+{"cycle": 1, "event": "connected", "protocol": "xhttp-h2", "seconds": 0.18251097202301025, "time": "2026-10-04T18:40:13Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:13Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1350722916686209, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:14Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:14Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.20849687500231084, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:14Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:14Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10307491666753776, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:14Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:14Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.055260624998481944, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:14Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:14Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05564766666429932, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:14Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:14Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23481.995342875"}, {"interface": "", "kind": "applied", "uptime": "23482.525346000002"}], "protocol": "xhttp-h2", "stage": "after-traffic", "time": "2026-10-04T18:40:14Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 5129864, "inboundPackets": 188, "outboundPackets": 170, "protocol": "xhttp-h2", "rss": 33374208, "runtime": "1cd8b450-1a38-4ed3-a61b-2267b52f7677", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:14Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h2", "time": "2026-10-04T18:40:14Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 1, "event": "connection-close-verified", "newIDs": [7], "protocol": "xhttp-h2", "seconds": 2.102552000000287, "time": "2026-10-04T18:40:16Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23481.995342875"}, {"interface": "", "kind": "applied", "uptime": "23482.525346000002"}], "protocol": "xhttp-h2", "stage": "after-close", "time": "2026-10-04T18:40:17Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4785800, "inboundPackets": 195, "outboundPackets": 177, "protocol": "xhttp-h2", "rss": 33734656, "runtime": "1cd8b450-1a38-4ed3-a61b-2267b52f7677", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:40:17Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.07699608333496144, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0660145833317074, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08996387499792036, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05580208333412884, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:17Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.053494750001846114, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"cycle": 1, "event": "traffic-after-close", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:17Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23481.995342875"}, {"interface": "", "kind": "applied", "uptime": "23482.525346000002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23485.424550708336"}], "protocol": "xhttp-h2", "stage": "after-recovery", "time": "2026-10-04T18:40:17Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4933256, "inboundPackets": 370, "outboundPackets": 348, "protocol": "xhttp-h2", "rss": 34127872, "runtime": "1cd8b450-1a38-4ed3-a61b-2267b52f7677", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:17Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "disconnected", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:18Z"}
+{"cycle": 2, "event": "connected", "protocol": "xhttp-h2", "seconds": 0.2538830041885376, "time": "2026-10-04T18:40:18Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:18Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.14475916666924604, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:18Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:18Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.21208041666614008, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:19Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:19Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1565797500006738, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:19Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:19Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.055805708332627546, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:19Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:19Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05424354166825651, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:19Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:19Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23486.62351316667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23486.675934583334"}, {"interface": "en0", "kind": "unchanged", "uptime": "23486.926308583334"}, {"interface": "", "kind": "applied", "uptime": "23487.153573708336"}], "protocol": "xhttp-h2", "stage": "after-traffic", "time": "2026-10-04T18:40:19Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 5293704, "inboundPackets": 196, "outboundPackets": 173, "protocol": "xhttp-h2", "rss": 33652736, "runtime": "6abc416c-1693-4066-a061-b942e8c417e7", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:19Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 2, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h2", "time": "2026-10-04T18:40:19Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 2, "event": "connection-close-verified", "newIDs": [7], "protocol": "xhttp-h2", "seconds": 2.1245156250006403, "time": "2026-10-04T18:40:21Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23486.62351316667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23486.675934583334"}, {"interface": "en0", "kind": "unchanged", "uptime": "23486.926308583334"}, {"interface": "", "kind": "applied", "uptime": "23487.153573708336"}, {"interface": "en0", "kind": "unchanged", "uptime": "23489.526713500003"}], "protocol": "xhttp-h2", "stage": "after-close", "time": "2026-10-04T18:40:21Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4900488, "inboundPackets": 201, "outboundPackets": 180, "protocol": "xhttp-h2", "rss": 33931264, "runtime": "6abc416c-1693-4066-a061-b942e8c417e7", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:40:21Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:21Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.07368537499860395, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:21Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:21Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.079512333333696, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:22Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08045904166647233, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:22Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05548566666766419, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:22Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05626145833230112, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"cycle": 2, "event": "traffic-after-close", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23486.62351316667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23486.675934583334"}, {"interface": "en0", "kind": "unchanged", "uptime": "23486.926308583334"}, {"interface": "", "kind": "applied", "uptime": "23487.153573708336"}, {"interface": "en0", "kind": "unchanged", "uptime": "23489.526713500003"}, {"interface": "en0", "kind": "unchanged", "uptime": "23490.53980125"}], "protocol": "xhttp-h2", "stage": "after-recovery", "time": "2026-10-04T18:40:22Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 5015176, "inboundPackets": 373, "outboundPackets": 345, "protocol": "xhttp-h2", "rss": 34177024, "runtime": "6abc416c-1693-4066-a061-b942e8c417e7", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:40:22Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 2, "event": "disconnected", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:22Z"}
+{"cycle": 3, "event": "connected", "protocol": "xhttp-h2", "seconds": 0.24777400493621826, "time": "2026-10-04T18:40:23Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:23Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1312374583321798, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:23Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:23Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.2573266250001325, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:23Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:23Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0867714583328052, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:23Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:23Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.054638291665469296, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:23Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:24Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05376241666817805, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:24Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:24Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23491.342496625002"}, {"interface": "", "kind": "applied", "uptime": "23491.873515958334"}, {"interface": "en0", "kind": "unchanged", "uptime": "23492.160587625"}], "protocol": "xhttp-h2", "stage": "after-traffic", "time": "2026-10-04T18:40:24Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 5064328, "inboundPackets": 196, "outboundPackets": 175, "protocol": "xhttp-h2", "rss": 33357824, "runtime": "489d6c3b-b3f0-4b0e-a2da-896e9037fb87", "stage": "after-traffic", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:24Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h2", "time": "2026-10-04T18:40:24Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 3, "event": "connection-close-verified", "newIDs": [7], "protocol": "xhttp-h2", "seconds": 2.0690017499982787, "time": "2026-10-04T18:40:26Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23491.342496625002"}, {"interface": "", "kind": "applied", "uptime": "23491.873515958334"}, {"interface": "en0", "kind": "unchanged", "uptime": "23492.160587625"}], "protocol": "xhttp-h2", "stage": "after-close", "time": "2026-10-04T18:40:26Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4818568, "inboundPackets": 201, "outboundPackets": 182, "protocol": "xhttp-h2", "rss": 33669120, "runtime": "489d6c3b-b3f0-4b0e-a2da-896e9037fb87", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:40:26Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08217074999993201, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:26Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0651220416657452, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:26Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.06512633333477424, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.07639333333281684, "host": "198.51.100.7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h2", "time": "2026-10-04T18:40:26Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.052110000000539, "host": "2001:db8::7", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:26Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:27Z"}
+{"cycle": 3, "event": "traffic-after-close", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:27Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23491.342496625002"}, {"interface": "", "kind": "applied", "uptime": "23491.873515958334"}, {"interface": "en0", "kind": "unchanged", "uptime": "23492.160587625"}, {"interface": "en0", "kind": "unchanged", "uptime": "23494.668893958336"}], "protocol": "xhttp-h2", "stage": "after-recovery", "time": "2026-10-04T18:40:27Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4933256, "inboundPackets": 380, "outboundPackets": 349, "protocol": "xhttp-h2", "rss": 34029568, "runtime": "489d6c3b-b3f0-4b0e-a2da-896e9037fb87", "stage": "after-recovery", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:27Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "disconnected", "protocol": "xhttp-h2", "result": "passed", "time": "2026-10-04T18:40:27Z"}
+{"event": "import", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:27Z"}
+{"cycle": 1, "event": "connected", "protocol": "xhttp-h3", "seconds": 0.23635399341583252, "time": "2026-10-04T18:40:27Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:27Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11144741666794289, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:28Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:28Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.14759516666526906, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:28Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:28Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.16620262500146055, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:28Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:28Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.06540695833245991, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:28Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:28Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.06608216666791122, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:28Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:28Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23496.001119291668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23496.270454041667"}, {"interface": "", "kind": "applied", "uptime": "23496.533440083334"}], "protocol": "xhttp-h3", "stage": "after-traffic", "time": "2026-10-04T18:40:28Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 5228168, "inboundPackets": 218, "outboundPackets": 183, "protocol": "xhttp-h3", "rss": 32800768, "runtime": "616553eb-b459-4b60-960c-50c4b020549c", "stage": "after-traffic", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:28Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h3", "time": "2026-10-04T18:40:28Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 1, "event": "connection-close-verified", "newIDs": [7], "protocol": "xhttp-h3", "seconds": 2.1441265833345824, "time": "2026-10-04T18:40:31Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23496.001119291668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23496.270454041667"}, {"interface": "", "kind": "applied", "uptime": "23496.533440083334"}], "protocol": "xhttp-h3", "stage": "after-close", "time": "2026-10-04T18:40:31Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4736648, "inboundPackets": 223, "outboundPackets": 190, "protocol": "xhttp-h3", "rss": 33046528, "runtime": "616553eb-b459-4b60-960c-50c4b020549c", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:40:31Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.07452924999961397, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.11272429166638176, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.16478604166695732, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.054266750001261244, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:31Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05613883333353442, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"cycle": 1, "event": "traffic-after-close", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:31Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23496.001119291668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23496.270454041667"}, {"interface": "", "kind": "applied", "uptime": "23496.533440083334"}], "protocol": "xhttp-h3", "stage": "after-recovery", "time": "2026-10-04T18:40:31Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4933256, "inboundPackets": 431, "outboundPackets": 368, "protocol": "xhttp-h3", "rss": 33374208, "runtime": "616553eb-b459-4b60-960c-50c4b020549c", "stage": "after-recovery", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:31Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "disconnected", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:32Z"}
+{"cycle": 2, "event": "connected", "protocol": "xhttp-h3", "seconds": 0.2635129690170288, "time": "2026-10-04T18:40:32Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:32Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10740320833428996, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:32Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:32Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0899057916685706, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:33Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:33Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.1107397083324031, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:33Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:33Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.06951987499996903, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:33Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:33Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05280333333575982, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:33Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:33Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23500.833809333333"}, {"interface": "", "kind": "applied", "uptime": "23501.361021625"}], "protocol": "xhttp-h3", "stage": "after-traffic", "time": "2026-10-04T18:40:33Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4933256, "inboundPackets": 206, "outboundPackets": 182, "protocol": "xhttp-h3", "rss": 32636928, "runtime": "453e6df4-292d-4894-9851-a6b52fa2fe9c", "stage": "after-traffic", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:33Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 2, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6], "protocol": "xhttp-h3", "time": "2026-10-04T18:40:33Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6], "cycle": 2, "event": "connection-close-verified", "newIDs": [], "protocol": "xhttp-h3", "seconds": 2.068806041665084, "time": "2026-10-04T18:40:35Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23500.833809333333"}, {"interface": "", "kind": "applied", "uptime": "23501.361021625"}], "protocol": "xhttp-h3", "stage": "after-close", "time": "2026-10-04T18:40:35Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4490888, "inboundPackets": 211, "outboundPackets": 189, "protocol": "xhttp-h3", "rss": 32899072, "runtime": "453e6df4-292d-4894-9851-a6b52fa2fe9c", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:40:35Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:35Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09072233333426993, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:35Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:35Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08170966666511958, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:36Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:36Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.06761929166532354, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:36Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:36Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.13634766666655196, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:36Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:36Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.054935333333560266, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:36Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:36Z"}
+{"cycle": 2, "event": "traffic-after-close", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:36Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23500.833809333333"}, {"interface": "", "kind": "applied", "uptime": "23501.361021625"}], "protocol": "xhttp-h3", "stage": "after-recovery", "time": "2026-10-04T18:40:36Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4540040, "inboundPackets": 396, "outboundPackets": 360, "protocol": "xhttp-h3", "rss": 33177600, "runtime": "453e6df4-292d-4894-9851-a6b52fa2fe9c", "stage": "after-recovery", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:36Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 2, "event": "disconnected", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:37Z"}
+{"cycle": 3, "event": "connected", "protocol": "xhttp-h3", "seconds": 0.21586894989013672, "time": "2026-10-04T18:40:37Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09257837499899324, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:37Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0890809166667168, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:37Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10652716666663764, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.11491904166905442, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:37Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.06915954166834126, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:37Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:38Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23505.367261333337"}, {"interface": "", "kind": "applied", "uptime": "23505.881973958334"}], "protocol": "xhttp-h3", "stage": "after-traffic", "time": "2026-10-04T18:40:38Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4867696, "inboundPackets": 204, "outboundPackets": 184, "protocol": "xhttp-h3", "rss": 32653312, "runtime": "8aba11f9-152e-4943-b40d-69ff0cbf9bf1", "stage": "after-traffic", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:38Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 3, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5], "protocol": "xhttp-h3", "time": "2026-10-04T18:40:38Z"}
+{"closedIDs": [1, 2, 3, 4, 5], "cycle": 3, "event": "connection-close-verified", "newIDs": [], "protocol": "xhttp-h3", "seconds": 2.078747666666459, "time": "2026-10-04T18:40:40Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23505.367261333337"}, {"interface": "", "kind": "applied", "uptime": "23505.881973958334"}], "protocol": "xhttp-h3", "stage": "after-close", "time": "2026-10-04T18:40:40Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4572784, "inboundPackets": 209, "outboundPackets": 191, "protocol": "xhttp-h3", "rss": 32882688, "runtime": "8aba11f9-152e-4943-b40d-69ff0cbf9bf1", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:40:40Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 0}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.12944583333228366, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:40Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08215979166561738, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:40Z"}
+{"event": "tcp-start", "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.06860000000233413, "host": "v07-probe-4b87f75a1457.test", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05505191666816245, "host": "198.51.100.7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "xhttp-h3", "time": "2026-10-04T18:40:40Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.13557399999990594, "host": "2001:db8::7", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:41Z"}
+{"event": "dns-anchor", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:41Z"}
+{"cycle": 3, "event": "traffic-after-close", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:41Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23505.367261333337"}, {"interface": "", "kind": "applied", "uptime": "23505.881973958334"}], "protocol": "xhttp-h3", "stage": "after-recovery", "time": "2026-10-04T18:40:41Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4736624, "inboundPackets": 402, "outboundPackets": 360, "protocol": "xhttp-h3", "rss": 33374208, "runtime": "8aba11f9-152e-4943-b40d-69ff0cbf9bf1", "stage": "after-recovery", "tcp": 3, "threads": 10, "time": "2026-10-04T18:40:41Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 3, "event": "disconnected", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:41Z"}
+{"event": "complete", "protocol": "xhttp-h3", "result": "passed", "time": "2026-10-04T18:40:41Z"}

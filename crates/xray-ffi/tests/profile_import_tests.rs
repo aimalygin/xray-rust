@@ -66,8 +66,20 @@ fn import(input: &[u8]) -> Value {
 }
 
 #[test]
-fn ffi_imports_both_formats_with_exact_sizing_and_loadable_configs() {
-    for (format, text) in [("hysteria2", HY), ("wireguard", WG)] {
+fn ffi_imports_all_formats_with_exact_sizing_and_loadable_configs() {
+    for (format, text) in [
+        ("hysteria2", HY),
+        ("wireguard", WG),
+        ("trojan", "trojan://synthetic-secret@trojan.example:443"),
+        (
+            "shadowsocks2022",
+            "ss://2022-blake3-aes-128-gcm:AQEBAQEBAQEBAQEBAQEBAQ==@ss.example:8388",
+        ),
+        (
+            "vmess",
+            "vmess://00112233-4455-6677-8899-aabbccddeeff@vmess.example:443",
+        ),
+    ] {
         let result = import(&request(format, text));
         assert_eq!(result["schemaVersion"], 1);
         let config = CString::new(result["configJSON"].as_str().unwrap()).unwrap();

@@ -1,0 +1,517 @@
+{
+  "schema": 1,
+  "purpose": "Bounded same-device v0.7.0/v0.8 WireGuard comparison and v0.8 Trojan lifecycle repeat; not release qualification",
+  "device": {
+    "model": "iPhone18,2",
+    "os": "27.0.1",
+    "build": "24A446",
+    "transport": "wired development / Wi-Fi test traffic"
+  },
+  "baseline": {
+    "commit": "67969094b352f948c6b8b9e2ac75402c577cb7f7",
+    "tag": "v0.7.0",
+    "artifacts": [
+      {
+        "path": "v070Static",
+        "sha256": "30df63e46ec610adbd8a50ff561ae00d0881c5656a686f34d7958c5be285e214"
+      },
+      {
+        "path": "v070LinkedStatic",
+        "sha256": "30df63e46ec610adbd8a50ff561ae00d0881c5656a686f34d7958c5be285e214"
+      },
+      {
+        "path": "v070/XrayClient",
+        "sha256": "2d3d6c3b50e56e67944366b78fc7366703af559fe33103273d8f5bcc3e8adc9d"
+      },
+      {
+        "path": "v070/XrayClient.debug.dylib",
+        "sha256": "0450c6fa3c2227d8b5446dfba2def22b5faa142d48bbc194fc766c93db0066d0"
+      },
+      {
+        "path": "v070/PlugIns/Tunnel.appex/Tunnel.debug.dylib",
+        "sha256": "09e13a84657e8bd4e0b1f3bd1aaa4e90480ca9cb433858493a568dcabd34066c"
+      }
+    ]
+  },
+  "candidate": {
+    "runtimeCommit": "de33998158e84c03f280f979ba2d4212072e5bc4",
+    "identityReport": "../2026-10-04-iphone17-lifecycle-resources/manifest.json",
+    "sameInstalledBuild": true
+  },
+  "sharedDebugHarness": {
+    "platform/apple/Sources/XrayAppleClient/Debug/XrayProtocolDeviceProbe.swift": "1e8e2e539a3ed47c91d4c72a8f2336e3550216feb02e77da93d0ac701614a37b",
+    "platform/apple/Sources/XrayAppleClient/XrayClientTunnelController.swift": "8237cf045c5ee8a6ba08accf52c331b72e4d59a61439c4e1af7254516206b369",
+    "platform/apple/XrayClient/Tunnel/PacketTunnelProvider.swift": "96c8ecdf8771942d659b675e41ceb69d43f980b432c300517ae1a30dada20d92"
+  },
+  "reference": {
+    "revision": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "sha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+    "logLevel": "debug"
+  },
+  "runs": [
+    {
+      "name": "v070-wireguard-1",
+      "version": "v070",
+      "result": "passed",
+      "start": "2026-10-04T19:21:37Z",
+      "end": "2026-10-04T19:21:59Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "maxTCPSeconds": 7.263809166666761,
+      "maxUDPSeconds": 0.1143767083340208,
+      "peakFootprintBytes": 5260936,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 18,
+        "tcpExact64KiB": 18,
+        "udpEcho": 12
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T19:21:59Z"
+        },
+        "rows": 102
+      },
+      "files": {
+        "v070-wireguard-1-events.jsonl": "98a6f37be845694b4ea2bb56307091ac8f86291435b374eb2e5751ee64c269da",
+        "v070-wireguard-1-backend.json": "7e2f5898e076869c3c2ba20d6bbcf559c453defb53267707bede3f76fd025ba7"
+      },
+      "privateServerLogSHA256": "f3f73634d935b74e7be0a78c3943f82919210ae0523d71e75a79ff8afeefc8ea"
+    },
+    {
+      "name": "v08-wireguard-1",
+      "version": "v08",
+      "result": "passed",
+      "start": "2026-10-04T19:22:14Z",
+      "end": "2026-10-04T19:22:29Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "maxTCPSeconds": 0.21964016666606767,
+      "maxUDPSeconds": 0.056872875000408385,
+      "peakFootprintBytes": 4769416,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 18,
+        "tcpExact64KiB": 18,
+        "udpEcho": 12
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T19:22:29Z"
+        },
+        "rows": 102
+      },
+      "files": {
+        "v08-wireguard-1-events.jsonl": "e44147cd24b7fb96b715628d19576ebfe35d13e8daef7552405613686182bf9a",
+        "v08-wireguard-1-backend.json": "eca650601fab62d9982212028b440ba4d4bfd4877482421a67c09fd6f63c6073"
+      },
+      "privateServerLogSHA256": "2d76034e8c0ba8eb7c9ea1ced299cf311a2fbbbd7dd4b5cc7bd739212f9dd922"
+    },
+    {
+      "name": "v070-wireguard-2",
+      "version": "v070",
+      "result": "passed",
+      "start": "2026-10-04T19:22:43Z",
+      "end": "2026-10-04T19:22:58Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "maxTCPSeconds": 0.2784576249978272,
+      "maxUDPSeconds": 0.13994483333226526,
+      "peakFootprintBytes": 5064304,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 18,
+        "tcpExact64KiB": 18,
+        "udpEcho": 12
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T19:22:58Z"
+        },
+        "rows": 102
+      },
+      "files": {
+        "v070-wireguard-2-events.jsonl": "50c6ca105a40770ee1b22bc598d40065e68073e9696beed650b87b73e6c54de3",
+        "v070-wireguard-2-backend.json": "4a19e1a8929080ba2f7b580f33cfc6e8e3b2de8926a4c4ae6791ce963095c076"
+      },
+      "privateServerLogSHA256": "ea62c83909d82c4ac7a48694f94d4552a7b1267f2dadbf7f652c3b6ae89ba4d0"
+    },
+    {
+      "name": "v08-wireguard-2",
+      "version": "v08",
+      "result": "passed",
+      "start": "2026-10-04T19:23:12Z",
+      "end": "2026-10-04T19:23:27Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "maxTCPSeconds": 0.352377458333649,
+      "maxUDPSeconds": 0.14086866666548303,
+      "peakFootprintBytes": 4867720,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 18,
+        "tcpExact64KiB": 18,
+        "udpEcho": 12
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T19:23:27Z"
+        },
+        "rows": 102
+      },
+      "files": {
+        "v08-wireguard-2-events.jsonl": "efa30686f057d21245fe7d941ea3458f671742ee18c3b9c2dfd47942d12d345a",
+        "v08-wireguard-2-backend.json": "dbf1e3b022d3b2637fd5f8da2e42283687857197b16e57c99d17d00c61806e3a"
+      },
+      "privateServerLogSHA256": "d317211384105cc3cc1814a3b7d0c0cc706815bc82073c987b65db7279987a45"
+    },
+    {
+      "name": "v070-wireguard-3",
+      "version": "v070",
+      "result": "passed",
+      "start": "2026-10-04T19:23:41Z",
+      "end": "2026-10-04T19:23:57Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "maxTCPSeconds": 1.531223083333316,
+      "maxUDPSeconds": 0.13947650000045542,
+      "peakFootprintBytes": 5293680,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 18,
+        "tcpExact64KiB": 18,
+        "udpEcho": 12
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T19:23:57Z"
+        },
+        "rows": 102
+      },
+      "files": {
+        "v070-wireguard-3-events.jsonl": "1fcd82a62a58ee41a9d9a25b68f83239112350d1cd293a13bf05f489d433e26d",
+        "v070-wireguard-3-backend.json": "6d90b1c2c2023f571d39dc0f9cbf496b8498984445c812d743a1e49a8bca8abe"
+      },
+      "privateServerLogSHA256": "9adfc74f577174bdc2707c8ad62b8b03eadaaea52e52971100675c321d58dc2a"
+    },
+    {
+      "name": "v08-wireguard-3",
+      "version": "v08",
+      "result": "passed",
+      "start": "2026-10-04T19:24:12Z",
+      "end": "2026-10-04T19:24:26Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "connected": 3,
+        "tcp-start": 18,
+        "tcp": 18,
+        "udp-start": 12,
+        "udp": 12,
+        "dns-anchor": 6,
+        "network-observer": 9,
+        "sample": 9,
+        "connection-close-request": 3,
+        "connection-close-verified": 3,
+        "traffic-after-close": 3,
+        "disconnected": 3,
+        "complete": 1
+      },
+      "maxTCPSeconds": 0.20489412499955506,
+      "maxUDPSeconds": 0.09274458333311486,
+      "peakFootprintBytes": 4851336,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 18,
+        "tcpExact64KiB": 18,
+        "udpEcho": 12
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "wireguard",
+          "result": "passed",
+          "time": "2026-10-04T19:24:26Z"
+        },
+        "rows": 102
+      },
+      "files": {
+        "v08-wireguard-3-events.jsonl": "2f1825a73ee623f82a64209a4d1aa3d316e58278193c36023a229f900924d2a4",
+        "v08-wireguard-3-backend.json": "b8e0f2c2742b0914ea415175c20a0e60de877f904ff31b6ee9d913d99bade33c"
+      },
+      "privateServerLogSHA256": "e98608327e6a18c2b0ab78074f4b19e25c1d86f1910250dd69eef6ba88fbb12f"
+    },
+    {
+      "name": "v08-trojan-1",
+      "version": "v08",
+      "result": "passed",
+      "start": "2026-10-04T19:24:38Z",
+      "end": "2026-10-04T19:24:56Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "startup-cancelled": 3,
+        "tcp-start": 24,
+        "tcp": 24,
+        "udp-start": 16,
+        "udp": 16,
+        "dns-anchor": 8,
+        "network-observer": 8,
+        "sample": 8,
+        "rapid-restart": 5,
+        "complete": 1
+      },
+      "maxTCPSeconds": 1.0531517083327344,
+      "maxUDPSeconds": 0.13307625000015832,
+      "peakFootprintBytes": 4523656,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 24,
+        "tcpExact64KiB": 24,
+        "udpEcho": 16
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T19:24:56Z"
+        },
+        "rows": 115
+      },
+      "files": {
+        "v08-trojan-1-events.jsonl": "59f41401767e3fdf0dca74c0a8918044469038c2abf95ee5cf0fa908a41a5d02",
+        "v08-trojan-1-backend.json": "ac7e938781f373c9e1a8761985e2fa718a609acd2930e9f557352aa7cf224718"
+      },
+      "privateServerLogSHA256": "bde02908ab644021634e2aed4872116e01c2067b92aa4e887ddc2af0746cae5d"
+    },
+    {
+      "name": "v08-trojan-2",
+      "version": "v08",
+      "result": "passed",
+      "start": "2026-10-04T19:25:09Z",
+      "end": "2026-10-04T19:25:27Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "startup-cancelled": 3,
+        "tcp-start": 24,
+        "tcp": 24,
+        "udp-start": 16,
+        "udp": 16,
+        "dns-anchor": 8,
+        "network-observer": 8,
+        "sample": 8,
+        "rapid-restart": 5,
+        "complete": 1
+      },
+      "maxTCPSeconds": 1.2414207916663145,
+      "maxUDPSeconds": 0.1542767916689627,
+      "peakFootprintBytes": 4392584,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 24,
+        "tcpExact64KiB": 24,
+        "udpEcho": 16
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T19:25:27Z"
+        },
+        "rows": 115
+      },
+      "files": {
+        "v08-trojan-2-events.jsonl": "fa80bbd119b0801f7b1fa9a7f117ca61910aafee7feeafd2ee96b1a8399c7845",
+        "v08-trojan-2-backend.json": "9528b8d7bba61154598bc0920f018e7aa111e84fccd9c17d58648ce829755a8f"
+      },
+      "privateServerLogSHA256": "d1a9d0a414317634a41b590bb571fc31016c5cf1b3b5bf5d402d2c5169a092b7"
+    },
+    {
+      "name": "v08-trojan-3",
+      "version": "v08",
+      "result": "passed",
+      "start": "2026-10-04T19:25:39Z",
+      "end": "2026-10-04T19:25:57Z",
+      "counts": {
+        "abi": 1,
+        "import": 1,
+        "startup-cancelled": 3,
+        "tcp-start": 24,
+        "tcp": 24,
+        "udp-start": 16,
+        "udp": 16,
+        "dns-anchor": 8,
+        "network-observer": 8,
+        "sample": 8,
+        "rapid-restart": 5,
+        "complete": 1
+      },
+      "maxTCPSeconds": 0.32014754166448256,
+      "maxUDPSeconds": 0.1813769999971555,
+      "peakFootprintBytes": 4408968,
+      "maxTunDrops": 0,
+      "loopExits": 0,
+      "backend": {
+        "tcpClosed": 24,
+        "tcpExact64KiB": 24,
+        "udpEcho": 16
+      },
+      "collector": {
+        "consoleEqualsDevice": true,
+        "validConsoleEventsMatchDevice": true,
+        "complete": {
+          "event": "complete",
+          "protocol": "trojan",
+          "result": "passed",
+          "time": "2026-10-04T19:25:57Z"
+        },
+        "rows": 115
+      },
+      "files": {
+        "v08-trojan-3-events.jsonl": "89eebf158f7fb0599625f23312f599c08b1679fb597969d0578fc0b51496caa4",
+        "v08-trojan-3-backend.json": "1b43708b785450a3fa63b5ce76c57625bc4cbbf7d5e763a589abd65ea413fc3b"
+      },
+      "privateServerLogSHA256": "12e1ca662221dc7da566ebf263d65ab085b47f8f1c6fe6ef314e1c4917a4fa92"
+    }
+  ],
+  "ciTestFix": {
+    "commit": "f90006b95c5407269d11d5c78cb58abcb11a40c8",
+    "unitTestsPassed": 504,
+    "ignored": 2,
+    "beforeRepeated": 100,
+    "beforeFailures": 0,
+    "afterRepeated": 100,
+    "afterFailures": 0,
+    "note": "The race was observed in Linux CI, not reproduced locally; bounded wait synchronizes observation of accounting before cancellation. Initial sandboxed full run failed socket permission checks; unsandboxed local-network run passed."
+  },
+  "diagnosticFixture": {
+    "executedWrapperSHA256": "a36ad1d034f4bfc4ed88546193c7df1210c5c19ddc90905994c539ac2faa447c",
+    "publishedWrapperSHA256": "66814a8438fb9614051c77fe2386be145bb56a0f864409fd862db660edcd2505",
+    "note": "Published wrapper is formatted, discovers the repository root and uses the parsed output directory (including --output=); echo/logging behavior is unchanged. Local TCP/UDP metadata and cleanup self-check passed."
+  },
+  "cleanup": {
+    "currentCandidateReinstalled": true,
+    "normalAppLaunched": true,
+    "testInputRemoved": true,
+    "localEphemeralCredentialsRemoved": true,
+    "testManagerAndKeychainRemovedByHarness": true,
+    "vpsUsed": false
+  }
+}

@@ -180,6 +180,39 @@ typedef struct XrayCoreHandle XrayCoreHandle;
 typedef struct XrayError XrayError;
 typedef int32_t (*XraySocketProtectCallback)(int32_t fd, void *user_data);
 
+/* ABI 1.11: original application tuple before FakeDNS restoration. Ports are
+ * host-endian, addresses network byte order. IPv4 uses the first 4 bytes. */
+typedef struct XrayTunFlow {
+  uint64_t id;
+  uint8_t protocol; /* TCP=6, UDP=17 */
+  uint8_t address_family; /* 4 or 6 */
+  uint16_t source_port;
+  uint16_t destination_port;
+  uint16_t reserved;
+  uint8_t source_address[16];
+  uint8_t destination_address[16];
+} XrayTunFlow;
+typedef int32_t (*XrayTunAdmissionCallback)(const XrayTunFlow *flow, void *user_data);
+typedef void (*XrayTunAdmissionRelease)(void *user_data);
+
+/* Register before config load. Return 1 to allow, any other value to deny.
+ * timeout_ms: 1..5000, fail_open: 0/1 for timeout or unavailable host workers.
+ * Callbacks run concurrently on four process-wide workers with a bounded queue.
+ * A timeout bounds the decision; it does not interrupt callback execution.
+ * On success ownership transfers: release runs exactly once after all callbacks
+ * retire, possibly after core_free and on any thread. On failure ownership stays
+ * with the caller. release is mandatory for a non-null callback. Both callbacks
+ * must return promptly, never unwind, and never call core lifecycle methods.
+ * Callback code/context must remain valid until release. flow is borrowed only
+ * during the call. To clear, pass NULL for callback/release/user_data.
+ * Disabled by default. Opting in drops unsupported IP protocols/fragments.
+ * TCP denials reset the local flow; UDP denials drop until 60 seconds idle. */
+XrayStatus xray_core_set_tun_admission(
+    XrayCoreHandle *handle, XrayTunAdmissionCallback callback,
+    XrayTunAdmissionRelease release, void *user_data, uint32_t timeout_ms,
+    int32_t fail_open, XrayError **error);
+
+
 /* Capability bits are additive within one ABI major. Preserve and ignore
  * unknown bits so a newer library remains usable through its older surface. */
 typedef enum XrayFfiCapability {
@@ -201,8 +234,26 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE = 1 << 15,
   XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND = 1 << 16,
   XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND = 1 << 17,
-  XRAY_FFI_CAPABILITY_PROFILE_IMPORT = 1 << 18
+  XRAY_FFI_CAPABILITY_PROFILE_IMPORT = 1 << 18,
+  XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND = 1 << 19,
+  XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND = 1 << 20,
+  XRAY_FFI_CAPABILITY_VMESS_OUTBOUND = 1 << 21,
+  XRAY_FFI_CAPABILITY_OUTBOUND_PROBE = 1 << 22,
+  XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS = 1 << 23,
+  XRAY_FFI_CAPABILITY_TUN_ADMISSION = 1 << 24
 } XrayFfiCapability;
+
+/* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
+ * Failure kinds mirror the outbound health snapshot's lastFailureKind. */
+typedef enum XrayOutboundProbeFailureKind {
+  XRAY_OUTBOUND_PROBE_FAILURE_NONE = 0,
+  XRAY_OUTBOUND_PROBE_FAILURE_TIMEOUT = 1,
+  XRAY_OUTBOUND_PROBE_FAILURE_TRANSPORT = 2,
+  XRAY_OUTBOUND_PROBE_FAILURE_TLS = 3,
+  XRAY_OUTBOUND_PROBE_FAILURE_IO = 4,
+  XRAY_OUTBOUND_PROBE_FAILURE_MALFORMED_HTTP_RESPONSE = 5,
+  XRAY_OUTBOUND_PROBE_FAILURE_HTTP_STATUS = 6
+} XrayOutboundProbeFailureKind;
 
 uint32_t xray_ffi_version_major(void);
 uint32_t xray_ffi_version_minor(void);
@@ -210,7 +261,8 @@ uint64_t xray_ffi_capabilities(void);
 
 /* ABI 1.5, PROFILE_IMPORT plus the selected outbound capability. Offline,
  * thread-safe and handle-free. UTF-8 request (<=256 KiB):
- * {"format":"hysteria2"|"wireguard","text":"...","name":"...",
+ * {"format":"trojan"|"shadowsocks2022"|"vmess"|"hysteria2"|"wireguard",
+ *  "text":"...","name":"...",
  *  "dnsServers":["IP",...]}; name and dnsServers are optional.
  * Source text <=64 KiB. No network, file access, commands or VPN startup.
  * Result (<=256 KiB): {"schemaVersion":1,"name":"...","serverAddress":"...",
@@ -226,6 +278,13 @@ XrayStatus xray_profile_import_json(
     char *buffer, size_t buffer_len, size_t *written, XrayError **error);
 
 XrayCoreHandle *xray_core_new(XrayError **error);
+/* ABI 1.10. Host resource policy, independent of Xray JSON and TUN profiles.
+ * Set before config load. Per Hysteria outbound: TCP 1..256, UDP 1..128;
+ * defaults 64/32. All inbounds share these limits. Invalid calls change nothing.
+ * Lifecycle call: do not race any other handle call. */
+XrayStatus xray_core_set_hysteria_stream_limits(
+    XrayCoreHandle *handle, uint32_t max_tcp_streams,
+    uint32_t max_udp_sessions, XrayError **error);
 /* Searches dir first, then the process default geodata directories. */
 XrayStatus xray_core_set_geodata_search_dir(
     XrayCoreHandle *handle,
@@ -324,6 +383,32 @@ XrayStatus xray_core_rebind_wireguard(
 XrayStatus xray_core_rebind_hysteria(
     XrayCoreHandle *handle,
     uint64_t *accepted,
+    XrayError **error);
+/* ABI 1.9, OUTBOUND_PROBE. Nonblocking, shared teardown preparation. Cancels
+ * current AND future probes on a running core; no-op before start/unloaded.
+ * Then drain shared calls before exclusive stop/load/free. A new handle with loaded config
+ * resets the latch. Normal traffic and health state are unaffected. */
+XrayStatus xray_core_cancel_outbound_probes(
+    XrayCoreHandle *handle,
+    XrayError **error);
+/* ABI 1.9, OUTBOUND_PROBE. Blocks for at most timeout_ms (1..=60000) while one
+ * HTTP(S) GET (URL rules as the startup probe) goes through a leaf outbound of a
+ * running core, bypassing routing and selectors; a NULL/empty outbound_tag uses
+ * the default outbound. delay_ms, failure_kind and http_status are required and
+ * zeroed on entry. OK means the probe ran: failure_kind NONE with delay_ms for
+ * a 2xx/3xx status line, else a failure kind; http_status is set only for
+ * HTTP_STATUS. Bad URL/timeout/tag: INVALID_ARGUMENT, no network. Loaded but
+ * not running or cancelled: RUNTIME_ERROR. No health/selector/accounting side effects.
+ * Concurrent with data-path/snapshot calls, but not lifecycle/free; never call
+ * it from the socket-protect callback. */
+XrayStatus xray_core_probe_outbound_url(
+    XrayCoreHandle *handle,
+    const char *url,
+    uint64_t timeout_ms,
+    const char *outbound_tag,
+    uint64_t *delay_ms,
+    int32_t *failure_kind,
+    uint16_t *http_status,
     XrayError **error);
 XrayStatus xray_core_set_socket_protect_callback(
     XrayCoreHandle *handle,

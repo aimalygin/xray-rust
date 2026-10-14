@@ -1,5 +1,8 @@
 //! Bounded, offline mobile profile import shared by the native SDKs.
 mod hysteria;
+mod shadowsocks;
+mod trojan;
+mod vmess;
 mod wireguard;
 
 use serde::{Deserialize, Serialize};
@@ -14,6 +17,9 @@ pub const MAX_RESULT_BYTES: usize = 256 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileFormat {
+    Trojan,
+    Vmess,
+    Shadowsocks2022,
     Hysteria2,
     Wireguard,
 }
@@ -128,6 +134,9 @@ pub fn import_profile(
         validate_name(name)?;
     }
     let mut profile = match format {
+        ProfileFormat::Shadowsocks2022 => shadowsocks::import(text, dns_servers)?,
+        ProfileFormat::Vmess => vmess::import(text, dns_servers)?,
+        ProfileFormat::Trojan => trojan::import(text, dns_servers)?,
         ProfileFormat::Hysteria2 => hysteria::import(text, dns_servers)?,
         ProfileFormat::Wireguard => wireguard::import(text, dns_servers)?,
     };

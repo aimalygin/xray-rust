@@ -1,0 +1,34 @@
+{
+  "buildTime": "2026-10-12T15:51:17.631631+00:00",
+  "coreCommit": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "device": {
+    "abi": "arm64-v8a",
+    "androidRelease": "15",
+    "buildFingerprint": "samsung/a14nsxx/a14:15/AP3A.240905.015.A2/A145FXXSEDZF1:user/release-keys",
+    "model": "SM-A145F",
+    "sdk": "35"
+  },
+  "harnessProfile": "debug",
+  "nativeSha256": "420e35d063e43005fd8a174894c7fdbf29197b56bcb6e802a04fb7743e52c884",
+  "packages": [
+    {
+      "apk": "android/devicehost/build/intermediates/apk/debug/devicehost-debug.apk",
+      "nativeLibraries": {
+        "lib/arm64-v8a/libxray_ffi.so": "420e35d063e43005fd8a174894c7fdbf29197b56bcb6e802a04fb7743e52c884",
+        "lib/arm64-v8a/libxray_mobile_jni.so": "05edc946cd715c7064e0f92723b7ceb4e799508b8afabd77a6b4008cccc422e8"
+      },
+      "package": "org.xrayrust.devicehost.v08",
+      "sha256": "ce8f66b44865bed8e0a2689a35c6ed4d2d0a3a72c71f9fd6a3880abfb2f52762"
+    },
+    {
+      "apk": "android/deviceprobe/build/intermediates/apk/debug/deviceprobe-debug.apk",
+      "nativeLibraries": {
+        "lib/arm64-v8a/libxray_tun_admission_probe.so": "303198112ea666bcdfd8a08dcb5b9d0b832ad53cd41268d44f174552cca606a5"
+      },
+      "package": "org.xrayrust.deviceprobe.v08",
+      "sha256": "9b93cc130a29c9de47fc711f6d611a539cf2293573efdf3d2305184b60f53693"
+    }
+  ],
+  "runtimeProfile": "release",
+  "sdkCommit": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7"
+}

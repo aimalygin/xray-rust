@@ -22,3 +22,7 @@ env -u XRAY_HYSTERIA_BINARY NATIVE_HYSTERIA_BINARY="$TEST_ROOT/hysteria" \
 
 env -u XRAY_HYSTERIA_BINARY NATIVE_HYSTERIA_BINARY="$TEST_ROOT/hysteria" \
   cargo test --locked -p xray-core-rs --lib outbound::hysteria::tests -- --include-ignored --nocapture
+
+env -u XRAY_HYSTERIA_BINARY NATIVE_HYSTERIA_BINARY="$TEST_ROOT/hysteria" \
+  cargo test --locked -p xray-core-rs --test hysteria_runtime_tests \
+  udp_noise_ -- --ignored --nocapture

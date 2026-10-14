@@ -1,0 +1,625 @@
+[
+  {
+    "event": "abi",
+    "major": 1,
+    "minor": 11,
+    "protocol": "setup",
+    "time": "2026-10-12T17:47:31Z"
+  },
+  {
+    "event": "import",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:31Z"
+  },
+  {
+    "event": "access-network",
+    "interface": "wifi",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:31Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:31Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "wifi",
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:31Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "app-active",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:31Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:34Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:34Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:34Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:34Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7583167499979027,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:35Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:35Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7583063750062138,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:36Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:36Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.0364920833380893,
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:37Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:37Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.35724104166729376,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:37Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:37Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:39Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:47Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "code": 0,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "udp-failed",
+    "exchangeSeconds": 10.294899499975145,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:48Z"
+  },
+  {
+    "attempt": 1,
+    "event": "recovery-retry",
+    "protocol": "shadowsocks2022",
+    "stage": "wifi-baseline",
+    "time": "2026-10-12T17:47:48Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:48Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.9767032082891092,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:49Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:49Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:50Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7570755417109467,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:50Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:50Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7465297083253972,
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:51Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:51Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:51Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.237876791623421,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:47:51Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:47:51Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:56Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:47:57Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:48:00Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "code": 0,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "udp-failed",
+    "exchangeSeconds": 10.420618958363775,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:02Z"
+  },
+  {
+    "attempt": 2,
+    "event": "recovery-retry",
+    "protocol": "shadowsocks2022",
+    "stage": "wifi-baseline",
+    "time": "2026-10-12T17:48:02Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:02Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.8386140833608806,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:03Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:03Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "shadowsocks2022",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:48:03Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.810338708339259,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:04Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:04Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.8257869583321735,
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:05Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:05Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.24781487503787503,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:05Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:05Z"
+  },
+  {
+    "code": 0,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "udp-failed",
+    "exchangeSeconds": 10.362293083337136,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:16Z"
+  },
+  {
+    "attempt": 3,
+    "event": "recovery-retry",
+    "protocol": "shadowsocks2022",
+    "stage": "wifi-baseline",
+    "time": "2026-10-12T17:48:16Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:16Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.8634692083578557,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:17Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:17Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7728197916294448,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:18Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:18Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7949454166227952,
+    "host": "v07-probe-8100d6ad4736.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.34761125000659376,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "code": 0,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "udp-failed",
+    "exchangeSeconds": 0.10784137499285862,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "code": 0,
+    "domain": "XrayProtocolDeviceProbe.Network",
+    "event": "failure",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383931.613623375"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383931.7773654584"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383936.0109296667"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383944.33813391667"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383947.44034933334"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383948.38515245833"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383953.7970554167"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383954.80721500004"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383957.88561608334"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383960.6647844167"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "failure",
+    "time": "2026-10-12T17:48:19Z"
+  },
+  {
+    "cycle": 0,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4163184,
+    "inboundPackets": 833,
+    "outboundPackets": 727,
+    "protocol": "shadowsocks2022",
+    "rss": 29704192,
+    "runtime": "bc1efcf8-9e27-48c3-8686-929cd4844772",
+    "stage": "failure",
+    "tcp": 2,
+    "threads": 8,
+    "time": "2026-10-12T17:48:19Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 8
+  },
+  {
+    "event": "complete",
+    "protocol": "shadowsocks2022",
+    "result": "failed",
+    "time": "2026-10-12T17:48:20Z"
+  }
+]

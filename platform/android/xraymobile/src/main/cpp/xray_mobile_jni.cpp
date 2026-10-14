@@ -42,6 +42,68 @@ struct AndroidSocketProtector {
   }
 };
 
+// Each worker attachment is scoped, including context destruction after close.
+class AdmissionEnv {
+ public:
+  explicit AdmissionEnv(JavaVM *vm) : vm_(vm) {
+    if (vm_ == nullptr) return;
+    const jint status = vm_->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+#if defined(__ANDROID__)
+      attached_ = vm_->AttachCurrentThreadAsDaemon(&env, nullptr) == JNI_OK;
+#else
+      attached_ = vm_->AttachCurrentThreadAsDaemon(reinterpret_cast<void **>(&env), nullptr) == JNI_OK;
+#endif
+      if (!attached_) env = nullptr;
+    } else if (status != JNI_OK) env = nullptr;
+  }
+  ~AdmissionEnv() { if (attached_) vm_->DetachCurrentThread(); }
+  JNIEnv *env = nullptr;
+ private:
+  JavaVM *vm_;
+  bool attached_ = false;
+};
+
+struct AndroidTunAdmission {
+  JavaVM *vm = nullptr;
+  jobject object = nullptr;
+  jmethodID method = nullptr;
+  ~AndroidTunAdmission() {
+    AdmissionEnv scope(vm);
+    if (scope.env != nullptr && object != nullptr) scope.env->DeleteGlobalRef(object);
+  }
+};
+
+int32_t admit_tun_flow(const XrayTunFlow *flow, void *user_data) {
+  auto *callback = static_cast<AndroidTunAdmission *>(user_data);
+  AdmissionEnv scope(callback->vm);
+  JNIEnv *env = scope.env;
+  if (env == nullptr || env->PushLocalFrame(4) < 0) {
+    if (env != nullptr && env->ExceptionCheck()) env->ExceptionClear();
+    return 0;
+  }
+  const jsize length = flow->address_family == 4 ? 4 : 16;
+  jbyteArray source = env->NewByteArray(length);
+  jbyteArray destination = env->NewByteArray(length);
+  jboolean allowed = JNI_FALSE;
+  if (source != nullptr && destination != nullptr && !env->ExceptionCheck()) {
+    env->SetByteArrayRegion(source, 0, length, reinterpret_cast<const jbyte *>(flow->source_address));
+    env->SetByteArrayRegion(destination, 0, length, reinterpret_cast<const jbyte *>(flow->destination_address));
+    if (!env->ExceptionCheck()) {
+      allowed = env->CallBooleanMethod(callback->object, callback->method,
+          static_cast<jlong>(flow->id), static_cast<jint>(flow->protocol), source,
+          static_cast<jint>(flow->source_port), destination, static_cast<jint>(flow->destination_port));
+    }
+  }
+  if (env->ExceptionCheck()) { env->ExceptionClear(); allowed = JNI_FALSE; }
+  env->PopLocalFrame(nullptr);
+  return allowed == JNI_TRUE ? 1 : 0;
+}
+
+void release_tun_admission(void *user_data) {
+  delete static_cast<AndroidTunAdmission *>(user_data);
+}
+
 struct NativeCore {
   XrayCoreHandle *core = nullptr;
   std::unique_ptr<AndroidSocketProtector> protector;
@@ -739,6 +801,135 @@ Java_org_xrayrust_mobile_XrayCore_nativeCloseConnection(
   check_status(env, status, error);
 } XRAY_JNI_CATCH_VOID(env)
 
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeRebindHysteria(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return 0;
+  uint64_t accepted = 0;
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_rebind_hysteria(native->core, &accepted, &error);
+  check_status(env, status, error);
+  return static_cast<jlong>(accepted);
+} XRAY_JNI_CATCH_RETURN(env, 0)
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeRebindWireGuard(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return 0;
+  uint64_t accepted = 0;
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_rebind_wireguard(native->core, &accepted, &error);
+  check_status(env, status, error);
+  return static_cast<jlong>(accepted);
+} XRAY_JNI_CATCH_RETURN(env, 0)
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetTunAdmission(
+    JNIEnv *env, jobject, jlong handle, jobject object, jint timeout_ms, jboolean fail_open) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return;
+  if (object == nullptr || timeout_ms < 1 || timeout_ms > 5000) {
+    throw_illegal_argument(env, "TUN admission requires a callback and timeout 1..5000 ms");
+    return;
+  }
+  auto callback = std::make_unique<AndroidTunAdmission>();
+  if (env->GetJavaVM(&callback->vm) != JNI_OK) return;
+  callback->object = env->NewGlobalRef(object);
+  if (callback->object == nullptr) return;
+  jclass klass = env->GetObjectClass(object);
+  if (klass == nullptr) return;
+  callback->method = env->GetMethodID(klass, "admitNative", "(JI[BI[BI)Z");
+  env->DeleteLocalRef(klass);
+  if (callback->method == nullptr) return;
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_set_tun_admission(native->core,
+      admit_tun_flow, release_tun_admission, callback.get(),
+      static_cast<uint32_t>(timeout_ms), fail_open == JNI_TRUE ? 1 : 0, &error);
+  if (status == XRAY_STATUS_OK) callback.release();
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetHysteriaStreamLimits(
+    JNIEnv *env, jobject, jlong handle, jint tcp, jint udp) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return;
+  if (tcp < 1 || tcp > 256 || udp < 1 || udp > 128) {
+    throw_illegal_argument(env, "Hysteria limits require TCP 1..256 and UDP 1..128");
+    return;
+  }
+  XrayError *error = nullptr;
+  const XrayStatus status = xray_core_set_hysteria_stream_limits(
+      native->core, static_cast<uint32_t>(tcp), static_cast<uint32_t>(udp), &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
+// Blocks for at most timeout_ms. The Kotlin caller holds the data-path read
+// lock. Lifecycle calls cancel probes, then drain readers before freeing.
+extern "C" JNIEXPORT jlongArray JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeProbeOutboundUrl(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring url,
+    jlong timeout_ms,
+    jstring outbound_tag) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return nullptr;
+  }
+
+  std::string utf8_url;
+  if (!jstring_to_utf8(env, url, &utf8_url)) {
+    return nullptr;
+  }
+
+  std::string utf8_outbound_tag;
+  const char *raw_outbound_tag = nullptr;
+  if (outbound_tag != nullptr) {
+    if (!jstring_to_utf8(env, outbound_tag, &utf8_outbound_tag)) {
+      return nullptr;
+    }
+    raw_outbound_tag = utf8_outbound_tag.c_str();
+  }
+
+  // Negative values map to 0 so the core rejects them as an invalid timeout.
+  const uint64_t ffi_timeout_ms =
+      timeout_ms > 0 ? static_cast<uint64_t>(timeout_ms) : 0;
+  uint64_t delay_ms = 0;
+  int32_t failure_kind = XRAY_OUTBOUND_PROBE_FAILURE_NONE;
+  uint16_t http_status = 0;
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_probe_outbound_url(
+      native->core,
+      utf8_url.c_str(),
+      ffi_timeout_ms,
+      raw_outbound_tag,
+      &delay_ms,
+      &failure_kind,
+      &http_status,
+      &error);
+  if (!check_status(env, status, error)) {
+    return nullptr;
+  }
+
+  constexpr uint64_t kMaxJlong =
+      static_cast<uint64_t>(std::numeric_limits<jlong>::max());
+  const jlong values[3] = {
+      static_cast<jlong>(delay_ms > kMaxJlong ? kMaxJlong : delay_ms),
+      static_cast<jlong>(failure_kind),
+      static_cast<jlong>(http_status),
+  };
+  jlongArray array = env->NewLongArray(3);
+  if (array == nullptr) {
+    return nullptr;
+  }
+  env->SetLongArrayRegion(array, 0, 3, values);
+  return array;
+} XRAY_JNI_CATCH_RETURN(env, nullptr)
+
 extern "C" JNIEXPORT jobject JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativePollTunDiagnosticEvent(
     JNIEnv *env,
@@ -1102,6 +1293,18 @@ Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle
 
   XrayError *error = nullptr;
   XrayStatus status = xray_core_start(native->core, &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeCancelOutboundProbes(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_cancel_outbound_probes(native->core, &error);
   check_status(env, status, error);
 } XRAY_JNI_CATCH_VOID(env)
 

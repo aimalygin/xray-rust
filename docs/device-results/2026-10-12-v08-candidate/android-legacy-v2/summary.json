@@ -1,0 +1,8 @@
+{
+  "cases": 8,
+  "passed": true,
+  "traffic": {
+    "http": 104,
+    "udp": 104
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "candidate": {
+    "commit": "9198a8f2770496199022b531b01b3a2b35ec1bcc",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-duplex-profile/normal",
+    "sha256": "528e6532d6919bc867dc0c7993bc090125ed3a725c0ebbc12db02791f60ff8e8",
+    "tree": "62ed0279dda3b0b94312bf0a806fc9eb4bf0a01b"
+  },
+  "files": {
+    "target/v08-census-investigation/census-harness": "bc334198a065815e845e162a988be828bcbaa37ba953bb8c0851170191ad0f17",
+    "target/v08-census-investigation/libcensus.dylib": "032be4f0d3260c59906f480cf95f9f8348fb3d91113b36370cb649cdfd00adc7",
+    "target/v08-duplex-profile/normal": "528e6532d6919bc867dc0c7993bc090125ed3a725c0ebbc12db02791f60ff8e8",
+    "target/v08-duplex-profile/profile-harness": "1afb88acbd1b77b1a63bfc0672c27c4bee8da8b0d3625d2f78ca04c3ac9ec8b0",
+    "target/v08-duplex-profile/symbols": "4fceb4c118c2fed49a728bc4a6dc72becaaccf31da0881d64a6f86464fe88e28"
+  },
+  "harness": {
+    "build_arguments": [
+      "build",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-bench",
+      "--bin",
+      "xray-bench"
+    ],
+    "commit": "2d8afb6e6d9f601f0446aa74382f6e24dac9a7dd",
+    "incremental": false,
+    "path": "/Users/antonmalygin/xray-rust/target/v08-io-final/bin/harness",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+    "sha256": "98995b304613f27bd5040221bcb1462f2c85a8eaff264eb2a4b18962714454ce",
+    "tree": "394221c9efac31d9a57de15c9153add9182d528a"
+  },
+  "normal_confirmation_reason": "OS diagnostic full-duplex CPU totals reversed the ordinary series ranking; repeat ordinary case without instrumentation, retain both series",
+  "ordinary_release_restored_byte_identically": true,
+  "platform": "macOS 26.6.2 / Apple M3 Pro / arm64",
+  "profiler": "xctrace 27.0 (27A266a), Time Profiler, 1 ms on-CPU, kernel stacks enabled, waiting threads disabled",
+  "runtime_commit": "9198a8f2770496199022b531b01b3a2b35ec1bcc",
+  "runtime_tree": "62ed0279dda3b0b94312bf0a806fc9eb4bf0a01b",
+  "runtime_workers": "stock defaults: Rust CLI 2, Go default; inherited worker/GC overrides removed",
+  "scope": "Current ordinary runtime and diagnostic builds; no production change",
+  "singbox": {
+    "commit": "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-io-final/bin/singbox",
+    "sha256": "5d17d2b91fb5b022be50fc49c74cb6aed84dcae9e94011159a31da3f211412ff",
+    "version": "1.13.20"
+  },
+  "source_head": "a7ac07616247dd035876dc5f52e1612b44688050",
+  "symbol_build_arguments": [
+    "cargo",
+    "rustc",
+    "--locked",
+    "--offline",
+    "--release",
+    "-p",
+    "xray-cli",
+    "--bin",
+    "xray-rust",
+    "--",
+    "-C",
+    "strip=none",
+    "-C",
+    "debuginfo=1"
+  ],
+  "trace_privacy": "Native trace and TOC remain local because TOC includes inherited environment; publish only target time-profile tables and capture metadata",
+  "xray": {
+    "commit": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-io-final/bin/xray",
+    "sha256": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+    "version": "26.7.28"
+  }
+}

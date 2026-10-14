@@ -1,0 +1,102 @@
+{"event": "abi", "major": 1, "minor": 8, "protocol": "setup", "time": "2026-10-04T18:37:49Z"}
+{"event": "import", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:49Z"}
+{"cycle": 1, "event": "connected", "protocol": "hysteria2", "seconds": 0.2505819797515869, "time": "2026-10-04T18:37:50Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:37:50Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 5.3151792916651175, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:55Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:37:55Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.20060183333407622, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:55Z"}
+{"event": "tcp-start", "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "time": "2026-10-04T18:37:55Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10886395833222196, "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:56Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:37:56Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05318324999825563, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:56Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:37:56Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05240604166465346, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:56Z"}
+{"event": "dns-anchor", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:56Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23338.351171583334"}, {"interface": "", "kind": "applied", "uptime": "23338.873727416667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23341.859239666668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23343.815659583335"}], "protocol": "hysteria2", "stage": "after-traffic", "time": "2026-10-04T18:37:56Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4605552, "inboundPackets": 281, "outboundPackets": 240, "protocol": "hysteria2", "rss": 32931840, "runtime": "75ebeab4-5d5f-4039-a10a-ae2c0112a383", "stage": "after-traffic", "tcp": 3, "threads": 10, "time": "2026-10-04T18:37:56Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 2}
+{"cycle": 1, "event": "connection-close-request", "ids": [2, 3, 4, 5, 6], "protocol": "hysteria2", "time": "2026-10-04T18:37:56Z"}
+{"closedIDs": [2, 3, 4, 5, 6], "cycle": 1, "event": "connection-close-verified", "newIDs": [7], "protocol": "hysteria2", "seconds": 2.0714623333333293, "time": "2026-10-04T18:37:58Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23338.351171583334"}, {"interface": "", "kind": "applied", "uptime": "23338.873727416667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23341.859239666668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23343.815659583335"}, {"interface": "en0", "kind": "unchanged", "uptime": "23344.416811833336"}], "protocol": "hysteria2", "stage": "after-close", "time": "2026-10-04T18:37:58Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4441712, "inboundPackets": 291, "outboundPackets": 252, "protocol": "hysteria2", "rss": 33161216, "runtime": "75ebeab4-5d5f-4039-a10a-ae2c0112a383", "stage": "after-close", "tcp": 0, "threads": 10, "time": "2026-10-04T18:37:58Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:37:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0836123333319847, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:58Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:37:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08917879166619969, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:58Z"}
+{"event": "tcp-start", "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "time": "2026-10-04T18:37:58Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.16743425000095158, "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:59Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:37:59Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.053542291669145925, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:59Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:37:59Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05315816666552564, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:59Z"}
+{"event": "dns-anchor", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:59Z"}
+{"cycle": 1, "event": "traffic-after-close", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:59Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23338.351171583334"}, {"interface": "", "kind": "applied", "uptime": "23338.873727416667"}, {"interface": "en0", "kind": "unchanged", "uptime": "23341.859239666668"}, {"interface": "en0", "kind": "unchanged", "uptime": "23343.815659583335"}, {"interface": "en0", "kind": "unchanged", "uptime": "23344.416811833336"}], "protocol": "hysteria2", "stage": "after-recovery", "time": "2026-10-04T18:37:59Z"}
+{"cycle": 1, "droppedPackets": 0, "event": "sample", "footprint": 4589168, "inboundPackets": 498, "outboundPackets": 422, "protocol": "hysteria2", "rss": 33374208, "runtime": "75ebeab4-5d5f-4039-a10a-ae2c0112a383", "stage": "after-recovery", "tcp": 3, "threads": 10, "time": "2026-10-04T18:37:59Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 1, "event": "disconnected", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:37:59Z"}
+{"cycle": 2, "event": "connected", "protocol": "hysteria2", "seconds": 0.2335599660873413, "time": "2026-10-04T18:38:00Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.20647591666784137, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:00Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.07540766666716081, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:00Z"}
+{"event": "tcp-start", "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08918345833080821, "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.053404166665131925, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:00Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05573879166695406, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:00Z"}
+{"event": "dns-anchor", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:00Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23348.187431583334"}, {"interface": "", "kind": "applied", "uptime": "23348.720457375002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23348.743148875"}], "protocol": "hysteria2", "stage": "after-traffic", "time": "2026-10-04T18:38:00Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4589168, "inboundPackets": 232, "outboundPackets": 189, "protocol": "hysteria2", "rss": 32079872, "runtime": "7bc5ca9f-d676-4737-b024-3189de0d37ca", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:38:00Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 6}
+{"cycle": 2, "event": "connection-close-request", "ids": [1, 2, 3, 4, 5, 6, 7, 8, 9], "protocol": "hysteria2", "time": "2026-10-04T18:38:00Z"}
+{"closedIDs": [1, 2, 3, 4, 5, 6, 7, 8, 9], "cycle": 2, "event": "connection-close-verified", "newIDs": [11], "protocol": "hysteria2", "seconds": 2.0955144583313086, "time": "2026-10-04T18:38:03Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23348.187431583334"}, {"interface": "", "kind": "applied", "uptime": "23348.720457375002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23348.743148875"}], "protocol": "hysteria2", "stage": "after-close", "time": "2026-10-04T18:38:03Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4343408, "inboundPackets": 256, "outboundPackets": 211, "protocol": "hysteria2", "rss": 32522240, "runtime": "7bc5ca9f-d676-4737-b024-3189de0d37ca", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:38:03Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.10350991666564369, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09438945833244361, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"event": "tcp-start", "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.14196441666717874, "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05622162500003469, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:03Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.05214104166589095, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"event": "dns-anchor", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"cycle": 2, "event": "traffic-after-close", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:03Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23348.187431583334"}, {"interface": "", "kind": "applied", "uptime": "23348.720457375002"}, {"interface": "en0", "kind": "unchanged", "uptime": "23348.743148875"}], "protocol": "hysteria2", "stage": "after-recovery", "time": "2026-10-04T18:38:03Z"}
+{"cycle": 2, "droppedPackets": 0, "event": "sample", "footprint": 4441712, "inboundPackets": 470, "outboundPackets": 395, "protocol": "hysteria2", "rss": 32751616, "runtime": "7bc5ca9f-d676-4737-b024-3189de0d37ca", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:38:03Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 2, "event": "disconnected", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:04Z"}
+{"cycle": 3, "event": "connected", "protocol": "hysteria2", "seconds": 0.24278497695922852, "time": "2026-10-04T18:38:04Z"}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:04Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.09193958333344199, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:04Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:04Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.07356987499952083, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:04Z"}
+{"event": "tcp-start", "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "time": "2026-10-04T18:38:05Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0854313749987341, "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:05Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:05Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05519283333342173, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:05Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:05Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.051914291667344514, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:05Z"}
+{"event": "dns-anchor", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:05Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23352.804702458336"}, {"interface": "", "kind": "applied", "uptime": "23353.33338379167"}], "protocol": "hysteria2", "stage": "after-traffic", "time": "2026-10-04T18:38:05Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4654704, "inboundPackets": 226, "outboundPackets": 196, "protocol": "hysteria2", "rss": 32178176, "runtime": "8cdd4172-b4a0-4241-ab81-0f5a743ea384", "stage": "after-traffic", "tcp": 3, "threads": 11, "time": "2026-10-04T18:38:05Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "connection-close-request", "ids": [1, 2, 4, 5, 6, 7], "protocol": "hysteria2", "time": "2026-10-04T18:38:05Z"}
+{"closedIDs": [1, 2, 4, 5, 6, 7], "cycle": 3, "event": "connection-close-verified", "newIDs": [8], "protocol": "hysteria2", "seconds": 2.125855333335494, "time": "2026-10-04T18:38:07Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23352.804702458336"}, {"interface": "", "kind": "applied", "uptime": "23353.33338379167"}], "protocol": "hysteria2", "stage": "after-close", "time": "2026-10-04T18:38:07Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4408944, "inboundPackets": 243, "outboundPackets": 214, "protocol": "hysteria2", "rss": 32407552, "runtime": "8cdd4172-b4a0-4241-ab81-0f5a743ea384", "stage": "after-close", "tcp": 0, "threads": 11, "time": "2026-10-04T18:38:07Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 1}
+{"event": "tcp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:07Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.0748022083316755, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:07Z"}
+{"event": "tcp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:07Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.08782141666597454, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:07Z"}
+{"event": "tcp-start", "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "time": "2026-10-04T18:38:07Z"}
+{"bytes": 65536, "event": "tcp", "exchangeSeconds": 0.07879195833447739, "host": "v07-probe-596e62d49552.test", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}
+{"bytes": 1392, "event": "udp-start", "host": "198.51.100.7", "protocol": "hysteria2", "time": "2026-10-04T18:38:08Z"}
+{"bytes": 1392, "event": "udp", "exchangeSeconds": 0.05206750000070315, "host": "198.51.100.7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}
+{"bytes": 1372, "event": "udp-start", "host": "2001:db8::7", "protocol": "hysteria2", "time": "2026-10-04T18:38:08Z"}
+{"bytes": 1372, "event": "udp", "exchangeSeconds": 0.050247916668013204, "host": "2001:db8::7", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}
+{"event": "dns-anchor", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}
+{"cycle": 3, "event": "traffic-after-close", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}
+{"event": "network-observer", "events": [{"interface": "en0", "kind": "scheduled", "uptime": "23352.804702458336"}, {"interface": "", "kind": "applied", "uptime": "23353.33338379167"}, {"interface": "en0", "kind": "unchanged", "uptime": "23356.125403583334"}], "protocol": "hysteria2", "stage": "after-recovery", "time": "2026-10-04T18:38:08Z"}
+{"cycle": 3, "droppedPackets": 0, "event": "sample", "footprint": 4474480, "inboundPackets": 440, "outboundPackets": 385, "protocol": "hysteria2", "rss": 32620544, "runtime": "8cdd4172-b4a0-4241-ab81-0f5a743ea384", "stage": "after-recovery", "tcp": 3, "threads": 11, "time": "2026-10-04T18:38:08Z", "tunFDReadLoopExits": 0, "tunFDWriteLoopExits": 0, "udp": 3}
+{"cycle": 3, "event": "disconnected", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}
+{"event": "complete", "protocol": "hysteria2", "result": "passed", "time": "2026-10-04T18:38:08Z"}

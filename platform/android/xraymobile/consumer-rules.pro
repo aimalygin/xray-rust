@@ -8,3 +8,8 @@
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }
+
+# Called by native TUN admission workers after asynchronous flow creation.
+-keep class org.xrayrust.mobile.NativeTunAdmission {
+    boolean admitNative(long, int, byte[], int, byte[], int);
+}

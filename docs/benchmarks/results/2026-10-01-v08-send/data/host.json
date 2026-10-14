@@ -1,0 +1,10 @@
+{
+  "captured_utc": "2026-10-02T02:01:59.133198+00:00",
+  "capture_phase": "after paired throughput; during held-memory campaign",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "macos": "26.6.2",
+  "cpu": "Apple M3 Pro",
+  "memory_bytes": 19327352832,
+  "cores": 12,
+  "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=26607715)\t100%; charged; 0:00 remaining present: true"
+}

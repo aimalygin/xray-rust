@@ -60,6 +60,7 @@ class XrayTunBackendTest {
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 2))
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 3))
         validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 4))
+        validateXrayFfiVersion(XrayFfiVersion(major = 1, minor = 9))
     }
 
     @Test
@@ -96,6 +97,42 @@ class XrayTunBackendTest {
         assertEquals(1L shl 13, XrayFfiCapability.OutboundHealth.mask)
         assertEquals(1L shl 14, XrayFfiCapability.ConnectionManagement.mask)
         assertEquals(1L shl 15, XrayFfiCapability.RoutingPolicyUpdate.mask)
+        assertEquals(1L shl 22, XrayFfiCapability.OutboundProbe.mask)
+    }
+
+    @Test
+    fun outboundProbeResultDecodesNativeCarrier() {
+        val reachable = outboundProbeResultFromNative(longArrayOf(42, 0, 0))
+        assertTrue(reachable.isReachable)
+        assertEquals(42L, reachable.delayMs)
+        assertNull(reachable.failureKind)
+        assertNull(reachable.httpStatus)
+
+        val expected = listOf(
+            1L to XrayOutboundHealthFailureKind.Timeout,
+            2L to XrayOutboundHealthFailureKind.Transport,
+            3L to XrayOutboundHealthFailureKind.Tls,
+            4L to XrayOutboundHealthFailureKind.Io,
+            5L to XrayOutboundHealthFailureKind.MalformedHttpResponse,
+            6L to XrayOutboundHealthFailureKind.HttpStatus,
+        )
+        for ((nativeKind, kind) in expected) {
+            val failed = outboundProbeResultFromNative(longArrayOf(0, nativeKind, 503))
+            assertFalse(failed.isReachable)
+            assertNull(failed.delayMs)
+            assertEquals(kind, failed.failureKind)
+            assertEquals(
+                if (kind == XrayOutboundHealthFailureKind.HttpStatus) 503 else null,
+                failed.httpStatus,
+            )
+        }
+
+        assertThrows(IllegalStateException::class.java) {
+            outboundProbeResultFromNative(longArrayOf(0, 7, 0))
+        }
+        assertThrows(IllegalStateException::class.java) {
+            outboundProbeResultFromNative(longArrayOf(0, 0))
+        }
     }
 
     @Test

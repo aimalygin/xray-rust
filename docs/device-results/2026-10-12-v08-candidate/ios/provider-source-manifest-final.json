@@ -1,0 +1,12 @@
+{
+  "core": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+  "files": {
+    "Tunnel/PacketTunnelProvider.swift": "1cf526c42f6e13d60cc503e0fd1f1bf161f8dbc2c29dd375754a248c85c08680",
+    "XrayClient/XrayClientApp.swift": "82086886d77be36e0dc45751189a3c3e3eda16d26d5837d9ebdde81b367d46ea"
+  },
+  "priorHarness": "device-provider-hysteria-fixes-2026-10-11/harness/FixedClient",
+  "productionSDKChanged": false,
+  "scope": "signed host overrides; actual production provider/Swift/FFI/core; no calibrated performance claim",
+  "sdk": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7",
+  "supersedes": "provider-source-manifest.json; launch-only correction before successful run"
+}

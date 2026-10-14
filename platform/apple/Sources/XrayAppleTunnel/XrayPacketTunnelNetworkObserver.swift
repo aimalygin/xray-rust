@@ -100,15 +100,21 @@ struct XrayPacketTunnelCarrierSignature: Equatable {
 
 struct XrayPacketTunnelCarrierTracker {
     private var previous: XrayPacketTunnelCarrierSignature?
+    private(set) var hasObservedPath = false
 
     mutating func update(_ signature: XrayPacketTunnelCarrierSignature?) -> Bool {
+        let isInitialPath = !hasObservedPath
+        hasObservedPath = true
         guard let signature else {
             previous = nil
             return false
         }
-        guard signature != previous else { return false }
+        let changed = signature != previous
         previous = signature
-        return true
+        // NWPathMonitor first reports the current path, not a transition.
+        // Fresh sockets already use that path; migrating them 500 ms later can
+        // discard in-flight QUIC datagrams during the first application exchange.
+        return !isInitialPath && changed
     }
 }
 
@@ -160,8 +166,9 @@ final class XrayPacketTunnelNetworkObserver: @unchecked Sendable {
             } else {
                 // Unknown/other interface or address enumeration failure:
                 // retain raw-path behavior instead of missing a real outage.
+                let isInitialPath = !tracker.hasObservedPath
                 _ = tracker.update(nil)
-                changed = path != previousFallback
+                changed = !isInitialPath && path != previousFallback
                 previousFallback = path
             }
 #if DEBUG

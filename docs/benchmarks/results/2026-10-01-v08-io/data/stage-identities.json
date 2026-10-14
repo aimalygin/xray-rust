@@ -1,0 +1,43 @@
+{
+  "patch_base": "c6c1c90a6214d1d7550c8fd2c9352e96ee12cd70",
+  "baseline_runtime": "ce6deef3fe1b3f8536c471235dd2a6c003e7e9e5",
+  "baseline_sha256": "2180631c4187dd3cd85fda27d06c3b98a22f92c0954b841d3a1c13d9bd1beb04",
+  "stages": [
+    {
+      "name": "decoupled",
+      "sha256": "69dec04cb17486818372564a8c89c32cc8da9e146edc6b03ed0bac5b6efa869e",
+      "patch": "decoupled.patch",
+      "description": "Backpressure decoupling only",
+      "patch_sha256": "9dd98745283e8b255908f84f48631b8288477042978980241183c99cc43abe97"
+    },
+    {
+      "name": "read-buffer",
+      "sha256": "790e280c58ebccfb393625e359d490db6a2d5915c8e6e5070ee93bc28952a3cd",
+      "patch": "read-buffer.patch",
+      "description": "Decoupling and one bounded read buffer",
+      "patch_sha256": "9c6c6851f653acd3757866ebef445c78bf2b5b63fe8f9b060b01821e080975a0"
+    },
+    {
+      "name": "read-word",
+      "sha256": "05e9cbadabc1512d5a3a9ab50d6382eb90eb0f7655ab50edc89bb199c8a3c386",
+      "patch": "read-word.patch",
+      "description": "Read buffer plus word zeroization",
+      "patch_sha256": "b0e470be8685882c0f5c54b0b40017fa734447bd00bd05c1d9b13d87a5421ec1"
+    },
+    {
+      "name": "word-only",
+      "sha256": "63c370bd2ab7bc69c40de6f42e72dd997a8a4f4bd5dac4e27a23a5f10b7ee0d3",
+      "patch": "word-only.patch",
+      "description": "Decoupling and word zeroization, old reads",
+      "patch_sha256": "988ec0b1dee72e68296d042f3dbfbc56987236ddeef9af9695624ff466d144d8"
+    },
+    {
+      "name": "final",
+      "sha256": "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab",
+      "patch": "final.patch",
+      "description": "Combined changes, refined VMess two-byte prefix allocation",
+      "patch_sha256": "2087936237d8726ae51f22990c5aeeb21806b6a4339a4bcf5ba8651eeab4ba58"
+    }
+  ],
+  "verified_against_frozen_stage_binaries": true
+}

@@ -1,0 +1,46 @@
+{
+  "baseline": "f5aefca40b9f492e8095ba3c1620ae627ce331ee",
+  "candidate": "17f0d8c77fc177d50d0aa08a34a40f767a9d3d07",
+  "production_build": "bc9db66da5484606838af8308d40493e79e176a0",
+  "xray_core": "5ca6f4b7d4dc20a881d4330e498892697627ec0c",
+  "combined_with_pr42": "e7ff63b0f9904016640c8d1b867af61cf6487846",
+  "pr42": "1388c613971c8785f22107e2fac6be85f956e388",
+  "host": {
+    "cpu": "Apple M3 Pro",
+    "logical_cpus": 12,
+    "memory_bytes": 19327352832,
+    "os": "macOS 26.6.2 (25G83)"
+  },
+  "rust": "1.96.0",
+  "go": "1.26.5",
+  "tests": {
+    "rust_all_targets": {
+      "passed": 2339,
+      "ignored": 72
+    },
+    "swift": {
+      "passed": 323
+    },
+    "host_jni": {
+      "passed": 9,
+      "probe_native": 2
+    },
+    "live_xray": {
+      "passed": 23
+    },
+    "combined_pr42": {
+      "blackhole": 11,
+      "probe": 5,
+      "live_protocols": 6,
+      "inner_tls": 2,
+      "ffi": 6
+    },
+    "policy": {
+      "promotion": 61,
+      "gitleaks_scope": 9,
+      "public_fixtures": 13
+    },
+    "h3_race_repetitions": 100
+  },
+  "performance_runs": 220
+}

@@ -1,0 +1,10 @@
+{
+  "cycles": 2,
+  "httpAttempts": 240,
+  "rssGrowthBytes": 8388608,
+  "rssGrowthFraction": 0.25,
+  "settleSeconds": 20,
+  "threadGrowth": 4,
+  "udpAttempts": 480,
+  "workers": 32
+}

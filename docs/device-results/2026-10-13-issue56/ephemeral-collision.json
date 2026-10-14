@@ -1,0 +1,19 @@
+[
+  {
+    "family": 30,
+    "decoyPort": 51493,
+    "attempts": 46758,
+    "collision": true,
+    "seconds": 1.07200987500255,
+    "replyReceiver": [
+      "unrelated-ipv4-socket"
+    ]
+  },
+  {
+    "family": 2,
+    "decoyPort": 53762,
+    "attempts": 100000,
+    "collision": false,
+    "seconds": 1.1081376670044847
+  }
+]

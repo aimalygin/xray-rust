@@ -1,0 +1,28 @@
+{
+  "backend": {
+    "requestBytes": 67,
+    "responseBytes": 83,
+    "time": 1791821377.816237
+  },
+  "clientTimeoutTime": 1791821383.024,
+  "httpAttempts": 240,
+  "httpPassed": 240,
+  "interpretation": "Backend received the nonce-matched request and called sendto with its reply. Native remote-read accounting lacks one 83-byte reply before subsequent explicit cleanup. This does not establish delivery from the backend to Xray, wire emission by Xray, or the precise failing hop. No Wi-Fi cause or product fix is claimed.",
+  "ownerWaiver": null,
+  "protocol": "vmess-aes-128-gcm",
+  "queryTag": "39d4b0fbbc00d9e9",
+  "recovery": "Post-stress ordinary traffic and second burst passed; the failed first burst remains failed.",
+  "remoteCounterCheckpoint": {
+    "fatalTunErrors": 0,
+    "readBytes": 40006,
+    "readPackets83Bytes": 482,
+    "tunDroppedPackets": 0,
+    "writtenBytes": 32361,
+    "writtenPackets67Bytes": 483
+  },
+  "stressCycle": 419,
+  "tunBackend": "packet-pump",
+  "udpAttempts": 480,
+  "udpFailed": 1,
+  "udpPassed": 479
+}

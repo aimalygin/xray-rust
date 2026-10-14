@@ -954,7 +954,7 @@
       "errorPath": "$.outbounds[0].protocol",
       "base": "loopback-policy",
       "set": {
-        "/outbounds/0/protocol": "vmess"
+        "/outbounds/0/protocol": "unsupported-test-protocol"
       }
     },
     {
@@ -1279,7 +1279,7 @@
     {
       "name": "nonempty-finalmask",
       "accepted": false,
-      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp",
+      "errorPath": "$.outbounds[0].streamSettings.finalmask.udp[0]",
       "base": "transport-chain",
       "set": {
         "/outbounds": [
@@ -1428,6 +1428,22 @@
               "hysteriaSettings": {
                 "version": 2,
                 "auth": "synthetic-example-auth"
+              },
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "salamander",
+                    "settings": {
+                      "password": "synthetic-contract-password"
+                    }
+                  }
+                ],
+                "quicParams": {
+                  "udpHop": {
+                    "ports": "443,8443-8445",
+                    "interval": "5-10"
+                  }
+                }
               }
             }
           }
@@ -1435,7 +1451,9 @@
       },
       "objects": {
         "HYSTERIA": "/outbounds/0/settings",
-        "HYSTERIA_TRANSPORT": "/outbounds/0/streamSettings/hysteriaSettings"
+        "HYSTERIA_TRANSPORT": "/outbounds/0/streamSettings/hysteriaSettings",
+        "FINALMASK_ENTRY": "/outbounds/0/streamSettings/finalmask/udp/0",
+        "SALAMANDER": "/outbounds/0/streamSettings/finalmask/udp/0/settings"
       }
     },
     {
@@ -1580,6 +1598,524 @@
             }
           }
         ]
+      }
+    },
+    {
+      "name": "trojan-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "trojan",
+            "settings": {
+              "address": "trojan.example",
+              "port": 443,
+              "password": "synthetic-example-trojan-password"
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "TROJAN": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "trojan-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "trojan",
+            "settings": {
+              "servers": [
+                {
+                  "address": "trojan.example",
+                  "port": 443,
+                  "password": "synthetic-example-trojan-password"
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "TROJAN_SERVER": "/outbounds/0/settings/servers/0"
+      }
+    },
+    {
+      "name": "shadowsocks-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "shadowsocks",
+            "settings": {
+              "address": "trojan.example",
+              "port": 443,
+              "password": "AQEBAQEBAQEBAQEBAQEBAQ==",
+              "method": "2022-blake3-aes-128-gcm"
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "SHADOWSOCKS": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "shadowsocks-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "shadowsocks",
+            "settings": {
+              "servers": [
+                {
+                  "address": "trojan.example",
+                  "port": 443,
+                  "password": "AQEBAQEBAQEBAQEBAQEBAQ==",
+                  "method": "2022-blake3-aes-128-gcm"
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "trojan.example"
+              }
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "SHADOWSOCKS_SERVER": "/outbounds/0/settings/servers/0"
+      }
+    },
+    {
+      "name": "vmess-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vmess",
+            "settings": {
+              "address": "vmess.example",
+              "port": 443,
+              "id": "00112233-4455-6677-8899-aabbccddeeff",
+              "security": "auto"
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "VMESS": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "vmess-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "tun-in",
+            "protocol": "tun",
+            "settings": {}
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "vmess",
+            "settings": {
+              "vnext": [
+                {
+                  "address": "vmess.example",
+                  "port": 443,
+                  "users": [
+                    {
+                      "id": "00112233-4455-6677-8899-aabbccddeeff",
+                      "security": "auto"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "dns": {
+          "queryStrategy": "UseIPv4",
+          "fakeIp": {
+            "enabled": true,
+            "ipv4Pool": "198.19.0.0/16",
+            "poolSize": 32768,
+            "ttl": 60
+          }
+        },
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "VMESS_SERVER": "/outbounds/0/settings/vnext/0",
+        "VMESS_USER": "/outbounds/0/settings/vnext/0/users/0"
+      }
+    },
+    {
+      "name": "blackhole-routing",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": true
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "direct",
+            "protocol": "freedom"
+          },
+          {
+            "tag": "block",
+            "protocol": "blackhole",
+            "settings": {
+              "response": {
+                "type": "http"
+              }
+            }
+          }
+        ],
+        "routing": {
+          "balancers": [
+            {
+              "tag": "proxies",
+              "selector": [
+                "proxy-"
+              ],
+              "fallbackTag": "block"
+            }
+          ],
+          "rules": [
+            {
+              "type": "field",
+              "domain": [
+                "domain:ads.example"
+              ],
+              "outboundTag": "block"
+            },
+            {
+              "type": "field",
+              "network": "udp",
+              "port": "443",
+              "outboundTag": "block"
+            },
+            {
+              "type": "field",
+              "ip": [
+                "192.0.2.0/24"
+              ],
+              "balancerTag": "proxies"
+            }
+          ]
+        }
+      },
+      "objects": {
+        "BLACKHOLE_SETTINGS": "/outbounds/1/settings",
+        "BLACKHOLE_RESPONSE": "/outbounds/1/settings/response"
+      }
+    },
+    {
+      "name": "blackhole-unknown-response",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.response.type",
+      "base": "blackhole-routing",
+      "set": {
+        "/outbounds/1/settings/response/type": "redirect"
+      }
+    },
+    {
+      "name": "blackhole-null-response",
+      "accepted": false,
+      "errorPath": "$.outbounds[1].settings.response",
+      "base": "blackhole-routing",
+      "set": {
+        "/outbounds/1/settings/response": null
+      }
+    },
+    {
+      "name": "tcp-tlshello-finalmask",
+      "accepted": true,
+      "config": {
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "streamSettings": {
+              "finalmask": {
+                "tcp": [
+                  {
+                    "type": "fragment",
+                    "settings": {
+                      "packets": "tlshello",
+                      "length": "100-200",
+                      "delay": 0,
+                      "lengths": [
+                        10,
+                        "100-200"
+                      ],
+                      "delays": [
+                        0,
+                        1
+                      ],
+                      "maxSplit": 12
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "TCP_MASK_ENTRY": "/outbounds/0/streamSettings/finalmask/tcp/0",
+        "TCP_FRAGMENT": "/outbounds/0/streamSettings/finalmask/tcp/0/settings"
+      }
+    },
+    {
+      "name": "tcp-tlshello-legacy",
+      "accepted": true,
+      "config": {
+        "outbounds": [
+          {
+            "protocol": "freedom",
+            "settings": {
+              "fragment": {
+                "packets": "tlshello",
+                "length": "100-200",
+                "interval": 0,
+                "maxSplit": 8
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "FREEDOM_FRAGMENT": "/outbounds/0/settings/fragment"
+      }
+    },
+    {
+      "name": "udp-noise-finalmask",
+      "accepted": true,
+      "config": {
+        "outbounds": [
+          {
+            "protocol": "hysteria",
+            "settings": {
+              "version": 2,
+              "address": "server.example",
+              "port": 443
+            },
+            "streamSettings": {
+              "network": "hysteria",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "server.example"
+              },
+              "hysteriaSettings": {
+                "version": 2,
+                "auth": "synthetic"
+              },
+              "finalmask": {
+                "udp": [
+                  {
+                    "type": "noise",
+                    "settings": {
+                      "reset": 0,
+                      "noise": [
+                        {
+                          "rand": "16-32",
+                          "delay": 1
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "objects": {
+        "UDP_NOISE": "/outbounds/0/streamSettings/finalmask/udp/0/settings",
+        "UDP_NOISE_ITEM": "/outbounds/0/streamSettings/finalmask/udp/0/settings/noise/0"
+      }
+    },
+    {
+      "name": "linux-tproxy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "protocol": "dokodemo-door",
+            "listen": "127.0.0.1",
+            "port": 12345,
+            "settings": {
+              "network": "tcp,udp",
+              "followRedirect": true
+            },
+            "streamSettings": {
+              "sockopt": {
+                "tproxy": "tproxy",
+                "mark": 255
+              }
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "protocol": "freedom"
+          }
+        ]
+      },
+      "objects": {
+        "TPROXY_INBOUND": "/inbounds/0",
+        "TPROXY_SETTINGS": "/inbounds/0/settings",
+        "TPROXY_STREAM": "/inbounds/0/streamSettings",
+        "TPROXY_SOCKOPT": "/inbounds/0/streamSettings/sockopt"
       }
     }
   ]

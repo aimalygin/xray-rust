@@ -10,6 +10,233 @@ documents the generated [machine-readable contract](config-contract.json),
 canonical examples, geodata lookup and the boundary between parser acceptance
 and later runtime validation.
 
+## v0.8 Hysteria carrier additions
+
+Hysteria accepts one Salamander mask and the `udpHop` QUIC override in the
+pinned Xray-core v26.7.28 spelling:
+
+```json
+"finalmask": {
+  "udp": [{"type": "salamander", "settings": {"password": "synthetic-example-password"}}],
+  "quicParams": {"udpHop": {"ports": "443,8443-8445", "interval": "5-10"}}
+}
+```
+
+Both settings are optional and can be used separately. Passwords contain
+4..4096 UTF-8 bytes and remain redacted/zeroized in typed configuration.
+`packetSize` must be absent, null or zero: Gecko is a different wire protocol
+and is unsupported. One Salamander mask may be combined with one UDP noise mask (below); unknown mask fields fail.
+Port lists preserve order and duplicate weights, with at most 65535 expanded
+entries. Each interval bound defaults from zero to 30 seconds; enabled hopping
+requires ordered bounds of at least five seconds. The first packet already uses
+a randomly selected configured port. Server ports must reach the same QUIC
+server (for example through server-side port redirects).
+
+Each hop binds and protects a fresh socket while retaining the authenticated
+QUIC session and its TCP/UDP leases. Quinn retains at most one previous socket
+until an authenticated packet arrives on the new path. A scheduled hop whose
+bind/protection fails keeps the old protected path; a failed host-requested
+network rebind closes the stale session. Stop/free aborts the timer. Salamander
+reserves its eight-byte salt in MTU discovery and handles receive GRO segments
+individually. Its bounded receive scratch is 64 KiB per live carrier; send
+scratch is reused. Profiles without either option use the existing UDP path.
+All other explicit Hysteria `quicParams` fields, Brutal, bandwidth overrides,
+QUIC v2 and socket overrides remain unsupported. XHTTP H3 hopping is unchanged.
+
+The transport tests exercise TCP, inner TLS, fragmented UDP, automatic hopping,
+manual rebind and rejected socket protection against pinned Xray-core and
+independent official Hysteria v2.12.2. This is client carrier support, not a
+change to the congestion-control parity or published v0.7 artifacts.
+
+## v0.8 TLS ClientHello fragmentation
+
+TCP TLS/REALITY carriers accept one `tlshello` FinalMask, after socket
+protection and after the TLS/REALITY handshake bytes have been finalized:
+
+```json
+"finalmask": {
+  "tcp": [{"type": "fragment", "settings": {
+    "packets": "tlshello", "length": "100-200", "delay": "1-2", "maxSplit": 32
+  }}]
+}
+```
+
+`lengths` and `delays` optionally override the scalar ranges with sequences of
+at most 16 entries; subsequent fragments reuse the last entry. Ranges accept
+integers or inclusive `min-max` strings and normalize reversed bounds as Xray
+does. This bounded subset requires lengths 1..16384 bytes, delays 0..1000 ms,
+and `maxSplit` 0..4096 (zero means no explicit split limit). Before sending,
+each actual randomized plan must fit 4096 records and ten seconds of total
+delay; exceeding either limit fails the connection. `maxSplit` makes the last
+record contain the remainder, even when it exceeds the configured length.
+Arbitrary/all-write packet selectors, zero lengths, other mask types and
+unknown fields are rejected. FinalMask spells the delay `delay`, not `interval`.
+
+Existing mobile profiles may instead put
+`{"fragment":{"packets":"tlshello","length":"100-200","interval":"1-2","maxSplit":32}}`
+in a dedicated `freedom` outbound's `settings`, then reference its tag with
+`streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
+security, socket overrides, mux or proxy chain. The parser normalizes its sole
+fragment transform into the caller's stream. General `dialerProxy` chaining,
+combining two fragment masks, legacy freedom UDP noises, QUIC/H3 fragmentation and split XHTTP
+downloads remain unsupported. A raw freedom outbound can also fragment an
+application's first complete TLS record directly.
+
+As in pinned Xray-core v26.7.28, only the first write's complete handshake
+record is fragmented; an incomplete or non-TLS first write passes through.
+TLS record envelopes change, while the concatenated handshake bytes, including
+REALITY authentication, remain identical. Later writes pass through unchanged.
+One zero delay entry coalesces the new records into one write; it does not
+promise separate IP packets. Nonzero delays use cancellable async timers.
+Dropping the handshake drops its bounded buffer and timer without a background
+sender. The option is disabled by default and adds no fragment wrapper to
+existing profiles. Configured delays intentionally increase handshake latency.
+
+## v0.8 UDP noise
+
+Hysteria2 and XHTTP with exact TLS `alpn: ["h3"]` accept one FinalMask UDP
+noise mask, using Xray-core v26.7.28's format:
+
+```json
+"finalmask": {"udp": [{"type": "noise", "settings": {
+  "reset": 0,
+  "noise": [
+    {"rand": "16-32", "delay": "1-3"},
+    {"type": "str", "packet": "synthetic-example", "delay": 1},
+    {"type": "base64", "packet": "AAEC", "delay": 0}
+  ]
+}}]}
+```
+
+Ranges are inclusive and reversed bounds normalize. Up to 16 items, 4096 bytes
+per datagram, 1000 ms delay per item and 10 seconds total are accepted. Random
+length is `rand`; optional `randRange` bounds byte values (default 0..255).
+Literal encodings are `str` (UTF-8 without trimming), `hex`, standard padded
+`base64`, or a byte array with absent/`array` type. Random and literal packets
+cannot be combined. These are FinalMask spellings; legacy `type: "rand"` with
+`packet: "16-32"` and freedom `settings.noises` remain unsupported.
+
+Each delay follows its noise packet, including the last packet before the
+first QUIC datagram. No wrapper is installed when absent. With `reset: 0`,
+later application datagrams pass unchanged; a positive range sets a sliding
+idle interval in seconds after each successful send, as in pinned Xray-core.
+Hop/rebind preserves the prelude progress and idle deadline of the logical
+QUIC connection, matching Xray's mask outside its hopping socket. A new QUIC
+connection starts a fresh prelude. Noise before a
+Salamander entry is obfuscated; noise after Salamander is raw. Neither changes
+the QUIC payload. All sends occur after host socket protection, timers are
+asynchronous, and cancellation drops the state without a background sender.
+Configured delays count against the existing connection deadline.
+
+## v0.8 Linux TPROXY inbound
+
+```json
+{
+  "inbounds": [{
+    "tag": "transparent", "protocol": "dokodemo-door",
+    "listen": "0.0.0.0", "port": 12345,
+    "settings": {"network": "tcp,udp", "followRedirect": true},
+    "streamSettings": {"sockopt": {"tproxy": "tproxy"}}
+  }],
+  "outbounds": [{"protocol": "freedom", "tag": "direct"}]
+}
+```
+
+This is Linux transparent interception, requiring socket privileges
+(`CAP_NET_ADMIN` or appropriate `CAP_NET_RAW`). The operator supplies TPROXY
+firewall rules, fwmark policy routes, and an exclusion for the core's own
+upstream traffic (for example by its dedicated UID). The core does not install
+or change firewall rules, interfaces or routes. Optional nonnegative i32
+`sockopt.mark` applies to the inbound and source-preserving UDP reply sockets;
+it is not a general outbound socket-mark configuration.
+
+Use separate IPv4/IPv6 inbounds; IPv6 listeners are v6-only. `network` accepts
+`tcp`, `udp`, comma-separated values or arrays; `allowedNetwork` is the alias
+and `network` takes precedence. Default is TCP. TCP uses the accepted socket's
+original local address; UDP uses kernel original-destination ancillary data,
+never the listener address as a substitute. Truncated/missing metadata is
+rejected. UDP flows include both source and original destination in their key,
+and replies retain the original destination address/port even after DNS or
+sniffing rewrites. A connection directly to the local interception listener is
+rejected to avoid self-dial loops.
+
+Routing, sniffing, DNS/FakeDNS, protocol sessions, connection accounting and
+close handling reuse the existing handlers. TCP is capped at 1024 concurrent
+connections per listener. UDP uses the shared 1024-flow/64-pending-open global
+budgets, at most 128 flows per listener and four queued packets per flow
+(at most 256 KiB); idle expiry is 60 seconds and all tasks close on core stop.
+Destination rewriting, `portMap`, REDIRECT mode, UNIX sockets and arbitrary
+inbound stream/socket overrides are unsupported. Apple, Android and Windows
+reject this inbound at start; mobile applications continue to use their TUN
+adapter. UDP noise is available through their ordinary JSON configuration.
+
+## v0.8 development client protocols
+
+The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
+These additions are not part of the published 0.7 artifacts. See the
+[implementation evidence](v08-implementation-plan.md) for verified combinations,
+resource bounds and remaining release gates. The reference stays Xray-core
+v26.7.28; unsupported options fail closed.
+
+| Outbound | Settings | Import |
+| --- | --- | --- |
+| `trojan` | Flat `address`, `port`, `password`, optional `level`; or exactly one entry in `servers` | `trojan://password@host:port` with supported stream/security parameters; TLS default |
+| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers` | SIP002 `ss://` plain or base64 userinfo, SS2022 only |
+| `vmess` | Flat `address`, `port`, `id`, optional `security`, `alterId`, `experiments`, `level`, `email`; or one `vnext` server with exactly one `users` entry | Common v2 base64 JSON and UUID-authority `vmess://` URI |
+
+Flat and legacy settings cannot be mixed. Trojan passwords are 1–4096 UTF-8
+bytes, with no nonempty `flow`; public plaintext servers are rejected. SS2022
+supports `2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm` and
+`2022-blake3-chacha20-poly1305`. AES accepts up to eight colon-separated identity
+keys; ChaCha accepts one. The encoded key string is bounded by 8192 bytes.
+AEAD-2017 ciphers and SIP003 plugins are excluded.
+
+VMess requires a UUID and `alterId` absent/zero. Body encryption is `auto`
+(default), `aes-128-gcm` or `chacha20-poly1305`; `none`, `zero`, CFB and legacy
+VMess authentication are unsupported. `experiments` recognizes the exact names
+`AuthenticatedLength` and `NoTerminationSignal`, separated by `|`, without
+duplicates. Unknown explicit encryption modes fail instead of falling back.
+VMess record counters stop before nonce reuse; see the record-count bound in
+the implementation evidence. No server-side proxy or response-command support
+is implied by these client additions.
+
+All three use the shared raw/WS/HTTPUpgrade/gRPC/XHTTP stream carrier and core
+routing, accounting, SOCKS/HTTP/TUN and DNS paths. SS2022 ordinary UDP uses a
+separate native UDP socket, independently of its TCP carrier. VMess ordinary
+UDP uses per-association XUDP except destinations on ports 53/443. Outer TLS
+verification cannot be disabled. Live tests cover REALITY over raw/gRPC/XHTTP,
+XHTTP H1/H2/H3 with independent downloads, and transport-layer chains among
+the three protocols. REALITY over a chained stream, chained split downloads
+and QUIC chaining retain the existing explicit graph restrictions.
+
+Both pinned SS2022 reference servers retain a UDP session's first return
+address. A network change that changes the client's external UDP port requires
+a fresh association (for example, through the host's runtime reconnect).
+Keeping the old cryptographic session does not provide seamless NAT rebinding.
+Server restart with unchanged keys is verified on an existing client session;
+forged, misbound and replayed replies remain rejected.
+
+`mux.enabled: true` activates bounded shared Mux for these three outbounds.
+TCP `concurrency` defaults to 8 (including zero), a negative value disables TCP
+multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
+a separate UDP pool, and a negative value uses the native protocol UDP path.
+Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
+or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool has at most four
+parents, 128 lifetime child IDs per parent, bounded per-child queues and a
+30-second empty-parent timeout. Queue overload resets the affected child;
+parent failure terminates its children without replay. This Mux is distinct
+from XHTTP's existing `xmux` transport pooling.
+
+The pinned Xray XHTTP inbound permits only UDP Mux children. XHTTP therefore
+requires `mux.concurrency: -1`; use positive `xudpConcurrency` for UDP pooling.
+Enabling TCP Mux on XHTTP is rejected before dialing, including configurations
+built through the Rust API. Ordinary TCP still uses XHTTP's own transport pool.
+
+The shared Rust importer, protocol capability discovery introduced in C ABI 1.8,
+Swift adapter and Kotlin adapter expose all three formats. Host applications still own secure
+profile persistence. Imports preserve credentials in the returned JSON, while
+Debug/error descriptions redact them.
+
 ## Minimal loopback example
 
 This config exposes unauthenticated SOCKS5 only on loopback and routes through
@@ -71,14 +298,23 @@ subset rather than full Xray sniffing behavior.
 
 ## Outbounds and streams
 
-`freedom`, `vless`, and `dns` are supported. DNS outbound settings are described
-below. VLESS accepts one `vnext` server with one or more UUID users, but the
+`freedom`, `vless`, `dns`, and `blackhole` are supported. DNS outbound settings
+are described below, and [blackhole](#blackhole-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
 `level` and these flow values are accepted:
 
 - empty/no flow;
 - `xtls-rprx-vision`;
 - `xtls-rprx-vision-udp443`.
+
+On the raw transport, Vision switches each direction to direct mode on its own,
+as Xray-core does. After the peer's `Direct` command the downlink is read from
+the connection beneath TLS or REALITY — the socket, or the chained carrier
+under `proxySettings` — while the uplink stays inside the session until this
+side sends its own `Direct`. Until then, reads beneath a Vision flow stop at
+TLS record boundaries so the outer session never consumes the cleartext that
+follows its last record; a flow without Vision, or one that resolves to
+`End`, drops that alignment.
 
 The development `0.6` line also accepts bounded
 `mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}` configurations with one
@@ -117,7 +353,7 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
 supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
-engines. Outbound mux, `sendThrough`, multiple VLESS servers, and
+engines. General VLESS mux, `sendThrough`, multiple VLESS servers, and
 protocol-layer chaining remain unsupported. The supported chaining subset
 uses Xray's outbound `proxySettings` with a non-empty `tag` and an explicit
 `"transportLayer": true`:
@@ -186,6 +422,58 @@ custom certificate stores, or removed chain/SPKI pin fields. They are rejected
 with a path-aware error instead of being ignored. The programmatic
 `allow_insecure` model field exists only for hermetic local tests and cannot be
 produced by canonical JSON parsing.
+
+### Blackhole outbound
+
+`blackhole` follows Xray-core v26.7.28 and is commonly the `block` target of
+deny rules (ads, QUIC on UDP/443, other traffic a profile refuses):
+
+```json
+{ "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+```
+
+`settings` may be absent, `null`, or an object with an optional `response`. A
+present `response` must be an object whose case-insensitive `type` is `none`
+(the default) or `http`. As in Xray, a `null` or non-object response, a missing
+or `null` type, and any other type fail parsing; unknown keys also fail here,
+where Go would ignore them. `sendThrough`, enabled `mux`, and `streamSettings`
+keep the generic outbound validation, but nothing in `streamSettings` is used
+because nothing is dialed.
+
+The handler never resolves a destination, dials, or opens a socket:
+
+- SOCKS and HTTP `CONNECT` are acknowledged first (SOCKS success, HTTP
+  `200 Connection Established`), as Xray's inbounds do before dispatching.
+  `none` then closes the connection. `http` writes Xray's fixed reply
+  byte-for-byte (`HTTP/1.1 403 Forbidden`, `Connection: close`,
+  `Cache-Control: max-age=3600, public`, `Content-Length: 0`, with LF line
+  endings) and half-closes. Xray holds the link for one second after that
+  reply; xray-rust instead discards late client bytes for at most one second,
+  so unread input does not turn the close into a reset.
+- TUN TCP completes the client handshake in the userspace stack, as Xray's TUN
+  inbound does, then sends FIN, preceded by the reply for `http`. Client
+  upload is discarded during the one-second grace after an `http` reply;
+  upload after that, or any upload with `none`, resets the flow, as when Xray
+  interrupts the link. It is not counted as a TCP open error.
+- UDP from SOCKS `UDP ASSOCIATE` and TUN is dispatched once per flow (client
+  address and destination), as Xray dispatches a link once. `http` returns
+  its reply once, as a datagram from the destination the client addressed;
+  `none` returns nothing, and nothing answers with an ICMP error. Later
+  datagrams of the flow are discarded rather than routed again, until the
+  flow has been idle for the 60-second UDP idle timeout (Xray waits for 30 to
+  90 seconds of inactivity), the host closes it, or the SOCKS association
+  ends. Unlike xray-rust, Xray keeps one SOCKS UDP link per client source
+  address, routed by its first destination, and that link also carries the
+  client's datagrams to later destinations.
+
+A blackhole can be a rule `outboundTag`, the default first outbound, a balancer
+candidate, or a balancer `fallbackTag`. Connection inventory and per-outbound
+accounting record each blocked session, including a whole UDP flow, once and
+with zero bytes. Paths that need a dialable transport fail closed with
+`CoreError::BlackholeOutbound` instead: a DNS server or TUN DNS upstream whose
+queries route to it, and a startup probe of it, fail without dialing;
+observatory probes record it as unhealthy. `proxySettings` chains to or from a
+blackhole are rejected by core compilation.
 
 ### WebSocket and HTTPUpgrade
 
@@ -483,8 +771,8 @@ initial congestion window, not quic-go's exact controller. Distinct
 `maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
 the transport API, conservative/aggressive BBR profiles, Brutal and
 force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
-a socket. Nonempty `finalmask.tcp` or `finalmask.udp` masks also remain
-unsupported. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
+a socket. H3 rejects nonempty TCP and UDP masks; the opt-in TCP fragment
+and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively
 allows one active HTTP request per QUIC connection and opens another
@@ -1044,6 +1332,14 @@ the rest of the core runtime. Rust health snapshots expose unknown/healthy/
 unhealthy state, delay, last-try and last-success timestamps, consecutive
 failure count, and a typed redacted failure category; raw URLs and transport
 error strings are not retained.
+
+Hosts that schedule their own checks, such as a mobile tunnel heartbeat, can
+request one probe at a time through C ABI 1.9 and the Swift/Kotlin adapters
+without an `observatory` object. It accepts the same URLs as the startup probe,
+dials one leaf by tag or the default outbound with routing bypassed, takes a
+host timeout of 1 to 60000 ms, and returns the delay or the same typed failure
+category. Its result is not written to health snapshots and does not
+influence selector groups.
 
 Domain matchers:
 

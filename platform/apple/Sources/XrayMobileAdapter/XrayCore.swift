@@ -142,10 +142,35 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     )
     public static let hysteria2Outbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA2_OUTBOUND.rawValue))
     public static let wireguardOutbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_WIREGUARD_OUTBOUND.rawValue))
+    public static let vmessOutbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_VMESS_OUTBOUND.rawValue))
+    public static let trojanOutbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND.rawValue))
+    public static let shadowsocks2022Outbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND.rawValue))
     public static let profileImport = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_PROFILE_IMPORT.rawValue))
     public static let routingPolicyUpdate = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE.rawValue)
     )
+    public static let outboundProbe = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_PROBE.rawValue)
+    )
+    public static let tunAdmission = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_ADMISSION.rawValue))
+    public static let hysteriaStreamLimits = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS.rawValue)
+    )
+}
+
+/// Host concurrency policy for each Hysteria outbound, shared across inbounds.
+public struct XrayHysteriaStreamLimits: Equatable, Sendable {
+    public let maxTcpStreams: UInt32
+    public let maxUdpSessions: UInt32
+
+    public init(maxTcpStreams: UInt32 = 64, maxUdpSessions: UInt32 = 32) throws {
+        guard (1...256).contains(maxTcpStreams), (1...128).contains(maxUdpSessions) else {
+            throw XrayCoreError.status(code: XRAY_STATUS_INVALID_ARGUMENT,
+                message: "Hysteria limits require TCP 1...256 and UDP 1...128")
+        }
+        self.maxTcpStreams = maxTcpStreams
+        self.maxUdpSessions = maxUdpSessions
+    }
 }
 
 public struct XrayFFIInfo: Equatable, Sendable {
@@ -248,6 +273,50 @@ public enum XrayOutboundHealthFailureKind: String, Codable, Equatable, Sendable 
     case io
     case malformedHttpResponse
     case httpStatus
+}
+
+/// Typed result of `XrayCore.probeOutboundURL(_:timeoutMs:outboundTag:)`.
+/// Exactly one of `delayMs` and `failureKind` is non-nil; `httpStatus` is set
+/// only for `.httpStatus`.
+public struct XrayOutboundProbeResult: Equatable, Sendable {
+    public let delayMs: UInt64?
+    public let failureKind: XrayOutboundHealthFailureKind?
+    public let httpStatus: UInt16?
+
+    public var isReachable: Bool {
+        failureKind == nil
+    }
+
+    init(ffiDelayMs delayMs: UInt64, failureKind rawFailureKind: Int32, httpStatus: UInt16) throws {
+        // The C ABI carries the enum through int32_t; compare raw discriminants
+        // as the TCP slow-flow projection does.
+        let ffiKind = XrayOutboundProbeFailureKind.RawValue(truncatingIfNeeded: rawFailureKind)
+        let failureKind: XrayOutboundHealthFailureKind?
+        switch ffiKind {
+        case XRAY_OUTBOUND_PROBE_FAILURE_NONE.rawValue:
+            failureKind = nil
+        case XRAY_OUTBOUND_PROBE_FAILURE_TIMEOUT.rawValue:
+            failureKind = .timeout
+        case XRAY_OUTBOUND_PROBE_FAILURE_TRANSPORT.rawValue:
+            failureKind = .transport
+        case XRAY_OUTBOUND_PROBE_FAILURE_TLS.rawValue:
+            failureKind = .tls
+        case XRAY_OUTBOUND_PROBE_FAILURE_IO.rawValue:
+            failureKind = .io
+        case XRAY_OUTBOUND_PROBE_FAILURE_MALFORMED_HTTP_RESPONSE.rawValue:
+            failureKind = .malformedHttpResponse
+        case XRAY_OUTBOUND_PROBE_FAILURE_HTTP_STATUS.rawValue:
+            failureKind = .httpStatus
+        default:
+            throw XrayCoreError.status(
+                code: XRAY_STATUS_RUNTIME_ERROR,
+                message: "unknown outbound probe failure kind: \(rawFailureKind)"
+            )
+        }
+        self.delayMs = failureKind == nil ? delayMs : nil
+        self.failureKind = failureKind
+        self.httpStatus = failureKind == .httpStatus ? httpStatus : nil
+    }
 }
 
 public struct XrayOutboundHealthSnapshot: Codable, Equatable, Sendable {
@@ -523,9 +592,18 @@ final class XrayCoreCallGate: @unchecked Sendable {
         return try body()
     }
 
-    func withLifecycle<T>(_ body: () throws -> T) rethrows -> T {
+    func withLifecycle<T>(
+        beforeWaiting: () -> Void = {},
+        _ body: () throws -> T
+    ) rethrows -> T {
         condition.lock()
         waitingLifecycleCalls += 1
+        // The handle is stable once another exclusive caller has left. Cancel
+        // probes while shared calls still run, before waiting for them to drain.
+        while lifecycleCallActive {
+            condition.wait()
+        }
+        beforeWaiting()
         while lifecycleCallActive || activeDataPathCalls > 0 {
             condition.wait()
         }
@@ -817,7 +895,9 @@ public final class XrayCore: @unchecked Sendable {
         geodataSearchDirectory: URL? = nil,
         geodataSearchPolicy: XrayGeodataSearchPolicy = .fallbackToDefaults,
         startupProbe: XrayStartupProbeOptions? = nil,
-        fileLogDirectory: URL? = nil
+        fileLogDirectory: URL? = nil,
+        hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
+        tunAdmission: XrayTunAdmissionOptions? = nil
     ) throws {
         try self.init(
             configJSON: configJSON,
@@ -830,7 +910,9 @@ public final class XrayCore: @unchecked Sendable {
             fileLogDirectory: fileLogDirectory,
             tunFileDescriptor: fd,
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
-            tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED
+            tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
+            hysteriaStreamLimits: hysteriaStreamLimits,
+            tunAdmission: tunAdmission
         )
     }
 
@@ -846,7 +928,9 @@ public final class XrayCore: @unchecked Sendable {
         socketProtector: XraySocketProtecting? = nil,
         tunFileDescriptor: Int32? = nil,
         tunPacketFormat: XrayTunFdPacketFormat = XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
-        tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED
+        tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
+        hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
+        tunAdmission: XrayTunAdmissionOptions? = nil
     ) throws {
         let ffiInfo = Self.ffiInfo
         try Self.validateFFIVersion(
@@ -964,6 +1048,27 @@ public final class XrayCore: @unchecked Sendable {
                 ),
                 error: error
             )
+            if let hysteriaStreamLimits {
+                guard ffiInfo.version.minor >= 10 else {
+                    throw XrayCoreError.incompatibleFFIMinorVersion(required: 10, actual: ffiInfo.version.minor)
+                }
+                try requireCapability(.hysteriaStreamLimits)
+                try check(xray_core_set_hysteria_stream_limits(handle,
+                    hysteriaStreamLimits.maxTcpStreams, hysteriaStreamLimits.maxUdpSessions,
+                    &error), error: error)
+            }
+            if let tunAdmission {
+                guard ffiInfo.version.minor >= 11 else {
+                    throw XrayCoreError.incompatibleFFIMinorVersion(required: 11, actual: ffiInfo.version.minor)
+                }
+                try requireCapability(.tunAdmission)
+                let context = Unmanaged.passRetained(XrayTunAdmissionContext(tunAdmission))
+                let status = xray_core_set_tun_admission(handle, xrayTunAdmissionCallback,
+                    xrayTunAdmissionRelease, context.toOpaque(), tunAdmission.timeoutMilliseconds,
+                    tunAdmission.failOpen ? 1 : 0, &error)
+                if status != XRAY_STATUS_OK { context.release() }
+                try check(status, error: error)
+            }
             if let geodataSearchDirectory {
                 try geodataSearchDirectory.path.withCString { pointer in
                     let status: XrayStatus
@@ -1013,7 +1118,7 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     deinit {
-        callGate.withLifecycle {
+        callGate.withLifecycle(beforeWaiting: cancelOutboundProbesForLifecycle) {
             dataPathEnabled = false
             if let handle {
                 self.handle = nil
@@ -1189,6 +1294,74 @@ public final class XrayCore: @unchecked Sendable {
             var accepted: UInt64 = 0
             try check(xray_core_rebind_hysteria(handle, &accepted, &error), error: error)
             return accepted
+        }
+    }
+
+    /// Sends one HTTP(S) GET through a leaf outbound of the running core and
+    /// returns its latency or typed failure. A `nil` or empty `outboundTag`
+    /// uses the default outbound; routing rules and selector overrides are
+    /// bypassed, and health snapshots are not updated. Blocks the caller for at
+    /// most `timeoutMs` (1...60_000), so call it off the main thread; lifecycle
+    /// calls cancel probes before waiting for shared calls. Requires ABI 1.9.
+    public func probeOutboundURL(
+        _ url: String,
+        timeoutMs: UInt64 = 5_000,
+        outboundTag: String? = nil
+    ) throws -> XrayOutboundProbeResult {
+        let version = Self.ffiInfo.version
+        guard version.minor >= 9 else {
+            throw XrayCoreError.incompatibleFFIMinorVersion(required: 9, actual: version.minor)
+        }
+        try requireCapability(.outboundProbe)
+        guard !url.utf8.contains(0), !(outboundTag?.utf8.contains(0) ?? false) else {
+            throw XrayCoreError.status(
+                code: XRAY_STATUS_INVALID_ARGUMENT,
+                message: "outbound probe arguments must not contain NUL"
+            )
+        }
+        return try withDataPathHandle { handle in
+            var error: OpaquePointer?
+            var delayMs: UInt64 = 0
+            var failureKind: Int32 = 0
+            var httpStatus: UInt16 = 0
+            try url.withCString { urlPointer in
+                if let outboundTag, !outboundTag.isEmpty {
+                    try outboundTag.withCString { outboundTagPointer in
+                        try check(
+                            xray_core_probe_outbound_url(
+                                handle,
+                                urlPointer,
+                                timeoutMs,
+                                outboundTagPointer,
+                                &delayMs,
+                                &failureKind,
+                                &httpStatus,
+                                &error
+                            ),
+                            error: error
+                        )
+                    }
+                } else {
+                    try check(
+                        xray_core_probe_outbound_url(
+                            handle,
+                            urlPointer,
+                            timeoutMs,
+                            nil,
+                            &delayMs,
+                            &failureKind,
+                            &httpStatus,
+                            &error
+                        ),
+                        error: error
+                    )
+                }
+            }
+            return try XrayOutboundProbeResult(
+                ffiDelayMs: delayMs,
+                failureKind: failureKind,
+                httpStatus: httpStatus
+            )
         }
     }
 
@@ -1698,11 +1871,17 @@ public final class XrayCore: @unchecked Sendable {
     }
 
     private func withLifecycleHandle<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
-        try callGate.withLifecycle {
+        try callGate.withLifecycle(beforeWaiting: cancelOutboundProbesForLifecycle) {
             guard let handle else {
                 throw XrayCoreError.missingHandle
             }
             return try body(handle)
+        }
+    }
+
+    private func cancelOutboundProbesForLifecycle() {
+        if let handle, Self.ffiInfo.supports(.outboundProbe) {
+            _ = xray_core_cancel_outbound_probes(handle, nil)
         }
     }
 

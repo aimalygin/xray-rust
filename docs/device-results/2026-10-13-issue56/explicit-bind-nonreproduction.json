@@ -1,0 +1,32 @@
+[
+  {
+    "family": "dual-stack-wildcard",
+    "backend": [
+      "127.0.0.1",
+      53858
+    ],
+    "decoy": [
+      "127.0.0.1",
+      51146
+    ],
+    "overlapBind": 48,
+    "replyReceiver": [
+      "outbound"
+    ]
+  },
+  {
+    "family": "explicit-ipv4",
+    "backend": [
+      "127.0.0.1",
+      56483
+    ],
+    "decoy": [
+      "127.0.0.1",
+      51726
+    ],
+    "overlapBind": 48,
+    "replyReceiver": [
+      "outbound"
+    ]
+  }
+]

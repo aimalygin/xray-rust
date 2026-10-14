@@ -38,6 +38,7 @@ mod sniffing;
 mod socks;
 mod startup_probe;
 mod tun;
+mod tun_admission;
 mod tun_fd;
 
 #[cfg(feature = "fuzzing")]
@@ -68,7 +69,11 @@ pub use outbound::{
     UdpOutbound, VlessTcpOutbound, VlessUdpFraming,
 };
 pub use runtime_log::{RuntimeLogConfig, RuntimeLogger};
-pub use startup_probe::{StartupProbeError, StartupProbeOptions};
+pub use startup_probe::{
+    OutboundProbeError, OutboundProbeOutcome, StartupProbeError, StartupProbeOptions,
+    MAX_OUTBOUND_PROBE_TIMEOUT,
+};
+pub use tun_admission::{TunAdmissionPolicy, TunFlow, TunFlowAdmission};
 pub use tun_fd::{TunFdClosePolicy, TunFdConfig, TunFdPacketFormat, TunFdRuntime};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +88,53 @@ pub struct TunRuntimeOptions {
     pub collect_tcp_timings: bool,
     pub profile: TunRuntimeProfile,
     pub dns_bootstrap: DnsBootstrapMode,
+    /// Host resource limits for each Hysteria outbound, shared by all inbounds.
+    /// Independent of the TUN profile and never interpreted as Xray JSON fields.
+    pub hysteria_stream_limits: HysteriaStreamLimits,
+}
+
+/// Bounded concurrent streams per Hysteria connection. Existing defaults are
+/// retained; increasing the limits admits more flows, not larger per-flow queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HysteriaStreamLimits {
+    max_tcp_streams: u32,
+    max_udp_sessions: u32,
+}
+
+impl Default for HysteriaStreamLimits {
+    fn default() -> Self {
+        Self {
+            max_tcp_streams: 64,
+            max_udp_sessions: 32,
+        }
+    }
+}
+
+impl HysteriaStreamLimits {
+    pub fn new(max_tcp_streams: u32, max_udp_sessions: u32) -> Result<Self, CoreError> {
+        if !(1..=256).contains(&max_tcp_streams) || !(1..=128).contains(&max_udp_sessions) {
+            return Err(xray_transport::hysteria::HysteriaError::Configuration.into());
+        }
+        Ok(Self {
+            max_tcp_streams,
+            max_udp_sessions,
+        })
+    }
+
+    pub fn max_tcp_streams(self) -> u32 {
+        self.max_tcp_streams
+    }
+    pub fn max_udp_sessions(self) -> u32 {
+        self.max_udp_sessions
+    }
+
+    pub(crate) fn transport_limits(self) -> xray_transport::hysteria::HysteriaLimits {
+        xray_transport::hysteria::HysteriaLimits {
+            max_tcp_streams: self.max_tcp_streams as usize,
+            max_udp_sessions: self.max_udp_sessions as usize,
+            ..Default::default()
+        }
+    }
 }
 
 /// Controls bootstrap and no-configured-server fallback for managed runtime DNS.
@@ -218,10 +270,29 @@ pub struct BoundInbound {
 struct RuntimeState {
     inbounds: Vec<BoundInbound>,
     tasks: Vec<JoinHandle<()>>,
+    probe_dns: ProbeDnsResolvers,
+}
+
+/// Runtime DNS resolvers shared by the startup probe, the observatory, and
+/// host-requested outbound probes while the core runs.
+#[derive(Clone)]
+struct ProbeDnsResolvers {
+    destination: Arc<dyn DnsResolver>,
+    bootstrap: Arc<dyn DnsResolver>,
+}
+
+impl std::fmt::Debug for ProbeDnsResolvers {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProbeDnsResolvers")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum CoreError {
+    #[error(transparent)]
+    Trojan(#[from] xray_proxy::trojan::WireError),
     #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
@@ -232,8 +303,17 @@ pub enum CoreError {
     AlreadyStopped,
     #[error("no supported inbound found")]
     NoSupportedInbound,
+    #[error(
+        "TPROXY inbound requires Linux; configure a TUN, SOCKS or HTTP inbound on this platform"
+    )]
+    UnsupportedTproxyPlatform,
     #[error("no supported outbound found")]
     NoSupportedOutbound,
+    /// A path that needs a dialable transport (an internal DNS client, a
+    /// probe or a TUN DNS upstream) was routed to a `blackhole` outbound.
+    /// Session inbounds handle blackhole selection themselves and never dial.
+    #[error("traffic was routed to a blackhole outbound")]
+    BlackholeOutbound,
     #[error("outbound selector group {0:?} was not found")]
     OutboundSelectorGroupNotFound(String),
     #[error("outbound {outbound:?} is not a candidate of selector group {group:?}")]
@@ -363,6 +443,7 @@ pub struct Core {
     config: Arc<CoreConfig>,
     state: CoreState,
     shutdown: Shutdown,
+    probe_shutdown: Shutdown,
     tun: Arc<TunEndpoint>,
     runtime: Option<RuntimeState>,
     dns_resolver: Arc<dyn DnsResolver>,
@@ -374,6 +455,7 @@ pub struct Core {
     outbound_router: Arc<OutboundRouter>,
     connection_registry: Arc<ConnectionRegistry>,
     tun_runtime_options: TunRuntimeOptions,
+    tun_admission: Option<TunAdmissionPolicy>,
     startup_probe: Option<StartupProbeOptions>,
     runtime_logger: RuntimeLogger,
 }
@@ -595,6 +677,43 @@ impl Core {
         }
         ensure_effective_dns_tag(&mut config);
         for outbound in &config.outbounds {
+            outbound::validate_udp_noise(&outbound.stream)?;
+            if outbound.stream.udp_noise.is_some()
+                && matches!(
+                    outbound.settings,
+                    xray_config::OutboundSettings::Freedom
+                        | xray_config::OutboundSettings::Blackhole(_)
+                        | xray_config::OutboundSettings::Dns(_)
+                        | xray_config::OutboundSettings::Wireguard(_)
+                )
+            {
+                return Err(CoreError::UnsupportedOutboundNetwork);
+            }
+            if let Some(fragment) = &outbound.stream.tcp_fragment {
+                if outbound.stream.network != xray_config::Network::Tcp
+                    || matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                        && (outbound.stream.security != xray_config::StreamSecurity::None
+                            || outbound.stream.transport != xray_config::StreamTransport::Raw)
+                    || !matches!(outbound.settings, xray_config::OutboundSettings::Freedom)
+                        && outbound.stream.security == xray_config::StreamSecurity::None
+                    || matches!(&outbound.stream.transport, xray_config::StreamTransport::Xhttp(xhttp) if xhttp.download.is_some() || matches!(&outbound.stream.security, xray_config::StreamSecurity::Tls(tls) if tls.alpn == ["h3"]))
+                    || matches!(
+                        outbound.settings,
+                        xray_config::OutboundSettings::Dns(_)
+                            | xray_config::OutboundSettings::Hysteria(_)
+                            | xray_config::OutboundSettings::Wireguard(_)
+                            | xray_config::OutboundSettings::Blackhole(_)
+                    )
+                {
+                    return Err(CoreError::UnsupportedOutboundNetwork);
+                }
+                xray_transport::TcpFragmentConfig::new(
+                    fragment.lengths.iter().map(|r| r.from..=r.to).collect(),
+                    fragment.delays_ms.iter().map(|r| r.from..=r.to).collect(),
+                    fragment.max_split.from..=fragment.max_split.to,
+                )
+                .map_err(|_| CoreError::UnsupportedOutboundNetwork)?;
+            }
             if matches!(
                 outbound.settings,
                 xray_config::OutboundSettings::Wireguard(_)
@@ -614,7 +733,10 @@ impl Core {
         let config = Arc::new(config);
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
-        let outbound_factory = Arc::new(OutboundFactory::new(outbound_graph));
+        let outbound_factory = Arc::new(OutboundFactory::with_hysteria_stream_limits(
+            outbound_graph,
+            tun_runtime_options.hysteria_stream_limits,
+        ));
         let outbound_router = Arc::new(OutboundRouter::from_factory(outbound_factory));
         let shutdown = Shutdown::new();
         let tun_queue_options = tun_runtime_options.tun_queue_options();
@@ -631,6 +753,7 @@ impl Core {
             config,
             state: CoreState::Created,
             shutdown,
+            probe_shutdown: Shutdown::new(),
             tun,
             runtime: None,
             dns_resolver: dns.destination,
@@ -642,6 +765,7 @@ impl Core {
             outbound_router,
             connection_registry: Arc::new(ConnectionRegistry::new()),
             tun_runtime_options,
+            tun_admission: None,
             startup_probe: None,
             runtime_logger: RuntimeLogger::disabled(),
         })
@@ -654,6 +778,18 @@ impl Core {
     pub fn with_startup_probe(mut self, options: StartupProbeOptions) -> Self {
         self.startup_probe = Some(options);
         self
+    }
+
+    /// Configure admission before start; existing flows cannot be reclassified.
+    pub fn set_tun_admission(
+        &mut self,
+        policy: Option<TunAdmissionPolicy>,
+    ) -> Result<(), CoreError> {
+        if self.state == CoreState::Running {
+            return Err(CoreError::AlreadyRunning);
+        }
+        self.tun_admission = policy;
+        Ok(())
     }
 
     pub fn set_startup_probe(&mut self, options: Option<StartupProbeOptions>) {
@@ -737,6 +873,99 @@ impl Core {
     /// outbounds remain lazy; current endpoints and inner flows are retained.
     pub fn rebind_wireguard(&self) -> u64 {
         self.outbound_factory().rebind_wireguard()
+    }
+
+    /// Cancels current and future on-demand probes on a running core.
+    ///
+    /// This shared, nonblocking teardown step lets hosts drain shared probe
+    /// calls before taking their exclusive lifecycle lock. It leaves normal
+    /// traffic and health state untouched. Creating a new core resets the latch;
+    /// calling this before start is a no-op.
+    pub fn cancel_outbound_probes(&self) {
+        if self.state == CoreState::Running {
+            self.probe_shutdown.signal();
+        }
+    }
+
+    /// Runs one host-requested HTTP(S) probe through a leaf outbound.
+    ///
+    /// `options.outbound_tag` names a configured leaf outbound; `None` uses the
+    /// default outbound. Routing rules, balancers, and selector overrides are
+    /// bypassed, as for the startup probe and observatory, whose bounded dial
+    /// path and runtime DNS resolvers this reuses. The whole probe is bounded
+    /// by `options.timeout`, which must be positive and at most
+    /// [`MAX_OUTBOUND_PROBE_TIMEOUT`]. Only a running core accepts probes.
+    ///
+    /// Rejected arguments return [`OutboundProbeError`] without network
+    /// activity. A probe that ran returns its typed outcome; it does not update
+    /// outbound health, selector state, or connection accounting.
+    pub async fn probe_outbound_url(
+        &self,
+        options: StartupProbeOptions,
+    ) -> Result<OutboundProbeOutcome, OutboundProbeError> {
+        let dns = match (self.state, self.runtime.as_ref()) {
+            (CoreState::Running, Some(runtime)) => runtime.probe_dns.clone(),
+            _ => return Err(OutboundProbeError::NotRunning),
+        };
+        startup_probe::validate_outbound_probe(&options, self.outbound_graph())?;
+        let mut cancellation = self.probe_shutdown.subscribe();
+
+        let probe_url = startup_probe::diagnostic_probe_url(&options.url);
+        let timeout_ms = options.timeout.as_millis();
+        let outbound = if options.outbound_tag.is_some() {
+            "<configured>"
+        } else {
+            "default"
+        };
+        self.runtime_logger.debug(|| {
+            format!(
+                "Debug outboundProbe start url={probe_url} timeoutMs={timeout_ms} outbound={outbound}"
+            )
+        });
+        let result = tokio::select! {
+            biased;
+            _ = async {
+                while !*cancellation.borrow_and_update() {
+                    if cancellation.changed().await.is_err() {
+                        break;
+                    }
+                }
+            } => return Err(OutboundProbeError::Cancelled),
+            result = startup_probe::run_outbound_url_probe(
+                self.outbound_router.as_ref(),
+                options,
+                dns.destination.as_ref(),
+                dns.bootstrap.as_ref(),
+                self.transport_dialer.as_ref(),
+                "xray-rust-outbound-probe",
+            ) => result,
+        };
+        let outcome = match result {
+            Ok(delay) => {
+                self.runtime_logger.debug(|| {
+                    format!(
+                        "Debug outboundProbe success url={probe_url} delayMs={}",
+                        delay.as_millis()
+                    )
+                });
+                OutboundProbeOutcome::Reachable { delay }
+            }
+            Err(error) => {
+                let failure = error.health_failure();
+                self.runtime_logger.debug(|| {
+                    let status = match failure {
+                        OutboundHealthFailure::HttpStatus(status) => format!(" status={status}"),
+                        _ => String::new(),
+                    };
+                    format!(
+                        "Debug outboundProbe fail url={probe_url} kind={}{status} error=<redacted>",
+                        startup_probe::health_failure_label(failure)
+                    )
+                });
+                OutboundProbeOutcome::Failed(failure)
+            }
+        };
+        Ok(outcome)
     }
 
     fn runtime_dns_resolvers(
@@ -843,8 +1072,13 @@ impl Core {
 
         let mut bound_listeners = Vec::new();
         let mut tun_inbounds = Vec::new();
+        let mut tproxy_inbounds = Vec::new();
         for inbound in &self.config.inbounds {
             match inbound.protocol {
+                InboundProtocol::Tproxy(settings) => {
+                    tproxy_inbounds.push((socks::tproxy::bind(inbound, settings)?, inbound));
+                    continue;
+                }
                 InboundProtocol::Socks | InboundProtocol::Http => {}
                 InboundProtocol::Tun => {
                     tun_inbounds.push((
@@ -886,7 +1120,7 @@ impl Core {
             ));
         }
 
-        if bound_listeners.is_empty() && tun_inbounds.is_empty() {
+        if bound_listeners.is_empty() && tun_inbounds.is_empty() && tproxy_inbounds.is_empty() {
             return Err(CoreError::NoSupportedInbound);
         }
 
@@ -929,10 +1163,32 @@ impl Core {
                     Arc::clone(&self.connection_registry),
                     self.shutdown.subscribe(),
                 )),
-                InboundProtocol::Tun => continue,
+                InboundProtocol::Tun | InboundProtocol::Tproxy(_) => continue,
             };
             inbounds.push(bound);
             tasks.push(task);
+        }
+        for (bound, inbound) in tproxy_inbounds {
+            inbounds.push(BoundInbound {
+                tag: inbound.tag.clone(),
+                addr: bound.addr,
+            });
+            let context = socks::tproxy::Context {
+                inbound_tag: inbound.tag.clone(),
+                config: Arc::clone(&config),
+                router: Arc::clone(&outbound_router),
+                dns: runtime_dns_resolvers.clone(),
+                dialer: Arc::clone(&self.transport_dialer),
+                sniffing: inbound.sniffing.clone(),
+                policy: policy::effective_policy_for_level(&config, inbound.user_level),
+                logger: self.runtime_logger.clone(),
+                registry: Arc::clone(&self.connection_registry),
+            };
+            tasks.push(tokio::spawn(socks::tproxy::serve(
+                bound,
+                context,
+                self.shutdown.subscribe(),
+            )));
         }
         if has_tun_inbound {
             let tun_inbound_tag = tun_inbounds.first().and_then(|(tag, _, _)| tag.clone());
@@ -960,6 +1216,7 @@ impl Core {
                 Arc::clone(&self.transport_dialer),
                 Arc::clone(&self.connection_registry),
                 tun_runtime_options,
+                self.tun_admission.clone(),
                 self.runtime_logger.clone(),
                 self.shutdown.subscribe(),
             )));
@@ -972,7 +1229,14 @@ impl Core {
             }
         }
 
-        self.runtime = Some(RuntimeState { inbounds, tasks });
+        self.runtime = Some(RuntimeState {
+            inbounds,
+            tasks,
+            probe_dns: ProbeDnsResolvers {
+                destination: Arc::clone(&runtime_dns_resolvers.destination),
+                bootstrap: Arc::clone(&runtime_dns_resolvers.bootstrap),
+            },
+        });
         self.state = CoreState::Running;
 
         if let Some(options) = self.startup_probe.clone() {
@@ -1034,14 +1298,18 @@ impl Core {
     }
 
     pub async fn stop(&mut self) -> Result<(), CoreError> {
+        self.probe_shutdown.signal();
         self.shutdown.signal();
         self.outbound_factory().close_sessions();
         if let Some(runtime) = self.runtime.take() {
             for task in runtime.tasks {
-                task.abort();
+                // Runtime owners observe the shutdown signal and join their
+                // connection tasks. Aborting the owner here would skip that
+                // drain and let stop return while children are still closing.
                 let _ = task.await;
             }
         }
+        self.outbound_factory().join_sessions().await;
         self.tun.close();
         self.state = CoreState::Stopped;
         Ok(())
@@ -1351,6 +1619,40 @@ mod tests {
         DnsRules, DnsRuntimeLimits, TransportDnsQueryStrategy, TunRuntimeOptions,
         TunRuntimeProfile,
     };
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn stop_waits_for_runtime_shutdown_cleanup() {
+        let config = parse_xray_json(r#"{"outbounds":[{"protocol":"freedom"}]}"#)
+            .unwrap()
+            .config;
+        let mut core = Core::new(config).unwrap();
+        let mut shutdown = core.shutdown.subscribe();
+        let cleaned = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = cleaned.clone();
+        let owner = tokio::spawn(async move {
+            while !*shutdown.borrow_and_update() {
+                if shutdown.changed().await.is_err() {
+                    break;
+                }
+            }
+            // Model an owner's asynchronous drain after observing shutdown.
+            tokio::task::yield_now().await;
+            finished.store(true, Ordering::Release);
+        });
+        core.runtime = Some(super::RuntimeState {
+            inbounds: Vec::new(),
+            tasks: vec![owner],
+            probe_dns: super::ProbeDnsResolvers {
+                destination: Arc::new(StaticResolver),
+                bootstrap: Arc::new(StaticResolver),
+            },
+        });
+        tokio::time::timeout(Duration::from_secs(1), core.stop())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(cleaned.load(Ordering::Acquire));
+    }
 
     struct StaticResolver;
 

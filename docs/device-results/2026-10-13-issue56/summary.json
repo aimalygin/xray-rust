@@ -1,0 +1,68 @@
+{
+  "usb-baseline": {
+    "httpPassed": 1920,
+    "httpFailed": 0,
+    "udpPassed": 3838,
+    "udpFailed": 2,
+    "completedBursts": 8,
+    "expectedBursts": 8,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  },
+  "usb-observed": {
+    "httpPassed": 1920,
+    "httpFailed": 0,
+    "udpPassed": 3831,
+    "udpFailed": 9,
+    "completedBursts": 8,
+    "expectedBursts": 8,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  },
+  "usb-collision-challenge": {
+    "httpPassed": 960,
+    "httpFailed": 0,
+    "udpPassed": 1907,
+    "udpFailed": 13,
+    "completedBursts": 4,
+    "expectedBursts": 4,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  },
+  "usb-fixed": {
+    "httpPassed": 3832,
+    "httpFailed": 8,
+    "udpPassed": 7680,
+    "udpFailed": 0,
+    "completedBursts": 16,
+    "expectedBursts": 16,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  },
+  "wifi-fixed": {
+    "httpPassed": 3840,
+    "httpFailed": 0,
+    "udpPassed": 7680,
+    "udpFailed": 0,
+    "completedBursts": 16,
+    "expectedBursts": 16,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  },
+  "wifi-fixed-ipv6": {
+    "httpPassed": 480,
+    "httpFailed": 0,
+    "udpPassed": 960,
+    "udpFailed": 0,
+    "completedBursts": 2,
+    "expectedBursts": 2,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "captured_utc": "2026-10-02T12:46:37.211735+00:00",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "cpu": "Apple M3 Pro",
+  "memory_bytes": 19327352832,
+  "power": "Now drawing from 'AC Power'\n -InternalBattery-0 (id=26607715)\t100%; charged; 0:00 remaining present: true\n",
+  "notes": "Interactive desktop; rotating controls; ambient CPU samples retained in every run. No local compilation overlaps benchmark campaigns."
+}

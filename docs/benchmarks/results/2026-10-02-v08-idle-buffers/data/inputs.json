@@ -1,0 +1,20 @@
+{
+  "source_head": "dc70c1edcb832e7e88671daceab325e899f79d79",
+  "baseline_runtime": "9198a8f2770496199022b531b01b3a2b35ec1bcc",
+  "frozen_files": {
+    "target/v08-idle-buffer-investigation/baseline": "528e6532d6919bc867dc0c7993bc090125ed3a725c0ebbc12db02791f60ff8e8",
+    "target/v08-idle-buffer-investigation/trim": "a4a2e1f92251df0572244920cec588620793d1ee0d5f2b038a253fb51b742b08",
+    "target/v08-idle-buffer-investigation/shrink": "e976f5c7f5b78eebb2c8f9b6b8e071cc1ec98f853746c8dd3914bab35f953bf0",
+    "target/v08-idle-buffer-investigation/trim.patch": "21b3ff17746ce11f97031092bc60817d442048fcbbfd5ee59282a2be79cae978",
+    "target/v08-idle-buffer-investigation/shrink.patch": "edd9c563e1737502549fb5cba5e75e48541cfc96d7312aaea77295bdfab7df73",
+    "target/v08-io-final/bin/xray": "fcbfcfe586d891ecf556570acd32ce5160e803498e30fe072d151d0056d23b99",
+    "target/v08-idle-buffer-investigation/untouched": "8d855dab3b1f0eb063a42a58b844e5a9476360fa81af6507b1f6a0daf78fd79d",
+    "target/v08-idle-buffer-investigation/untouched.patch": "8ab70b6a832093476fc8a08620a1dc13b5aa306921e9020f5b67412360e34490"
+  },
+  "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+  "host": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "build_command": "CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=target/v08-comparison-driver cargo build --locked --offline --release -p xray-cli",
+  "rss_pilot": "Stopped deliberately after eight complete clients and a partial ninth; RSS alone changed markedly without allocator changes. Not used as performance acceptance.",
+  "footprint_api": "macOS proc_pid_rusage RUSAGE_INFO_V0; SDK sys/resource.h layout, 96 bytes",
+  "reference_memory_semantics": "https://developer.apple.com/videos/play/wwdc2018/416/"
+}

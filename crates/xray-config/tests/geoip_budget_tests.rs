@@ -2,6 +2,7 @@ use std::{
     fs,
     net::{IpAddr, Ipv6Addr},
     path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -102,12 +103,16 @@ struct GeoIpFixture {
 
 impl GeoIpFixture {
     fn new(cidr_count: usize) -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("xray-geoip-budget-{}-{stamp}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "xray-geoip-budget-{}-{stamp}-{id}",
+            std::process::id()
+        ));
         fs::create_dir(&dir).unwrap();
         let fixture = Self { dir };
         let body = Country {

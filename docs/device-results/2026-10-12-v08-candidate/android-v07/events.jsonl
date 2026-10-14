@@ -1,0 +1,38 @@
+{"backends": ["file-descriptor", "packet-pump"], "caseCount": 2, "hostTime": 1791823021.8298109, "kind": "matrix-start"}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823021.82998, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823022.3552902, "kind": "share-link-import-not-supported-by-device-host", "source": "documented config-only test host"}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823024.135568, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823028.305797, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823032.38221, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823036.4508421, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823039.50881, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823044.7747998, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "wireguard", "hostTime": 1791823045.065186, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823048.1214652, "kind": "case-start"}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823048.3745978, "kind": "share-link-import-not-supported-by-device-host", "source": "documented config-only test host"}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823050.141335, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823054.3343282, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823058.400314, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823062.5459049, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823065.67033, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823071.458005, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "wireguard", "hostTime": 1791823072.322455, "kind": "case-pass"}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823075.4451141, "kind": "case-start"}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823076.69206, "kind": "share-link-import", "passed": true}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823077.875168, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823082.036136, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823086.106265, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823090.1709068, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823093.1987798, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823098.422316, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "file-descriptor", "case": "hysteria2", "hostTime": 1791823098.708732, "kind": "case-pass"}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823101.776928, "kind": "case-start"}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823103.027483, "kind": "share-link-import", "passed": true}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823104.208929, "kind": "running", "status": {"detail": "probe-only", "fatal-tun-errors": "0", "runtime-generation": "1", "state": "running"}}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823108.374527, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv4"}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823113.0875762, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "ipv6"}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823117.151189, "kind": "traffic", "status": {"http-failed": "0", "http-passed": "3", "running": "false", "udp-failed": "0", "udp-passed": "3"}, "target": "domain"}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823120.1745222, "kind": "close-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823125.99265, "kind": "cancel-start-recovery", "status": {"http-failed": "0", "http-passed": "2", "running": "false", "udp-failed": "0", "udp-passed": "2"}}
+{"backend": "packet-pump", "case": "hysteria2", "hostTime": 1791823126.861084, "kind": "case-pass"}
+{"hostTime": 1791823130.005079, "kind": "matrix-pass"}

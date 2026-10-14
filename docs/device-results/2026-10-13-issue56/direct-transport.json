@@ -1,0 +1,176 @@
+{
+  "plan": {
+    "protocol": "plain HTTP TCP; no Rust, VPN, VMess, SOCKS, or Xray",
+    "rounds": [
+      "usb-reverse",
+      "wifi"
+    ],
+    "requestsPerRound": 4096,
+    "workers": 32,
+    "connectDeadlineSeconds": 5,
+    "responseDeadlineSeconds": 5,
+    "probeSha256": "0f83288266e9ed7de4e4d164ecd25d5b29df401fe2a9cece58050b85ec467647"
+  },
+  "usb-reverse": [
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "13ae24074dd74ff154809b80c745bb49",
+      "seconds": 5.000508343,
+      "sequence": 19,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "7e7981fc7a3259fb98433133a5b4545f",
+      "seconds": 5.000130919,
+      "sequence": 26,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "a5d965988bc09b998dc72312dc053016",
+      "seconds": 5.002157651,
+      "sequence": 21,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "3e2fe9d16cd358817db67363c4fd2676",
+      "seconds": 5.002461497,
+      "sequence": 23,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "7c3a2fa642f1424060f056e794845fa6",
+      "seconds": 5.002798458,
+      "sequence": 24,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "84ddb1b9dae94a432a1630128e6c73fb",
+      "seconds": 5.000226189,
+      "sequence": 32,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "69e97c2144c5c0160ea42dfab3c879ee",
+      "seconds": 5.000263073,
+      "sequence": 33,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "ae4ec45c8f3a67328b34b5a4b6e386e1",
+      "seconds": 5.000369881,
+      "sequence": 35,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "5bad90ede7e904179e42bd3ad8940b22",
+      "seconds": 5.000991304,
+      "sequence": 38,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "546f723e76d4f3143964a93bfbef9538",
+      "seconds": 5.001665304,
+      "sequence": 37,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "a287653bd79fd0c020fde7cef69c5975",
+      "seconds": 5.000265765,
+      "sequence": 41,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "2e9e65c0f68232a0915d5b79b4d39d58",
+      "seconds": 5.001823535,
+      "sequence": 39,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "9ca76bbf8f02f39d626cace8c954f40a",
+      "seconds": 5.00112165,
+      "sequence": 42,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "de197ea298524b8b0fbb7076d6bec922",
+      "seconds": 5.001204381,
+      "sequence": 3785,
+      "stage": "connect"
+    },
+    {
+      "error": "dial tcp 127.0.0.1:49300: i/o timeout",
+      "event": "failure",
+      "local": "",
+      "nonce": "195a7138287b60b6e9dbac2b4d4f9614",
+      "seconds": 5.001466419,
+      "sequence": 3794,
+      "stage": "connect"
+    },
+    {
+      "attempts": 4096,
+      "deadlineSeconds": 5,
+      "durationSeconds": 10.03466657,
+      "event": "summary",
+      "failed": 15,
+      "passed": 4081,
+      "workers": 32
+    }
+  ],
+  "wifi": [
+    {
+      "attempts": 4096,
+      "deadlineSeconds": 5,
+      "durationSeconds": 3.477605921,
+      "event": "summary",
+      "failed": 0,
+      "passed": 4096,
+      "workers": 32
+    }
+  ],
+  "cleanup": {
+    "time": 1791924072.528502,
+    "ownedProbeRemoved": true,
+    "reverseRemoved": true
+  }
+}

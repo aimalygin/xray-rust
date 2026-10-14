@@ -1,0 +1,53 @@
+{
+  "combinations": 6,
+  "localCancellationMaxSeconds": 0.4225471019744873,
+  "localCancellationPassed": 12,
+  "operations": 12,
+  "remoteCloseWithin3s": 8,
+  "remoteLimitFailures": [
+    {
+      "backend": "file-descriptor",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "closed": {
+        "backend": "hold-close",
+        "id": 8005,
+        "reason": "TimeoutError",
+        "time": 1791821905.81687
+      },
+      "mode": "close-connections"
+    },
+    {
+      "backend": "file-descriptor",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "closed": {
+        "backend": "hold-close",
+        "id": 8006,
+        "reason": "TimeoutError",
+        "time": 1791821931.755498
+      },
+      "mode": "disconnect"
+    },
+    {
+      "backend": "packet-pump",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "closed": {
+        "backend": "hold-close",
+        "id": 8007,
+        "reason": "TimeoutError",
+        "time": 1791821958.58217
+      },
+      "mode": "close-connections"
+    },
+    {
+      "backend": "packet-pump",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "closed": {
+        "backend": "hold-close",
+        "id": 8008,
+        "reason": "TimeoutError",
+        "time": 1791821985.771017
+      },
+      "mode": "disconnect"
+    }
+  ]
+}

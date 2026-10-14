@@ -1,0 +1,1052 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 8,
+    "protocol" : "setup",
+    "time" : "2026-10-04T20:18:54Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:54Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "seconds" : 0.23540008068084717,
+    "time" : "2026-10-04T20:18:54Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:18:54Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.90581441666654428,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:18:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.87751783333078492,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:56Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:18:56Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.89076537499931874,
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:57Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:18:57Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19750054166433983,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:57Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:18:58Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.27929400000357418,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:58Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:18:58Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29402.947721750003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29403.288974916668"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29403.478273250003"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-10-04T20:18:58Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4048520,
+    "inboundPackets" : 203,
+    "outboundPackets" : 181,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 28688384,
+    "runtime" : "bff02c4f-2d2a-41aa-babc-47953ab047ac",
+    "stage" : "after-traffic",
+    "tcp" : 2,
+    "threads" : 10,
+    "time" : "2026-10-04T20:18:58Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:18:58Z"
+  },
+  {
+    "closedIDs" : [
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "seconds" : 2.0473101250026957,
+    "time" : "2026-10-04T20:19:00Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29402.947721750003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29403.288974916668"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29403.478273250003"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-close",
+    "time" : "2026-10-04T20:19:00Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3851912,
+    "inboundPackets" : 206,
+    "outboundPackets" : 186,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 28852224,
+    "runtime" : "bff02c4f-2d2a-41aa-babc-47953ab047ac",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 8,
+    "time" : "2026-10-04T20:19:00Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:00Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75584741666898481,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:01Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:01Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.87410475000069709,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:02Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:02Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75404804166464601,
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19124925000141957,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.2142343333325698,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29402.947721750003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29403.288974916668"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29403.478273250003"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-10-04T20:19:03Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3917448,
+    "inboundPackets" : 405,
+    "outboundPackets" : 360,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 29016064,
+    "runtime" : "bff02c4f-2d2a-41aa-babc-47953ab047ac",
+    "stage" : "after-recovery",
+    "tcp" : 2,
+    "threads" : 8,
+    "time" : "2026-10-04T20:19:03Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:04Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "seconds" : 0.20165205001831055,
+    "time" : "2026-10-04T20:19:04Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:04Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.26851866666766,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.74110274999839021,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.97546783333382336,
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19040812499952153,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:08Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:08Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19920216666650958,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:08Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:08Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29412.704681583335"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29413.231603125"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-10-04T20:19:08Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4228744,
+    "inboundPackets" : 211,
+    "outboundPackets" : 186,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 28884992,
+    "runtime" : "2e3894a1-dd5f-4de2-8e9e-f677afae87e8",
+    "stage" : "after-traffic",
+    "tcp" : 2,
+    "threads" : 10,
+    "time" : "2026-10-04T20:19:08Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:08Z"
+  },
+  {
+    "closedIDs" : [
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "seconds" : 2.0992297083357698,
+    "time" : "2026-10-04T20:19:10Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29412.704681583335"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29413.231603125"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-close",
+    "time" : "2026-10-04T20:19:10Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3966600,
+    "inboundPackets" : 213,
+    "outboundPackets" : 188,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 28999680,
+    "runtime" : "2e3894a1-dd5f-4de2-8e9e-f677afae87e8",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 8,
+    "time" : "2026-10-04T20:19:10Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:10Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75232933333609253,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:11Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75910104166905512,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:12Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:12Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75920908333137049,
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:13Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:13Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.19103566666672123,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:13Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:13Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.39115979166672332,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:13Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:13Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:14Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29412.704681583335"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29413.231603125"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29421.123101708334"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-10-04T20:19:14Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3999368,
+    "inboundPackets" : 422,
+    "outboundPackets" : 371,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 29163520,
+    "runtime" : "2e3894a1-dd5f-4de2-8e9e-f677afae87e8",
+    "stage" : "after-recovery",
+    "tcp" : 2,
+    "threads" : 9,
+    "time" : "2026-10-04T20:19:14Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:14Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "seconds" : 0.21059095859527588,
+    "time" : "2026-10-04T20:19:14Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:14Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.75319679166568676,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:15Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:15Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.2774037500021223,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:16Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:17Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 1.0718886666654726,
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.18954820833459962,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.24430999999822234,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29422.850923375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29423.03518925"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29423.375069041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29425.175062416667"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4228720,
+    "inboundPackets" : 210,
+    "outboundPackets" : 184,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 28753920,
+    "runtime" : "a54a4f4c-3e46-4334-bb48-35c93638096f",
+    "stage" : "after-traffic",
+    "tcp" : 2,
+    "threads" : 11,
+    "time" : "2026-10-04T20:19:18Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:18Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "seconds" : 2.1116328333300771,
+    "time" : "2026-10-04T20:19:20Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29422.850923375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29423.03518925"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29423.375069041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29425.175062416667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29428.80941941667"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-close",
+    "time" : "2026-10-04T20:19:20Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4048496,
+    "inboundPackets" : 222,
+    "outboundPackets" : 195,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 29016064,
+    "runtime" : "a54a4f4c-3e46-4334-bb48-35c93638096f",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-10-04T20:19:20Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.76050308333651628,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:21Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.85584612500315416,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:22Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:22Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.88344975000291015,
+    "host" : "v07-probe-1a626a132fc2.test",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:23Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:23Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.18883666666442878,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:23Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:19:23Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.21572566666873172,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:24Z"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:24Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:24Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29422.850923375"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29423.03518925"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29423.375069041667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29425.175062416667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29428.80941941667"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-10-04T20:19:24Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4097648,
+    "inboundPackets" : 424,
+    "outboundPackets" : 372,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 29229056,
+    "runtime" : "a54a4f4c-3e46-4334-bb48-35c93638096f",
+    "stage" : "after-recovery",
+    "tcp" : 2,
+    "threads" : 11,
+    "time" : "2026-10-04T20:19:24Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:25Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:19:25Z"
+  }
+]

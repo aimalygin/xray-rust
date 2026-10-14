@@ -1,0 +1,1446 @@
+{
+  "reportVersion": 1,
+  "kind": "physical-android-lan-regression-and-active-cancellation",
+  "artifacts": [
+    {
+      "path": "backend-events.jsonl",
+      "sha256": "f4718cd10ad64959a62777fb01f9dc50670595f7bdfcb1ab4ed1575778ff691b"
+    },
+    {
+      "path": "build-identity.json",
+      "sha256": "62308951a172172d780e2a17ca40c79343337ad5b947137ca770cc2198e00c7f"
+    },
+    {
+      "path": "cleanup.json",
+      "sha256": "5141036fe24808706dee4355e056e80c19b57abc2839c2f5d9f643c8c8fcb300"
+    },
+    {
+      "path": "device-environment.json",
+      "sha256": "15d78acd7acbe416e277d81ca5dec5a2ae3694195511accad3d69f065a38816f"
+    },
+    {
+      "path": "device-logcat.log",
+      "sha256": "5c59a9c7da110cb20b04858556eb40e6faa739141c0f474b7b92e9baffa1c7de"
+    },
+    {
+      "path": "events.jsonl",
+      "sha256": "50752a6aed055c55e764425400ed23a97c9fc528039ba8c26b5c3e5774fcf05f"
+    },
+    {
+      "path": "fixture-cleanup.json",
+      "sha256": "50a2c83bf1b04ae1d1f4d5ba45a5f7ab0de99c96748edc06f9e0b2b583fa8c37"
+    },
+    {
+      "path": "limits.json",
+      "sha256": "ce8939394b69f53990ec19a4457006671f1eb7585310ac3445cb821cbb2f02bc"
+    },
+    {
+      "path": "reproduce/README.md",
+      "sha256": "d9b5a5517f2163fc636decb65e9dbc3fda25786d0e6a540720f116e7d9c1fd90"
+    },
+    {
+      "path": "reproduce/campaign-pilot.py",
+      "sha256": "88df5d63cdb810c0f983217fa5d7be1e13ce80b834b913be971af086be56a0de"
+    },
+    {
+      "path": "reproduce/campaign.py",
+      "sha256": "a587ad5ba5586816d56bc04ea442da50059e3c43c8c31d6a6bf4bd0bc29c12b0"
+    },
+    {
+      "path": "reproduce/cleanup-device.py",
+      "sha256": "bf81e2d0afa383f419e50ac9ce9543eb94743775137a9c998eaa5a8a88cd3840"
+    },
+    {
+      "path": "reproduce/drive.py",
+      "sha256": "26c9abdd273ee04a8c945189e9ead210bc22e657b8370b8e6adaa36614ac2219"
+    },
+    {
+      "path": "reproduce/fixture-initial.py",
+      "sha256": "36c6ddde28883e3616201a279612dc0eca7796c18289598541a08e39a408d05b"
+    },
+    {
+      "path": "reproduce/ss2022-go-control.py",
+      "sha256": "7da99ae4f59d65c02ecc10c815acd6eb8241ce44bfbb074826dac1c266aa43e7"
+    },
+    {
+      "path": "reproduce/ss2022-local-control.py",
+      "sha256": "4b28aa1e95f7ee0d1a7f30efda0aa8f79b14209f9fa48d485e19bd49cab2aeb4"
+    },
+    {
+      "path": "reproduce/trojan-udp-repeat.py",
+      "sha256": "973a27a5b9163ed72299481bdddc3c7cde107614fb02a63b1e3be8147fdf78a6"
+    },
+    {
+      "path": "reproduce/udp-cancel-pilot-initial.py",
+      "sha256": "1f719202730603f8ebf3d5566335b7031d608fe70845b218f41a8b415ce5a01f"
+    },
+    {
+      "path": "reproduce/udp-cancel.py",
+      "sha256": "a863631f1920f4331874edfd039b54bac3672cc78158a7928100cdbe4288c165"
+    },
+    {
+      "path": "reproduce/wireguard-stop-control-initial.py",
+      "sha256": "f1f006583934fb4a621cdb532ea517a74475317daafa57adff6a4afdb523f894"
+    },
+    {
+      "path": "reproduce/wireguard-stop-control.py",
+      "sha256": "8838cabf1a07f9aac7c8c26cf62a1e977aa9f546e3921a2a6d745fc26b98993c"
+    },
+    {
+      "path": "ss2022-teardown-diagnosis.json",
+      "sha256": "72a4e21559f65d840e818e635ff932802252fd6b9224a45055e835f92bd59c39"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "4fb39e1b7ec41eb5384f42d0dbf841eb0576cbc16e45592fe74d639fcdcbca9e"
+    },
+    {
+      "path": "trojan-repeat-1/backend-events.jsonl",
+      "sha256": "184fe9bf4d2c892b13fd65afecb78d647273297b40aa0dfd33631aa33086fd2e"
+    },
+    {
+      "path": "trojan-repeat-1/events.jsonl",
+      "sha256": "87ca41fea6531287c100fa1cae652dea8792a996d7306dc06481edce6a7a9b78"
+    },
+    {
+      "path": "trojan-repeat-2/backend-events.jsonl",
+      "sha256": "9b06b95b182e09e315b205f1695b3ede4aea68901b8096a4d9fa321d6ce1a7f4"
+    },
+    {
+      "path": "trojan-repeat-2/events.jsonl",
+      "sha256": "a0db1c249758740348cea8a5322d216eeb3626b88a885419643a762919e1a7e2"
+    },
+    {
+      "path": "trojan-repeat-3/backend-events.jsonl",
+      "sha256": "65dc03ebcdcca10eb1ff574367c957605743f937deca2c06736cae024ad6c1cb"
+    },
+    {
+      "path": "trojan-repeat-3/events.jsonl",
+      "sha256": "bbf33fa0145fef5a80b4612219df4c08d11e687d90f4a669a72dd9eea80f0695"
+    },
+    {
+      "path": "trojan-repeat-4/backend-events.jsonl",
+      "sha256": "d5463cedfffa9e00ec53ecd609c5be882626c5e277cf52ddb169a49b698fc1df"
+    },
+    {
+      "path": "trojan-repeat-4/events.jsonl",
+      "sha256": "d7687eee0cbe729ff52cc4a9c510962c246e855d6c822f61d24b58a75829ccaa"
+    },
+    {
+      "path": "trojan-udp-diagnosis.json",
+      "sha256": "36aec4648774d052c81bcff93fee720b4c51589e25586bff2412957403142f6b"
+    },
+    {
+      "path": "udp-pilot-diagnosis.json",
+      "sha256": "a4011d49a23a30d813afc0ef959d9ebdbbc99082fadeed8a5d7487d8e6f65b35"
+    },
+    {
+      "path": "verify.py",
+      "sha256": "11d9fff5b6076263bc83359a265b7936e816432b9df796bbc3c5cf2925079a80"
+    },
+    {
+      "path": "wireguard-control-diagnosis.json",
+      "sha256": "c2370800eb8ad564bd3416ff45d8137123dc92996a6c4e04bb6633fa14f24c5a"
+    },
+    {
+      "path": "wireguard-stop-diagnosis.json",
+      "sha256": "c03a3c637e96113e7659653cdf5a7bfd3b231ca5c3daaae8734e2c2e0215d52d"
+    }
+  ],
+  "tcpCasePasses": [
+    {
+      "hostTime": 1791165959.610642,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "vless-reality",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166024.133276,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "vless-reality",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166069.671129,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h1",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166115.2485561,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h1",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166156.9389398,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h2",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166199.787022,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h2",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166241.671145,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h3",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166284.1693802,
+      "kind": "case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h3",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166862.088497,
+      "kind": "case-pass",
+      "suite": "v07",
+      "case": "hysteria2",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166903.708643,
+      "kind": "case-pass",
+      "suite": "v07",
+      "case": "hysteria2",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167141.037858,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "trojan-tls",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167182.098293,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "trojan-tls",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167249.9114811,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "vmess-auto",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167287.058959,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "vmess-auto",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167387.276163,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "vmess-aes-128-gcm",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167425.1947782,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "vmess-aes-128-gcm",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167462.915647,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "vmess-chacha20-poly1305",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167500.679172,
+      "kind": "case-pass",
+      "suite": "v08",
+      "case": "vmess-chacha20-poly1305",
+      "backend": "packet-pump"
+    }
+  ],
+  "udpCasePasses": [
+    {
+      "hostTime": 1791166400.8591459,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "vless-reality",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166454.1416802,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "vless-reality",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166502.7681751,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h1",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166552.132288,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h1",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166601.413337,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h2",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166650.725353,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h2",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166699.188926,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h3",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791166748.0270169,
+      "kind": "udp-case-pass",
+      "suite": "legacy",
+      "case": "xhttp-h3",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791166953.897469,
+      "kind": "udp-case-pass",
+      "suite": "v07",
+      "case": "wireguard",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167002.201235,
+      "kind": "udp-case-pass",
+      "suite": "v07",
+      "case": "wireguard",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167050.3685791,
+      "kind": "udp-case-pass",
+      "suite": "v07",
+      "case": "hysteria2",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167099.150607,
+      "kind": "udp-case-pass",
+      "suite": "v07",
+      "case": "hysteria2",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167552.394709,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "trojan-tls",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167653.94519,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167704.2169,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167756.511877,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "vmess-auto",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167805.773064,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "vmess-auto",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167855.450836,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791167904.9079008,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791167953.545496,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791168003.299932,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791168052.385272,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "vmess-aes-128-gcm",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791168101.819384,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "vmess-aes-128-gcm",
+      "backend": "packet-pump"
+    },
+    {
+      "hostTime": 1791168150.1492639,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "vmess-chacha20-poly1305",
+      "backend": "file-descriptor"
+    },
+    {
+      "hostTime": 1791168199.148143,
+      "kind": "udp-case-pass",
+      "suite": "v08",
+      "case": "vmess-chacha20-poly1305",
+      "backend": "packet-pump"
+    }
+  ],
+  "failures": [
+    {
+      "hostTime": 1791166313.5502532,
+      "kind": "udp-case-fail",
+      "suite": "legacy",
+      "case": "vless-reality",
+      "backend": "file-descriptor",
+      "error": "[]"
+    },
+    {
+      "hostTime": 1791166786.057122,
+      "kind": "case-fail",
+      "suite": "v07",
+      "case": "wireguard",
+      "backend": "file-descriptor",
+      "error": "backend hold-close deadline id=2002"
+    },
+    {
+      "hostTime": 1791166821.725764,
+      "kind": "case-fail",
+      "suite": "v07",
+      "case": "wireguard",
+      "backend": "packet-pump",
+      "error": "backend hold-close deadline id=2004"
+    },
+    {
+      "hostTime": 1791167197.339249,
+      "kind": "case-fail",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "error": "backend hold-close deadline id=3005"
+    },
+    {
+      "hostTime": 1791167212.534755,
+      "kind": "case-fail",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "error": "backend hold-close deadline id=3006"
+    },
+    {
+      "hostTime": 1791167302.267058,
+      "kind": "case-fail",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "error": "backend hold-close deadline id=3011"
+    },
+    {
+      "hostTime": 1791167317.940512,
+      "kind": "case-fail",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "error": "backend hold-close deadline id=3012"
+    },
+    {
+      "hostTime": 1791167333.762379,
+      "kind": "case-fail",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "error": "backend hold-close deadline id=3013"
+    },
+    {
+      "hostTime": 1791167349.35318,
+      "kind": "case-fail",
+      "suite": "v08",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "error": "backend hold-close deadline id=3014"
+    },
+    {
+      "hostTime": 1791167604.32756,
+      "kind": "udp-case-fail",
+      "suite": "v08",
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "error": "traffic failure: ipv4 {\"running\": \"false\", \"http-failed\": \"0\", \"udp-failed\": \"1\", \"http-passed\": \"1\", \"udp-passed\": \"0\"}"
+    }
+  ],
+  "tcpCancellations": 38,
+  "udpCancellations": 52,
+  "ordinaryTraffic": {
+    "http-passed": 255,
+    "http-failed": 0,
+    "udp-passed": 254,
+    "udp-failed": 1
+  },
+  "tcpBackendCloseSeconds": [
+    1.2334120273590088,
+    1.2186200618743896,
+    1.1882619857788086,
+    1.4039092063903809,
+    1.1987531185150146,
+    1.1582920551300049,
+    1.1739389896392822,
+    1.2137517929077148,
+    0.1660151481628418,
+    0.16262006759643555,
+    0.17424392700195312,
+    0.23134207725524902,
+    0.1676023006439209,
+    0.15564703941345215,
+    0.16959738731384277,
+    0.4088711738586426,
+    0.21028804779052734,
+    0.20031213760375977,
+    0.16024088859558105,
+    0.17247891426086426,
+    0.1636350154876709,
+    0.3113059997558594,
+    1.2243950366973877,
+    1.17787504196167,
+    1.205902099609375,
+    1.300753116607666,
+    1.1702120304107666,
+    1.168586015701294,
+    1.1644668579101562,
+    1.229583740234375,
+    1.1846089363098145,
+    1.1647138595581055,
+    1.165236234664917,
+    1.3456246852874756,
+    1.1833159923553467,
+    1.1596639156341553,
+    1.2131688594818115,
+    1.255323886871338
+  ],
+  "wireguardStopControls": [
+    {
+      "hostTime": 1791168232.550046,
+      "kind": "wireguard-stop-control",
+      "case": "wireguard",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "id": 4001,
+      "opened": {
+        "backend": "hold-open",
+        "id": 4001,
+        "time": 1791168212.512953
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 4001,
+        "reason": "TimeoutError",
+        "time": 1791168232.516106
+      },
+      "closeRequestTime": 1791168212.547176,
+      "stopRequestTime": 1791168212.54718,
+      "localHttpError": "1791168212.830 23960 15258 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.2828240394592285,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168212.830 23960 15258 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168212.859 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":147464192,\"threadCount\":30,\"processCpuMillis\":78311,\"elapsedRealtimeMillis\":8675688,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168212.859 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localStopPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168252.0321789,
+      "kind": "wireguard-stop-control",
+      "case": "wireguard",
+      "backend": "file-descriptor",
+      "mode": "close-before-disconnect",
+      "id": 4002,
+      "opened": {
+        "backend": "hold-open",
+        "id": 4002,
+        "time": 1791168239.033931
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 4002,
+        "reason": "eof",
+        "time": 1791168239.1783621
+      },
+      "closeRequestTime": 1791168239.072221,
+      "stopRequestTime": 1791168239.221406,
+      "localHttpError": "1791168239.268 23960 15471 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.19577884674072266,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168239.070 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168239.266 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168239.268 23960 15471 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168239.270 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":151465984,\"threadCount\":36,\"processCpuMillis\":79149,\"elapsedRealtimeMillis\":8702099,\"activeConnections\":0,\"tunInboundPackets\":16,\"tunOutboundPackets\":9,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168239.279 23960 15471 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0",
+        "1791168239.448 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":151572480,\"threadCount\":30,\"processCpuMillis\":79212,\"elapsedRealtimeMillis\":8702277,\"activeConnections\":0,\"tunInboundPackets\":16,\"tunOutboundPackets\":9,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168239.448 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localStopPassed": true,
+      "remoteCloseBoundPassed": true
+    },
+    {
+      "hostTime": 1791168375.892072,
+      "kind": "wireguard-stop-control",
+      "case": "wireguard",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "id": 4101,
+      "opened": {
+        "backend": "hold-open",
+        "id": 4101,
+        "time": 1791168355.8829372
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 4101,
+        "reason": "TimeoutError",
+        "time": 1791168375.879663
+      },
+      "closeRequestTime": 1791168355.919816,
+      "stopRequestTime": 1791168355.919821,
+      "localHttpError": "1791168356.169 23960 15923 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.24918389320373535,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168355.948 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168356.169 23960 15923 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168356.232 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":154189824,\"threadCount\":30,\"processCpuMillis\":82595,\"elapsedRealtimeMillis\":8819061,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168356.233 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localStopPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168395.654451,
+      "kind": "wireguard-stop-control",
+      "case": "wireguard",
+      "backend": "packet-pump",
+      "mode": "close-before-disconnect",
+      "id": 4102,
+      "opened": {
+        "backend": "hold-open",
+        "id": 4102,
+        "time": 1791168381.932713
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 4102,
+        "reason": "eof",
+        "time": 1791168382.0861819
+      },
+      "closeRequestTime": 1791168381.9696121,
+      "stopRequestTime": 1791168382.098371,
+      "localHttpError": "1791168382.202 23960 16131 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.23238778114318848,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168382.011 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168382.199 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168382.202 23960 16131 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168382.204 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":152911872,\"threadCount\":38,\"processCpuMillis\":83596,\"elapsedRealtimeMillis\":8845033,\"activeConnections\":0,\"tunInboundPackets\":16,\"tunOutboundPackets\":9,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168382.221 23960 16131 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0",
+        "1791168382.475 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":153268224,\"threadCount\":30,\"processCpuMillis\":83697,\"elapsedRealtimeMillis\":8845305,\"activeConnections\":0,\"tunInboundPackets\":16,\"tunOutboundPackets\":9,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168382.476 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localStopPassed": true,
+      "remoteCloseBoundPassed": true
+    }
+  ],
+  "ss2022LocalControls": [
+    {
+      "hostTime": 1791168488.577301,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "mode": "close-connections",
+      "id": 6001,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6001,
+        "time": 1791168468.564822
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6001,
+        "reason": "TimeoutError",
+        "time": 1791168488.5674372
+      },
+      "closeRequestTime": 1791168468.585257,
+      "localHttpError": "1791168468.839 23960 16400 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.25374293327331543,
+      "status": {
+        "state": "running",
+        "detail": "probe-only",
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168468.657 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168468.837 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168468.839 23960 16400 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168468.841 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":152715264,\"threadCount\":36,\"processCpuMillis\":85967,\"elapsedRealtimeMillis\":8931671,\"activeConnections\":0,\"tunInboundPackets\":12,\"tunOutboundPackets\":6,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168468.873 23960 16400 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168515.170089,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "id": 6002,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6002,
+        "time": 1791168495.152808
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6002,
+        "reason": "TimeoutError",
+        "time": 1791168515.1546519
+      },
+      "closeRequestTime": 1791168495.1706262,
+      "localHttpError": "1791168495.428 23960 16573 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.2573738098144531,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168495.243 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168495.428 23960 16573 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168495.463 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":151187456,\"threadCount\":30,\"processCpuMillis\":86712,\"elapsedRealtimeMillis\":8958292,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168495.463 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168541.390048,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "mode": "close-connections",
+      "id": 6003,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6003,
+        "time": 1791168521.37109
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6003,
+        "reason": "TimeoutError",
+        "time": 1791168541.374157
+      },
+      "closeRequestTime": 1791168521.3944588,
+      "localHttpError": "1791168521.638 23960 16769 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.24354124069213867,
+      "status": {
+        "state": "running",
+        "detail": "probe-only",
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168521.471 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168521.636 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168521.638 23960 16769 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168521.639 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":151449600,\"threadCount\":38,\"processCpuMillis\":87614,\"elapsedRealtimeMillis\":8984469,\"activeConnections\":0,\"tunInboundPackets\":12,\"tunOutboundPackets\":6,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168521.657 23960 16769 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168567.494931,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "id": 6004,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6004,
+        "time": 1791168547.483733
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6004,
+        "reason": "TimeoutError",
+        "time": 1791168567.486752
+      },
+      "closeRequestTime": 1791168547.494866,
+      "localHttpError": "1791168547.762 23960 16959 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.2671341896057129,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168547.577 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168547.762 23960 16959 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168547.860 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":149159936,\"threadCount\":30,\"processCpuMillis\":88435,\"elapsedRealtimeMillis\":9010690,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168547.860 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168594.8962219,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "mode": "close-connections",
+      "id": 6005,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6005,
+        "time": 1791168574.8743591
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6005,
+        "reason": "TimeoutError",
+        "time": 1791168594.876876
+      },
+      "closeRequestTime": 1791168574.895138,
+      "localHttpError": "1791168575.121 23960 17160 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.2258620262145996,
+      "status": {
+        "state": "running",
+        "detail": "probe-only",
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168574.972 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168575.119 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168575.121 23960 17160 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168575.122 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":151564288,\"threadCount\":36,\"processCpuMillis\":89373,\"elapsedRealtimeMillis\":9037951,\"activeConnections\":0,\"tunInboundPackets\":12,\"tunOutboundPackets\":7,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168575.139 23960 17160 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168621.4580429,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "id": 6006,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6006,
+        "time": 1791168601.433738
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6006,
+        "reason": "TimeoutError",
+        "time": 1791168621.4365828
+      },
+      "closeRequestTime": 1791168601.449908,
+      "localHttpError": "1791168601.716 23960 17330 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.26609206199645996,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168601.444 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168601.716 23960 17330 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168601.754 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":150290432,\"threadCount\":30,\"processCpuMillis\":90119,\"elapsedRealtimeMillis\":9064584,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168601.755 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168647.865473,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "mode": "close-connections",
+      "id": 6007,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6007,
+        "time": 1791168627.852302
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6007,
+        "reason": "TimeoutError",
+        "time": 1791168647.8551428
+      },
+      "closeRequestTime": 1791168627.887857,
+      "localHttpError": "1791168628.213 23960 17534 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.32514309883117676,
+      "status": {
+        "state": "running",
+        "detail": "probe-only",
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168627.854 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168628.210 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168628.213 23960 17534 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168628.214 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":149970944,\"threadCount\":38,\"processCpuMillis\":91125,\"elapsedRealtimeMillis\":9091043,\"activeConnections\":0,\"tunInboundPackets\":12,\"tunOutboundPackets\":6,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168628.386 23960 17534 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168674.341089,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "id": 6008,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6008,
+        "time": 1791168654.324657
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6008,
+        "reason": "TimeoutError",
+        "time": 1791168674.3275
+      },
+      "closeRequestTime": 1791168654.337878,
+      "localHttpError": "1791168654.582 23960 17712 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.24412202835083008,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168654.409 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168654.582 23960 17712 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168654.690 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":152375296,\"threadCount\":30,\"processCpuMillis\":91927,\"elapsedRealtimeMillis\":9117520,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168654.692 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168700.455483,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "mode": "close-connections",
+      "id": 6009,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6009,
+        "time": 1791168680.447577
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6009,
+        "reason": "TimeoutError",
+        "time": 1791168700.450328
+      },
+      "closeRequestTime": 1791168680.464401,
+      "localHttpError": "1791168680.719 23960 17927 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.25459909439086914,
+      "status": {
+        "state": "running",
+        "detail": "probe-only",
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168680.541 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168680.717 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168680.719 23960 17927 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168680.721 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":152080384,\"threadCount\":36,\"processCpuMillis\":92825,\"elapsedRealtimeMillis\":9143550,\"activeConnections\":0,\"tunInboundPackets\":12,\"tunOutboundPackets\":6,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168680.736 23960 17927 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168727.355587,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "file-descriptor",
+      "mode": "disconnect",
+      "id": 6010,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6010,
+        "time": 1791168707.3422341
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6010,
+        "reason": "TimeoutError",
+        "time": 1791168727.345025
+      },
+      "closeRequestTime": 1791168707.370036,
+      "localHttpError": "1791168707.621 23960 18096 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.2509641647338867,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168707.440 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168707.621 23960 18096 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168707.652 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"file-descriptor\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":150728704,\"threadCount\":30,\"processCpuMillis\":93587,\"elapsedRealtimeMillis\":9170481,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168707.652 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168753.764394,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "mode": "close-connections",
+      "id": 6011,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6011,
+        "time": 1791168733.7303429
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6011,
+        "reason": "TimeoutError",
+        "time": 1791168753.733286
+      },
+      "closeRequestTime": 1791168733.750531,
+      "localHttpError": "1791168734.061 23960 18368 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.3104691505432129,
+      "status": {
+        "state": "running",
+        "detail": "probe-only",
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168733.677 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168734.057 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=connections-close-requested accepted=1",
+        "1791168734.061 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":true,\"runtimeGeneration\":1,\"residentMemoryBytes\":152264704,\"threadCount\":38,\"processCpuMillis\":94550,\"elapsedRealtimeMillis\":9196891,\"activeConnections\":0,\"tunInboundPackets\":13,\"tunOutboundPackets\":6,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168734.061 23960 18368 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168734.167 23960 18368 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    },
+    {
+      "hostTime": 1791168780.163771,
+      "kind": "ss2022-local-control",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "backend": "packet-pump",
+      "mode": "disconnect",
+      "id": 6012,
+      "opened": {
+        "backend": "hold-open",
+        "id": 6012,
+        "time": 1791168760.153079
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 6012,
+        "reason": "TimeoutError",
+        "time": 1791168780.154166
+      },
+      "closeRequestTime": 1791168760.187541,
+      "localHttpError": "1791168760.538 23960 18625 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+      "localErrorAfterRequestSeconds": 0.35045909881591797,
+      "status": {
+        "state": "stopped",
+        "detail": null,
+        "runtime-generation": "1",
+        "fatal-tun-errors": "0"
+      },
+      "lifecycle": [
+        "1791168760.176 23960 23960 I XrayDeviceProbe: XRAY_ANDROID_PROBE state=started",
+        "1791168760.538 23960 18625 I XrayDeviceProbe: XRAY_ANDROID_PROBE kind=http result=failed errorCode=SocketException elapsedSeconds=0",
+        "1791168760.707 24006 24006 I XrayDeviceGate: XRAY_ANDROID_SAMPLE {\"tunBackend\":\"packet-pump\",\"probeOnly\":true,\"runtimeRunning\":false,\"runtimeGeneration\":1,\"residentMemoryBytes\":149958656,\"threadCount\":30,\"processCpuMillis\":95417,\"elapsedRealtimeMillis\":9223536,\"activeConnections\":0,\"tunInboundPackets\":3,\"tunOutboundPackets\":0,\"tunDroppedPackets\":0,\"udpRemoteOpenEvents\":0,\"udpRemoteWrittenBytes\":0,\"udpRemoteReadBytes\":0,\"fatalTunErrors\":0,\"unrecoveredTransitions\":0}",
+        "1791168760.707 24006 24006 I XrayDeviceGate: XRAY_ANDROID_LIFECYCLE state=stopped"
+      ],
+      "recovery": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "0",
+        "http-passed": "2",
+        "udp-passed": "2"
+      },
+      "localCancellationPassed": true,
+      "remoteCloseBoundPassed": false
+    }
+  ],
+  "ss2022GoControls": [
+    {
+      "hostTime": 1791168423.9938319,
+      "kind": "ss2022-go-control",
+      "case": "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "id": 7001,
+      "client": "Xray-core v26.7.28",
+      "opened": {
+        "backend": "hold-open",
+        "id": 7001,
+        "time": 1791168403.9690309
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 7001,
+        "reason": "TimeoutError",
+        "time": 1791168423.9718888
+      },
+      "socksCloseTime": 1791168403.9983082,
+      "processStopTime": 1791168407.009225,
+      "processExitTime": 1791168407.014098,
+      "processExitCode": 0,
+      "backendBeforeClientExit": [
+        {
+          "backend": "hold-open",
+          "id": 7001,
+          "time": 1791168403.9690309
+        }
+      ],
+      "remoteCloseAfterSocksSeconds": 19.973580598831177
+    },
+    {
+      "hostTime": 1791168444.139946,
+      "kind": "ss2022-go-control",
+      "case": "shadowsocks2022-2022-blake3-aes-128-gcm",
+      "id": 7002,
+      "client": "Xray-core v26.7.28",
+      "opened": {
+        "backend": "hold-open",
+        "id": 7002,
+        "time": 1791168424.1184099
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 7002,
+        "reason": "TimeoutError",
+        "time": 1791168444.119234
+      },
+      "socksCloseTime": 1791168424.1569479,
+      "processStopTime": 1791168427.167254,
+      "processExitTime": 1791168427.168841,
+      "processExitCode": 0,
+      "backendBeforeClientExit": [
+        {
+          "backend": "hold-open",
+          "id": 7002,
+          "time": 1791168424.1184099
+        }
+      ],
+      "remoteCloseAfterSocksSeconds": 19.962286233901978
+    },
+    {
+      "hostTime": 1791168464.2728992,
+      "kind": "ss2022-go-control",
+      "case": "shadowsocks2022-2022-blake3-aes-256-gcm",
+      "id": 7003,
+      "client": "Xray-core v26.7.28",
+      "opened": {
+        "backend": "hold-open",
+        "id": 7003,
+        "time": 1791168444.257632
+      },
+      "closed": {
+        "backend": "hold-close",
+        "id": 7003,
+        "reason": "TimeoutError",
+        "time": 1791168464.26021
+      },
+      "socksCloseTime": 1791168444.289523,
+      "processStopTime": 1791168447.2950678,
+      "processExitTime": 1791168447.29971,
+      "processExitCode": 0,
+      "backendBeforeClientExit": [
+        {
+          "backend": "hold-open",
+          "id": 7003,
+          "time": 1791168444.257632
+        }
+      ],
+      "remoteCloseAfterSocksSeconds": 19.9706871509552
+    }
+  ],
+  "ordinaryTrafficFailures": [
+    {
+      "hostTime": 1791167604.32756,
+      "kind": "udp-case-fail",
+      "suite": "v08",
+      "case": "trojan-tls",
+      "backend": "packet-pump",
+      "error": "traffic failure: ipv4 {\"running\": \"false\", \"http-failed\": \"0\", \"udp-failed\": \"1\", \"http-passed\": \"1\", \"udp-passed\": \"0\"}",
+      "status": {
+        "running": "false",
+        "http-failed": "0",
+        "udp-failed": "1",
+        "http-passed": "1",
+        "udp-passed": "0"
+      }
+    }
+  ],
+  "controllerIncompleteAttempts": [
+    "udp-pilot-diagnosis.json",
+    "wireguard-control-diagnosis.json"
+  ],
+  "trojanRepeatResults": [
+    {
+      "hostTime": 1791168838.241377,
+      "kind": "trojan-repeat-complete",
+      "trial": 1,
+      "backend": "packet-pump",
+      "exitCode": 0,
+      "casePassed": true,
+      "failures": []
+    },
+    {
+      "hostTime": 1791168889.801889,
+      "kind": "trojan-repeat-complete",
+      "trial": 2,
+      "backend": "file-descriptor",
+      "exitCode": 0,
+      "casePassed": true,
+      "failures": []
+    },
+    {
+      "hostTime": 1791168942.02718,
+      "kind": "trojan-repeat-complete",
+      "trial": 3,
+      "backend": "packet-pump",
+      "exitCode": 0,
+      "casePassed": true,
+      "failures": []
+    },
+    {
+      "hostTime": 1791168993.2460868,
+      "kind": "trojan-repeat-complete",
+      "trial": 4,
+      "backend": "file-descriptor",
+      "exitCode": 0,
+      "casePassed": true,
+      "failures": []
+    }
+  ],
+  "trojanRepeatEvents": 44,
+  "releaseAcceptanceComplete": false,
+  "androidNetworkAndLock": "owner-skipped-not-tested"
+}

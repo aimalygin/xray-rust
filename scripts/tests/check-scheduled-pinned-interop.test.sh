@@ -54,7 +54,6 @@ cat >"$FAKE_BIN/go" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-printf '%s\n' 'xray-core-build' >>"$FAKE_INVOCATION_LOG"
 
 [[ -z "${GOFLAGS+x}" ]] || {
   echo 'Xray-core build inherited GOFLAGS' >&2
@@ -80,6 +79,25 @@ printf '%s\n' 'xray-core-build' >>"$FAKE_INVOCATION_LOG"
   echo 'Xray-core build did not set CGO_ENABLED=0' >&2
   exit 96
 }
+
+if [[ "${4:-}" == "-mod=readonly" ]]; then
+  [[ "$1" == "-C" && "$2" == "$FAKE_EXPECTED_CORE" && "$3" == build && "$5" == -o ]] || exit 97
+  output="$6"
+  case "$(basename "$output")" in
+    download-oracle)
+      [[ $# == 8 && "$7" == */tools/xhttp-download-oracle/main.go && "$8" == */tools/xhttp-download-oracle/bridge.go ]] || exit 97
+      ;;
+    encryption-oracle)
+      [[ $# == 7 && "$7" == */tools/vless-encryption-oracle/main.go ]] || exit 97
+      ;;
+    *) exit 97 ;;
+  esac
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$output"
+  chmod +x "$output"
+  printf 'oracle:%s\n' "$(basename "$output")" >>"$FAKE_INVOCATION_LOG"
+  exit 0
+fi
+printf '%s\n' 'xray-core-build' >>"$FAKE_INVOCATION_LOG"
 
 if (( $# != 6 )) ||
   [[ "$1" != "-C" ]] ||
@@ -151,7 +169,7 @@ case "${1:-}" in
   test)
     assert_args "scheduled interop test" \
       test --locked -p xray-core-rs --test local_xray_interop_tests \
-      -- --ignored --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1
+      -- --ignored --skip vless_encryption:: --skip xhttp_download:: --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --nocapture --test-threads=1
 
     [[ -z "${GOFLAGS+x}" ]] || die 'scheduled interop test inherited GOFLAGS'
     [[ -z "${GOEXPERIMENT+x}" ]] || die 'scheduled interop test inherited GOEXPERIMENT'
@@ -161,6 +179,11 @@ case "${1:-}" in
     [[ "${GOWORK:-}" == "off" ]] || die 'scheduled interop test did not set GOWORK=off'
     [[ "${GOTOOLCHAIN:-}" == "local" ]] || die 'scheduled interop test did not set GOTOOLCHAIN=local'
     [[ "${CGO_ENABLED:-}" == "0" ]] || die 'scheduled interop test did not set CGO_ENABLED=0'
+
+    scheduled_binary="$(cat "$FAKE_CORE_PATH_LOG")"
+    [[ "$XRAY_VLESS_FULL_BINARY" == "$scheduled_binary" ]] || die 'missing exact full oracle'
+    [[ "$XRAY_DOWNLOAD_ORACLE" == "$(dirname "$scheduled_binary")/download-oracle" && -x "$XRAY_DOWNLOAD_ORACLE" ]] || die 'missing download oracle'
+    [[ "$XRAY_VLESS_ENCRYPTION_ORACLE" == "$(dirname "$scheduled_binary")/encryption-oracle" && -x "$XRAY_VLESS_ENCRYPTION_ORACLE" ]] || die 'missing encryption oracle'
 
     printf '%s\n' 'serial-ignored-interop' >>"$FAKE_INVOCATION_LOG"
     printf 'test|command=%s|fingerprints=%s|burst_fingerprints=%s|burst_flows=%s|xhttp_cases=%s|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=%s|gowork=%s|gotoolchain=%s|cgo=%s\n' \
@@ -302,7 +325,7 @@ assert_prefix_count() {
 }
 
 assert_line_count 1 \
-  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
+  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --skip vless_encryption:: --skip xhttp_download:: --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
 assert_line_count 1 \
   'build|command=build --locked --release -p xray-cli --bin xray-rust'
 
@@ -318,7 +341,7 @@ assert_prefix_count 1 'build|'
 assert_prefix_count 4 'resource|'
 assert_prefix_count 6 'invoke|'
 
-expected_invocations=$'xray-core-build\nserial-ignored-interop\nrelease-xray-rust-build\nresource:xray-rust:many-idle-flows\nresource:xray-rust:xhttp-h2-held-open\nresource:xray-core:many-idle-flows\nresource:xray-core:xhttp-h2-held-open'
+expected_invocations=$'xray-core-build\noracle:download-oracle\noracle:encryption-oracle\nserial-ignored-interop\nrelease-xray-rust-build\nresource:xray-rust:many-idle-flows\nresource:xray-rust:xhttp-h2-held-open\nresource:xray-core:many-idle-flows\nresource:xray-core:xhttp-h2-held-open'
 if [[ "$(<"$TEST_ROOT/invocations.log")" != "$expected_invocations" ]]; then
   echo 'scheduled interop operations ran out of order' >&2
   exit 102

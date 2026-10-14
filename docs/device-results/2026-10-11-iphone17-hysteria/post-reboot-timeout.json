@@ -1,0 +1,113 @@
+{
+  "case": "duplex-0-0",
+  "failure": [
+    {
+      "error": "receive n=-1 errno=35",
+      "index": 0,
+      "latencyMs": 2004.9553750432096,
+      "ok": false,
+      "startedUptime": 358304.993651875,
+      "udp": false
+    }
+  ],
+  "initialPackets": [
+    {
+      "direction": "send",
+      "phoneUnixTime": 1791774357.766614,
+      "hostUnixTime": 1791774360.848324,
+      "kernelUnixTime": 1791774360.847896,
+      "clientPort": 54165,
+      "bytes": 1200,
+      "hash": "41a85cf1adf9c032",
+      "clockOffsetContaminatedDeltaMs": 3081.282138824463,
+      "kernelToUserMs": 0.4279613494873047,
+      "excessOverMinimumSameSocketMs": 3000.119209289551
+    },
+    {
+      "direction": "send",
+      "phoneUnixTime": 1791774358.767319,
+      "hostUnixTime": 1791774360.8489568,
+      "kernelUnixTime": 1791774360.847944,
+      "clientPort": 54165,
+      "bytes": 1200,
+      "hash": "9757226cd6d662a5",
+      "clockOffsetContaminatedDeltaMs": 2080.625057220459,
+      "kernelToUserMs": 1.0128021240234375,
+      "excessOverMinimumSameSocketMs": 1999.4621276855469
+    },
+    {
+      "direction": "send",
+      "phoneUnixTime": 1791774358.767752,
+      "hostUnixTime": 1791774360.849532,
+      "kernelUnixTime": 1791774360.847971,
+      "clientPort": 54165,
+      "bytes": 1200,
+      "hash": "4524e722cdb54ab0",
+      "clockOffsetContaminatedDeltaMs": 2080.219030380249,
+      "kernelToUserMs": 1.5609264373779297,
+      "excessOverMinimumSameSocketMs": 1999.056100845337
+    },
+    {
+      "direction": "send",
+      "phoneUnixTime": 1791774360.763943,
+      "hostUnixTime": 1791774360.8462741,
+      "kernelUnixTime": 1791774360.845106,
+      "clientPort": 54165,
+      "bytes": 1200,
+      "hash": "9e829bec03add29a",
+      "clockOffsetContaminatedDeltaMs": 81.16292953491211,
+      "kernelToUserMs": 1.1682510375976562,
+      "excessOverMinimumSameSocketMs": 0.0
+    }
+  ],
+  "phoneSendSpanMs": 2997.328996658325,
+  "macFirstToLastPacketKernelDeltaMs": -2.790212631225586,
+  "relativeExcessDelayMs": 3000.119209289551,
+  "hostWindow": {
+    "samples": 5,
+    "cpuMean": 12.86508,
+    "cpuMax": 13.9303,
+    "swapInPages": 0,
+    "swapOutPages": 0
+  },
+  "syscallErrors": [],
+  "semanticEvents": [
+    "1791774357.762468 connect begin",
+    "1791774360.763739 runtime connect result=Err(Timeout)",
+    "1791774360.764253 connect begin",
+    "1791774360.980517 QUIC connected",
+    "1791774361.000914 authenticated",
+    "1791774361.001124 runtime connect result=Ok(())",
+    "1791774361.001295 tcp open begin",
+    "1791774361.001673 tcp request sent id=StreamId(4)",
+    "1791774361.244424 tcp response complete id=StreamId(4)",
+    "1791774361.244789 tcp wrote id=StreamId(4) bytes=128",
+    "1791774361.258905 tcp read ready id=StreamId(4) bytes=128 result=Ready(Ok(()))",
+    "1791774361.259560 tcp wrote id=StreamId(4) bytes=128",
+    "1791774361.313453 tcp read ready id=StreamId(4) bytes=128 result=Ready(Ok(()))",
+    "1791774361.314259 tcp wrote id=StreamId(4) bytes=128",
+    "1791774361.323856 tcp read ready id=StreamId(4) bytes=128 result=Ready(Ok(()))",
+    "1791774361.326162 tcp open begin",
+    "1791774361.326420 tcp request sent id=StreamId(8)",
+    "1791774361.335324 tcp response complete id=StreamId(8)",
+    "1791774361.335583 tcp wrote id=StreamId(8) bytes=128",
+    "1791774361.346444 tcp read ready id=StreamId(8) bytes=128 result=Ready(Ok(()))",
+    "1791774361.346945 tcp wrote id=StreamId(8) bytes=128",
+    "1791774361.357647 tcp read ready id=StreamId(8) bytes=128 result=Ready(Ok(()))",
+    "1791774361.358088 tcp wrote id=StreamId(8) bytes=128",
+    "1791774361.366013 tcp read ready id=StreamId(8) bytes=128 result=Ready(Ok(()))",
+    "1791774361.368103 tcp open begin",
+    "1791774361.368320 tcp request sent id=StreamId(12)",
+    "1791774361.379355 tcp response complete id=StreamId(12)",
+    "1791774361.379630 tcp wrote id=StreamId(12) bytes=128",
+    "1791774361.389671 tcp read ready id=StreamId(12) bytes=128 result=Ready(Ok(()))",
+    "1791774361.390117 tcp wrote id=StreamId(12) bytes=128",
+    "1791774361.491672 tcp read ready id=StreamId(12) bytes=128 result=Ready(Ok(()))",
+    "1791774361.492472 tcp wrote id=StreamId(12) bytes=128",
+    "1791774361.505648 tcp read ready id=StreamId(12) bytes=128 result=Ready(Ok(()))",
+    "1791774361.506171 tcp wrote id=StreamId(4) bytes=128",
+    "1791774361.518058 tcp read ready id=StreamId(4) bytes=128 result=Ready(Ok(()))",
+    ""
+  ],
+  "scope": "Separate diagnostic reproduction after a production startup EOF. Matches and relative delays localize this diagnostic event before Mac kernel UDP receive; does not identify a common cause conclusively or distinguish phone, path, Mac driver. Instrumented/proxied diagnostic is not performance evidence."
+}

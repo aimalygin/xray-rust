@@ -3,11 +3,20 @@ import XrayAppleShared
 import XrayRust
 
 public enum XrayProfileFormat: String, Codable, Sendable {
+    case vmess
+    case trojan
+    case shadowsocks2022
     case hysteria2
     case wireguard
 
     var capability: XrayFFICapabilities {
-        self == .hysteria2 ? .hysteria2Outbound : .wireguardOutbound
+        switch self {
+        case .vmess: return .vmessOutbound
+        case .trojan: return .trojanOutbound
+        case .shadowsocks2022: return .shadowsocks2022Outbound
+        case .hysteria2: return .hysteria2Outbound
+        case .wireguard: return .wireguardOutbound
+        }
     }
 }
 

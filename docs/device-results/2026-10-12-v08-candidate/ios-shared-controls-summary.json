@@ -1,0 +1,9 @@
+{
+  "harnessPatch": "ios/harness-fakeip-dns.patch",
+  "negative": "ios-shared-AsIs-negative/smoke/result.json",
+  "negativeExpected": "AsIs blocks domain traffic while IPv4 and IPv6 literals succeed",
+  "passed": true,
+  "positive": "ios-shared-v2/smoke/result.json",
+  "recovery": "ios-shared-positive-recovery/smoke/result.json",
+  "runtimeChanged": false
+}

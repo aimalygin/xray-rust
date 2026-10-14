@@ -1,0 +1,10 @@
+{
+  "apkSha256": "df30c371e71b46fc25e494dd038aa03115512e9de53e9b3d8474167028d0846c",
+  "nativeLibraries": {
+    "lib/arm64-v8a/libxray_ffi.so": "420e35d063e43005fd8a174894c7fdbf29197b56bcb6e802a04fb7743e52c884",
+    "lib/arm64-v8a/libxray_mobile_jni.so": "3fc5f603d478fad021ee7f8f95a05d0ea22618feac1a852cdffd2c6da75ab79b"
+  },
+  "notCanonicalAcceptance": true,
+  "patch": "controllers/jni-udp-counters.patch",
+  "purpose": "diagnostic logging only; core native byte-identical, SDK JNI differs"
+}

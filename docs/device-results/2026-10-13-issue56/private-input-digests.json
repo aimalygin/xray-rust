@@ -1,0 +1,186 @@
+{
+  "usb-baseline/plan.json": {
+    "sha256": "f69667ae1b720a53dd842d3bb729c3fc6c17e05c776739ff5b09c12440c63305",
+    "bytes": 1070
+  },
+  "usb-baseline/events.jsonl": {
+    "sha256": "39453592d7990377e8aca2fa636b2f3057e1fba993acb7ad3f6a601907c77498",
+    "bytes": 2508
+  },
+  "usb-baseline/logcat.txt": {
+    "sha256": "f00100201fb6d8a098d46f2cb9832ec933a44d65e14600df15cbce8793a99d81",
+    "bytes": 4720
+  },
+  "usb-observed/plan.json": {
+    "sha256": "73add100226693b1700a115b50185994e667cde15efd26828ae34feea77fff33",
+    "bytes": 1102
+  },
+  "usb-observed/events.jsonl": {
+    "sha256": "f95d625546ce5fa3498536cfe491a7193f4d079ce100813f89f2b6207ffcf8d1",
+    "bytes": 2508
+  },
+  "usb-observed/logcat.txt": {
+    "sha256": "46c0486e6cc84066a52276551a4e568b61719ae6dbfe692b6d115f0d5ff9fffa",
+    "bytes": 30338
+  },
+  "usb-collision-challenge/plan.json": {
+    "sha256": "639d6cd03001ef6dc2bde24c9803cee8be6979552f45b81690ffb1ea3da2618f",
+    "bytes": 1104
+  },
+  "usb-collision-challenge/events.jsonl": {
+    "sha256": "fa65fd6a7884abf543240ca9f65c8ffa696ad4919c39a13756606e8eef13173a",
+    "bytes": 1254
+  },
+  "usb-collision-challenge/logcat.txt": {
+    "sha256": "64c2388c21aa0450db2bb85abab11d700595015212620fcb29eebe0cef556fb3",
+    "bytes": 20692
+  },
+  "usb-fixed/plan.json": {
+    "sha256": "ab86e34114ff23b128d2f718e47d449ad7c9c8eab0b1b5252f7cf408528f9644",
+    "bytes": 1104
+  },
+  "usb-fixed/events.jsonl": {
+    "sha256": "da17eb4c5e3b931041a3e8595c5778f7d125b386737b720e4441947808e7b461",
+    "bytes": 5016
+  },
+  "usb-fixed/logcat.txt": {
+    "sha256": "958c7e69edce35b5056c9aab21d5165819aa4a4bb5dce2783d6cfd8e409f449b",
+    "bytes": 46505
+  },
+  "wifi-fixed/plan.json": {
+    "sha256": "21a4e6982311cb84fe4f1125a5e4804282d45c7654ebb71cc9fd80a3f527466c",
+    "bytes": 1092
+  },
+  "wifi-fixed/events.jsonl": {
+    "sha256": "74d793f9230238e5fd8e05a1da7edf3bd9cefaefc0143d8f99366d95df8f846f",
+    "bytes": 5013
+  },
+  "wifi-fixed/logcat.txt": {
+    "sha256": "ecf90c0956d5c3e587b9a6e81fc88a7a298e5b4caa6a77440aa17d96003506f8",
+    "bytes": 44300
+  },
+  "wifi-fixed-ipv6/plan.json": {
+    "sha256": "6cc399542b1eafa0290564735eeac98d3eeaa62961f5eb3d72ebe1ec0cddfd40",
+    "bytes": 1123
+  },
+  "wifi-fixed-ipv6/events.jsonl": {
+    "sha256": "a1a07ffa0e23ca22feb9e6c28e091a3523826e9a6b5191cb374dfa0df20dc4e1",
+    "bytes": 626
+  },
+  "wifi-fixed-ipv6/logcat.txt": {
+    "sha256": "c77a9b8dc9656e8e843679995eb1f3f7052844a78d8d08682acaafa90d0bf1ca",
+    "bytes": 10329
+  },
+  "baseline-apks.json": {
+    "sha256": "79d6e9cc760836c443753365507a1de4b6e72d09a5b352443438773b7df738e1",
+    "bytes": 679
+  },
+  "challenge-correlation.json": {
+    "sha256": "d0573d3f05d2a31d95a3383ad451195dcc1d85acd9c366a071d395078b6a3d64",
+    "bytes": 10734
+  },
+  "observed-correlation.json": {
+    "sha256": "089bf102d36be5fc01f81330f00fda2a418714f183d3d3bf58cffd3e34e19ec0",
+    "bytes": 9333
+  },
+  "ephemeral-collision.json": {
+    "sha256": "94bfcc3ea35ab7ed006f0edc4c27db3326da50fb6464f6dd04b1a2f44327b6a2",
+    "bytes": 324
+  },
+  "bind-collision.json": {
+    "sha256": "41eac7a5326c915ddac7803220a11d2771d82ed6873905033ff87599f05cc87a",
+    "bytes": 443
+  },
+  "android-independent-fixed/results.jsonl": {
+    "sha256": "29b81a6ba719dbc181cdd8652ed2a86e94d52222f7e816568967e0c0d80a565e",
+    "bytes": 1185
+  },
+  "android-independent-wifi/results.jsonl": {
+    "sha256": "52e655bb0bb6164316978b93187cbbece49f9ccbc77bc45971674646f2bc610d",
+    "bytes": 527
+  },
+  "android-socks-observe/results.jsonl": {
+    "sha256": "8fbab687c8259bd6ac6359026371996381f79760e93897896cd0cfbba4263a1f",
+    "bytes": 387626
+  },
+  "direct-transport/usb-reverse.jsonl": {
+    "sha256": "a12e9782c161f45abddc39260e614d56075af172cbf0b5d5437a9488dd85836d",
+    "bytes": 2768
+  },
+  "direct-transport/wifi.jsonl": {
+    "sha256": "492e5fb46b5e5f07c90fbc7aed3c083d8a491c9df4d7fa6021c488db58d8e6ed",
+    "bytes": 124
+  },
+  "socks-port-collision.json": {
+    "sha256": "21a636194d913f313c09f8145ecca73b9c54ec1efeb42c72cf88aaa4a1c07d6e",
+    "bytes": 738
+  },
+  "android-udp-reuse-result.txt": {
+    "sha256": "662baa668b6cc07ebf7a270c03a583e599f27e9cb09ac1f63a8d5880644e9591",
+    "bytes": 273
+  },
+  "android-probe-observe.go": {
+    "sha256": "ea89d38a4ae76fa0d59f7b83ac4a60028e422870fb9a4b8751a7188f55f0dc05",
+    "bytes": 3840
+  },
+  "udp-reuse.go": {
+    "sha256": "431d6687337f8f8300aacb966e8b7929d55b083a54ee3cd0aff162f0107a4085",
+    "bytes": 1177
+  },
+  "direct-probe.go": {
+    "sha256": "13337ccf4be4f222fdf4a33ffe181c388c9f5f3ef328cc29935f0b71355ae917",
+    "bytes": 1454
+  },
+  "observe/main.go": {
+    "sha256": "8468f6a89a1a77cf65e94387009e3ffe90c12fa1590605bc2ef338ab092d1b87",
+    "bytes": 2256
+  },
+  "host-fixture-cleanup.json": {
+    "sha256": "009086505e005b7ab721d239dc3bac14319175d413f16b391ff5ed5562c13ec5",
+    "bytes": 256
+  },
+  "org.xrayrust.devicehost.v08-after.xml": {
+    "sha256": "5ece3e7a90425b0fae973f4410fa05875c93f4599bc0f435a5120df6ed8a62fc",
+    "bytes": 245
+  },
+  "org.xrayrust.deviceprobe.v08-after.xml": {
+    "sha256": "fd85ea9ebdd13c64d5f6116871c787a0ec27c38e8c5dc47bf18b807db9a0afba",
+    "bytes": 281
+  },
+  "fixture.py": {
+    "sha256": "f3077781c0bd36b244fe37ed4d026c13baac8f5813469e9ef9efd8cfeead8959",
+    "bytes": 1946
+  },
+  "direct_server.py": {
+    "sha256": "bf9f8f87ee064604cad44458ed071b66e87bf06ab74b375ab8b932976d8a8d08",
+    "bytes": 1258
+  },
+  "usb-fixture.log": {
+    "sha256": "1ff62c840228ce0bd072f75a9509c1b3afe02c7d454ab3f93c26f01b725e6296",
+    "bytes": 1195241
+  },
+  "observe-fixture.log": {
+    "sha256": "dfd27c2e8fdb1580371ed9e0f0077c44d26d1a9c32327dbe8a214e68951f9dfa",
+    "bytes": 1195175
+  },
+  "collision-fixture.log": {
+    "sha256": "b05f718ffcc1fe810cc22a580ddd364a2bbda8b53d031a58e34a0068599ceb46",
+    "bytes": 600931
+  },
+  "fixed-usb-fixture.log": {
+    "sha256": "25bf35de1eef604b2f88af1aa017bc110b68c4f9911d4161ec6f93fbc309e368",
+    "bytes": 2688290
+  },
+  "fixed-wifi-fixture.log": {
+    "sha256": "3ea46ec593eb0e1569c009ca5e9a102746e756b3255c7e7d6eea2f46a97f7930",
+    "bytes": 3584691
+  },
+  "direct-server.jsonl": {
+    "sha256": "da51f6f5ad603c3befe50056093052af37ea2739b44bc059d5c79f6f04ab02fc",
+    "bytes": 770181
+  },
+  "published-reproducer-validation.json": {
+    "sha256": "17582dbfbaccf18bc62605f6b3abe7af54bc98d2da4c8c33e030d22b8e4a3226",
+    "bytes": 342
+  }
+}

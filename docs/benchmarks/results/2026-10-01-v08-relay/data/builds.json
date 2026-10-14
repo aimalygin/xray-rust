@@ -1,0 +1,81 @@
+{
+  "baseline": {
+    "sha256": "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/baseline",
+    "base_commit": "de3674da8d6ab1dde5c2de8ac6f48d9c183e3ac1",
+    "patch": null,
+    "runtime_commit": "5e32972976074551aea4ce42e98f5e0dde7159c9"
+  },
+  "padding": {
+    "sha256": "56d9cf5d81ab57b83a76cdb7b4eee0e88e223251afa22d67380e51a830c82cbe",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/padding",
+    "base_commit": "de3674da8d6ab1dde5c2de8ac6f48d9c183e3ac1",
+    "patch": "padding.patch"
+  },
+  "relay": {
+    "sha256": "6a357c4389f35e0a6a80737af51dabdf8552ed2a5a71033b53af6bbc54d92827",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/relay",
+    "base_commit": "de3674da8d6ab1dde5c2de8ac6f48d9c183e3ac1",
+    "patch": "relay.patch"
+  },
+  "relay-v2": {
+    "sha256": "5dd2ec249b7a92ee31a9b0645c6dc8c955a6511895bde2b3b25f395b32c56661",
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/relay-v2",
+    "base_commit": "de3674da8d6ab1dde5c2de8ac6f48d9c183e3ac1",
+    "patch": "relay-v2.patch"
+  },
+  "batched": {
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/batched",
+    "sha256": "c9a62f21086ae08fb1229afbffdb313d2408c8619e2afb4cbf5e3919dc4c6889",
+    "base_commit": "de3674da8d6ab1dde5c2de8ac6f48d9c183e3ac1",
+    "patch": "batched.patch",
+    "patch_sha256": "5ad53fde411701754f88ed8eaac0c7bdd9a08ce4db186fa7bbecbf8e898eb733"
+  },
+  "combined": {
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/combined",
+    "sha256": "2f1963ec3593df24372dc83081e11cf2a45dc48293324eae2665c796996c09d1",
+    "base_commit": "de3674da8d6ab1dde5c2de8ac6f48d9c183e3ac1",
+    "patch": "combined.patch",
+    "patch_sha256": "4b1fcda66e0b7b3f5941e7db6de910c06f094296528908b51c9e676e8081f648"
+  },
+  "candidate": {
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/candidate",
+    "sha256": "f0f1bb795226b474377483713f0322dcbbf422d0064382bc49fb7f3d9d9e0b85",
+    "commit": "b92b54d1e4566406f61a36c9d6d6d0794b781efa",
+    "tree": "403ab7b41a4fc24543132b8e172e2d115e39232c",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+    "build_arguments": [
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-cli"
+    ],
+    "incremental": false
+  },
+  "stack-candidate": {
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/stack-candidate",
+    "sha256": "1ed77d5b5afbf4fe466dde699442d3d6938c8e7ffd12b20f5cf987ab355c797d",
+    "base_commit": "b92b54d1e4566406f61a36c9d6d6d0794b781efa",
+    "patch": "stack.patch",
+    "patch_sha256": "a2d8b22ef5062ccb943a12ca469bb8bb3061d34ef34bfddd23538b1bf7f916cb"
+  },
+  "final_runtime": {
+    "path": "/Users/antonmalygin/xray-rust/target/v08-relay-investigation/stack-candidate",
+    "sha256": "1ed77d5b5afbf4fe466dde699442d3d6938c8e7ffd12b20f5cf987ab355c797d",
+    "commit": "fdc0dad1aa1ffe39d3621008ab66512b30ccf452",
+    "tree": "fec66ef23ea8512f97c123d090ca889a1501b77e",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+    "build_arguments": [
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "xray-cli"
+    ],
+    "incremental": false,
+    "mobile_commit": "874cc8e8103ade25b8ea3e53938e826431a9aeee"
+  }
+}

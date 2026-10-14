@@ -68,8 +68,8 @@ profile you control without committing it to the repository.
 ## Swift Package products
 
 - `XrayMobileAdapter`: `XrayCore`, atomic routing-policy replacement and
-  snapshots, packet batching/pump, stats/events, startup probe, and optional
-  Darwin-utun fd discovery.
+  snapshots, packet batching/pump, stats/events, startup probe, blocking
+  on-demand outbound probe (ABI 1.9), and optional Darwin-utun fd discovery.
 - `XrayAppleShared`: profile/config models, secure config storage, sanitized
   logging, and app-to-extension message keys.
 - `XrayAppleClient`: SwiftUI profile editor and `NETunnelProviderManager`
@@ -79,6 +79,47 @@ profile you control without committing it to the repository.
 The provider prefers direct borrowed Darwin-utun fd I/O when enabled and a
 usable fd can be discovered. It falls back to `NEPacketTunnelFlow` packet
 pumping otherwise.
+
+## Host limits and TUN admission
+
+Subclass `XrayPacketTunnelProvider` to supply typed host settings. Both hooks
+are called once per configured start, before DNS bootstrap or network settings;
+a thrown validation error fails startup. The resulting options are immutable
+until the tunnel is restarted and apply to both borrowed utun fd and packetFlow
+backends. They are host policy, not Xray JSON or serialized provider options.
+
+```swift
+import XrayAppleTunnel
+import XrayMobileAdapter
+
+final class PacketTunnelProvider: XrayPacketTunnelProvider {
+    override func hysteriaStreamLimits() throws -> XrayHysteriaStreamLimits? {
+        try .init(maxTcpStreams: 128, maxUdpSessions: 64)
+    }
+
+    override func tunAdmissionOptions() throws -> XrayTunAdmissionOptions? {
+        try .init(timeoutMilliseconds: 100, failOpen: false) { flow in
+            // Example policy: allow only IPv4 destinations. Replace with host policy.
+            flow.addressFamily == 4
+        }
+    }
+}
+```
+
+The default hooks return `nil`: Hysteria2 retains 64 TCP streams / 32 UDP
+sessions per QUIC session, and admission remains disabled with no callbacks or
+additional packet-loop work. Explicit Hysteria2 limits accept 1...256 TCP and
+1...128 UDP (ABI 1.10+); admission requires ABI 1.11+. Neither changes the wire
+protocol or creates extra QUIC sessions.
+
+Admission receives the original TCP/UDP tuple before routing/FakeDNS restoration.
+Its `@Sendable` callback runs concurrently on bounded native workers; keep it
+short, avoid capturing the provider strongly, and never invoke lifecycle methods
+from it. The timeout (1...5000 ms) bounds the decision, not callback execution.
+Explicit denial stays denied even with `failOpen: true`; native queue/buffer
+exhaustion also drops. Apple supplies no Android-style UID lookup. Captured policy
+must be safe for concurrent access and can outlive tunnel shutdown while a callback
+finishes. No app UI, entitlement, or per-app identity inference is added by these hooks.
 
 ## Network privacy defaults
 

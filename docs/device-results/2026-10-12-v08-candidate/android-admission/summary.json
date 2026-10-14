@@ -1,0 +1,129 @@
+{
+  "derivedFieldCorrection": "original controller compared echoBytes to 29; actual native literal is 31 bytes. Raw results retained unchanged; verdicts above derive from native payload definition.",
+  "expectedEchoBytes": 31,
+  "limitations": "Included UID only. Bound TCP denied; excluded UID not exercised in this campaign.",
+  "observations": [
+    {
+      "backend": "file-descriptor",
+      "bound": false,
+      "ioPassed": true,
+      "result": {
+        "bindErrno": 0,
+        "bound": false,
+        "echoBytes": 31,
+        "ioErrno": 0,
+        "nonce": "2fcdeaeb66864fa1b51ec270309ed785",
+        "protocol": "tcp",
+        "uid": 10277
+      },
+      "udp": false
+    },
+    {
+      "backend": "file-descriptor",
+      "bound": false,
+      "ioPassed": true,
+      "result": {
+        "bindErrno": 0,
+        "bound": false,
+        "echoBytes": 31,
+        "ioErrno": 0,
+        "nonce": "6a43805054134205b9bb32ce8627e5ba",
+        "protocol": "udp",
+        "uid": 10277
+      },
+      "udp": true
+    },
+    {
+      "backend": "file-descriptor",
+      "bound": true,
+      "ioPassed": false,
+      "result": {
+        "bindErrno": 0,
+        "bound": true,
+        "echoBytes": 0,
+        "ioErrno": 104,
+        "nonce": "9b6f549e0910482294d859d256d3fce5",
+        "protocol": "tcp",
+        "uid": 10277
+      },
+      "udp": false
+    },
+    {
+      "backend": "file-descriptor",
+      "bound": true,
+      "ioPassed": true,
+      "result": {
+        "bindErrno": 0,
+        "bound": true,
+        "echoBytes": 31,
+        "ioErrno": 0,
+        "nonce": "09fc58688ab047cda8af2fefb9310e13",
+        "protocol": "udp",
+        "uid": 10277
+      },
+      "udp": true
+    },
+    {
+      "backend": "packet-pump",
+      "bound": false,
+      "ioPassed": true,
+      "result": {
+        "bindErrno": 0,
+        "bound": false,
+        "echoBytes": 31,
+        "ioErrno": 0,
+        "nonce": "03d5526bb07942958c19e0633f5c0abd",
+        "protocol": "tcp",
+        "uid": 10277
+      },
+      "udp": false
+    },
+    {
+      "backend": "packet-pump",
+      "bound": false,
+      "ioPassed": true,
+      "result": {
+        "bindErrno": 0,
+        "bound": false,
+        "echoBytes": 31,
+        "ioErrno": 0,
+        "nonce": "5eb6f1b5bf7d489bb58535c7ebd6cdf3",
+        "protocol": "udp",
+        "uid": 10277
+      },
+      "udp": true
+    },
+    {
+      "backend": "packet-pump",
+      "bound": true,
+      "ioPassed": false,
+      "result": {
+        "bindErrno": 0,
+        "bound": true,
+        "echoBytes": 0,
+        "ioErrno": 104,
+        "nonce": "09e52d2d54c841c1b5c9bb944788b185",
+        "protocol": "tcp",
+        "uid": 10277
+      },
+      "udp": false
+    },
+    {
+      "backend": "packet-pump",
+      "bound": true,
+      "ioPassed": true,
+      "result": {
+        "bindErrno": 0,
+        "bound": true,
+        "echoBytes": 31,
+        "ioErrno": 0,
+        "nonce": "07701e23077a484694446ff9f0c1f1b1",
+        "protocol": "udp",
+        "uid": 10277
+      },
+      "udp": true
+    }
+  ],
+  "passed": 6,
+  "total": 8
+}

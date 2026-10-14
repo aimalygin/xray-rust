@@ -1,0 +1,886 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 8,
+    "protocol" : "setup",
+    "time" : "2026-10-04T20:15:06Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:06Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29174.741574458334"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "udp-sweep-start",
+    "time" : "2026-10-04T20:15:06Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3622512,
+    "inboundPackets" : 1,
+    "outboundPackets" : 0,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 25903104,
+    "runtime" : "9845887c-1b04-4b42-978b-ad47b6f28a86",
+    "stage" : "udp-sweep-start",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-10-04T20:15:06Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:06Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.29296500000054948,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:07Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:07Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25671895833511371,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:07Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:07Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.26384324999889941,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:07Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:07Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25615000000107102,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:08Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:08Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25639620833317167,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:08Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:08Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25793420833360869,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:08Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:08Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25455745833460242,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:08Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:08Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25750141666867421,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:09Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:09Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25806479166567442,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:09Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:09Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.26203404166881228,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:09Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:09Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25671958333259681,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:10Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:10Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25570266666545649,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:10Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:10Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25589716666945606,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:10Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:10Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25843412499671103,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:11Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:11Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25466870833406574,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:11Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:11Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25595800000155577,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:11Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:11Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25719458333333023,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:12Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:12Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35950362500079791,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:12Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:12Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35559462499804795,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:12Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:12Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.36694279166840715,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:13Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:13Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.26035529166620108,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:13Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:13Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 32,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.23139045833158889,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:13Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:13Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.29642608333233511,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:14Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:14Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1200,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25395145833317656,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:14Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:14Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25834066666720901,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:14Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:14Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1300,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.2530620416655438,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:15Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:15Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25806654166808585,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:15Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:15Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1340,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25731266666844022,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:15Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:15Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25724791666652891,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:16Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:16Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1350,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25401058333227411,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:16Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:16Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25551608333262266,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:16Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:16Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1360,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.2575089999991178,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:16Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:16Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25376183333355584,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:17Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:17Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1372,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25468220833136002,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:17Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:17Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.35938666666697827,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:17Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:18Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1392,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.25458566666566185,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:18Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:18Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1420,
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 2.1740830833332438,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "failed",
+    "time" : "2026-10-04T20:15:20Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:20Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1420,
+    "code" : 0,
+    "domain" : "XrayProtocolDeviceProbe.Network",
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 2.1688565416661731,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "failed",
+    "time" : "2026-10-04T20:15:22Z"
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:22Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 1,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.24147637499845587,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:23Z"
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:23Z",
+    "timeoutSeconds" : 2
+  },
+  {
+    "attempt" : 2,
+    "bytes" : 1450,
+    "event" : "udp-size-result",
+    "exchangeSeconds" : 0.24774866666484741,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-10-04T20:15:23Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "scheduled",
+        "uptime" : "29174.741574458334"
+      },
+      {
+        "interface" : "",
+        "kind" : "applied",
+        "uptime" : "29175.272085"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29180.05239766667"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29187.254954333333"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29190.010225125003"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "29191.322827625"
+      }
+    ],
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "stage" : "udp-sweep-end",
+    "time" : "2026-10-04T20:15:23Z"
+  },
+  {
+    "cycle" : 0,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 5490288,
+    "inboundPackets" : 68,
+    "outboundPackets" : 64,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "rss" : 29720576,
+    "runtime" : "9845887c-1b04-4b42-978b-ad47b6f28a86",
+    "stage" : "udp-sweep-end",
+    "tcp" : 0,
+    "threads" : 9,
+    "time" : "2026-10-04T20:15:23Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 40
+  },
+  {
+    "attempts" : 40,
+    "event" : "udp-sweep-complete",
+    "failures" : 2,
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:23Z"
+  },
+  {
+    "code" : 1,
+    "domain" : "XrayProtocolDeviceProbe",
+    "event" : "failure",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "time" : "2026-10-04T20:15:23Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "shadowsocks2022:2022-blake3-aes-128-gcm",
+    "result" : "failed",
+    "time" : "2026-10-04T20:15:24Z"
+  }
+]

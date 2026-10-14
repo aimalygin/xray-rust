@@ -1,8 +1,15 @@
+mod blackhole;
 mod dns;
+mod fragment;
 mod hysteria;
+mod noise;
 mod routing;
+mod shadowsocks;
 mod stream;
+mod tproxy;
+mod trojan;
 mod vless;
+mod vmess;
 mod wireguard;
 mod xhttp;
 
@@ -630,6 +637,7 @@ impl Parser<'_> {
             Some("socks") => InboundProtocol::Socks,
             Some("http") => InboundProtocol::Http,
             Some("tun") => InboundProtocol::Tun,
+            Some("dokodemo-door") => InboundProtocol::Tproxy(self.parse_tproxy(inbound, index)?),
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -720,7 +728,15 @@ impl Parser<'_> {
         protocol: &InboundProtocol,
     ) {
         let inbound_path = format!("$.inbounds[{index}]");
-        self.reject_unknown_fields(inbound, &inbound_path, &surface::INBOUND);
+        self.reject_unknown_fields(
+            inbound,
+            &inbound_path,
+            if matches!(protocol, InboundProtocol::Tproxy(_)) {
+                &surface::TPROXY_INBOUND
+            } else {
+                &surface::INBOUND
+            },
+        );
 
         let Some(settings) = inbound.get("settings") else {
             return;
@@ -729,7 +745,7 @@ impl Parser<'_> {
         match protocol {
             InboundProtocol::Socks => self.validate_socks_inbound_settings(settings, index),
             InboundProtocol::Http => self.validate_http_inbound_settings(settings, index),
-            InboundProtocol::Tun => {}
+            InboundProtocol::Tun | InboundProtocol::Tproxy(_) => {}
         }
     }
 
@@ -913,11 +929,18 @@ impl Parser<'_> {
             return Vec::new();
         };
 
-        outbounds
+        let mut parsed: Vec<_> = outbounds
             .iter()
             .enumerate()
             .filter_map(|(index, outbound)| self.parse_outbound(outbound, index))
-            .collect()
+            .collect();
+        if parsed.len() == outbounds.len() {
+            self.resolve_fragment_dialer_proxies(outbounds, &mut parsed);
+        }
+        for (index, outbound) in parsed.iter().enumerate() {
+            self.validate_tcp_fragment_scope(outbound, index);
+        }
+        parsed
     }
 
     fn parse_outbound(&mut self, outbound: &Value, index: usize) -> Option<OutboundConfig> {
@@ -930,8 +953,12 @@ impl Parser<'_> {
             Some("freedom") => OutboundProtocol::Freedom,
             Some("dns") => OutboundProtocol::Dns,
             Some("vless") => OutboundProtocol::Vless,
+            Some("vmess") => OutboundProtocol::Vmess,
+            Some("trojan") => OutboundProtocol::Trojan,
+            Some("shadowsocks") => OutboundProtocol::Shadowsocks2022,
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
+            Some("blackhole") => OutboundProtocol::Blackhole,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -947,6 +974,15 @@ impl Parser<'_> {
         self.validate_outbound_compatibility(outbound, index);
 
         let settings = match protocol {
+            OutboundProtocol::Shadowsocks2022 => {
+                OutboundSettings::Shadowsocks2022(self.parse_shadowsocks_settings(outbound, index)?)
+            }
+            OutboundProtocol::Vmess => {
+                OutboundSettings::Vmess(self.parse_vmess_settings(outbound, index)?)
+            }
+            OutboundProtocol::Trojan => {
+                OutboundSettings::Trojan(self.parse_trojan_settings(outbound, index)?)
+            }
             OutboundProtocol::Wireguard => {
                 OutboundSettings::Wireguard(self.parse_wireguard_settings(outbound, index)?)
             }
@@ -963,10 +999,34 @@ impl Parser<'_> {
             OutboundProtocol::Vless => {
                 OutboundSettings::Vless(self.parse_vless_settings(outbound, index)?)
             }
+            OutboundProtocol::Blackhole => {
+                OutboundSettings::Blackhole(self.parse_blackhole_settings(outbound, index)?)
+            }
         };
-        let stream = self.parse_stream_settings(outbound, index)?;
+        let mut stream = self.parse_stream_settings(outbound, index)?;
+        if protocol == OutboundProtocol::Freedom {
+            if let Some(raw) = outbound
+                .get("settings")
+                .and_then(|s| s.get("fragment"))
+                .filter(|v| !v.is_null())
+            {
+                let fragment = self.parse_tcp_fragment(
+                    raw,
+                    &format!("$.outbounds[{index}].settings.fragment"),
+                    true,
+                );
+                if stream.tcp_fragment.is_some() {
+                    self.error(
+                        format!("$.outbounds[{index}].settings.fragment"),
+                        "freedom fragment and FinalMask fragment cannot be combined",
+                    );
+                }
+                stream.tcp_fragment = fragment;
+            }
+        }
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
+        self.validate_trojan_stream(&settings, &stream, index);
 
         if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
             self.error(
@@ -992,7 +1052,11 @@ impl Parser<'_> {
             OutboundSettings::Freedom
             | OutboundSettings::Dns(_)
             | OutboundSettings::Hysteria(_)
-            | OutboundSettings::Wireguard(_) => false,
+            | OutboundSettings::Trojan(_)
+            | OutboundSettings::Vmess(_)
+            | OutboundSettings::Shadowsocks2022(_)
+            | OutboundSettings::Wireguard(_)
+            | OutboundSettings::Blackhole(_) => false,
         };
         if rejects_plaintext_server {
             self.error(
@@ -1021,8 +1085,18 @@ impl Parser<'_> {
             }
         }
 
+        let mux = self.parse_mux(outbound, index, &settings);
+        if matches!(&stream.transport, StreamTransport::Xhttp(_))
+            && mux.as_ref().is_some_and(|mux| mux.concurrency >= 0)
+        {
+            self.error(
+                format!("$.outbounds[{index}].mux.concurrency"),
+                "XHTTP requires negative TCP Mux concurrency; use xudpConcurrency for UDP pooling",
+            );
+        }
         Some(OutboundConfig {
             tag: self.string_at(outbound, "tag").map(ToOwned::to_owned),
+            mux,
             proxy_settings,
             stream,
             settings,
@@ -1039,23 +1113,76 @@ impl Parser<'_> {
                 "outbound sendThrough is unsupported",
             );
         }
+    }
 
-        let Some(mux) = outbound.get("mux") else {
-            return;
-        };
+    fn parse_mux(
+        &mut self,
+        outbound: &Value,
+        index: usize,
+        settings: &OutboundSettings,
+    ) -> Option<crate::MuxSettings> {
+        let mux = outbound.get("mux")?;
+        let outbound_path = format!("$.outbounds[{index}]");
         let mux_path = format!("{outbound_path}.mux");
         if !mux.is_object() {
             self.error(mux_path, "outbound mux must be an object");
-            return;
+            return None;
         }
         self.reject_unknown_fields(mux, &mux_path, &surface::MUX);
-        if matches!(
-            self.optional_bool_at(mux, "enabled", format!("{mux_path}.enabled")),
-            Some(true)
-        ) {
-            self.error(format!("{mux_path}.enabled"), "outbound mux is unsupported");
+        let enabled = self
+            .optional_bool_at(mux, "enabled", format!("{mux_path}.enabled"))
+            .unwrap_or(false);
+        let mut numbers = [0i16; 2];
+        for (slot, key) in numbers.iter_mut().zip(["concurrency", "xudpConcurrency"]) {
+            if let Some(value) = mux.get(key) {
+                if let Some(n) = value.as_i64().filter(|n| (-32768..=64).contains(n)) {
+                    *slot = n as i16;
+                } else {
+                    self.error(
+                        format!("{mux_path}.{key}"),
+                        "Mux concurrency must be an integer between -32768 and 64",
+                    );
+                }
+            }
         }
-        self.optional_u32_at(mux, "concurrency", format!("{mux_path}.concurrency"));
+        let udp443 = match self
+            .optional_string_at(
+                mux,
+                "xudpProxyUDP443",
+                format!("{mux_path}.xudpProxyUDP443"),
+            )
+            .unwrap_or("reject")
+        {
+            "" | "reject" => crate::MuxUdp443::Reject,
+            "allow" => crate::MuxUdp443::Allow,
+            "skip" => crate::MuxUdp443::Skip,
+            _ => {
+                self.error(
+                    format!("{mux_path}.xudpProxyUDP443"),
+                    "unsupported Mux UDP/443 policy",
+                );
+                crate::MuxUdp443::Reject
+            }
+        };
+        if !enabled {
+            return None;
+        }
+        if !matches!(
+            settings,
+            OutboundSettings::Trojan(_)
+                | OutboundSettings::Shadowsocks2022(_)
+                | OutboundSettings::Vmess(_)
+        ) {
+            self.error(
+                format!("{mux_path}.enabled"),
+                "Mux requires Trojan, Shadowsocks 2022 or VMess",
+            );
+        }
+        Some(crate::MuxSettings {
+            concurrency: if numbers[0] == 0 { 8 } else { numbers[0] },
+            xudp_concurrency: numbers[1],
+            udp443,
+        })
     }
 
     fn parse_outbound_proxy_settings(
@@ -1991,7 +2118,7 @@ fn parse_quic_bandwidth(value: &str) -> Result<u64, String> {
 
 /// Dedicated `PortList` parser for UDP hopping. Unlike routing selectors,
 /// order and duplicates are wire/runtime significant and must be preserved.
-fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
+pub(crate) fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
     let mut ports = Vec::new();
     for token in value
         .split(',')
@@ -2011,6 +2138,9 @@ fn parse_quic_udp_hop_ports(value: &str) -> Result<Vec<u16>, String> {
         };
         if from > to {
             return Err(format!("udpHop port range is reversed: {from}-{to}"));
+        }
+        if ports.len() + usize::from(to - from) + 1 > 65_535 {
+            return Err("udpHop supports at most 65535 expanded ports".into());
         }
         ports.extend(from..=to);
     }

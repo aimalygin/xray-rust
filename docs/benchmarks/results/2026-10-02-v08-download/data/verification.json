@@ -1,0 +1,13 @@
+{
+  "all_numeric_summaries_reproduced": true,
+  "archive_files_verified": 1021,
+  "comparison_trials": 270,
+  "complete_case_selections_verified": 30,
+  "core_and_sdk_ci_pass": true,
+  "diagnostic_libc_trials": 12,
+  "held_memory_clients": 36,
+  "mobile_commit": "7b84921501348dc462d7b3527d09becb3bf86492",
+  "paired_control_trials": 316,
+  "release_rebuild_sha256": "528e6532d6919bc867dc0c7993bc090125ed3a725c0ebbc12db02791f60ff8e8",
+  "runtime_commit": "9198a8f2770496199022b531b01b3a2b35ec1bcc"
+}

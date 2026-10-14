@@ -1,0 +1,75 @@
+{
+  "release": "0.7.0",
+  "scope": "Only the explicitly accepted 0.7 release decisions; no general reliability waiver.",
+  "decisions": [
+    {
+      "id": "v07-android-cellular-owner-exception",
+      "recordedAt": "2026-09-27T01:20:17.133499+00:00",
+      "release": "0.7",
+      "scope": {
+        "platform": "android",
+        "transition": "wifi-cellular-wifi",
+        "scenarios": [
+          "wireguard-file-descriptor",
+          "wireguard-packet-pump",
+          "hysteria2-file-descriptor",
+          "hysteria2-packet-pump"
+        ]
+      },
+      "ownerInstruction": "это пропускаем",
+      "measurementStatus": "not-tested",
+      "releaseRequirement": "waived-by-owner",
+      "reason": "Available Samsung has no mobile Internet; user explicitly removes this check from the 0.7 release requirements.",
+      "unchangedRequirements": [
+        "Android Wi-Fi start/stop/reconnect and lock/wake",
+        "All Apple physical transition requirements",
+        "Diagnosis of two prior Android WireGuard timeouts",
+        "Performance, resource and interoperability limits"
+      ],
+      "archiveHandling": "Record an explicit scoped exception in final archive/policy; do not fabricate a successful transition or remove the requirement globally. Current strict validator has not yet been changed."
+    },
+    {
+      "id": "v07-android-wireguard-timeout-owner-acceptance",
+      "recordedDate": "2026-09-27",
+      "release": "0.7",
+      "ownerInstruction": "тогда мы можем пока сичтать этот кейс как закрытый, что дальше?",
+      "scope": "The investigated rare Android WireGuard/UDP timeout case, including retained historical startup/reconnect failures and the one timeout in the paired official-app comparison.",
+      "releaseCaseStatus": "closed-by-owner-for-v0.7",
+      "blocksRelease": false,
+      "rootCauseEstablished": false,
+      "productFixClaimed": false,
+      "measurementStatus": "preserve-original-failures-and-not-tested-results",
+      "evidence": [
+        "../v0.7.0-rc.1-wireguard-official-20260927/COMPARISON.md",
+        "../v0.7.0-rc.1-wireguard-official-20260927/analysis.json",
+        "../v0.7.0-rc.1-wireguard-official-20260927/official-slow-first-request.json",
+        "../v0.7.0-rc.1-direct-udp-20260927/DIRECT-UDP.md",
+        "../v0.7.0-rc.1-wireguard-recovery-20260927/SAMSUNG.md",
+        "android-wifi-timeouts-3533166.json"
+      ],
+      "observed": {
+        "officialWireGuardResponses": 3000,
+        "officialWireGuardRequests": 3000,
+        "xrayRustResponses": 2999,
+        "xrayRustRequests": 3000,
+        "xrayRustLossPercent": 0.03333333333333333,
+        "latestFailureBoundary": "before VPS ingress observation; client versus network path unresolved",
+        "directWithoutVpnResponses": 4999,
+        "directWithoutVpnRequests": 5000
+      },
+      "interpretation": "Owner accepts the remaining uncertainty and closes this case as a release blocker for 0.7. This is not a proven fix, a claim of zero loss, or statistical proof of equal reliability.",
+      "supersedes": "The requirement to finish diagnosing this WireGuard case before 0.7; including the corresponding unchangedRequirements entry in the earlier Android-cellular decision.",
+      "unchangedRequirements": [
+        "All unrelated release checks and performance requirements",
+        "Android cellular remains not-tested under its separate existing owner exception",
+        "Exact measured source identities and all original raw failures remain preserved",
+        "Complete release archive validation, canonical artifacts and final SDK consumer checks"
+      ],
+      "doesNotAuthorize": [
+        "A general reliability allowance for future bugs",
+        "Relabeling failed requests as passed",
+        "Merging pull requests, creating public tags or publishing releases"
+      ]
+    }
+  ]
+}

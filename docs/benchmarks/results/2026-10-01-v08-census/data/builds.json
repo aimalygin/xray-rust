@@ -1,0 +1,24 @@
+{
+  "source_commit": "e557e98fcf8efa6375bbc26c135552e057b74811",
+  "runtime_commit": "1804e17890baf4c3a587fbd86d6a17a0787ce9dd",
+  "scope": "Temporary internal census; normal release source restored; no production change",
+  "build": "CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=target/v08-comparison-driver cargo build --release --locked --offline -p xray-cli -p xray-bench",
+  "sha256": {
+    "internal-client": "4c7243cc50e9a31f49638e26f9ab6e01da5479839bb2a7c8d4dba753650d4bbc",
+    "census-harness": "bc334198a065815e845e162a988be828bcbaa37ba953bb8c0851170191ad0f17",
+    "libcensus.dylib": "032be4f0d3260c59906f480cf95f9f8348fb3d91113b36370cb649cdfd00adc7",
+    "instrumentation.patch": "53c2d0ad5cacf2b13d0263b659ab2f99aba0c3ac65fddda36cedb38053d28fd2",
+    "census.rs": "aac27e9ae231ddecf75436de1b30e743f87d4fdab3cdc06210345301650e38ec",
+    "task_info.rs": "667ac07d230fb01b6666eedca5d9fe769b2df18a26164cea655084f22a9a2c2d",
+    "interpose.c": "97c67209658986ee9ec188f858649c22fdd42852bf0b5116ca0246b20c85eddd",
+    "instrument.py": "3b2e3ca4532bf235cc15605c2ebf435975572f8549d071db84d01a7e80b0ee1e"
+  },
+  "calibration_note": "Initial 4 MiB smoke snapshots mislabeled Mach ticks as ns; excluded from final CPU analysis. Corrected harness records both raw ticks and scaled ns (125/3 on this host). Kernel call counts were unaffected.",
+  "original_file_sha256": {
+    "crates/xray-bench/src/protocol_bench.rs": "4eb954ecbead980ca8b9db02ee36949f5d76648bfa264a1b35f217ba5b769135",
+    "crates/xray-proxy/src/record_buffer.rs": "00a9591ff79d08be974194f2f4280c48603bb38b98b1ab54d595bb8861f8544e",
+    "crates/xray-proxy/src/vmess/stream.rs": "d3ec54b2d3888dbf9463325a187d8190d2fd8889e24202085a5d5b4be1418d5c",
+    "crates/xray-proxy/src/vmess/records.rs": "fafa6a770db33a38a429000226d638c739340dcbb9609b8ee4049ddde64a2374",
+    "crates/xray-core-rs/src/policy.rs": "2e220bebf389d7079acf35e427bffa49969b2e47d5aeceec0488a4020c7448a1"
+  }
+}

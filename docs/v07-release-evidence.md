@@ -10,7 +10,8 @@ unexpired artifact. A v0.6 archive cannot satisfy the v0.7 contract.
 Commit release metadata, generated configuration contract and all runtime/build
 inputs before collection. Collect against that clean checkout and keep output
 outside it. Record every failure and retry; do not substitute earlier device
-reports for the candidate or change versions after collecting exact-source evidence.
+reports for the candidate. The specifically reviewed 0.7.0 stable promotion
+below permits only a verified metadata delta; measured identities stay unchanged.
 
 Schema version **2** retains the structural and archive-integrity rules described
 in [v0.6 evidence](v06-release-evidence.md): exact clean `candidate` identity,
@@ -94,9 +95,30 @@ Dispatch `.github/workflows/v07-release-evidence.yml` on the exact frozen source
 with an immutable HTTPS ZIP URL and lowercase SHA-256. It produces
 `v07-release-evidence-<commit>` containing `v07-release-evidence.zip` and its
 validation output. The workflow must exist on the default branch before dispatch.
-Do not create/push the public RC tag until the complete CI and evidence gates pass.
+Do not create/push a public release tag until the complete CI and evidence gates pass.
+The owner selected direct stable 0.7.0 publication; no public RC is required.
 
 The v0.6 workflow and schema remain separate for older releases. Unknown release
 series fail closed in the selector; they never fall back to the old schema.
-Stable v0.7 publication also requires exact-candidate evidence unless a separately
-reviewed promotion mechanism is introduced later.
+
+## Owner-accepted 0.7.0 evidence (schema 3)
+
+Schema 2 remains strict. Schema 3 requires `result: accepted-with-exceptions`,
+`acceptance` exactly matching the canonical
+[`v0.7.0-owner-decisions.json`](releases/v0.7.0-owner-decisions.json), and a fifth
+performance artifact kind `release-decisions` containing those exact bytes.
+
+Only the four Android protocol scenarios may omit `wifi-cellular-wifi`; their
+acceptance entries explicitly record it as `notTested`. Claiming that waived
+transition as a pass is rejected. Apple cellular checks, all other transitions,
+current traffic results, zero fatal/unrecovered errors and performance/resource
+limits remain required. The investigated Android WireGuard timeout case is
+accepted as a release decision, not a diagnosis or a generic packet-loss waiver.
+Historical failures and diagnostics remain hashed in the archive.
+
+For stable version 0.7.0 the CLI invokes the
+[stable source validator](v07-stable-promotion.md), which pins both the complete
+measured archive and the measured commit/tree. Other versions do not inherit
+these exceptions. The original manifest keeps candidate `3533166` and its
+accepted-with-exceptions status; the separate promotion report identifies the
+final stable source and explicitly sets `newPhysicalDeviceRun: false`.

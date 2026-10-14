@@ -1,0 +1,34 @@
+{
+  "inbounds": [
+    {
+      "tag": "tun-in",
+      "protocol": "tun",
+      "settings": {}
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "shadowsocks",
+      "settings": {
+        "address": "ss2022.example",
+        "port": 443,
+        "password": "AQEBAQEBAQEBAQEBAQEBAQ==",
+        "method": "2022-blake3-aes-128-gcm"
+      }
+    }
+  ],
+  "dns": {
+    "queryStrategy": "UseIPv4",
+    "fakeIp": {
+      "enabled": true,
+      "ipv4Pool": "198.19.0.0/16",
+      "poolSize": 32768,
+      "ttl": 60
+    }
+  },
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": []
+  }
+}

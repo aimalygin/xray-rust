@@ -1,0 +1,72 @@
+[
+  {
+    "fixture": "legacy-udp-pilot",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "legacy-udp",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "legacy",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "ss2022-control",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "trojan-repeat-1",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "trojan-repeat-2",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "trojan-repeat-3",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "trojan-repeat-4",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "v07-udp",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "v07",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "v08-udp",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "v08",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "wireguard-stop-retry",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  },
+  {
+    "fixture": "wireguard-stop",
+    "exitCode": 0,
+    "credentialsRemaining": []
+  }
+]

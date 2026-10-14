@@ -1,0 +1,11 @@
+{
+  "archive_files_verified": 1036,
+  "candidate_sha256": "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab",
+  "exact_runtime_core_and_sdk_ci_pass": true,
+  "mac_3pct_summary_recomputed": true,
+  "release_rebuild_sha256": {
+    "/Users/antonmalygin/xray-rust/target/v08-comparison-driver/release/xray-rust": "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+  },
+  "runtime_commit": "5e32972976074551aea4ce42e98f5e0dde7159c9",
+  "strict_summary_recomputed": true
+}

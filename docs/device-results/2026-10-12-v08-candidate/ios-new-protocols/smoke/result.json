@@ -1,0 +1,2939 @@
+[
+  {
+    "event": "abi",
+    "major": 1,
+    "minor": 11,
+    "protocol": "setup",
+    "time": "2026-10-12T16:31:43Z"
+  },
+  {
+    "event": "import",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:43Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "trojan",
+    "seconds": 0.3061100244522095,
+    "time": "2026-10-12T16:31:43Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:43Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.584822416654788,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:44Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:44Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.21819520829012617,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:44Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:44Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.6067311667138711,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.07926308334572241,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.1393429166637361,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379413.68397662503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379415.38696825004"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4687472,
+    "inboundPackets": 314,
+    "outboundPackets": 240,
+    "protocol": "trojan",
+    "rss": 32997376,
+    "runtime": "27f50332-84fc-48ce-aa0d-1831145940b5",
+    "stage": "after-traffic",
+    "tcp": 2,
+    "threads": 10,
+    "time": "2026-10-12T16:31:45Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 3
+  },
+  {
+    "cycle": 1,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      10,
+      17,
+      24,
+      26
+    ],
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:45Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      10,
+      17,
+      24,
+      26
+    ],
+    "cycle": 1,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "trojan",
+    "seconds": 2.172543416672852,
+    "time": "2026-10-12T16:31:47Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379413.68397662503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379415.38696825004"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-close",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4392560,
+    "inboundPackets": 388,
+    "outboundPackets": 278,
+    "protocol": "trojan",
+    "rss": 33210368,
+    "runtime": "27f50332-84fc-48ce-aa0d-1831145940b5",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:31:48Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.17616704164538532,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11085200001252815,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10408070834819227,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.14242179167922586,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.07724633329780772,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "cycle": 1,
+    "event": "traffic-after-close",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:48Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379413.68397662503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379415.38696825004"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:31:49Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4343408,
+    "inboundPackets": 567,
+    "outboundPackets": 448,
+    "protocol": "trojan",
+    "rss": 33210368,
+    "runtime": "27f50332-84fc-48ce-aa0d-1831145940b5",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 9,
+    "time": "2026-10-12T16:31:49Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "disconnected",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:49Z"
+  },
+  {
+    "cycle": 2,
+    "event": "connected",
+    "protocol": "trojan",
+    "seconds": 0.2142850160598755,
+    "time": "2026-10-12T16:31:49Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:49Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11285475001204759,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:49Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.12162583332974464,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.2517519583343528,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.0779518749914132,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.07791049999650568,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379419.6945492917"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379419.970191625"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 5228168,
+    "inboundPackets": 229,
+    "outboundPackets": 181,
+    "protocol": "trojan",
+    "rss": 32784384,
+    "runtime": "bcb5f17f-70cb-413c-a6bd-2e1f6010ed21",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:31:50Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 11
+  },
+  {
+    "cycle": 2,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:50Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "cycle": 2,
+    "event": "connection-close-verified",
+    "newIDs": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33
+    ],
+    "protocol": "trojan",
+    "seconds": 2.0709747500368394,
+    "time": "2026-10-12T16:31:52Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379419.6945492917"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379419.970191625"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-close",
+    "time": "2026-10-12T16:31:52Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4703880,
+    "inboundPackets": 287,
+    "outboundPackets": 191,
+    "protocol": "trojan",
+    "rss": 33554432,
+    "runtime": "bcb5f17f-70cb-413c-a6bd-2e1f6010ed21",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:31:53Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 18
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11632829165318981,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10445033333962783,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.19450954167405143,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.1714513333281502,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.07298424997134134,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "cycle": 2,
+    "event": "traffic-after-close",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379419.6945492917"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379419.970191625"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:31:53Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 5244552,
+    "inboundPackets": 503,
+    "outboundPackets": 364,
+    "protocol": "trojan",
+    "rss": 34422784,
+    "runtime": "bcb5f17f-70cb-413c-a6bd-2e1f6010ed21",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:31:54Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 27
+  },
+  {
+    "cycle": 2,
+    "event": "disconnected",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:54Z"
+  },
+  {
+    "cycle": 3,
+    "event": "connected",
+    "protocol": "trojan",
+    "seconds": 0.3152620792388916,
+    "time": "2026-10-12T16:31:54Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:54Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.2204828333342448,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:55Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:58Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.18984212499344721,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:58Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:58Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.14587524998933077,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:58Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.06992141663795337,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.1356882083346136,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379424.7156852083"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 5195400,
+    "inboundPackets": 325,
+    "outboundPackets": 203,
+    "protocol": "trojan",
+    "rss": 33734656,
+    "runtime": "a4a46f9a-de2e-4767-b874-c2b8e1c9b4c3",
+    "stage": "after-traffic",
+    "tcp": 6,
+    "threads": 10,
+    "time": "2026-10-12T16:31:59Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 19
+  },
+  {
+    "cycle": 3,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27
+    ],
+    "protocol": "trojan",
+    "time": "2026-10-12T16:31:59Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27
+    ],
+    "cycle": 3,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "trojan",
+    "seconds": 2.1703705833642744,
+    "time": "2026-10-12T16:32:01Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379424.7156852083"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:01Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4621960,
+    "inboundPackets": 331,
+    "outboundPackets": 211,
+    "protocol": "trojan",
+    "rss": 33964032,
+    "runtime": "a4a46f9a-de2e-4767-b874-c2b8e1c9b4c3",
+    "stage": "after-close",
+    "tcp": 4,
+    "threads": 9,
+    "time": "2026-10-12T16:32:01Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:32:01Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.1181106666335836,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:01Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:32:01Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11043045832775533,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10471637500450015,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.12290154164656997,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.07402875000843778,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "cycle": 3,
+    "event": "traffic-after-close",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379424.7156852083"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:02Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4605576,
+    "inboundPackets": 538,
+    "outboundPackets": 385,
+    "protocol": "trojan",
+    "rss": 34045952,
+    "runtime": "a4a46f9a-de2e-4767-b874-c2b8e1c9b4c3",
+    "stage": "after-recovery",
+    "tcp": 7,
+    "threads": 9,
+    "time": "2026-10-12T16:32:02Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 10
+  },
+  {
+    "cycle": 3,
+    "event": "disconnected",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "event": "import",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "shadowsocks2022",
+    "seconds": 0.19729208946228027,
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09057683328865096,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09266020829090849,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09822008333867416,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.07808704167837277,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:03Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:04Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05051862500840798,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:04Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:04Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379433.33208358334"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:32:04Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4392560,
+    "inboundPackets": 204,
+    "outboundPackets": 178,
+    "protocol": "shadowsocks2022",
+    "rss": 29376512,
+    "runtime": "0efb3c5b-a8b9-4a2b-82cc-1fcba251c67d",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:32:04Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 4
+  },
+  {
+    "cycle": 1,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:04Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "cycle": 1,
+    "event": "connection-close-verified",
+    "newIDs": [
+      8
+    ],
+    "protocol": "shadowsocks2022",
+    "seconds": 2.0692836249945685,
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379433.33208358334"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4114032,
+    "inboundPackets": 209,
+    "outboundPackets": 184,
+    "protocol": "shadowsocks2022",
+    "rss": 29720576,
+    "runtime": "0efb3c5b-a8b9-4a2b-82cc-1fcba251c67d",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 11,
+    "time": "2026-10-12T16:32:06Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 1
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.1843970000045374,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08925550000276417,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.0906700833584182,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.051580125000327826,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:06Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:07Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.09873120835982263,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:07Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:07Z"
+  },
+  {
+    "cycle": 1,
+    "event": "traffic-after-close",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:07Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379433.33208358334"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:07Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4195952,
+    "inboundPackets": 382,
+    "outboundPackets": 352,
+    "protocol": "shadowsocks2022",
+    "rss": 29917184,
+    "runtime": "0efb3c5b-a8b9-4a2b-82cc-1fcba251c67d",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:32:07Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 3
+  },
+  {
+    "cycle": 1,
+    "event": "disconnected",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:07Z"
+  },
+  {
+    "cycle": 2,
+    "event": "connected",
+    "protocol": "shadowsocks2022",
+    "seconds": 0.2203960418701172,
+    "time": "2026-10-12T16:32:08Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:08Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 2.1955025416682474,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09756854170700535,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09839624998858199,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.05078429164132103,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.1034212916274555,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379437.908234875"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4425328,
+    "inboundPackets": 203,
+    "outboundPackets": 177,
+    "protocol": "shadowsocks2022",
+    "rss": 29163520,
+    "runtime": "01ad6bef-9f8f-4c01-80b9-6eea29d3b02d",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:32:10Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 4
+  },
+  {
+    "cycle": 2,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:10Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "cycle": 2,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "shadowsocks2022",
+    "seconds": 2.0734651666716672,
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379437.908234875"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 3982960,
+    "inboundPackets": 206,
+    "outboundPackets": 183,
+    "protocol": "shadowsocks2022",
+    "rss": 29507584,
+    "runtime": "01ad6bef-9f8f-4c01-80b9-6eea29d3b02d",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:32:13Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08616804162738845,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.24199925002176315,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.15616404166212305,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.15294566663214937,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:13Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.17611549998400733,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:14Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:14Z"
+  },
+  {
+    "cycle": 2,
+    "event": "traffic-after-close",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:14Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379437.908234875"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:14Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4032112,
+    "inboundPackets": 382,
+    "outboundPackets": 351,
+    "protocol": "shadowsocks2022",
+    "rss": 29769728,
+    "runtime": "01ad6bef-9f8f-4c01-80b9-6eea29d3b02d",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:32:14Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "disconnected",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:14Z"
+  },
+  {
+    "cycle": 3,
+    "event": "connected",
+    "protocol": "shadowsocks2022",
+    "seconds": 0.22501003742218018,
+    "time": "2026-10-12T16:32:15Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:15Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.7641462083556689,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:15Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:15Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.1616179999546148,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.2755308333435096,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.3051616666489281,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05274795833975077,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379444.9425785834"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:32:16Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4621936,
+    "inboundPackets": 203,
+    "outboundPackets": 185,
+    "protocol": "shadowsocks2022",
+    "rss": 29868032,
+    "runtime": "50824f50-aed3-4b72-b122-aea56b8e6a0b",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:32:16Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 4
+  },
+  {
+    "cycle": 3,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:17Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 3,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "shadowsocks2022",
+    "seconds": 2.0576905833440833,
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379444.9425785834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379448.26660541666"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4310640,
+    "inboundPackets": 208,
+    "outboundPackets": 192,
+    "protocol": "shadowsocks2022",
+    "rss": 30195712,
+    "runtime": "50824f50-aed3-4b72-b122-aea56b8e6a0b",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:32:19Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 3
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.0897397916414775,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.0885536249843426,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08438766666222364,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.10938162496313453,
+    "host": "198.51.100.7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.050102708337362856,
+    "host": "2001:db8::7",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "cycle": 3,
+    "event": "traffic-after-close",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379444.9425785834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379448.26660541666"
+      }
+    ],
+    "protocol": "shadowsocks2022",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:19Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4179568,
+    "inboundPackets": 384,
+    "outboundPackets": 363,
+    "protocol": "shadowsocks2022",
+    "rss": 30490624,
+    "runtime": "50824f50-aed3-4b72-b122-aea56b8e6a0b",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 9,
+    "time": "2026-10-12T16:32:19Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 3,
+    "event": "disconnected",
+    "protocol": "shadowsocks2022",
+    "result": "passed",
+    "time": "2026-10-12T16:32:20Z"
+  },
+  {
+    "event": "import",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:20Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "vmess",
+    "seconds": 0.2034529447555542,
+    "time": "2026-10-12T16:32:20Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:20Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10215054167201743,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:20Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:20Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09578245837474242,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.1135200000135228,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.07769554166588932,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.06350312504218891,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379450.60904125"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379450.84726916667"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4228744,
+    "inboundPackets": 190,
+    "outboundPackets": 173,
+    "protocol": "vmess",
+    "rss": 29097984,
+    "runtime": "cd9ae487-5480-4e44-9301-32b5518db6e3",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:32:21Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:21Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 1,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "vmess",
+    "seconds": 2.15015858336119,
+    "time": "2026-10-12T16:32:23Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379450.60904125"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379450.84726916667"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:23Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4081288,
+    "inboundPackets": 195,
+    "outboundPackets": 180,
+    "protocol": "vmess",
+    "rss": 29540352,
+    "runtime": "cd9ae487-5480-4e44-9301-32b5518db6e3",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:32:23Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:23Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09141808334970847,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:23Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:23Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08967887499602512,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09133020834997296,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.0580501250224188,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.09223179164109752,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "cycle": 1,
+    "event": "traffic-after-close",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379450.60904125"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379450.84726916667"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:24Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4212360,
+    "inboundPackets": 381,
+    "outboundPackets": 349,
+    "protocol": "vmess",
+    "rss": 29786112,
+    "runtime": "cd9ae487-5480-4e44-9301-32b5518db6e3",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:32:24Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 1,
+    "event": "disconnected",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "cycle": 2,
+    "event": "connected",
+    "protocol": "vmess",
+    "seconds": 0.20902597904205322,
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.21929350000573322,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09572616661898792,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11685158335603774,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.06931274995440617,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:25Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:26Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.0629936249461025,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:26Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:26Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379455.2048015417"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:32:26Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4310640,
+    "inboundPackets": 177,
+    "outboundPackets": 172,
+    "protocol": "vmess",
+    "rss": 29294592,
+    "runtime": "dc092942-81ab-4b18-967d-0291c0ebcf1d",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:32:26Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:26Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 2,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "vmess",
+    "seconds": 2.1657827083254233,
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379455.2048015417"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4064880,
+    "inboundPackets": 177,
+    "outboundPackets": 175,
+    "protocol": "vmess",
+    "rss": 29589504,
+    "runtime": "dc092942-81ab-4b18-967d-0291c0ebcf1d",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 11,
+    "time": "2026-10-12T16:32:28Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10106891667237505,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08777704165549949,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09067058330401778,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:28Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.15109320834744722,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.06378745834808797,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "cycle": 2,
+    "event": "traffic-after-close",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379455.2048015417"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "cycle": 2,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4130416,
+    "inboundPackets": 353,
+    "outboundPackets": 344,
+    "protocol": "vmess",
+    "rss": 29786112,
+    "runtime": "dc092942-81ab-4b18-967d-0291c0ebcf1d",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 11,
+    "time": "2026-10-12T16:32:29Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 2,
+    "event": "disconnected",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:29Z"
+  },
+  {
+    "cycle": 3,
+    "event": "connected",
+    "protocol": "vmess",
+    "seconds": 0.20798194408416748,
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.10425524995662272,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09209350001765415,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.1032907500048168,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.10809441667515785,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.05783908331068233,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379460.02120404167"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-traffic",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4130416,
+    "inboundPackets": 206,
+    "outboundPackets": 173,
+    "protocol": "vmess",
+    "rss": 29097984,
+    "runtime": "a2318565-cb98-49c3-bb33-27f678ae59f8",
+    "stage": "after-traffic",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:32:30Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 3,
+    "event": "connection-close-request",
+    "ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:30Z"
+  },
+  {
+    "closedIDs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle": 3,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "vmess",
+    "seconds": 2.1613449583528563,
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379460.02120404167"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-close",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 3901040,
+    "inboundPackets": 206,
+    "outboundPackets": 176,
+    "protocol": "vmess",
+    "rss": 29409280,
+    "runtime": "a2318565-cb98-49c3-bb33-27f678ae59f8",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T16:32:33Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.11149429163197055,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.09894687501946464,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.08788437501061708,
+    "host": "v07-probe-43ce018cec16.test",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.1617384583223611,
+    "host": "198.51.100.7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.06098675000248477,
+    "host": "2001:db8::7",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:33Z"
+  },
+  {
+    "event": "dns-anchor",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:34Z"
+  },
+  {
+    "cycle": 3,
+    "event": "traffic-after-close",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:34Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "379460.02120404167"
+      }
+    ],
+    "protocol": "vmess",
+    "stage": "after-recovery",
+    "time": "2026-10-12T16:32:34Z"
+  },
+  {
+    "cycle": 3,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4032112,
+    "inboundPackets": 386,
+    "outboundPackets": 343,
+    "protocol": "vmess",
+    "rss": 29655040,
+    "runtime": "a2318565-cb98-49c3-bb33-27f678ae59f8",
+    "stage": "after-recovery",
+    "tcp": 3,
+    "threads": 10,
+    "time": "2026-10-12T16:32:34Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 2
+  },
+  {
+    "cycle": 3,
+    "event": "disconnected",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:34Z"
+  },
+  {
+    "event": "complete",
+    "protocol": "vmess",
+    "result": "passed",
+    "time": "2026-10-12T16:32:34Z"
+  }
+]

@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22)
+project(xray_tun_admission_probe LANGUAGES CXX)
+add_library(xray_tun_admission_probe SHARED tun_admission_probe.cpp)
+target_compile_features(xray_tun_admission_probe PRIVATE cxx_std_17)
+target_compile_options(xray_tun_admission_probe PRIVATE -Wall -Wextra -Werror)
+target_link_options(xray_tun_admission_probe PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")

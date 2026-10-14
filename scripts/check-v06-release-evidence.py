@@ -50,6 +50,10 @@ class EvidencePolicy:
     measurement_comparisons = MEASUREMENT_COMPARISONS
     performance_artifacts = REQUIRED_PERFORMANCE_ARTIFACTS
 
+    def prepare_manifest(self, manifest: dict[str, Any]) -> dict[str, Any]:
+        """Version-specific acceptance metadata; the default stays strict."""
+        return manifest
+
     @staticmethod
     def scenarios(platform: str) -> set[str]:
         return REQUIRED_SCENARIOS
@@ -268,6 +272,7 @@ def validate_manifest(
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         fail(f"invalid manifest.json: {error}")
     manifest = require_object(manifest, "manifest")
+    manifest = policy.prepare_manifest(manifest)
     require_fields(
         manifest,
         {"schemaVersion", "candidate", "devices", "performance", "result"},

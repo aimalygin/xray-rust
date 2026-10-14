@@ -1,0 +1,125 @@
+{
+  "status": "BLOCKED_BY_REPRODUCED_STARTUP_FAILURE",
+  "performance5Percent": "NOT_CONFIRMED",
+  "candidateCore": "f61eddaf40bcb2144933208438f3f4791cbbabca",
+  "candidateSDK": "ca0ba5480b4764f210cc7d16961ee00abe9dc4e7",
+  "baselineCore": "ee55398d436f22c1fd2b5d2ed3bc467cc03d8b0b",
+  "baselineSDK": "00f200917950a06a743b4987e4b33ced18feb486",
+  "firstAttempt": {
+    "runs": 0,
+    "reason": "Post-reboot CPU activity; preflight failed, no swap."
+  },
+  "readiness": {
+    "ready": true,
+    "startedUnix": 1791774087.764435,
+    "endedUnix": 1791774147.821913,
+    "quality": {
+      "cpuMean": 5.726742372881356,
+      "cpuP95": 9.6909,
+      "cpuMax": 17.7109,
+      "swapInPages": 0,
+      "swapOutPages": 0,
+      "samples": 59
+    }
+  },
+  "comparisonAttempts": [
+    {
+      "label": "controlled-aa-0-a",
+      "variant": "fixed",
+      "admission": "nil",
+      "ok": true,
+      "quality": {
+        "valid": false,
+        "reasons": [
+          "cpu-mean",
+          "cpu-p95"
+        ],
+        "samples": 35,
+        "cpuMean": 15.776962857142857,
+        "cpuP95": 26.5152,
+        "cpuMax": 27.5949,
+        "swapInPages": 0,
+        "swapOutPages": 0
+      },
+      "hostInterval": [
+        1791774182.920369,
+        1791774217.949997
+      ],
+      "thermalRange": [
+        0,
+        0
+      ]
+    },
+    {
+      "label": "controlled-aa-0-b",
+      "variant": "fixed",
+      "admission": "nil",
+      "ok": false,
+      "quality": {
+        "valid": true,
+        "reasons": [],
+        "samples": 14,
+        "cpuMean": 7.0157,
+        "cpuP95": 14.7157,
+        "cpuMax": 14.7157,
+        "swapInPages": 0,
+        "swapOutPages": 0
+      },
+      "hostInterval": [
+        1791774242.491586,
+        1791774256.809458
+      ],
+      "thermalRange": [
+        0,
+        0
+      ]
+    }
+  ],
+  "completeAAPairs": 0,
+  "completeABPairs": 0,
+  "completeAdmissionPairs": 0,
+  "successfulCandidateTransfer": {
+    "bytes": 1073741824,
+    "mbps": 268.18714752630166,
+    "ok": true,
+    "oneWayBytes": 536870912,
+    "seconds": 32.029628083342686,
+    "workload": "pipelined-tcp"
+  },
+  "failedCandidateStartup": {
+    "error": "receive n=0 errno=36",
+    "ok": false
+  },
+  "failureStage": "64 KiB initial exchange before the timed bulk transfer; recv returned EOF (n=0), errno is stale and not the cause",
+  "failureObservations": {
+    "sameProviderPID": true,
+    "deviceThermal": 0,
+    "tunFDLoopExits": 0,
+    "backendConnectionSeen": false
+  },
+  "diagnostic": {
+    "cases": 20,
+    "trafficChecks": 160,
+    "failedCases": [
+      "duplex-0-0"
+    ],
+    "relativeInitialPacketDelayMs": 3000.119209289551,
+    "matchedSendPackets": 1253,
+    "matchedReceivePackets": 1066,
+    "unmatchedPackets": 0,
+    "localization": "Before Mac UDP kernel receive; source of delay not resolved.",
+    "hostWindow": {
+      "samples": 5,
+      "cpuMean": 12.86508,
+      "cpuMax": 13.9303,
+      "swapInPages": 0,
+      "swapOutPages": 0
+    },
+    "scope": "Instrumented diagnostic, separate from production comparison; proxy and tracing change the path. Similar startup symptom does not prove identical cause.",
+    "metadataCaveat": "Diagnostic host begin row retains old hardcoded 7ff04c5/2a1ab85 labels. Actual provider before/after identifies current f61edda/ca0ba54/current-f61-ca0-duplex-fingerprint; preserved native/source hashes document its build. Host begin labels are not used as runtime identity."
+  },
+  "codeChanges": 0,
+  "compatibility": "No protocol changes or expanded compatibility claim; current xray-core reference is still pinned to 5ca6f4b, binary SHA-256 verified.",
+  "next": "Prepared narrow simultaneous RVI/Mac UDP capture; awaiting user authorization for macOS administrator dialog required by BPF.",
+  "stopped": "Comparison and diagnostic launchers completed cleanup; no further performance attempt made after traffic failure."
+}

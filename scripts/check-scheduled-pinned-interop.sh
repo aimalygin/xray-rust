@@ -41,11 +41,28 @@ env \
   CGO_ENABLED=0 \
   go -C "$XRAY_CORE_CHECKOUT" build -o "$xray_core_binary" ./main
 
+# The carrier tests need the same local oracles as check-v08-carrier-interop.sh.
+for oracle in download encryption; do
+  case "$oracle" in
+    download) sources=("$repository_root/tools/xhttp-download-oracle/main.go" "$repository_root/tools/xhttp-download-oracle/bridge.go") ;;
+    encryption) sources=("$repository_root/tools/vless-encryption-oracle/main.go") ;;
+  esac
+  env -u GOFLAGS -u GOEXPERIMENT -u GOTOOLCHAIN \
+    GOENV=off GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 \
+    go -C "$XRAY_CORE_CHECKOUT" build -mod=readonly \
+      -o "$scheduled_tmp/$oracle-oracle" "${sources[@]}"
+done
+export XRAY_DOWNLOAD_ORACLE="$scheduled_tmp/download-oracle"
+export XRAY_VLESS_ENCRYPTION_ORACLE="$scheduled_tmp/encryption-oracle"
+export XRAY_VLESS_FULL_BINARY="$xray_core_binary"
+
 export XRAY_REALITY_INTEROP_FINGERPRINTS="chrome,hellochrome_133,hellofirefox_148,hellosafari_26_3,helloios_13,hello360_11_0,hellochrome_120_pq,hellofirefox_99"
 export XRAY_REALITY_INTEROP_BURST_FINGERPRINTS="hellofirefox_99"
 export XRAY_REALITY_INTEROP_BURST_FLOWS="32"
 export XRAY_XHTTP_INTEROP_CASES="all"
 
+# Remote-profile acceptance is a separate owner-supplied WAN check; the
+# scheduled local gate has no remote profile or credentials.
 env \
   -u GOFLAGS \
   -u GOEXPERIMENT \
@@ -56,7 +73,9 @@ env \
   GOTOOLCHAIN=local \
   CGO_ENABLED=0 \
   cargo test --locked -p xray-core-rs --test local_xray_interop_tests \
-    -- --ignored --skip vless_encryption:: --skip xhttp_download:: --nocapture --test-threads=1
+    -- --ignored --skip vless_encryption:: --skip xhttp_download:: \
+    --skip rust_socks_client_reaches_target_through_remote_xhttp_profile \
+    --nocapture --test-threads=1
 
 cargo build --locked --release -p xray-cli --bin xray-rust
 xray_rust_binary="${CARGO_TARGET_DIR:-target}/release/xray-rust"

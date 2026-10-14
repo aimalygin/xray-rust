@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 REV = "dab390cdf9dcfb7a6fa85dd8798db92b681ad296"
@@ -58,6 +59,14 @@ def main():
     env["NATIVE_WIREGUARD_BINARY"] = str(binary)
     binaries = {"wireguard-go": binary}
     locks = {}
+    pinned = tomllib.loads((ROOT / "Cargo.lock").read_text())["package"]
+    registry = [p for p in pinned if p.get("source", "").startswith("registry+")]
+    versions = {}
+    for name in ("bytes", "tokio"):
+        matches = [p["version"] for p in registry if p["name"] == name]
+        if len(matches) != 1:
+            raise ValueError(f"expected one locked {name} version, got {matches}")
+        versions[name] = matches[0]
     for name, vendor, patched in [("pristine", pristine, False), ("patched", ROOT / "vendor/gotatun", True)]:
         package = build / (name + "-probe")
         package.mkdir(exist_ok=True)
@@ -76,8 +85,8 @@ xray-patches = []
 name = "wireguard-timeout-probe"
 path = "main.rs"
 [dependencies]
-bytes = "=1.12.1"
-tokio = {{ version = "=1.52.3", features = ["rt", "macros", "net"] }}
+bytes = "={versions["bytes"]}"
+tokio = {{ version = "={versions["tokio"]}", features = ["rt", "macros", "net"] }}
 gotatun = {{ path = {json.dumps(str(vendor))}, version = "=0.9.1", default-features = false, features = ["ring", "device"] }}
 '''
         (package / "Cargo.toml").write_text(manifest)
@@ -88,8 +97,6 @@ gotatun = {{ path = {json.dumps(str(vendor))}, version = "=0.9.1", default-featu
         if patched:
             command += ["--features", "xray-patches"]
         run(command, cwd=package, env=rust_env)
-        import tomllib
-        pinned = tomllib.loads((ROOT / "Cargo.lock").read_text())["package"]
         actual = tomllib.loads((package / "Cargo.lock").read_text())["package"]
         identities = {(p["name"], p["version"], p.get("checksum")) for p in pinned}
         for dependency in actual:

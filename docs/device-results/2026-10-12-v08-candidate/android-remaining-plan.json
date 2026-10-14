@@ -1,0 +1,51 @@
+{
+  "cancellation": {
+    "backends": [
+      "file-descriptor",
+      "packet-pump"
+    ],
+    "configurations": [
+      "trojan-tls",
+      "shadowsocks2022-2022-blake3-chacha20-poly1305",
+      "vmess-auto"
+    ],
+    "localErrorDeadlineSeconds": 3,
+    "operations": [
+      "close-connections",
+      "disconnect"
+    ],
+    "probeTimeoutIsNotCancellation": true,
+    "remoteEOFReportedSeparately": true
+  },
+  "legacy": [
+    "vless-reality",
+    "xhttp-h1",
+    "xhttp-h2",
+    "xhttp-h3",
+    "hysteria2",
+    "wireguard"
+  ],
+  "ownerSkipped": [
+    "wifi-cellular-wifi",
+    "lock-wake"
+  ],
+  "performanceClaim": "No calibrated 5% or energy claim; all failed attempts retained",
+  "phaseOrder": [
+    "finish-resources",
+    "build-pinned-download-oracle",
+    "active-TCP-cancellation",
+    "shared-features",
+    "legacy-smoke",
+    "admission-controls"
+  ],
+  "scope": "Remaining Android physical checks, exact fcce4be runtime",
+  "shared": [
+    "vless-encryption",
+    "ip-on-demand with FakeIP/domain restoration and blocked default",
+    "xhttp-download-session with distinct upload/download frontends"
+  ],
+  "sourceIdentities": {
+    "core": "fcce4be2771c1fb3f11e9503741d39a4d8df314e",
+    "sdk": "12fdfa14136e57024d46ace66c84bdbf3dc1d7c7"
+  }
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "returncode": 0,
+    "suite": "ios-ciphers"
+  },
+  {
+    "returncode": 1,
+    "suite": "ios-shared"
+  },
+  {
+    "returncode": 0,
+    "suite": "ios-legacy"
+  },
+  {
+    "returncode": 0,
+    "suite": "ios-v07"
+  }
+]

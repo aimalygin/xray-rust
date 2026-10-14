@@ -48,7 +48,9 @@ impl Default for HysteriaLimits {
         Self {
             max_tcp_streams: 64,
             max_udp_sessions: 32,
-            udp_queue_packets: 4,
+            // Absorb short QUIC receive bursts while a ready relay is scheduled.
+            // Payload storage remains capped by the shared byte budget below.
+            udp_queue_packets: 16,
             udp_queue_bytes: 1024 * 1024,
             udp_payload_bytes: 65535,
             fragment_timeout: Duration::from_secs(5),
@@ -83,6 +85,7 @@ pub struct HysteriaConfig {
     pub auth: Zeroizing<String>,
     pub quic: H3QuicConfig,
     pub limits: HysteriaLimits,
+    pub carrier: super::HysteriaCarrierConfig,
 }
 
 impl HysteriaConfig {
@@ -92,6 +95,7 @@ impl HysteriaConfig {
             tls,
             auth: Zeroizing::new(auth),
             limits: HysteriaLimits::default(),
+            carrier: super::HysteriaCarrierConfig::default(),
             quic: H3QuicConfig {
                 max_idle_timeout: Duration::from_secs(30),
                 ..H3QuicConfig::default()
@@ -107,6 +111,7 @@ impl fmt::Debug for HysteriaConfig {
             .field("auth", &"<redacted>")
             .field("quic", &self.quic)
             .field("limits", &self.limits)
+            .field("carrier", &self.carrier)
             .finish_non_exhaustive()
     }
 }
@@ -189,6 +194,8 @@ pub(super) struct Shared {
     rebind: Arc<RebindRequest>,
     rebind_driver: Mutex<Option<JoinHandle<()>>>,
     bind_addr: SocketAddr,
+    carrier: super::HysteriaCarrierConfig,
+    noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
     protector: Option<Arc<dyn crate::SocketProtector>>,
     pub limits: HysteriaLimits,
     pub tcp_slots: Arc<Semaphore>,
@@ -284,20 +291,35 @@ impl Shared {
         socket
             .set_nonblocking(true)
             .map_err(|_| HysteriaError::Connect)?;
-        #[cfg(target_os = "macos")]
-        let socket = crate::connected_quic::wrap(socket, self.connection()?.remote_address())
-            .map_err(|_| HysteriaError::Connect)?;
+        let logical_peer = self.connection()?.remote_address();
         let endpoint = self.endpoint.lock().unwrap_or_else(|e| e.into_inner());
         if self.closed.load(Ordering::Acquire) {
             return Err(HysteriaError::Closed);
         }
-        // Runs on the captured Tokio runtime, never on the host/FFI thread.
-        // Quinn retains the live QUIC connection and validates the new path.
         let endpoint = endpoint.as_ref().ok_or(HysteriaError::Closed)?;
-        #[cfg(target_os = "macos")]
-        let result = endpoint.rebind_abstract(socket);
-        #[cfg(not(target_os = "macos"))]
-        let result = endpoint.rebind(socket);
+        // On the captured runtime. Quinn retains at most the current and
+        // previous carrier until an authenticated packet arrives on the new one.
+        let result = if self.carrier.enabled() {
+            let wire_peer = self.carrier.next_peer(logical_peer);
+            let socket = super::carrier::wrap(
+                socket,
+                logical_peer,
+                wire_peer,
+                &self.carrier,
+                self.noise_state.clone(),
+            )
+            .map_err(|_| HysteriaError::Connect)?;
+            endpoint.rebind_abstract(socket)
+        } else {
+            #[cfg(target_os = "macos")]
+            {
+                let socket = crate::connected_quic::wrap(socket, logical_peer)
+                    .map_err(|_| HysteriaError::Connect)?;
+                endpoint.rebind_abstract(socket)
+            }
+            #[cfg(not(target_os = "macos"))]
+            endpoint.rebind(socket)
+        };
         result.map_err(|_| HysteriaError::Connect)
     }
 
@@ -339,6 +361,7 @@ impl HysteriaClient {
         tls: &TlsConnector,
     ) -> Result<Self, HysteriaError> {
         config.limits.validate()?;
+        config.carrier.validate()?;
         if config.remote_addr.port() == 0
             || config.auth.is_empty()
             || config.auth.len() > MAX_AUTH_BYTES
@@ -368,6 +391,12 @@ impl HysteriaClient {
         let tls_config = tls
             .quic_client_config_for(&config.tls, b"h3")
             .map_err(|_| HysteriaError::TlsConfiguration)?;
+        let noise_state = config
+            .carrier
+            .noise
+            .as_ref()
+            .filter(|noise| !noise.items.is_empty())
+            .map(|_| Arc::new(crate::udp_noise::UdpNoiseState::default()));
         let (endpoint, connection, _) = connect_quic_transport_with_datagrams(
             H3ConnectConfig {
                 remote_addr: config.remote_addr,
@@ -382,6 +411,8 @@ impl HysteriaClient {
                 QUIC_DATAGRAM_BUFFER,
                 QUIC_DATAGRAM_FRAME_SIZE,
             )),
+            Some(&config.carrier),
+            noise_state.clone(),
         )
         .await
         .map_err(|error| match error {
@@ -450,6 +481,8 @@ impl HysteriaClient {
             rebind: rebind.clone(),
             rebind_driver: Mutex::new(None),
             bind_addr,
+            carrier: config.carrier.clone(),
+            noise_state,
             protector: tls.socket_protector_arc(),
             limits: config.limits,
             tcp_slots: Arc::new(Semaphore::new(config.limits.max_tcp_streams)),
@@ -457,13 +490,28 @@ impl HysteriaClient {
             udp_enabled,
         });
         let owner = Arc::downgrade(&shared);
+        let hopping = config.carrier;
         let task = tokio::spawn(async move {
             loop {
-                rebind.wake.notified().await;
-                rebind.pending.store(false, Ordering::Release);
+                // A disabled hop policy creates no timer and preserves the
+                // event-driven network-rebind worker.
+                let hop = async {
+                    match hopping.next_interval() {
+                        Some(delay) => tokio::time::sleep(delay).await,
+                        None => std::future::pending::<()>().await,
+                    }
+                };
+                let requested = tokio::select! {
+                    _ = rebind.wake.notified() => true,
+                    _ = hop => false,
+                };
+                if requested {
+                    rebind.pending.store(false, Ordering::Release);
+                }
                 let Some(shared) = owner.upgrade() else { break };
-                if shared.rebind_socket().is_err() {
-                    // Do not retain a stale carrier after failed protection/bind.
+                if shared.rebind_socket().is_err() && requested {
+                    // A scheduled hop failure retains the protected old path,
+                    // matching Xray. A host network update cannot keep a stale carrier.
                     shared.close();
                     break;
                 }

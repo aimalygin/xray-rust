@@ -1,0 +1,87 @@
+[
+  {
+    "bytes": 1224,
+    "path": "Info.plist",
+    "sha256": "68c916a2ec432856511f3f7688ac755c943ea991e9b23bd0833501641f355336"
+  },
+  {
+    "bytes": 8,
+    "path": "PkgInfo",
+    "sha256": "82502191c9484b04d685374f9879a0066069c49b8acae7a04b01d38d07e8eca0"
+  },
+  {
+    "bytes": 947,
+    "path": "PlugIns/Tunnel.appex/Info.plist",
+    "sha256": "aa666ac057d3b26c2ac774464c97314291d55e6182251176a86d1a33b05c117b"
+  },
+  {
+    "bytes": 90032,
+    "path": "PlugIns/Tunnel.appex/Tunnel",
+    "sha256": "f7192874eede3e14cc50bb09d1cfbaa0d52ca5d032183c458e29171c09f2f7c1"
+  },
+  {
+    "bytes": 26975632,
+    "path": "PlugIns/Tunnel.appex/Tunnel.debug.dylib",
+    "sha256": "48302832d0e828f0fbec823493caa3f90d2259088406c2b0f6e12b8ae53f6f8e"
+  },
+  {
+    "bytes": 2890,
+    "path": "PlugIns/Tunnel.appex/_CodeSignature/CodeResources",
+    "sha256": "f8060bcdd37eaa06d52e13846b1502fcf62350ddcc3f066dce2499a33f928856"
+  },
+  {
+    "bytes": 35024,
+    "path": "PlugIns/Tunnel.appex/__preview.dylib",
+    "sha256": "1dfb1221500d30b2fb8cf83d2854d59c552671df724f8756809e473a3b7950e7"
+  },
+  {
+    "bytes": 13529,
+    "path": "PlugIns/Tunnel.appex/embedded.mobileprovision",
+    "sha256": "18902e8cc608d8a88c2a536018f4171ccaa156c863dbf7b00b8856e65c7a2dfc"
+  },
+  {
+    "bytes": 22765206,
+    "path": "PlugIns/Tunnel.appex/geoip.dat",
+    "sha256": "b71d1999439dde2de2d2b6844a2befa50c50211ff739785c005ca7c230a17d6a"
+  },
+  {
+    "bytes": 2257046,
+    "path": "PlugIns/Tunnel.appex/geosite.dat",
+    "sha256": "d6787cf3d08b86402640e8c2a7a18c8d64b31944ffa5274d8a6e154c8f3ddc07"
+  },
+  {
+    "bytes": 92656,
+    "path": "XrayClient",
+    "sha256": "c340c263e44d42c37f313cd69a6ec86731992c38613189f2e96c8a45385957e1"
+  },
+  {
+    "bytes": 28059312,
+    "path": "XrayClient.debug.dylib",
+    "sha256": "da4f5682912bb2ef7516d7d58692c0be3cb967b6b12899c33f2b9da7a9c2c09b"
+  },
+  {
+    "bytes": 5035,
+    "path": "_CodeSignature/CodeResources",
+    "sha256": "04f2b813dad35111a51d08eec0f7dd4cef5268e0aad3ed244a52013eb883df84"
+  },
+  {
+    "bytes": 35024,
+    "path": "__preview.dylib",
+    "sha256": "e6ea789e17d9ae85cfcf3713e4f3734d9578205bce03cd9b58c5a5d1c414ee2a"
+  },
+  {
+    "bytes": 13151,
+    "path": "embedded.mobileprovision",
+    "sha256": "262810476c1453fb96c1e8acaf290e487db514e7130c2d95e87beb8fe75a82dc"
+  },
+  {
+    "bytes": 22765206,
+    "path": "geoip.dat",
+    "sha256": "b71d1999439dde2de2d2b6844a2befa50c50211ff739785c005ca7c230a17d6a"
+  },
+  {
+    "bytes": 2257046,
+    "path": "geosite.dat",
+    "sha256": "d6787cf3d08b86402640e8c2a7a18c8d64b31944ffa5274d8a6e154c8f3ddc07"
+  }
+]

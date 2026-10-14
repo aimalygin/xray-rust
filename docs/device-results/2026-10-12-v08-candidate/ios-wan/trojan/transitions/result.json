@@ -1,0 +1,1947 @@
+[
+  {
+    "event": "abi",
+    "major": 1,
+    "minor": 11,
+    "protocol": "setup",
+    "time": "2026-10-12T17:40:00Z"
+  },
+  {
+    "event": "import",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:00Z"
+  },
+  {
+    "event": "access-network",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:00Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:00Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "wifi",
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:00Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "app-active",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:01Z"
+  },
+  {
+    "cycle": 1,
+    "event": "connected",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:04Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:04Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:04Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:04Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:05Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.06776345835533,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:05Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:05Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.025819833332207,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:06Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:06Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.586422499967739,
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:08Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:08Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.6045443333568983,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:08Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:08Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.6111630416708067,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:09Z"
+  },
+  {
+    "answerIPv4": "198.51.100.7",
+    "event": "dns-anchor",
+    "expectsFakeIPDNS": false,
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:09Z"
+  },
+  {
+    "activeRecoverySeconds": 5.187874916649889,
+    "event": "transition-recovered",
+    "protocol": "trojan",
+    "result": "passed",
+    "retries": 0,
+    "secondsSincePathOrUnlock": 8.647460166655947,
+    "stage": "wifi-baseline",
+    "time": "2026-10-12T17:40:09Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:09Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383481.2636005"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383482.06315683335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383486.51148187503"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "wifi-baseline",
+    "time": "2026-10-12T17:40:09Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4195952,
+    "inboundPackets": 234,
+    "outboundPackets": 192,
+    "protocol": "trojan",
+    "rss": 32243712,
+    "runtime": "0f801ef1-2a7d-4181-8433-c680edf5a0cd",
+    "stage": "wifi-baseline",
+    "tcp": 0,
+    "threads": 9,
+    "time": "2026-10-12T17:40:09Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 5
+  },
+  {
+    "action": "cellular",
+    "event": "action-required",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:09Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:11Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:15Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:17Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [],
+    "event": "carrier-path-detail",
+    "interface": "unavailable",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:17Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "access-network",
+    "interface": "cellular",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:17Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:17Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:17Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:17Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "app-active",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:18Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.1658263333374634,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:18Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:18Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.0530854583485052,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:19Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:19Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:20Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.6955337916733697,
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:21Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:21Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.5366236666450277,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:22Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:22Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.608283500012476,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:22Z"
+  },
+  {
+    "answerIPv4": "198.51.100.7",
+    "event": "dns-anchor",
+    "expectsFakeIPDNS": false,
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:22Z"
+  },
+  {
+    "activeRecoverySeconds": 5.344719416694716,
+    "event": "transition-recovered",
+    "protocol": "trojan",
+    "result": "passed",
+    "retries": 0,
+    "secondsSincePathOrUnlock": 5.483092874987051,
+    "stage": "cellular",
+    "time": "2026-10-12T17:40:22Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383481.2636005"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383482.06315683335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383486.51148187503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383488.2110527083"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383492.27575612505"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383494.2093062917"
+      },
+      {
+        "interface": "",
+        "kind": "offline",
+        "uptime": "383494.37847625004"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "scheduled",
+        "uptime": "383494.58129733335"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383495.1147804167"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383497.71039958333"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "cellular",
+    "time": "2026-10-12T17:40:22Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4195952,
+    "inboundPackets": 460,
+    "outboundPackets": 387,
+    "protocol": "trojan",
+    "rss": 32423936,
+    "runtime": "0f801ef1-2a7d-4181-8433-c680edf5a0cd",
+    "stage": "cellular",
+    "tcp": 0,
+    "threads": 10,
+    "time": "2026-10-12T17:40:23Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 5
+  },
+  {
+    "action": "wifi",
+    "event": "action-required",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:23Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:40Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:43Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:51Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "app-active",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:56Z"
+  },
+  {
+    "availableInterfaces": [
+      "wifi",
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:57Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "access-network",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:57Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:57Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:57Z"
+  },
+  {
+    "availableInterfaces": [
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:57Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:57Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:57Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:58Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:58Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.1718232916900888,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:58Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:58Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:40:58Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.9563201667042449,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:40:59Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:40:59Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.0342977916589007,
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:41:00Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:41:00Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.48908120836131275,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.48205004166811705,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "answerIPv4": "198.51.100.7",
+    "event": "dns-anchor",
+    "expectsFakeIPDNS": false,
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "activeRecoverySeconds": 4.430419416690711,
+    "event": "transition-recovered",
+    "protocol": "trojan",
+    "result": "passed",
+    "retries": 0,
+    "secondsSincePathOrUnlock": 4.5128560833400115,
+    "stage": "wifi",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:01Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383481.2636005"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383482.06315683335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383486.51148187503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383488.2110527083"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383492.27575612505"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383494.2093062917"
+      },
+      {
+        "interface": "",
+        "kind": "offline",
+        "uptime": "383494.37847625004"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "scheduled",
+        "uptime": "383494.58129733335"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383495.1147804167"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383497.71039958333"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383517.4663316667"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383520.637406375"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383528.72057658335"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.1778356667"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.30298725003"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.5710046667"
+      },
+      {
+        "interface": "en0",
+        "kind": "scheduled",
+        "uptime": "383535.27806441666"
+      },
+      {
+        "interface": "en0",
+        "kind": "scheduled",
+        "uptime": "383535.68253675004"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383536.20957420836"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383538.70978333335"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "wifi",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4179568,
+    "inboundPackets": 719,
+    "outboundPackets": 604,
+    "protocol": "trojan",
+    "rss": 32735232,
+    "runtime": "0f801ef1-2a7d-4181-8433-c680edf5a0cd",
+    "stage": "wifi",
+    "tcp": 0,
+    "threads": 9,
+    "time": "2026-10-12T17:41:01Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 6
+  },
+  {
+    "action": "lock-30-seconds",
+    "event": "action-required",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:41:01Z"
+  },
+  {
+    "availableInterfaces": [
+      "wifi",
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:41:02Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:02Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:03Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:05Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:07Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:07Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:10Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:12Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:14Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:15Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:18Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:41:22Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:42:06Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:42:11Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:42:11Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:42:15Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:42:47Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:42:51Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "app-active",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:24Z"
+  },
+  {
+    "event": "protected-data-unavailable",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:25Z"
+  },
+  {
+    "event": "app-active",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:27Z"
+  },
+  {
+    "event": "app-background",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:27Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:43:42Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "protected-data-available",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:42Z"
+  },
+  {
+    "availableInterfaces": [
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:42Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:43:42Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "app-active",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:43Z"
+  },
+  {
+    "event": "lock-interval",
+    "protocol": "trojan",
+    "seconds": 16.918912624998484,
+    "time": "2026-10-12T17:43:43Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:43Z"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:43:43Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.9733100833254866,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:44Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:44Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 0.9635379166575149,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:45Z"
+  },
+  {
+    "event": "tcp-start",
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:45Z"
+  },
+  {
+    "bytes": 65536,
+    "event": "tcp",
+    "exchangeSeconds": 1.4181160416337661,
+    "host": "v07-probe-bf839fa23bc4.test",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:46Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp-start",
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:47Z"
+  },
+  {
+    "bytes": 1392,
+    "event": "udp",
+    "exchangeSeconds": 0.505590749962721,
+    "host": "198.51.100.7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:47Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp-start",
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:47Z"
+  },
+  {
+    "bytes": 1372,
+    "event": "udp",
+    "exchangeSeconds": 0.5312181249610148,
+    "host": "2001:db8::7",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:48Z"
+  },
+  {
+    "answerIPv4": "198.51.100.7",
+    "event": "dns-anchor",
+    "expectsFakeIPDNS": false,
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:48Z"
+  },
+  {
+    "activeRecoverySeconds": 4.673519374977332,
+    "event": "transition-recovered",
+    "protocol": "trojan",
+    "result": "passed",
+    "retries": 0,
+    "secondsSincePathOrUnlock": 5.5473437500186265,
+    "stage": "after-unlock",
+    "time": "2026-10-12T17:43:48Z"
+  },
+  {
+    "availableInterfaces": [
+      "wifi",
+      "wifi"
+    ],
+    "event": "carrier-path-detail",
+    "interface": "wifi",
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:48Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "other",
+      "other",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:43:48Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383481.2636005"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383482.06315683335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383486.51148187503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383488.2110527083"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383492.27575612505"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383494.2093062917"
+      },
+      {
+        "interface": "",
+        "kind": "offline",
+        "uptime": "383494.37847625004"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "scheduled",
+        "uptime": "383494.58129733335"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383495.1147804167"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383497.71039958333"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383517.4663316667"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383520.637406375"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383528.72057658335"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.1778356667"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.30298725003"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.5710046667"
+      },
+      {
+        "interface": "en0",
+        "kind": "scheduled",
+        "uptime": "383535.27806441666"
+      },
+      {
+        "interface": "en0",
+        "kind": "scheduled",
+        "uptime": "383535.68253675004"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383536.20957420836"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383538.70978333335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383539.4696827084"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383540.26184370834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383542.94974795834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383544.340951375"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383544.96731725003"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383547.26181195833"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383549.0115636667"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383551.59761395835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383552.4390855834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383555.66780933336"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383559.4753195"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383603.80187333334"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383608.4306933333"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383608.6907195"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383612.5276920833"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383644.53262658336"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383648.5830555417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383689.69751850003"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383695.93693825003"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383696.6421412917"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383700.8447160417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383705.2106315417"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-unlock",
+    "time": "2026-10-12T17:43:48Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4163184,
+    "inboundPackets": 1036,
+    "outboundPackets": 889,
+    "protocol": "trojan",
+    "rss": 33046528,
+    "runtime": "0f801ef1-2a7d-4181-8433-c680edf5a0cd",
+    "stage": "after-unlock",
+    "tcp": 0,
+    "threads": 9,
+    "time": "2026-10-12T17:43:48Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 5
+  },
+  {
+    "cycle": 1,
+    "event": "connection-close-request",
+    "ids": [
+      32,
+      33
+    ],
+    "protocol": "trojan",
+    "time": "2026-10-12T17:43:48Z"
+  },
+  {
+    "closedIDs": [
+      32,
+      33
+    ],
+    "cycle": 1,
+    "event": "connection-close-verified",
+    "newIDs": [],
+    "protocol": "trojan",
+    "seconds": 2.044816916633863,
+    "time": "2026-10-12T17:43:50Z"
+  },
+  {
+    "event": "network-observer",
+    "events": [
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383481.2636005"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383482.06315683335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383486.51148187503"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383488.2110527083"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383492.27575612505"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383494.2093062917"
+      },
+      {
+        "interface": "",
+        "kind": "offline",
+        "uptime": "383494.37847625004"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "scheduled",
+        "uptime": "383494.58129733335"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383495.1147804167"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383497.71039958333"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383517.4663316667"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383520.637406375"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383528.72057658335"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.1778356667"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.30298725003"
+      },
+      {
+        "interface": "pdp_ip0",
+        "kind": "unchanged",
+        "uptime": "383534.5710046667"
+      },
+      {
+        "interface": "en0",
+        "kind": "scheduled",
+        "uptime": "383535.27806441666"
+      },
+      {
+        "interface": "en0",
+        "kind": "scheduled",
+        "uptime": "383535.68253675004"
+      },
+      {
+        "interface": "",
+        "kind": "applied",
+        "uptime": "383536.20957420836"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383538.70978333335"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383539.4696827084"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383540.26184370834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383542.94974795834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383544.340951375"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383544.96731725003"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383547.26181195833"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383549.0115636667"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383551.59761395835"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383552.4390855834"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383555.66780933336"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383559.4753195"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383603.80187333334"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383608.4306933333"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383608.6907195"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383612.5276920833"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383644.53262658336"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383648.5830555417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383689.69751850003"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383695.93693825003"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383696.6421412917"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383700.8447160417"
+      },
+      {
+        "interface": "en0",
+        "kind": "unchanged",
+        "uptime": "383705.2106315417"
+      }
+    ],
+    "protocol": "trojan",
+    "stage": "after-close",
+    "time": "2026-10-12T17:43:50Z"
+  },
+  {
+    "cycle": 1,
+    "droppedPackets": 0,
+    "event": "sample",
+    "footprint": 4163184,
+    "inboundPackets": 1036,
+    "outboundPackets": 892,
+    "protocol": "trojan",
+    "rss": 33144832,
+    "runtime": "0f801ef1-2a7d-4181-8433-c680edf5a0cd",
+    "stage": "after-close",
+    "tcp": 0,
+    "threads": 9,
+    "time": "2026-10-12T17:43:50Z",
+    "tunFDReadLoopExits": 0,
+    "tunFDWriteLoopExits": 0,
+    "udp": 0
+  },
+  {
+    "availableInterfaces": [
+      "cellular",
+      "wifi",
+      "wifi"
+    ],
+    "event": "system-path",
+    "protocol": "trojan",
+    "status": "satisfied",
+    "supportsIPv4": true,
+    "supportsIPv6": true,
+    "time": "2026-10-12T17:43:50Z",
+    "unsatisfiedReason": "notAvailable"
+  },
+  {
+    "cycle": 1,
+    "event": "disconnected",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:51Z"
+  },
+  {
+    "event": "complete",
+    "protocol": "trojan",
+    "result": "passed",
+    "time": "2026-10-12T17:43:51Z"
+  }
+]

@@ -1,0 +1,141 @@
+{
+  "plan": {
+    "roundsPerBackend": 4,
+    "backends": [
+      "file-descriptor",
+      "packet-pump"
+    ],
+    "httpAttempts": 240,
+    "udpAttempts": 480,
+    "workers": 32,
+    "deadlineSeconds": 5,
+    "recoverySeconds": 20,
+    "carrier": "adb reverse TCP; no Wi-Fi data path",
+    "referenceSHA256": "261855920e4ad85627aae764ae2cc8e6ceb48c92ae551d326965807752103370",
+    "apkManifestRef": "baseline-apks.json"
+  },
+  "summary": {
+    "httpPassed": 1920,
+    "httpFailed": 0,
+    "udpPassed": 3838,
+    "udpFailed": 2,
+    "completedBursts": 8,
+    "expectedBursts": 8,
+    "ordinaryProbeFailures": 0,
+    "tunDroppedPacketsMax": 0,
+    "fatalTunErrorsMax": 0
+  },
+  "bursts": [
+    {
+      "stage": "completed",
+      "backend": "file-descriptor",
+      "cycle": 100,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=100 httpPassed=240 httpFailed=0 udpPassed=480 udpFailed=0 durationMillis=3132",
+      "time": 1791922468.611433,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 480,
+      "udpFailed": 0,
+      "durationMillis": 3132
+    },
+    {
+      "stage": "completed",
+      "backend": "file-descriptor",
+      "cycle": 101,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=101 httpPassed=240 httpFailed=0 udpPassed=479 udpFailed=1 durationMillis=6340",
+      "time": 1791922496.0140412,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 479,
+      "udpFailed": 1,
+      "durationMillis": 6340
+    },
+    {
+      "stage": "completed",
+      "backend": "file-descriptor",
+      "cycle": 102,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=102 httpPassed=240 httpFailed=0 udpPassed=480 udpFailed=0 durationMillis=3349",
+      "time": 1791922520.3882098,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 480,
+      "udpFailed": 0,
+      "durationMillis": 3349
+    },
+    {
+      "stage": "completed",
+      "backend": "file-descriptor",
+      "cycle": 103,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=103 httpPassed=240 httpFailed=0 udpPassed=480 udpFailed=0 durationMillis=3341",
+      "time": 1791922544.7432399,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 480,
+      "udpFailed": 0,
+      "durationMillis": 3341
+    },
+    {
+      "stage": "completed",
+      "backend": "packet-pump",
+      "cycle": 200,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=200 httpPassed=240 httpFailed=0 udpPassed=480 udpFailed=0 durationMillis=2295",
+      "time": 1791922574.786392,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 480,
+      "udpFailed": 0,
+      "durationMillis": 2295
+    },
+    {
+      "stage": "completed",
+      "backend": "packet-pump",
+      "cycle": 201,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=201 httpPassed=240 httpFailed=0 udpPassed=480 udpFailed=0 durationMillis=3207",
+      "time": 1791922599.096541,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 480,
+      "udpFailed": 0,
+      "durationMillis": 3207
+    },
+    {
+      "stage": "completed",
+      "backend": "packet-pump",
+      "cycle": 202,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=202 httpPassed=240 httpFailed=0 udpPassed=480 udpFailed=0 durationMillis=3200",
+      "time": 1791922623.486348,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 480,
+      "udpFailed": 0,
+      "durationMillis": 3200
+    },
+    {
+      "stage": "completed",
+      "backend": "packet-pump",
+      "cycle": 203,
+      "result": "XRAY_ANDROID_STRESS state=completed cycle=203 httpPassed=240 httpFailed=0 udpPassed=479 udpFailed=1 durationMillis=6441",
+      "time": 1791922650.8856409,
+      "httpPassed": 240,
+      "httpFailed": 0,
+      "udpPassed": 479,
+      "udpFailed": 1,
+      "durationMillis": 6441
+    }
+  ],
+  "udpFailureLines": [
+    "XRAY_ANDROID_UDP_FAILURE queryTag=beeb8c8ef846d12d localPort=52680 errorCode=SocketTimeoutException",
+    "XRAY_ANDROID_UDP_FAILURE queryTag=333119550624b946 localPort=47911 errorCode=SocketTimeoutException"
+  ],
+  "ordinaryProbeLines": [
+    "XRAY_ANDROID_PROBE kind=http result=passed sequence=1 elapsedSeconds=0",
+    "XRAY_ANDROID_PROBE kind=udp result=passed sequence=1 elapsedSeconds=0",
+    "XRAY_ANDROID_PROBE kind=http result=passed sequence=2 elapsedSeconds=60",
+    "XRAY_ANDROID_PROBE kind=udp result=passed sequence=2 elapsedSeconds=60",
+    "XRAY_ANDROID_PROBE kind=http result=passed sequence=3 elapsedSeconds=0",
+    "XRAY_ANDROID_PROBE kind=udp result=passed sequence=3 elapsedSeconds=0",
+    "XRAY_ANDROID_PROBE kind=http result=passed sequence=4 elapsedSeconds=60",
+    "XRAY_ANDROID_PROBE kind=udp result=passed sequence=4 elapsedSeconds=60"
+  ],
+  "samples": []
+}

@@ -1,0 +1,35 @@
+{
+  "complete": true,
+  "ownedServicesStopped": true,
+  "ownedAppProcessesStopped": true,
+  "ownedProfileAndPendingImportsRemoved": true,
+  "fixtureCredentialsRemoved": true,
+  "ownedFixtureAndReferenceClientProcessesStopped": true,
+  "previousAppPackagesUntouched": true,
+  "stateBeforeForceStop": {
+    "host": {
+      "state": "stopped",
+      "detail": null,
+      "runtime-generation": "2",
+      "fatal-tun-errors": "0"
+    },
+    "probe": {
+      "running": "false",
+      "http-failed": "0",
+      "udp-failed": "0",
+      "http-passed": "0",
+      "udp-passed": "0"
+    }
+  },
+  "finalConditions": {
+    "battery": [
+      "USB powered: true",
+      "status: 5",
+      "level: 100",
+      "temperature: 287"
+    ],
+    "thermal": [
+      "Thermal Status: 0"
+    ]
+  }
+}

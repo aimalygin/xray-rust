@@ -1,0 +1,63 @@
+{
+  "bursts": [
+    {
+      "cycle": 1,
+      "event": "burst",
+      "httpFailed": 0,
+      "httpPassed": 240,
+      "seconds": 5.924445188,
+      "udpFailed": 1,
+      "udpPassed": 479
+    },
+    {
+      "cycle": 2,
+      "event": "burst",
+      "httpFailed": 0,
+      "httpPassed": 240,
+      "seconds": 1.374079345,
+      "udpFailed": 0,
+      "udpPassed": 480
+    }
+  ],
+  "canonicalRustResult": false,
+  "conclusion": "symptom also reproduced without Rust/TUN; exact missing-reply location and relationship to Rust failures remain unresolved; not proof of Wi-Fi cause or release acceptance",
+  "engine": "pinned Xray-core v26.7.28 Android/arm64 Go1.26.5",
+  "failures": [
+    {
+      "backendEvents": [
+        {
+          "backend": "udp-source",
+          "peerHost": "127.0.0.1",
+          "peerPort": 51658,
+          "queryTag": "921238ec1bf9dc9a",
+          "time": 1791825038.319173
+        },
+        {
+          "backend": "udp",
+          "queryTag": "921238ec1bf9dc9a",
+          "requestBytes": 67,
+          "responseBytes": 83,
+          "time": 1791825038.3191931
+        }
+      ],
+      "error": "*net.OpError",
+      "event": "udp-failure",
+      "localPort": 32935,
+      "queryTag": "921238ec1bf9dc9a",
+      "time": 1791825043585
+    }
+  ],
+  "httpFailed": 0,
+  "httpPassed": 480,
+  "scope": "same phone and Wi-Fi; SOCKS/native-Go probe bypasses Rust, Android VpnService and TUN; workload scheduling and ingress differ",
+  "sha256": {
+    "build-manifest.json": "4f930d13cd1071c1d4e51b98efcfae6646f951c5956f7201bbdea592d58ca0d4",
+    "controller.stdout": "3c3e8691524a6f9f2441607273caa99aaa789b2c260a08b0be01804a0ed21cee",
+    "fixture.log": "db8c5b08d8ca2fcb34b657ae49014376e271b3b5994083aadaffe3c07d63f550",
+    "plan.json": "d7771383a96eae9b5037f13c9c42f4584ae6f41a51d98d0d94f424a0978c90c2",
+    "reference.log": "5726f0601fb079cea4892cd5e7171c1c19cb7d81fc31e94a5c009dbf911652ba"
+  },
+  "udpFailed": 1,
+  "udpPassed": 959,
+  "verdict": "fail"
+}

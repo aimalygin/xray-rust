@@ -1,0 +1,437 @@
+{
+  "scope": "Partial exact-candidate evidence inventory; not a schema-4 acceptance ZIP and not a passing release verdict.",
+  "sanitization": "Only explicit JSON/JSONL allowlist. Local paths, device serials and private LAN endpoints replaced; original timestamps, measured values, failed verdicts and binary hashes retained. Configs, share links, keys, raw system logs, credentials and app bundles excluded.",
+  "sourceSummaryNotes": "android-functional-summary.json is the original 14-case snapshot and retains its historical resourceSeries=in-progress field. Final total is 32 functional cases, with completed resources in android-resource-summary.json. See README.md for complete current status.",
+  "files": [
+    {
+      "path": "release-status.json",
+      "privateSourceSHA256": "7428e4a761c0c5b11189515d70edd591ba3aaaf9bcd09c332d60a3ccb7a7c598",
+      "publishedSHA256": "afa2237d71bb11fab65ca53e5b1195c172654536a88a0cc0f365f07ae793f10e"
+    },
+    {
+      "path": "issue56-owner-decision.json",
+      "privateSourceSHA256": "4fbf7c223f0d2505a6f376a35ed8815339d46f04f52216ef1fdc399abd1d234b",
+      "publishedSHA256": "dc3b8543c952d2b2c53a37115ac97b502f145cb5044ace8b93032ae47dfb500e"
+    },
+    {
+      "path": "campaign.json",
+      "privateSourceSHA256": "4366ca75321275cfb6c4027b4924348efa74b25791452dd7456ebed872121505",
+      "publishedSHA256": "9851b822818f5a34e11cbee1de29ba652bc6d007cef149299895f7db6451a29e"
+    },
+    {
+      "path": "build/build-manifest.json",
+      "privateSourceSHA256": "15d57d41c78f6d4a2fcaeea59f37dae4cce1e69b312f3a67b8b6ad7d6cc8732b",
+      "publishedSHA256": "e2e442ec90e8d3a30fd831fe99346ff761154cd092e494ee0daa34b482f5216d"
+    },
+    {
+      "path": "build/ios-build-manifest.json",
+      "privateSourceSHA256": "fab6bb6b1a6157d441a531a2097e41c243e08a2f147acf1d900bd4bf0abc9a72",
+      "publishedSHA256": "006ea4bb5c7effc4319301baf28c6fa5647b891dfd8e033f603fbe4644087ff0"
+    },
+    {
+      "path": "build/diagnostic-apk-manifest.json",
+      "privateSourceSHA256": "38c07739794f24d97b5021129c6961825ddad0f9ff362ecf9fb93193fced6a2b",
+      "publishedSHA256": "ec8c428cc443282efee818120a5674521829bb8ec726acb2d16292c79c6720f9"
+    },
+    {
+      "path": "ios/provider-source-manifest.json",
+      "privateSourceSHA256": "0504dfe271b23588679058f6d7f66b2a0b055ba3b48e708a922adac0a2c76b7b",
+      "publishedSHA256": "5d36a7cf32ef56cf5cada0d0dbf296c228bd39f1c7f1a75297f5796f0159cc4b"
+    },
+    {
+      "path": "ios/provider-source-manifest-final.json",
+      "privateSourceSHA256": "a17cc3b6ccef553c981f46175349b201f4f90d4e7f73e2ceaf5297e87fccfea3",
+      "publishedSHA256": "a058d2e044a5df9f2c18477f27b2ef4c5c15f5d9d5a0c4a695d366be82d908a3"
+    },
+    {
+      "path": "android-functional-summary.json",
+      "privateSourceSHA256": "0d6770d51ed181f2782f90751fa74a083179b7c9c58f188a82727e54cd7a8fc1",
+      "publishedSHA256": "24ef09af4a9d5516e7f7eb80f44b731279496e403e9ddc6d6e511db202aaf0a7"
+    },
+    {
+      "path": "android-resource-summary.json",
+      "privateSourceSHA256": "d8ea20f0db880590735cedacdece463c0ef987cf058827210b58c674123e5f58",
+      "publishedSHA256": "dd4be0b85dc0cc61032cf6ac8706dadc6ef4f08f33c51308236de4509429f8fd"
+    },
+    {
+      "path": "android-process-observations.json",
+      "privateSourceSHA256": "04636fcfdef023cd617228ca41cca33aa0d57439e214d5f3c989aaf878cd6f1c",
+      "publishedSHA256": "69c36e399d6a5792ef443be80777025eca3de75c37b755ead373aa14091ed6f6"
+    },
+    {
+      "path": "android-remaining-plan.json",
+      "privateSourceSHA256": "87181ca40895046c3ce62da3bf78e20049e6c03a4a9987e464583ea6f8f52e46",
+      "publishedSHA256": "9dd54d1a2ea84d9d2edc0231dea87d13ef717fecd9bbbe7ed4e4f7008fb9211a"
+    },
+    {
+      "path": "resource-limits.json",
+      "privateSourceSHA256": "61396c1b3e7430fbc320a7a7bc35ea48760ad15e1e2afaa3012fbc378b984b41",
+      "publishedSHA256": "e7827e2fd1aac8275a520dadbfa6e2cbb973eaf141c9f3bb3a483024e89abc44"
+    },
+    {
+      "path": "vmess-udp-failure.json",
+      "privateSourceSHA256": "b1cd3c6778a72ae2287e38ec676c4de51c4e4d5d761615e2350eb44c047ec29c",
+      "publishedSHA256": "4f5285fe402a5b15cfe1b72f27745f765f50e23c37350131d43b816b9630c1c9"
+    },
+    {
+      "path": "vmess-udp-failure-counters.json",
+      "privateSourceSHA256": "3f17a2233bf9038876874dc56454b0687a24c65ec40186599a5c5dcfa8ba0873",
+      "publishedSHA256": "2dd573ca7964d4cb0b615b188d11db5746e7d53008358470d65258825e27aaf6"
+    },
+    {
+      "path": "ios-functional-summary.json",
+      "privateSourceSHA256": "dbdd01ebd81189ff707bf9d7114583ad253e12bdb0b6a4ad7d191f0722252374",
+      "publishedSHA256": "f1d75b010c53883bcfa011664fbdd538288a82829fb70d5119b20fb22c7fddb5"
+    },
+    {
+      "path": "ios-resource-summary.json",
+      "privateSourceSHA256": "0505511c56869ff40d61fa581eae009266389af6f8473796f44670eaa776949a",
+      "publishedSHA256": "9963f323c3d89727f0b40f6ddacd17ed1e6248f52d410b9249adebe188439601"
+    },
+    {
+      "path": "ios-shared-controls-summary.json",
+      "privateSourceSHA256": "7b00ba13c140b5075268c15f81afa75b9e814c85f5eb166bf91ab91fff7889af",
+      "publishedSHA256": "7762552967ceb0c3b5e7460cb74e5cbafaa16b250151484726eda38763fce586"
+    },
+    {
+      "path": "ios-provider/plan.json",
+      "privateSourceSHA256": "e96d83286030d0892ac1dcc8ee508e143dd175a39efef7ef2e8ef5f0195ec19a",
+      "publishedSHA256": "d7004ce85dd2f74955ed1e70151860ed2f65c8ac8f86dbca6a476006e2419e79"
+    },
+    {
+      "path": "ios-provider/summary.json",
+      "privateSourceSHA256": "11839b061e8ea16b5df7e9d92df3a59986dfe7128dc231299f3ed68e02014337",
+      "publishedSHA256": "e67b63b8286f92b89f9eb9d986bd134ee53af28753a9f8e723f2d25dfc210d2f"
+    },
+    {
+      "path": "ios-provider/tuple-summary.json",
+      "privateSourceSHA256": "9aab6b807f5693887f48e2f59816edecc8303fe8f03d8509c8de27a8980407ce",
+      "publishedSHA256": "ad17793097f9d0b1cfb02c8c35173c326dfa3a6ef4700294c0c32a390e18d1b6"
+    },
+    {
+      "path": "ios-provider/result.json",
+      "privateSourceSHA256": "c71032410ccbed76bc818cebc19fff20cad870a874a0689c3f588f8fd13d8cf9",
+      "publishedSHA256": "fd0bdac1e5ad6606d5ec59ebc931d8e20cd97b065584ac1f83a5b3a218afe5ca"
+    },
+    {
+      "path": "ios-lock-wake/summary.json",
+      "privateSourceSHA256": "194c668be790bac8d44f083a28fe5b2adaa8dc52bbfc3993674e29b215e0ead4",
+      "publishedSHA256": "62ca2c2cfad2bed48d7f3874c22e8c8a55cd5bfe7a5a5376cea3ce10df44577f"
+    },
+    {
+      "path": "ios-lock-wake/cleanup.json",
+      "privateSourceSHA256": "e59aa0e124f9b8cd86fac22accb7fa4c806356bacfab5ea191fdf80746525e70",
+      "publishedSHA256": "e59aa0e124f9b8cd86fac22accb7fa4c806356bacfab5ea191fdf80746525e70"
+    },
+    {
+      "path": "ios-lock-wake/lock-wake/result.json",
+      "privateSourceSHA256": "a2503cbc39795312f1eced5c4e15d931e93a091c317d96561fc2b6ae3ed14a7a",
+      "publishedSHA256": "0da7be594bf6dd723e401db95e9cecdf3ac1348dc2e74e8c15b9419ca3072635"
+    },
+    {
+      "path": "android-vmess-diagnostic/plan.json",
+      "privateSourceSHA256": "0c017e8f61996dc64edf1ecf4b2497bc7609bb53f129b5d93946dd3dc4f6b1c7",
+      "publishedSHA256": "91a7a9b26a078560e22021dceeeefba0a40405a46649e250153c698bfff2450f"
+    },
+    {
+      "path": "android-vmess-diagnostic/summary.json",
+      "privateSourceSHA256": "4c0e0c9ac25a32b6853c46af81eb8e108e62800c522ad70564d7a497e3a6bbc1",
+      "publishedSHA256": "a57a55cf7a2d61d466afdf28b846704e5433d6ac9e8324f94575b6b8a7faad93"
+    },
+    {
+      "path": "android-xray-control/plan.json",
+      "privateSourceSHA256": "d7771383a96eae9b5037f13c9c42f4584ae6f41a51d98d0d94f424a0978c90c2",
+      "publishedSHA256": "39e8e90fd4f867d0ba91ca041a52de2f71c8525f9605a60e694aee0d30892a2d"
+    },
+    {
+      "path": "android-xray-control/build-manifest.json",
+      "privateSourceSHA256": "4f930d13cd1071c1d4e51b98efcfae6646f951c5956f7201bbdea592d58ca0d4",
+      "publishedSHA256": "b9d1a44fc2fd32677e2de9c6622adaeb41e674cafeecd0e53974d2926a196439"
+    },
+    {
+      "path": "android-xray-control/summary.json",
+      "privateSourceSHA256": "44c8e69103ce11a341254a5017904334c14740f00fbe9e931cb0eba8b57e8668",
+      "publishedSHA256": "7f644a1dbe39680a03ceee77892438ffd206b56d656fec1adadd749600e6f50b"
+    },
+    {
+      "path": "android-xray-control/cleanup.json",
+      "privateSourceSHA256": "be577200836898c1e09d67c95f2a07e8e030a5f98b446e2e28a74100923e3904",
+      "publishedSHA256": "ff148ce4757962e93d032d7ae491fc2fb6d496b941ba70627e8547c17d2b74e7"
+    },
+    {
+      "path": "android-admission/summary.json",
+      "privateSourceSHA256": "3923404f344a4471d5e00a3dda755b0a8614160e7db3d1566adf2c477dffba45",
+      "publishedSHA256": "38b15710462fb6c8526b5887961b47c3e53f982930455495f92b3b356b5b194d"
+    },
+    {
+      "path": "android-cancellation/summary.json",
+      "privateSourceSHA256": "75403ff9bd0f630567e34ae2d5a1a301cdc6e45eee932503e034ec720bd31cba",
+      "publishedSHA256": "d316f86c04d0708578e18d320228eb7fe9c9477d99f9c1a759707ff0451fe264"
+    },
+    {
+      "path": "android-legacy-v2/summary.json",
+      "privateSourceSHA256": "fe66f3b1c5c6de763386c3ed17fd64fb76d16cd5fb1806030ab3ec88e1f1cdbf",
+      "publishedSHA256": "2deebaa8491b26b59d39aae6163154fac9afe1c186815d5751b41cb616873ecf"
+    },
+    {
+      "path": "android-shared-v2/summary.json",
+      "privateSourceSHA256": "7ffc20b65316f0c0d06e499f2bfdd8ae0f02250b55b10951cb1fd9b57597bba3",
+      "publishedSHA256": "6e2181987a5db82d473e6ea01b28ec70505fd57682093739673feafe42ae17b5"
+    },
+    {
+      "path": "android-v07/summary.json",
+      "privateSourceSHA256": "7c710f339750f2ba3f339bf6891ad385b470165330b146e1031b8326cc2d80a4",
+      "publishedSHA256": "888dfd505063ecb2da9a3bc627941d21a36ffdadb0bb5b2b3cd04766312d1836"
+    },
+    {
+      "path": "host-vmess-reuse/plan.json",
+      "privateSourceSHA256": "d3fd5843d9323cc49567ed9653020fd8807281cedfb579e7fee901a9d3835338",
+      "publishedSHA256": "04c8604ab66ecc9be812bb795ce84237c59f53d3eb5eec02aa3398f97f8fb607"
+    },
+    {
+      "path": "performance-plan.json",
+      "privateSourceSHA256": "ceb5ad77fa2fd2aef5ce82eccf3d860d221ec0c76b217b38a702a132b86161d9",
+      "publishedSHA256": "d746c627f398e5f325494f8b1b4d7cf447b9eff81e3e2771972e0a6d6a8d4009"
+    },
+    {
+      "path": "performance-features/build-manifest.json",
+      "privateSourceSHA256": "584c548f4760288076cb5f1331a518f7f2cee318380c8884b1c591c51164a261",
+      "publishedSHA256": "584c548f4760288076cb5f1331a518f7f2cee318380c8884b1c591c51164a261"
+    },
+    {
+      "path": "performance-features/performance.json",
+      "privateSourceSHA256": "06b737cf7b751b9a6aeb449b89f9d463f44e4e019ecfec2f6b0accdb3e0d9a80",
+      "publishedSHA256": "06b737cf7b751b9a6aeb449b89f9d463f44e4e019ecfec2f6b0accdb3e0d9a80"
+    },
+    {
+      "path": "performance-features/benchmark-raw.json",
+      "privateSourceSHA256": "37703ec067aab792a762556d2db8ddb4430bcd69527be08dfd5f2db395cb0ec9",
+      "publishedSHA256": "37703ec067aab792a762556d2db8ddb4430bcd69527be08dfd5f2db395cb0ec9"
+    },
+    {
+      "path": "performance-protocols/manifest.json",
+      "privateSourceSHA256": "7381249c64b75190a60e95c749bb87bf184507f25a7d987cab9ec1a866b8a11a",
+      "publishedSHA256": "8d5b34a2d57a4ea5f75f7b0f609f24a6fcda54d264d8e0cb02d05eaf17d03211"
+    },
+    {
+      "path": "performance-protocols/performance.json",
+      "privateSourceSHA256": "fb311ae91275991397ed96c2b68d5826692b1fa244db884bb9490cd00d3f24aa",
+      "publishedSHA256": "da11af0f59258550dfb47a76d7c63dfb1720b094b359bf74688740b7adb07c5a"
+    },
+    {
+      "path": "performance-protocols/benchmark-raw.json",
+      "privateSourceSHA256": "416c2f693ea2fbd9d4f17a6f788e5e76ad0a084704526a45a3fd0ef6c3f299d1",
+      "publishedSHA256": "814556d122a3583f0dba207620f8701557b7fb82f9302cf0948da10d1e0812ce"
+    },
+    {
+      "path": "performance-protocols/protocol-comparisons.json",
+      "privateSourceSHA256": "2156d127566a8aa6657feddf9bb6614d38cc45ec578637fa2d22708876ce9c65",
+      "publishedSHA256": "df47d6ad5dd8192fac9091c395bb06c52a183b819f7c09a71bdb8e41a6437019"
+    },
+    {
+      "path": "events.jsonl",
+      "privateSourceSHA256": "9facc3f8086a8aada65e667afc0ec838cd3d5500a793b66feaab34ed869bc7d2",
+      "publishedSHA256": "dea30b60c9064d40a9c73f50945ce25874a0fda4cb561471daec1066ca1689a1"
+    },
+    {
+      "path": "android-admission/events.jsonl",
+      "privateSourceSHA256": "c95f72901ad66e2729608da259cfda7e4e701162f1ed48b44b39acc68cd37373",
+      "publishedSHA256": "e7a40000bf74afff5f867faa3f03a0802b1c0ef224db957119d493c45eb4fbf4"
+    },
+    {
+      "path": "android-cancellation/events.jsonl",
+      "privateSourceSHA256": "ac15a37094098b3241361d34b0a82112b136055257de8bc5d505ac79ec683ff8",
+      "publishedSHA256": "9e66e8e31267a2724523cf3cbd371d840de6d1c951b4a3e85bf2f05f7d727256"
+    },
+    {
+      "path": "android-legacy/events.jsonl",
+      "privateSourceSHA256": "8e229e02ddac54c2f1587816788c419ae87be98b3ab5d58c622bfbe0863a2e6c",
+      "publishedSHA256": "839e8eef16e8e813da87db208045cf3df4405dd35a276e69d9d777a685b318ae"
+    },
+    {
+      "path": "android-legacy-v2/events.jsonl",
+      "privateSourceSHA256": "2831eecbe738dc39b190d0425d7ff46c821439a72f14fb77d3e88c8087dc68f7",
+      "publishedSHA256": "5d41b05ed423e6d94f135960fe6a35e867ebbab306c707245c56856dc1d3b5f3"
+    },
+    {
+      "path": "android-shared/events.jsonl",
+      "privateSourceSHA256": "d874116d79d55f5dfadc642cf1033ae452832634663d6915b7645b8fd50c3bf1",
+      "publishedSHA256": "9930912ba1a3e6c6a1ac15e1e8e7a14dae0a673ef6dc96aefbe108349d212f6e"
+    },
+    {
+      "path": "android-shared-v2/events.jsonl",
+      "privateSourceSHA256": "dfa2e8b7191cf2c6d6d606d6151b67f723ae18562aa0163185c514aa10097d32",
+      "publishedSHA256": "adff0542db34b3b4a2adc7a3f8d16d549921b0ca10697958b326f35c8f8f2dc4"
+    },
+    {
+      "path": "android-v07/events.jsonl",
+      "privateSourceSHA256": "80c2ac1bfdf28df7a28332bb4c9f1ff0deabab90099af7227ea684b650978f32",
+      "publishedSHA256": "13bbd7cadebbc585cd881b6428b5205ae200db43184654d1111077535c79ca7c"
+    },
+    {
+      "path": "android-vmess-diagnostic/events.jsonl",
+      "privateSourceSHA256": "765a3ee4f9d7baef272df9824b274a659711319be3f0f582d92190177ca9e89e",
+      "publishedSHA256": "578266b26fc2f6d47b50c3ec91ad3c81d1b78ba83631ae826451a2c4bdbcd730"
+    },
+    {
+      "path": "android-vmess-observe/events.jsonl",
+      "privateSourceSHA256": "4162a1e053f08ad01b3ac87047783091c6a8d8448f3cc9530ea2e09b08a45f58",
+      "publishedSHA256": "dcd0781d219f7e201a5b798f7dae164566f06f2b63e1634718c4764909f61fc0"
+    },
+    {
+      "path": "android-vmess-observe-v2/events.jsonl",
+      "privateSourceSHA256": "7e638dbc0fa2618de062811350b577bb58d0984bbceefff1388609c43b958378",
+      "publishedSHA256": "b0f998cfefef5bc29007c345b1b1b48694a3ff7c8604aee7c34de05385a46007"
+    },
+    {
+      "path": "host-vmess-reuse/events.jsonl",
+      "privateSourceSHA256": "e5fab1f53a1d409b82813762f02d20118fe4e7a22bcff316ba81ecaa54a9f955",
+      "publishedSHA256": "e27bcaeb559240a484b52f54f23bdf1e41160b93dd3e746c53863101b7ed79af"
+    },
+    {
+      "path": "ios-ciphers/smoke/result.json",
+      "privateSourceSHA256": "daf1fad9ec2e745b09ca64109c1c41d519baf754fe252b940ecab68b319255dd",
+      "publishedSHA256": "ecbb4d56b5cc9539d072ad88f53415d30435908692b1731e84f61aeea01c60b6"
+    },
+    {
+      "path": "ios-legacy/smoke/result.json",
+      "privateSourceSHA256": "f62b92355c5e671a26292451a31fb6091e62ac5f5afc18e3c1e77877ec3d1a8e",
+      "publishedSHA256": "2eccbfb0fec824389a0f9561628f97b422d57ecedce1c01fa90afd38ee0c6d8e"
+    },
+    {
+      "path": "ios-new-protocols/lifecycle/result.json",
+      "privateSourceSHA256": "b9fadd874a0d403510a664bc3fdc7ba288f22eb658c4e5412e90323a4f65ccd4",
+      "publishedSHA256": "3bda09e103f4e97a3e8d822df96ac7a5824d9987b07697efd5f36a2f44dda181"
+    },
+    {
+      "path": "ios-new-protocols/resources/result.json",
+      "privateSourceSHA256": "2be61253d5060efb2ada159ab9f9df83472f4b14eb6dcf922b55d0878bcc04c3",
+      "publishedSHA256": "66ed1de20e8f88139cc328e95e80a4b98d4531480a84e8d5a52f30b482bf5c76"
+    },
+    {
+      "path": "ios-new-protocols/smoke/result.json",
+      "privateSourceSHA256": "c2dbdb59100786fb228bbeba9e9c38091231a64837d09d098a864fc471d252bb",
+      "publishedSHA256": "607e330313fe2bc3a884d66a863d826d87e798d4963a743a3cf363dd071a013c"
+    },
+    {
+      "path": "ios-resource-corrected/resources/result.json",
+      "privateSourceSHA256": "8d11a3bf560c1679cc87abe8d0a78446d5b9007edd8bcaab47261bbd64cd2117",
+      "publishedSHA256": "b1af8e8a477d6eae328b4103d6ea9d9d9b14a49af547a3ab44297fbbb5c59780"
+    },
+    {
+      "path": "ios-resource-final/resources/result.json",
+      "privateSourceSHA256": "c3a456c85d95d4fe17e36d63978d064d44d69d5a2d1694ed10b6b2427270adcb",
+      "publishedSHA256": "c5c5a2f3038a89c12632582d016a152e37f04e216ffb39d54b4ecf72364d047c"
+    },
+    {
+      "path": "ios-shared/smoke/result.json",
+      "privateSourceSHA256": "7b3595f2327f40f7e9248b668972f30792b52ab6b9567c6176de5d9cc389bcd8",
+      "publishedSHA256": "15b299a07bc6c13d50aa523ad8e9079e7b6aa0fb9c4cae9220b8b0dd69061f39"
+    },
+    {
+      "path": "ios-shared-AsIs-negative/smoke/result.json",
+      "privateSourceSHA256": "1933aa6a5f7afddb5988eb486cabc079b20e9e23589b9851168f740127868f2e",
+      "publishedSHA256": "d3708131dd2ed12fe3c986c6ae864a2ff1052a9647ff0ced1b461b70794e9284"
+    },
+    {
+      "path": "ios-shared-positive-recovery/smoke/result.json",
+      "privateSourceSHA256": "fa93e44f47287fb83edf323cc765b1d67e9eb3d77f28e6626bc9186e10b7e6ed",
+      "publishedSHA256": "efdd4594dd718531266a4fcad673b4b2f1e2790813dd2ab2c6b50c3fa49320d1"
+    },
+    {
+      "path": "ios-shared-v2/smoke/result.json",
+      "privateSourceSHA256": "b080b6d6fe63c69c338a28409de5a1695b8c7b76fa1b18e8102a59dba4ed13c9",
+      "publishedSHA256": "a693d3bae200d0b8a0bd1e67846bc8d16592a5389a1966861f43225b3d4fe957"
+    },
+    {
+      "path": "ios-v07/smoke/result.json",
+      "privateSourceSHA256": "7464d2d9c2c4ecfd71ccc43d10bd4fe2d8c6f1709fd363acdf5380373733cacf",
+      "publishedSHA256": "7020f3e1f8dcbebfbc4d5062de463dd5a4c502034c73cd809ba7ac0a6f1bd9ac"
+    },
+    {
+      "path": "build/ios-bundle-hashes-before-fakeip.json",
+      "privateSourceSHA256": "a8a0e3426ded1ec9d0a23b8134519d10a6fe71f591bfc1843a0c8076cf069e5d",
+      "publishedSHA256": "e105a4ad720490fd70670f97688208e6aac20b5632884d685037e32d9940e96e"
+    },
+    {
+      "path": "build/ios-bundle-hashes-fakeip.json",
+      "privateSourceSHA256": "b1bc38102d7ac14fa75a3814f3146dd62a5ccd6027a1c6061c6b843a1a313f47",
+      "publishedSHA256": "af1fbd9f965e96259bd880df894c151660177ea6f300265ea6d962f5a54b9faf"
+    },
+    {
+      "path": "build/ios-bundle-hashes-provider-launch.json",
+      "privateSourceSHA256": "af66269b32fead50cc14c41de531b3bf237afe2889780fcee752eeeffc1e2400",
+      "publishedSHA256": "af66269b32fead50cc14c41de531b3bf237afe2889780fcee752eeeffc1e2400"
+    },
+    {
+      "path": "build/ios-bundle-hashes-provider.json",
+      "privateSourceSHA256": "5a7ebcfc680c8b54fcd87f445d52b3ab25f5036acdc1fa5f11111fde253e6b3e",
+      "publishedSHA256": "26f40d7a7f63d158a19719c63be0476f5a4cd8015c369bcf8b8c26af8d2ca594"
+    },
+    {
+      "path": "ios-wan/shadowsocks2022/transitions/result.json",
+      "privateSourceSHA256": "6f13f54c09ed23fb93d0ffe669d2a75ce820c452419ea9fa4ca6d47e4d2e1d71",
+      "publishedSHA256": "eef706736db326bb12b220e5c8acfb46209439ff62286e128d4a8984bfbb48e9"
+    },
+    {
+      "path": "ios-wan/trojan/transitions/result.json",
+      "privateSourceSHA256": "36b49da2cc8c800b19ef2ed16c0da27e1c964af2a04523deb36d870b28aa1e8e",
+      "publishedSHA256": "6a019fbfa72d8a84ca430af05b55804696f1b3af7aeb96662cb18acdc4ffe0d1"
+    },
+    {
+      "path": "ios-wan/vmess/transitions/result.json",
+      "privateSourceSHA256": "1bfad6a37f0a88f117f43aa0dbd370f9bb5db7259d5514e41fee164ca0278f4e",
+      "publishedSHA256": "03e3e7b3a20f49bcdfbc06c51c046462387f908cd707b2c2c9669ea3fa8ee46b"
+    },
+    {
+      "path": "ios-wan-pmtu/shadowsocks2022/transitions/result.json",
+      "privateSourceSHA256": "00ab9010b8caae3c14ff84bc326f310cf80415e7ed5ec45f4b7351791abdce4e",
+      "publishedSHA256": "d100ed5459b0abb80b865844e91a702530ad13c37b958b78be888fb41d596f85"
+    },
+    {
+      "path": "ios-wan/cleanup.json",
+      "privateSourceSHA256": "236e09645c0c4e036e2a520cf7f1fef44cd47ac17725de058ba50b5413d75033",
+      "publishedSHA256": "7e41db7eb643ae5198d10e2f5322c3b185dea9f4e00a206bb6cba65756651045"
+    },
+    {
+      "path": "ios-wan/plan.json",
+      "privateSourceSHA256": "074899a7d2524150df1885bc34ceeed447a3ffd8793bbb3e80d84a913483b8cc",
+      "publishedSHA256": "f2bd3d057e3abea3db79954779a11aeb1b3de94ccf37f07b85fba3ffd3a30f83"
+    },
+    {
+      "path": "ios-wan/summary.json",
+      "privateSourceSHA256": "87730d0244919d7efa434465cf70b81dd2acf3cfc971324f168b1eef2046e805",
+      "publishedSHA256": "47ddc19d87265a99939ed7857f7488ed9a45eea9ec99fb1dba32971cc3446757"
+    },
+    {
+      "path": "ios-wan-pmtu/cleanup.json",
+      "privateSourceSHA256": "84f86cc1bc50b4102160976dc6720afa93dbeb776b8c112aff2b1d103fb79524",
+      "publishedSHA256": "ad364686251d8977d490a4d60191684b57b17cb1255565e0552aa237f42c66d4"
+    },
+    {
+      "path": "ios-wan-pmtu/plan.json",
+      "privateSourceSHA256": "1a1fc716dad8095a16ea3d6167df794a9b386c53286d51da0a1e57e5ac76c473",
+      "publishedSHA256": "f0826fa2b8f5893a28f97d9fd2a6c9624b3b5f2cbd1c7f356c4dd8fcb65e30c2"
+    },
+    {
+      "path": "ios-wan-pmtu/shadowsocks2022/pmtu-final-check.json",
+      "privateSourceSHA256": "afde0dcfbe5bedcccf072d8c1ee4cd27fa8b84bcc1a7164bcc7a88d690210dbb",
+      "publishedSHA256": "768bfcbf62de9e9f49331ca714846ab5329a6b85f2776ccedb727720b003d60e"
+    },
+    {
+      "path": "ios-wan-pmtu/shadowsocks2022/pmtu-startup.json",
+      "privateSourceSHA256": "e94991cbcefc671d531359f1000d4fa816362f2d9f46e5b0175e869e286e1daa",
+      "publishedSHA256": "490a06fa0aafc933cdc1c67ff15d9a6d3444981b8158f95408cd7410a46a4a76"
+    },
+    {
+      "path": "ios-resource-final/plan.json",
+      "privateSourceSHA256": "fa468159e1e094d690d9848d31863375b91c112da9a4098ebbcc4dc59c93b85d",
+      "publishedSHA256": "9f0d89a7bc4140c8be983089311b82a443b4247b9d7c33f4a603f201878619eb"
+    },
+    {
+      "path": "ios-resource-final/summary.json",
+      "privateSourceSHA256": "6ebfb665fb70717e77ce1d2fde3ce1746d7bc18dda7880a9095161697888f31b",
+      "publishedSHA256": "678ec7c2b717257137978be3cf7703bd5cdc108f694b958a0d784351a83126bb"
+    }
+  ]
+}

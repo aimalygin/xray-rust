@@ -28,7 +28,7 @@ use crate::{
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
     utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile},
     utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors},
-    BoxedTransportStream, CapturedTcpStream, PenetratingTlsStream, ServerReadLog, TransportError,
+    BoxedTransportStream, CapturedStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
 
 const TLS_RECORD_HANDSHAKE: u8 = 0x16;
@@ -495,6 +495,30 @@ impl RealityTlsSession for RustlsRealityTlsSession {
         prepared: crate::reality::RealityPreparedHandshake,
         mldsa65_verify: Option<Vec<u8>>,
     ) -> Result<BoxedTransportStream, TransportError> {
+        self.complete_over(tcp_stream, prepared, mldsa65_verify)
+            .await
+    }
+    async fn complete_fragmented(
+        self: Box<Self>,
+        tcp_stream: TcpStream,
+        prepared: crate::reality::RealityPreparedHandshake,
+        mldsa65_verify: Option<Vec<u8>>,
+        fragment: Arc<crate::TcpFragmentConfig>,
+    ) -> Result<BoxedTransportStream, TransportError> {
+        let stream = crate::fragment::FragmentStream::new(Box::new(tcp_stream), fragment);
+        self.complete_over(stream, prepared, mldsa65_verify).await
+    }
+}
+impl RustlsRealityTlsSession {
+    async fn complete_over<S>(
+        self: Box<Self>,
+        tcp_stream: S,
+        prepared: crate::reality::RealityPreparedHandshake,
+        mldsa65_verify: Option<Vec<u8>>,
+    ) -> Result<BoxedTransportStream, TransportError>
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
+    {
         let profile = profile_for_fingerprint(&self.fingerprint).ok_or_else(|| {
             TransportError::TlsConfig(format!(
                 "unsupported REALITY uTLS fingerprint profile: {}",
@@ -535,7 +559,7 @@ impl RealityTlsSession for RustlsRealityTlsSession {
         let server_name = ServerName::try_from(self.server_name.clone())
             .map_err(|_| TransportError::InvalidTlsServerName(self.server_name.clone()))?;
         let connector = TokioTlsConnector::from(config);
-        let tcp_stream = CapturedTcpStream::new(tcp_stream, server_read_log);
+        let tcp_stream = CapturedStream::new(tcp_stream, server_read_log);
         let connect = connector.connect(server_name, tcp_stream);
         let stream = connect.await.map_err(TransportError::Tls)?;
 

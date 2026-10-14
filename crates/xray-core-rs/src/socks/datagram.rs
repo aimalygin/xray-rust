@@ -24,6 +24,7 @@ pub(super) async fn bridge(
             context.dns_resolvers.destination.as_ref(),
             context.dns_resolvers.bootstrap.as_ref(),
             context.transport_dialer.as_ref(),
+            socks_udp_flow_global_id(context.client_addr, &target),
         )
         .await?;
         drop(pending_open_permit);
@@ -44,13 +45,8 @@ pub(super) async fn bridge(
             None,
             |source, payload| {
                 let source = client_visible_target.clone().unwrap_or(source);
-                let socket = &context.client_socket;
-                let addr = context.client_addr;
-                async move {
-                    let packet = encode_socks5_udp_datagram(&source, &payload)
-                        .map_err(std::io::Error::other)?;
-                    socket.send_to(&packet, addr).await.map(|_| ())
-                }
+                let context = &context;
+                async move { context.deliver(&source, &payload).await }
             },
         )
         .await

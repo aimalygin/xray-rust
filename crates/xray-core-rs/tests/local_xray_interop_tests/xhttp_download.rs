@@ -9,14 +9,14 @@ use xray_core_rs::{
 use xray_routing::{Network as RouteNetwork, Target, TargetAddr as RouteAddr};
 use xray_transport::{SocketHandle, SocketProtector};
 
-struct Process(Child);
+pub(super) struct Process(Child);
 impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
-fn json_process(binary: &std::ffi::OsStr, args: &[&str]) -> (Process, Value) {
+pub(super) fn json_process(binary: &std::ffi::OsStr, args: &[&str]) -> (Process, Value) {
     let mut process = Process(
         Command::new(binary)
             .args(args)

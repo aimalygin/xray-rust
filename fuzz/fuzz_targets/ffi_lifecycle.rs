@@ -4,7 +4,7 @@ use std::ffi::CString;
 
 use libfuzzer_sys::fuzz_target;
 use xray_ffi::{
-    xray_core_free, xray_core_load_config_json, xray_core_new,
+    xray_core_free, xray_core_load_config_json, xray_core_new, xray_core_probe_outbound_url,
     xray_core_replace_routing_policy_json, xray_core_routing_policy_snapshot_json, xray_core_start,
     xray_core_stop, xray_error_free, XrayCoreHandle, XrayError,
 };
@@ -28,7 +28,7 @@ fn run_operation(
     error: &mut *mut XrayError,
 ) {
     unsafe {
-        match operation % 5 {
+        match operation % 6 {
             0 => {
                 let _ = xray_core_load_config_json(handle, json.as_ptr(), error);
             }
@@ -42,13 +42,30 @@ fn run_operation(
                 let _ =
                     xray_core_replace_routing_policy_json(handle, routing_policy.as_ptr(), error);
             }
-            _ => {
+            4 => {
                 let mut written = 0;
                 let _ = xray_core_routing_policy_snapshot_json(
                     handle,
                     std::ptr::null_mut(),
                     0,
                     &mut written,
+                    error,
+                );
+            }
+            _ => {
+                // The no-inbound config never reaches the running state, so
+                // this covers argument/lifecycle checks without dialing.
+                let mut delay_ms = 0;
+                let mut failure_kind = 0;
+                let mut http_status = 0;
+                let _ = xray_core_probe_outbound_url(
+                    handle,
+                    c"http://127.0.0.1:9/health".as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    &mut delay_ms,
+                    &mut failure_kind,
+                    &mut http_status,
                     error,
                 );
             }
@@ -99,7 +116,7 @@ fuzz_target!(|data: &[u8]| {
     // Always cover the core lifecycle and its error transitions, even during a
     // short smoke campaign: reload while running must fail, then stop must
     // clear that error.
-    for operation in [0, 3, 4, 1, 0, 3, 4, 2] {
+    for operation in [5, 0, 3, 4, 5, 1, 0, 3, 4, 5, 2] {
         run_operation(
             operation,
             handle,
