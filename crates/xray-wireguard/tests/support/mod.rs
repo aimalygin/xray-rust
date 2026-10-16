@@ -148,6 +148,7 @@ impl Reference {
                 "peerKey": hex(client_public.as_bytes()),
                 "presharedKey": preshared_key.map(|key| hex(key)).unwrap_or_default(),
                 "redirectPort": redirect_port,
+                "verbose": std::env::var_os("WIREGUARD_REFERENCE_VERBOSE").is_some(),
             });
             if raw {
                 config["packetSocket"] = serde_json::json!(directory.join("server.sock"));

@@ -270,7 +270,9 @@ jobs:
       - name: Test
         # `--all-targets` overrides the fuzz bins' `test = false` metadata and
         # would otherwise launch their libFuzzer mains without a run bound.
-        run: cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+        run: |
+          cargo test --workspace --exclude xray-rust-fuzz --all-targets --locked
+          cargo test --locked -p xray-wireguard --features diagnostics
 
       - name: Verify Linux transparent TCP and UDP interception
         run: |
