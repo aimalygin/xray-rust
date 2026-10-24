@@ -9,3 +9,7 @@ pub use socks::{
     SocksCommand, SocksInboundAuth, SocksParseError, SocksRequest, SocksUdpDatagram,
     MAX_SOCKS_CREDENTIAL_LENGTH,
 };
+pub(crate) use socks::{
+    encode_target_addr, read_socks5_address, AddressReadError, METHOD_NONE_ACCEPTABLE,
+    METHOD_NO_AUTH, METHOD_PASSWORD, PASSWORD_AUTH_SUCCESS, PASSWORD_AUTH_VERSION,
+};

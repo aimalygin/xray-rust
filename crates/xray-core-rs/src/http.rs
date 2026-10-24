@@ -260,6 +260,14 @@ async fn handle_http_connection(
                 outbound_policy.relay_buffer_size(),
             )
         }
+        TcpOutbound::Socks(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
         TcpOutbound::Vmess(outbound) => {
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (

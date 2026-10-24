@@ -24,6 +24,7 @@ pub(crate) fn tcp_outbound_label(outbound: &TcpOutbound) -> &'static str {
         | TcpOutbound::FreedomFragment(_) => "freedom",
         TcpOutbound::Vless(_) => "vless",
         TcpOutbound::Trojan(_) => "trojan",
+        TcpOutbound::Socks(_) => "socks",
         TcpOutbound::Vmess(_) => "vmess",
         TcpOutbound::Shadowsocks2022(_) => "shadowsocks-2022",
         TcpOutbound::Hysteria(_) => "hysteria",

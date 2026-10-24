@@ -6,6 +6,7 @@ mod noise;
 mod routing;
 mod shadowsocks;
 mod socks;
+mod socks_outbound;
 mod stream;
 mod tproxy;
 mod trojan;
@@ -946,6 +947,7 @@ impl Parser<'_> {
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
             Some("blackhole") => OutboundProtocol::Blackhole,
+            Some("socks") => OutboundProtocol::Socks,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -989,6 +991,9 @@ impl Parser<'_> {
             OutboundProtocol::Blackhole => {
                 OutboundSettings::Blackhole(self.parse_blackhole_settings(outbound, index)?)
             }
+            OutboundProtocol::Socks => {
+                OutboundSettings::Socks(self.parse_socks_outbound_settings(outbound, index)?)
+            }
         };
         let mut stream = self.parse_stream_settings(outbound, index)?;
         if protocol == OutboundProtocol::Freedom {
@@ -1014,6 +1019,7 @@ impl Parser<'_> {
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);
+        self.validate_socks_outbound_stream(&settings, &stream, index);
 
         if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
             self.error(
@@ -1043,7 +1049,10 @@ impl Parser<'_> {
             | OutboundSettings::Vmess(_)
             | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_)
-            | OutboundSettings::Blackhole(_) => false,
+            | OutboundSettings::Blackhole(_)
+            // SOCKS5 proxies are commonly plaintext; RFC 1929 credentials
+            // then travel in cleartext, which is documented, not rejected.
+            | OutboundSettings::Socks(_) => false,
         };
         if rejects_plaintext_server {
             self.error(

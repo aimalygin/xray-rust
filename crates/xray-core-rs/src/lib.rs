@@ -294,6 +294,8 @@ pub enum CoreError {
     #[error(transparent)]
     Trojan(#[from] xray_proxy::trojan::WireError),
     #[error(transparent)]
+    Socks(#[from] xray_proxy::outbound::SocksClientError),
+    #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),

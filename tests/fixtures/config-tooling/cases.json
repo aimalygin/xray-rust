@@ -2046,6 +2046,233 @@
       }
     },
     {
+      "name": "socks-outbound-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": false
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "socks",
+            "settings": {
+              "address": "socks.example",
+              "port": 1080,
+              "level": 0,
+              "email": "synthetic@example.test"
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "socks.example"
+              }
+            }
+          }
+        ],
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "SOCKS_OUTBOUND": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "socks-outbound-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": false
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "socks",
+            "settings": {
+              "servers": [
+                {
+                  "address": "192.0.2.10",
+                  "port": 1080,
+                  "users": [
+                    {
+                      "user": "synthetic-user",
+                      "pass": "synthetic-pass",
+                      "level": 1,
+                      "email": "synthetic@example.test"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "tcp",
+              "security": "none"
+            }
+          }
+        ],
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "SOCKS_OUTBOUND": "/outbounds/0/settings",
+        "SOCKS_OUTBOUND_SERVER": "/outbounds/0/settings/servers/0",
+        "SOCKS_OUTBOUND_USER": "/outbounds/0/settings/servers/0/users/0"
+      }
+    },
+    {
+      "name": "socks-outbound-mixed-forms",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings",
+      "base": "socks-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/address": "192.0.2.11"
+      }
+    },
+    {
+      "name": "socks-outbound-two-servers",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.servers",
+      "base": "socks-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/servers": [
+          {
+            "address": "192.0.2.10",
+            "port": 1080,
+            "users": [
+              {
+                "user": "synthetic-user",
+                "pass": "synthetic-pass",
+                "level": 1,
+                "email": "synthetic@example.test"
+              }
+            ]
+          },
+          {
+            "address": "192.0.2.10",
+            "port": 1080,
+            "users": [
+              {
+                "user": "synthetic-user",
+                "pass": "synthetic-pass",
+                "level": 1,
+                "email": "synthetic@example.test"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "socks-outbound-two-users",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.servers[0].users",
+      "base": "socks-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/users": [
+          {
+            "user": "synthetic-user",
+            "pass": "synthetic-pass",
+            "level": 1,
+            "email": "synthetic@example.test"
+          },
+          {
+            "user": "synthetic-user",
+            "pass": "synthetic-pass",
+            "level": 1,
+            "email": "synthetic@example.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "socks-outbound-pass-only",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.user",
+      "base": "socks-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/pass": "synthetic-pass"
+      }
+    },
+    {
+      "name": "socks-outbound-empty-pass",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.servers[0].users[0].pass",
+      "base": "socks-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/users/0/pass": ""
+      }
+    },
+    {
+      "name": "socks-outbound-zero-port",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.port",
+      "base": "socks-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/port": 0
+      }
+    },
+    {
+      "name": "socks-outbound-mux",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].mux.enabled",
+      "base": "socks-outbound-flat",
+      "set": {
+        "/outbounds/0/mux": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "socks-outbound-non-raw-network",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.network",
+      "base": "socks-outbound-flat",
+      "set": {
+        "/outbounds/0/streamSettings/network": "ws"
+      }
+    },
+    {
+      "name": "socks-outbound-reality",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.security",
+      "base": "socks-outbound-legacy",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "network": "raw",
+          "security": "reality",
+          "realitySettings": {
+            "serverName": "server.example",
+            "fingerprint": "chrome",
+            "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+            "shortId": "02030405"
+          }
+        }
+      }
+    },
+    {
       "name": "tcp-tlshello-finalmask",
       "accepted": true,
       "config": {

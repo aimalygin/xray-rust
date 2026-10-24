@@ -15,6 +15,12 @@ long-term supported release series.
   accept datagrams only from the declared client endpoint and refuse requests
   that leave the port unset, such as `0.0.0.0:0`, and
   `accounts` under `noauth` are now rejected instead of ignored (#78).
+- Parse the Xray `socks` outbound in its flat and legacy `servers` forms, with
+  optional RFC 1929 `user`/`pass` credentials over raw/tcp with none or TLS
+  security. Mixed forms, more than one server or user, a lone `user` or `pass`,
+  empty credentials, a zero port, enabled Mux, other networks and REALITY fail
+  closed. Without TLS the credentials travel in cleartext. The outbound carries
+  TCP `CONNECT` only; UDP routed to it is refused.
 
 - Fix false checksum failures in Gradle provenance verification after a partial
   download is retried. Verify completed temporary files against both canonical

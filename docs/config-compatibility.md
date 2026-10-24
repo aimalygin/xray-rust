@@ -313,8 +313,9 @@ subset rather than full Xray sniffing behavior.
 
 ## Outbounds and streams
 
-`freedom`, `vless`, `dns`, and `blackhole` are supported. DNS outbound settings
-are described below, and [blackhole](#blackhole-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
+`freedom`, `vless`, `dns`, `blackhole`, and `socks` are supported. DNS outbound
+settings are described below, and [blackhole](#blackhole-outbound) and
+[SOCKS](#socks-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
 `level` and these flow values are accepted:
 
@@ -489,6 +490,58 @@ with zero bytes. Paths that need a dialable transport fail closed with
 queries route to it, and a startup probe of it, fail without dialing;
 observatory probes record it as unhealthy. `proxySettings` chains to or from a
 blackhole are rejected by core compilation.
+
+### SOCKS outbound
+
+`socks` is a SOCKS5 client for an upstream proxy and accepts both settings
+shapes of Xray-core v26.7.28, the flat form and the legacy `servers` form:
+
+```json
+{ "tag": "upstream", "protocol": "socks",
+  "settings": { "address": "192.0.2.10", "port": 1080,
+                "user": "synthetic-user", "pass": "synthetic-pass" } }
+```
+
+```json
+{ "tag": "upstream", "protocol": "socks",
+  "settings": { "servers": [{ "address": "192.0.2.10", "port": 1080,
+    "users": [{ "user": "synthetic-user", "pass": "synthetic-pass" }] }] } }
+```
+
+The two forms cannot be mixed: Xray silently prefers the flat `address` when
+both are present, while xray-rust rejects the combination. `servers` must hold
+exactly one entry and `users` at most one, as in Xray. The address is an IP
+literal (brackets allowed) or a domain of 1–255 characters without whitespace
+or control characters, and the port must be nonzero (Xray accepts zero).
+`level` (0–255) selects the policy level and applies with or without
+credentials, whereas Xray drops a flat `level` that has no `user`. `email` is
+type-checked and ignored. Unknown keys fail parsing.
+
+Credentials are optional. `user` and `pass` are both absent, which offers only
+the no-authentication method, or both strings of 1–255 UTF-8 bytes, which
+offers only RFC 1929 username/password authentication. Xray silently drops a
+`pass` without `user` and sends empty credentials for `users: [{}]`; xray-rust
+fails closed on a lone `user` or `pass`, an empty or oversized value, and a
+`users` entry without credentials. Credentials are redacted from the parsed
+model's debug output and are never echoed in diagnostics.
+
+- Only TCP `CONNECT` is supported. UDP routed to a SOCKS outbound is refused
+  rather than sent through `UDP ASSOCIATE`: a SOCKS `UDP ASSOCIATE` or TUN UDP
+  flow that selects it is dropped, and DNS queries over UDP through it fail, so
+  use `tcp://` DNS servers on such a route.
+- Enabled `mux` fails parsing; SOCKS is not a Mux carrier.
+- `streamSettings` may select only the `raw`/`tcp` network, with `security`
+  `none` or `tls` (SOCKS over TLS). Other networks and REALITY fail parsing,
+  although Xray accepts any transport.
+- Unlike Trojan and VLESS, a plaintext public server is accepted, because SOCKS5
+  proxies are usually plaintext. Without `tls`, RFC 1929 sends the username and
+  password in cleartext, so anyone on the path can read and replay them. Use
+  `tls`, or keep a credentialed proxy on loopback or a trusted network.
+- Chaining uses the `proxySettings` subset above with `"transportLayer": true`.
+  A SOCKS outbound can be the hop that carries another TCP outbound, and it can
+  itself be carried over another outbound's TCP carrier. Chained UDP/DNS and
+  REALITY inside a chain stay rejected. `streamSettings.sockopt.dialerProxy`
+  keeps its fragment-only form and cannot route through another proxy.
 
 ### WebSocket and HTTPUpgrade
 

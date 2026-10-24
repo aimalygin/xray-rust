@@ -877,7 +877,7 @@
         "sendThrough"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, SOCKS5 (TCP CONNECT), Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",
@@ -1046,6 +1046,41 @@
       ],
       "id": "SOCKS_SETTINGS",
       "notes": "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. ip is ignored; udp and userLevel are parsed."
+    },
+    {
+      "context": "$.outbounds[].settings (socks)",
+      "fields": [
+        "address",
+        "port",
+        "user",
+        "pass",
+        "level",
+        "email",
+        "servers"
+      ],
+      "id": "SOCKS_OUTBOUND",
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. user and pass are both absent (no authentication) or both strings of 1..255 UTF-8 bytes (RFC 1929); credentials are redacted. Level 0..255; email is type-checked and ignored. TCP CONNECT only over raw/tcp with none or TLS security; no Mux or UDP. Without TLS the credentials travel in cleartext."
+    },
+    {
+      "context": "$.outbounds[].settings.servers[0] (socks)",
+      "fields": [
+        "address",
+        "port",
+        "users"
+      ],
+      "id": "SOCKS_OUTBOUND_SERVER",
+      "notes": "Nonempty address and nonzero port. users is absent, empty or exactly one entry."
+    },
+    {
+      "context": "$.outbounds[].settings.servers[0].users[0] (socks)",
+      "fields": [
+        "user",
+        "pass",
+        "level",
+        "email"
+      ],
+      "id": "SOCKS_OUTBOUND_USER",
+      "notes": "user and pass are required strings of 1..255 UTF-8 bytes; level 0..255. Email is type-checked and ignored. Credentials are redacted."
     },
     {
       "context": "$.outbounds[].streamSettings; XHTTP downloadSettings after removing address/port",

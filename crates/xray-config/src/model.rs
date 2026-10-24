@@ -574,6 +574,7 @@ pub enum OutboundProtocol {
     Hysteria,
     Wireguard,
     Blackhole,
+    Socks,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -587,6 +588,7 @@ pub enum OutboundSettings {
     Hysteria(HysteriaOutboundSettings),
     Wireguard(WireguardOutboundSettings),
     Blackhole(BlackholeOutboundSettings),
+    Socks(SocksOutboundSettings),
 }
 
 impl OutboundSettings {
@@ -601,6 +603,7 @@ impl OutboundSettings {
             Self::Hysteria(_) => OutboundProtocol::Hysteria,
             Self::Wireguard(_) => OutboundProtocol::Wireguard,
             Self::Blackhole(_) => OutboundProtocol::Blackhole,
+            Self::Socks(_) => OutboundProtocol::Socks,
         }
     }
 }
@@ -811,6 +814,19 @@ impl fmt::Debug for TrojanOutboundSettings {
             .field("level", &self.level)
             .finish()
     }
+}
+
+/// Xray `socks` outbound settings: one SOCKS5 server reached over the
+/// configured stream, with optional RFC 1929 credentials.
+///
+/// `Debug` is safe to log: [`SocksAccount`](xray_proxy::inbound::SocksAccount)
+/// redacts both credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SocksOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub account: Option<xray_proxy::inbound::SocksAccount>,
+    pub level: u32,
 }
 
 #[derive(Clone, PartialEq, Eq)]

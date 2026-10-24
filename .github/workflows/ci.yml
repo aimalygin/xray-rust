@@ -365,6 +365,8 @@ jobs:
 
       - name: Check VMess AEAD pinned Xray interoperability
         run: bash scripts/check-vmess-interop.sh
+      - name: Check SOCKS5 outbound against the pinned Xray SOCKS server
+        run: bash scripts/check-socks-interop.sh
       - name: Check shared Mux and XUDP interoperability
         run: bash scripts/check-mux-interop.sh
       - name: Check v0.8 clients against pinned independent sing-box

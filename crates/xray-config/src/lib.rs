@@ -33,7 +33,8 @@ pub use model::{
     OBSERVATORY_PROBE_TIMEOUT,
 };
 pub use model::{
-    BlackholeOutboundSettings, BlackholeResponse, TproxySettings, UdpNoiseItem, UdpNoiseSettings,
+    BlackholeOutboundSettings, BlackholeResponse, SocksOutboundSettings, TproxySettings,
+    UdpNoiseItem, UdpNoiseSettings,
 };
 pub use parser::{
     parse_xray_json, parse_xray_json_with_exclusive_geodata_dirs, parse_xray_json_with_geodata_dir,

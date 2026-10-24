@@ -75,6 +75,8 @@ mod tun_admission;
 
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
+#[path = "runtime_data_path_tests/socks_outbound.rs"]
+mod socks_outbound;
 
 #[path = "runtime_data_path_tests/tun_download_backpressure.rs"]
 mod tun_download_backpressure;
@@ -104,6 +106,7 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         | TcpOutbound::FreedomHappyEyeballs(_)
         | TcpOutbound::FreedomFragment(_)
         | TcpOutbound::Trojan(_)
+        | TcpOutbound::Socks(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
