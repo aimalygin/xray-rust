@@ -2,6 +2,7 @@ package org.xrayrust.mobile
 
 import android.content.pm.PackageManager.NameNotFoundException
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.ErrnoException
 import android.system.Os
@@ -537,6 +538,10 @@ open class XrayVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addAddress("fd00:7872::1", 128)
             .addRoute("::", 0)
+        if (Build.VERSION.SDK_INT >= 29) {
+            // A VPN of an app targeting API 29+ is metered by default, even on Wi-Fi.
+            builder.setMetered(false)
+        }
         try {
             builder.addDisallowedApplication(packageName)
         } catch (_: NameNotFoundException) {

@@ -622,15 +622,20 @@ class XrayCore private constructor(handle: Long) : Closeable {
             }
         }
 
-        @JvmStatic
-        fun ffiInfo(): XrayFfiInfo {
-            val info = XrayFfiInfo(
+        // The loaded library cannot change, so read its version and capabilities once.
+        private val nativeFfiInfo by lazy {
+            XrayFfiInfo(
                 version = XrayFfiVersion(
                     major = nativeFfiVersionMajor(),
                     minor = nativeFfiVersionMinor(),
                 ),
                 capabilityMask = nativeFfiCapabilities(),
             )
+        }
+
+        @JvmStatic
+        fun ffiInfo(): XrayFfiInfo {
+            val info = nativeFfiInfo
             validateXrayFfiVersion(info.version)
             return info
         }
@@ -844,30 +849,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
-    fun stats(): XrayTunStats {
-        val raw = withDataPathHandle { nativeStats(it) }
-        return XrayTunStats(
-            inboundPackets = raw[0],
-            outboundPackets = raw[1],
-            droppedPackets = raw[2],
-            udpRemoteOpenEvents = raw[3],
-            udpRemoteUdp443OpenEvents = raw[4],
-            udpRemoteWrittenBytes = raw[5],
-            udpRemoteReadBytes = raw[6],
-            tcpOpenEvents = raw[7],
-            tcpOpenDurationMsTotal = raw[8],
-            tcpOpenDurationMsMax = raw[9],
-            tcpFirstByteEvents = raw[10],
-            tcpFirstByteDurationMsTotal = raw[11],
-            tcpFirstByteDurationMsMax = raw[12],
-            tcp443OpenEvents = raw[13],
-            tcp443OpenDurationMsTotal = raw[14],
-            tcp443OpenDurationMsMax = raw[15],
-            tcp443FirstByteEvents = raw[16],
-            tcp443FirstByteDurationMsTotal = raw[17],
-            tcp443FirstByteDurationMsMax = raw[18],
-        )
-    }
+    fun stats(): XrayTunStats = tunStatsFromNative(withDataPathHandle { nativeStats(it) })
 
     override fun close() {
         cancelOutboundProbesForLifecycle()
@@ -1114,6 +1096,36 @@ data class XrayTunStats(
     val tcp443FirstByteDurationMsTotal: Long,
     val tcp443FirstByteDurationMsMax: Long,
 )
+
+internal const val NATIVE_TUN_STATS_VALUE_COUNT = 19
+
+/** Decodes the `XrayTunStats` carrier returned by the JNI bridge, in C ABI field order. */
+internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
+    check(values.size == NATIVE_TUN_STATS_VALUE_COUNT) {
+        "unexpected native TUN stats size: ${values.size}"
+    }
+    return XrayTunStats(
+        inboundPackets = values[0],
+        outboundPackets = values[1],
+        droppedPackets = values[2],
+        udpRemoteOpenEvents = values[3],
+        udpRemoteUdp443OpenEvents = values[4],
+        udpRemoteWrittenBytes = values[5],
+        udpRemoteReadBytes = values[6],
+        tcpOpenEvents = values[7],
+        tcpOpenDurationMsTotal = values[8],
+        tcpOpenDurationMsMax = values[9],
+        tcpFirstByteEvents = values[10],
+        tcpFirstByteDurationMsTotal = values[11],
+        tcpFirstByteDurationMsMax = values[12],
+        tcp443OpenEvents = values[13],
+        tcp443OpenDurationMsTotal = values[14],
+        tcp443OpenDurationMsMax = values[15],
+        tcp443FirstByteEvents = values[16],
+        tcp443FirstByteDurationMsTotal = values[17],
+        tcp443FirstByteDurationMsMax = values[18],
+    )
+}
 
 class XrayCoreException(
     val code: Int,

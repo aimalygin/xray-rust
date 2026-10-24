@@ -198,7 +198,10 @@ refresh still requires a new tunnel start or host-specific policy.
 When enabled `dns.fakeIp` or a non-empty `dns.servers` list activates the core's
 local DNS endpoint, the reference service also installs `198.18.0.1` with
 `Builder.addDnsServer`. Apps that override `buildTunnel()` retain control of all
-other addresses, routes, and application exclusions. The endpoint accepts UDP
+other addresses, routes, and application exclusions. On Android 10 and later
+the default `buildTunnel()` also calls `setMetered(false)`: a VPN of an app
+targeting API 29+ is otherwise metered even on Wi-Fi. An override decides this
+itself. The endpoint accepts UDP
 and length-prefixed TCP queries. UDP clients are translated to the configured
 TCP, DoT, DoH, or DoQ transport. TCP clients remain length-prefixed for TCP/DoT
 and are translated frame-by-frame into bounded HTTP/2 DoH POST requests or
