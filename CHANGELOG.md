@@ -76,6 +76,16 @@ long-term supported release series.
   Android 10+, `XrayCore.ffiInfo()` reads the native version and capabilities
   once per process, and `XrayCore.stats()` checks the native value count.
 
+- Expose the geodata search directory in the Android adapter:
+  `XrayCore.create(geodataSearchDirectory = …, geodataSearchPolicy = …)` and an
+  overridable `XrayVpnService.geodataSearchDirectory()`. The policy defaults to
+  `Exclusive` because the core's process-default directories are meaningless in
+  an Android app. Routing replacement reuses the same directory, and the
+  reference service passes it to both the startup-probe preflight core and the
+  data-path core. Document how
+  to install geodata under `noBackupFilesDir` and correct the claim that
+  `geoip:private` never needs `geoip.dat`: DNS IP rules read it from the file.
+
 - Add RFC 1929 username/password authentication to the SOCKS inbound
   (`"auth": "password"` with `accounts`). Password-protected UDP associations
   accept datagrams only from the declared client endpoint and refuse requests

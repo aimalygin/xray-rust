@@ -10,6 +10,7 @@ import android.system.OsConstants
 import android.system.StructPollfd
 import java.io.Closeable
 import java.io.EOFException
+import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
@@ -404,6 +405,13 @@ open class XrayVpnService : VpnService() {
     protected open fun tunAdmissionOptions(): XrayTunAdmissionOptions? = null
 
     /**
+     * Optional existing directory with `geosite.dat`, `geoip.dat` and `ext:` files, searched
+     * exclusively. The startup-probe preflight core and the data-path core both load it, so a
+     * missing file or code reaches [onXrayTunnelStartFailed].
+     */
+    protected open fun geodataSearchDirectory(): File? = null
+
+    /**
      * Starts asynchronously. A [startupProbe] runs before `Builder.establish()`, so its failure,
      * timeout or cancellation leaves routes and DNS untouched; requires ABI 1.12.
      */
@@ -473,14 +481,17 @@ open class XrayVpnService : VpnService() {
         try {
             ensureStartIsActive(attempt)
             val preparedConfig = prepareAndroidVpnConfig(configJson)
+            val geodataSearchDirectory = geodataSearchDirectory()
             ensureStartIsActive(attempt)
-            // No TUN fd, listeners or admission policy: this core only runs the probe.
+            // No TUN fd, listeners or admission policy: this core only runs the probe. Routing
+            // still compiles geodata rules, so it needs the same search directory.
             startupProbePreflight.run(attempt, startupProbe) { probe ->
                 XrayCore.create(
                     configJson = preparedConfig.json,
                     vpnService = this,
                     startupProbe = probe,
                     dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
+                    geodataSearchDirectory = geodataSearchDirectory,
                 )
             }
             val tunnelBuilder = buildTunnel()
@@ -498,6 +509,7 @@ open class XrayVpnService : VpnService() {
                 tunRuntimeProfile = tunRuntimeProfile,
                 dnsBootstrapMode = XrayDnsBootstrapMode.StaticOnly,
                 tunAdmission = tunAdmissionOptions(),
+                geodataSearchDirectory = geodataSearchDirectory,
                 tunFileDescriptor = when (tunBackend) {
                     XrayTunBackend.PacketPump -> null
                     XrayTunBackend.FileDescriptor -> XrayTunFileDescriptor(

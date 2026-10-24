@@ -479,10 +479,63 @@ preserves separate local, remote-close and recovery verdicts and replay scripts.
 
 ## Geodata
 
-Geodata databases are not bundled. The current Kotlin wrapper does not expose a
-packaged-assets geodata directory, so configs using `geosite:` or non-private
-`geoip:` references require a host-specific JNI/FFI resource-directory
-integration. `geoip:private` does not require an external file.
+Geodata databases are not bundled. Configs that use `geosite:`, `geoip:` or
+`ext:` references need the host to supply Xray-format `geosite.dat`,
+`geoip.dat` or named `ext:` files in one directory and pass it to the core:
+
+```kotlin
+val generation = File(noBackupFilesDir, "xray-geodata/$version-$sha256")
+XrayCore.create(configJson, geodataSearchDirectory = generation).use { core ->
+    core.start()
+}
+```
+
+`XrayVpnService` subclasses override `geodataSearchDirectory()` instead. The
+service reads it once per start and passes it to both cores it creates: the
+startup-probe preflight core before `establish()` and the data-path core after
+it. A missing file or code fails whichever is created first, before routes and
+DNS are installed when a startup probe is configured, and is reported through
+`onXrayTunnelStartFailed`.
+
+The directory must already exist; otherwise `create` throws
+`IllegalArgumentException`. The default `XrayGeodataSearchPolicy.Exclusive`
+searches only that directory. `FallbackToDefaults` also searches the core's
+process defaults, the working directory and the executable directory, which in
+an Android app process are `/` and `/system/bin`; it exists for parity with the
+Swift adapter and host-side tests. Without a directory only those defaults are
+searched, so geodata references fail to load.
+
+APK `assets/` entries cannot be opened by path. Copy bundled files, or download
+them, into a directory under `noBackupFilesDir`, which keeps large regenerable
+data out of backups:
+
+- Write into a staging directory next to the target, verify the SHA-256 of each
+  file, then rename the staging directory to an immutable
+  `<version>-<sha256>` generation. Never rewrite a published generation in
+  place.
+- The generation directory itself and its `.dat` files must be real
+  directories and regular files, not symlinks; the core opens them with
+  `O_NOFOLLOW`. `ext:` names are relative to the directory and cannot escape it.
+- The directory is fixed for the lifetime of a core. Referenced files are read
+  when `create` loads the config and again on every `replaceRoutingPolicy`, so
+  keep a generation until no core uses it and switch generations by creating a
+  new core.
+
+Each load scans the whole referenced file once to index its codes and then
+decodes only the referenced entries; nothing is cached between loads. Parsing
+enforces per-entry budgets of 200,000 domains, 500,000 CIDRs and 32 MiB, a
+128 MiB file limit, and per-config budgets of 250,000 domain matchers and
+750,000 IP matchers. A code over a budget fails the load with a config error.
+For example, in the October 2026 runetfreedom `geosite.dat`, `ru-blocked-all`
+and `antifilter-download` (about 1.37 million domains each) exceed these
+limits, while `ru-blocked` (about 75,000 domains), `category-ru` and
+`geoip:ru` (about 25,000 CIDRs) fit. Because that file is 74 MB, smaller
+purpose-built files referenced through `ext:` reduce startup I/O.
+
+Xray-core reads `geoip:private` from `geoip.dat` everywhere. Here routing
+rules use a built-in private-network set and need no file, while DNS
+`expectedIPs`, `expectIPs` and `unexpectedIPs` read it from `geoip.dat`, as in
+Xray.
 
 ## Tests
 
