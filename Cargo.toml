@@ -37,7 +37,7 @@ base64 = "0.22.1"
 blake2 = "=0.10.6"
 blake3 = { version = "=1.8.5", features = ["zeroize", "pure"] }
 bytes = "1"
-chacha20poly1305 = "0.10.1"
+chacha20poly1305 = "0.11.0"
 crc32fast = "1.5"
 md-5 = { version = "0.11", features = ["zeroize"] }
 sha3 = { version = "0.11", features = ["zeroize"] }
