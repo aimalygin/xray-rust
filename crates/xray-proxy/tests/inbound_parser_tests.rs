@@ -6,9 +6,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, negotiate_socks5, negotiate_socks5_no_auth, parse_http_connect,
     parse_socks5_connect, parse_socks5_request, parse_socks5_request_message,
-    parse_socks5_udp_datagram, write_socks5_failure, write_socks5_success,
-    write_socks5_success_with_bind, HttpParseError, SocksAccount, SocksCommand, SocksInboundAuth,
-    SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
+    parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
+    write_socks5_success, write_socks5_success_with_bind, HttpParseError, SocksAccount,
+    SocksCommand, SocksInboundAuth, SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
 };
 use xray_routing::{Network, Target, TargetAddr};
 
@@ -287,12 +287,16 @@ async fn socks5_reply_writers_emit_ipv4_success_and_failure() {
 
     write_socks5_success(&mut output).await.unwrap();
     write_socks5_failure(&mut output).await.unwrap();
+    write_socks5_command_not_supported(&mut output)
+        .await
+        .unwrap();
 
     assert_eq!(
         output,
         vec![
             5, 0, 0, 1, 0, 0, 0, 0, 0, 0, // success
             5, 1, 0, 1, 0, 0, 0, 0, 0, 0, // general failure
+            5, 7, 0, 1, 0, 0, 0, 0, 0, 0, // command not supported, as Xray-core sends it
         ]
     );
 }

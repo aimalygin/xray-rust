@@ -16,11 +16,12 @@ use xray_config::{
     parse_xray_json, CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings,
     InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundProxySettings,
     OutboundSettings, RealitySettings, RealityShortId, RoutingBalancer, RoutingBalancerStrategy,
-    RoutingConfig, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport,
-    TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode,
-    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    RoutingConfig, RoutingRule, RoutingRuleTarget, SocksInboundSettings, StreamSecurity,
+    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
+    WebSocketSettings, XhttpMode, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
+use xray_proxy::inbound::SocksInboundAuth;
 use xray_transport::{
     DnsResolver, SystemDnsResolver, TlsConnector, TransportDialer, TransportError,
 };
@@ -2597,7 +2598,16 @@ async fn rust_socks_client_reaches_target_through_remote_xhttp_profile() {
         .iter_mut()
         .find(|inbound| inbound.tag.as_deref() == Some("socks-in"))
         .unwrap_or_else(|| panic!("{CONFIG_ENV} must contain a socks-in inbound"));
-    assert_eq!(inbound.protocol, InboundProtocol::Socks(Default::default()));
+    assert!(
+        matches!(
+            &inbound.protocol,
+            InboundProtocol::Socks(SocksInboundSettings {
+                auth: SocksInboundAuth::NoAuth,
+                ..
+            })
+        ),
+        "{CONFIG_ENV} socks-in must be a noauth SOCKS inbound"
+    );
     inbound.listen = Ipv4Addr::LOCALHOST.to_string();
     inbound.port = 0;
 

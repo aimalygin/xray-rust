@@ -1198,9 +1198,9 @@ impl Core {
             let dns_resolvers = runtime_dns_resolvers.clone();
             let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = match protocol {
-                InboundProtocol::Socks(auth) => tokio::spawn(socks::serve_socks_listener(
+                InboundProtocol::Socks(settings) => tokio::spawn(socks::serve_socks_listener(
                     listener,
-                    Arc::new(auth),
+                    Arc::new(settings),
                     inbound_tag,
                     Arc::clone(&config),
                     Arc::clone(&outbound_router),

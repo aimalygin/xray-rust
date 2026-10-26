@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- Honour `"udp": false` on the SOCKS inbound. Previously the flag was only
+  type-checked and `UDP ASSOCIATE` was relayed anyway. Like Xray-core, the
+  request now gets `REP = 0x07` (command not supported) with a `0.0.0.0:0`
+  bind address, after login under `password`; no relay socket is created,
+  nothing is dialed and the control connection is closed. `CONNECT` is
+  unaffected. An absent `udp` still enables `UDP ASSOCIATE`, unlike Xray-core,
+  which treats it as `false`; this is an open compatibility question. In the
+  Rust model, `InboundProtocol::Socks` now carries `SocksInboundSettings`
+  (`auth` and `udp`), whose default keeps UDP enabled.
+
 - Android: share snapshot/enum decoding and VLESS parameter validation without
   changing their accepted values or errors. VPN session shutdown retains later
   cleanup failures as suppressed exceptions on the original error; descriptor
