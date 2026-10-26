@@ -49,6 +49,17 @@ long-term supported release series.
   interop covers UDP, TLS control, IPv4/IPv6/domain targets, and TUN UDP/DNS;
   the password-inbound restriction on undeclared UDP ports remains in force.
 
+- Add the Xray `http` outbound: HTTP/1.1 `CONNECT` with optional Basic
+  credentials, in the flat and legacy `servers` forms, over raw/tcp with none
+  or TLS security. TLS offers only `http/1.1`, also under a uTLS fingerprint,
+  and only status 200 opens the tunnel, as in Xray. The request matches the
+  Go client's, masquerade headers included. The response head is limited to
+  16 KiB and tunnel bytes that arrive with it are kept, where Xray loses them.
+  Custom `headers`, HTTP/2, UDP, Mux, a lone `pass`, an empty `user` or one
+  containing `:`, other networks and REALITY fail closed; without TLS the
+  credentials travel in cleartext. Android and Apple prepare the proxy host
+  before VPN setup like a SOCKS server's (#79).
+
 - Fix false checksum failures in Gradle provenance verification after a partial
   download is retried. Verify completed temporary files against both canonical
   sidecars and the existing SHA-256 locks.
