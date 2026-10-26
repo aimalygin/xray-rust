@@ -132,11 +132,11 @@ applicable `dns.hosts` rule. Bare host keys use Xray's exact/full semantics.
 
 `XrayVpnService` uses the stricter mobile policy automatically. Before calling
 `Builder.establish()`, it resolves domain-valued VLESS, VMess, Trojan, Shadowsocks,
-SOCKS, and Hysteria 2 server addresses, all WireGuard peer endpoint hosts, and
-domain-valued `dns.servers` with Android's system resolver. SOCKS preparation
-supports both flat settings and the legacy single-entry `servers` form; it
-resolves only the proxy endpoint, leaving destination-domain resolution to the
-SOCKS proxy. DNS upstream preparation includes
+SOCKS, HTTP, and Hysteria 2 server addresses, all WireGuard peer endpoint hosts, and
+domain-valued `dns.servers` with Android's system resolver. SOCKS and HTTP
+preparation supports both flat settings and the legacy single-entry `servers`
+form; it resolves only the proxy endpoint, leaving destination-domain
+resolution to the proxy. DNS upstream preparation includes
 `tcp://`, `tcp+local://`, `tls://`, `https://`, `https+local://`, and
 `quic+local://` endpoints;
 an IP-literal URL needs no
