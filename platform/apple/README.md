@@ -273,11 +273,11 @@ The selected test mode, transport, and trusted upstream remain selected when a
 new VLESS URL is imported; choose `Config JSON` to disable the override.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS, VMess, Trojan, Shadowsocks, SOCKS, and Hysteria 2 server, every
+domain VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP, and Hysteria 2 server, every
 WireGuard peer endpoint host, and every domain-valued classic, TCP, DoT, DoH, or
-DoQ DNS endpoint. SOCKS preparation supports both flat settings and the legacy
-single-entry `servers` form; it resolves only the proxy endpoint, leaving
-destination-domain resolution to the SOCKS proxy. An IP-literal stream URL needs
+DoQ DNS endpoint. SOCKS and HTTP preparation supports both flat settings and the
+legacy single-entry `servers` form; it resolves only the proxy endpoint,
+leaving destination-domain resolution to the proxy. An IP-literal stream URL needs
 no system lookup. URL modes use their
 embedded/default port for endpoint safety checks and pin a domain host
 into `dns.hosts`; the original server URI, object policy fields, and `tag` stay

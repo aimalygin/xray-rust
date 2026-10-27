@@ -1,6 +1,7 @@
 mod blackhole;
 mod dns;
 mod fragment;
+mod http_outbound;
 mod hysteria;
 mod noise;
 mod routing;
@@ -949,6 +950,7 @@ impl Parser<'_> {
             Some("wireguard") => OutboundProtocol::Wireguard,
             Some("blackhole") => OutboundProtocol::Blackhole,
             Some("socks") => OutboundProtocol::Socks,
+            Some("http") => OutboundProtocol::Http,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -995,6 +997,9 @@ impl Parser<'_> {
             OutboundProtocol::Socks => {
                 OutboundSettings::Socks(self.parse_socks_outbound_settings(outbound, index)?)
             }
+            OutboundProtocol::Http => {
+                OutboundSettings::Http(self.parse_http_outbound_settings(outbound, index)?)
+            }
         };
         let mut stream = self.parse_stream_settings(outbound, index)?;
         if protocol == OutboundProtocol::Freedom {
@@ -1021,6 +1026,7 @@ impl Parser<'_> {
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);
         self.validate_socks_outbound_stream(&settings, &stream, index);
+        self.validate_http_outbound_stream(&settings, &stream, index);
 
         if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
             self.error(
@@ -1051,9 +1057,11 @@ impl Parser<'_> {
             | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_)
             | OutboundSettings::Blackhole(_)
-            // SOCKS5 proxies are commonly plaintext; RFC 1929 credentials
-            // then travel in cleartext, which is documented, not rejected.
-            | OutboundSettings::Socks(_) => false,
+            // SOCKS5 and HTTP proxies are commonly plaintext; RFC 1929 and
+            // Basic credentials then travel in cleartext, which is
+            // documented, not rejected.
+            | OutboundSettings::Socks(_)
+            | OutboundSettings::Http(_) => false,
         };
         if rejects_plaintext_server {
             self.error(

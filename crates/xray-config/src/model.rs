@@ -596,6 +596,7 @@ pub enum OutboundProtocol {
     Wireguard,
     Blackhole,
     Socks,
+    Http,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -610,6 +611,7 @@ pub enum OutboundSettings {
     Wireguard(WireguardOutboundSettings),
     Blackhole(BlackholeOutboundSettings),
     Socks(SocksOutboundSettings),
+    Http(HttpOutboundSettings),
 }
 
 impl OutboundSettings {
@@ -625,6 +627,7 @@ impl OutboundSettings {
             Self::Wireguard(_) => OutboundProtocol::Wireguard,
             Self::Blackhole(_) => OutboundProtocol::Blackhole,
             Self::Socks(_) => OutboundProtocol::Socks,
+            Self::Http(_) => OutboundProtocol::Http,
         }
     }
 }
@@ -847,6 +850,20 @@ pub struct SocksOutboundSettings {
     pub server: TargetAddr,
     pub port: u16,
     pub account: Option<xray_proxy::inbound::SocksAccount>,
+    pub level: u32,
+}
+
+/// Xray `http` outbound settings: one HTTP/1.1 proxy reached over the
+/// configured stream and asked for a `CONNECT` tunnel, with optional Basic
+/// credentials.
+///
+/// `Debug` is safe to log: [`HttpAccount`](xray_proxy::outbound::HttpAccount)
+/// redacts both credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub account: Option<xray_proxy::outbound::HttpAccount>,
     pub level: u32,
 }
 

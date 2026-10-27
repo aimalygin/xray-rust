@@ -109,6 +109,7 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         | TcpOutbound::FreedomFragment(_)
         | TcpOutbound::Trojan(_)
         | TcpOutbound::Socks(_)
+        | TcpOutbound::Http(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)

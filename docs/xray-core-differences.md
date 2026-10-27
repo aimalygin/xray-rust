@@ -52,7 +52,7 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | #84 / #87 / #79: SOCKS outbound | TCP CONNECT and UDP ASSOCIATE, noauth or password, flat or legacy settings, raw TCP with none/TLS control security | Tested subset of Xray-core; UDP relay datagrams remain plain and transport restrictions remain |
 | #82 / #81: Android fixes | VPN metering policy, cached native FFI information, checked stats array length | Host SDK behavior, not an Xray network protocol extension |
 | #81: Android cleanup/helpers | Stage 1 merged in #82; stage 2 cleanup follows separately; stage 3 helpers remain optional | Host SDK work; preserve documented ownership and lifecycle rules |
-| #79: HTTP outbound | Not implemented | Proposed CONNECT/Basic-auth/TLS support; scope decisions and checks remain below |
+| #79: HTTP outbound | HTTP/1.1 CONNECT, optional Basic auth, flat or legacy settings, raw TCP with none/TLS (`http/1.1` ALPN), TCP only | Tested subset of the pinned Xray client; status 200 only, no HTTP/2 or custom headers, bounded head, early bytes kept |
 | #86: mobile SOCKS bootstrap | Android and Apple prepare SOCKS carrier hosts/literals before VPN setup; Apple excludes carrier routes | Integration gap fixed; destination DNS remains at the proxy |
 | SOCKS inbound `udp` | `"udp": false` refuses `UDP ASSOCIATE` without a relay; an absent `udp` keeps it enabled | Explicit `false` matches the reference; the absent default differs and is an open question below |
 
@@ -200,29 +200,49 @@ hosts/aliases, literal normalization, and tunnel-owned address rejection.
 They passed in combined main CI. Physical-device routing is not established by
 those host tests.
 
-## HTTP outbound: proposed scope, not implemented support
+## HTTP outbound: implemented scope
 
-The #79 request for CONNECT, optional Basic authentication, TCP-only operation,
-and plain TCP or TLS follows the pinned
+The [#79 proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
+is implemented against the HTTP/1.1 path of the pinned
 [Xray HTTP client](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/http/client.go).
-The [next-PR proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
-requests HTTP/1.1 with matching ALPN and status 200, plus chain/probe/mobile
-integration. Contributor confirmation and implementation are still pending.
-Record the final decisions for these differences before claiming support:
+The decisions it asked for, with their evidence:
 
-- HTTP/1.1 versus HTTP/2: the reference supports both. If the first version
-  implements only HTTP/1.1, constrain TLS ALPN accordingly and document the
-  unsupported HTTP/2 path rather than negotiating a protocol it cannot speak.
-- CONNECT success: the reference accepts only status 200; the issue sketch
-  accepts all 2xx, consistent with
-  [RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6).
-  Choose and test the behavior explicitly.
-- The reference accepts flat and legacy settings and custom `headers`. Define
-  the initial parser surface, including `level`/`email`, and reject unsupported
-  options rather than implying that accepting them implements their behavior.
-- Bound response-header parsing and retain bytes immediately following the
-  CONNECT response. Cover authentication failure, malformed responses, TLS,
-  IPv4/IPv6/domain authorities, chaining, probes, and mobile carrier bootstrap.
+- HTTP/1.1 only. TLS always offers exactly `http/1.1`, also for a shaped uTLS
+  hello whose profile carries `h2`, and `tlsSettings.alpn` is limited to absent,
+  `[]` or `["http/1.1"]`. The reference also negotiates `h2` and then sends an
+  HTTP/2 `CONNECT`; a proxy that accepts only HTTP/2 therefore fails the
+  handshake here. `http_runtime_offers_only_http11_over_tls` checks the agreed
+  protocol against a server that prefers `h2` with unshaped, `chrome` and
+  `firefox` hellos; without the forced offer the shaped hello agrees `h2`.
+- Status 200 only, as in the reference, rather than every 2xx that
+  [RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6)
+  allows. 204 is refused like 403, 407 and 502 (`connect_accepts_only_status_200`,
+  `http_runtime_refuses_every_status_but_200`).
+- Parser surface: flat and legacy `servers` forms; `level` selects policy with
+  or without credentials; `email` is type-checked and ignored; `headers` is
+  accepted only as `null` or `{}`. The reference's custom headers are Go
+  templates expanded per flow; any header fails parsing instead of being
+  ignored. A lone `pass`, an empty `user`, a `user` containing `:` and a
+  `users` entry without `user` are rejected, where the reference drops or
+  sends them. Credentials are limited to 1024 bytes each, the reference has no
+  limit.
+- Request: byte-for-byte the pinned Go client's, including the browser
+  masquerade block and header order, except the browser versions drawn per
+  process (`http_runtime_request_matches_the_pinned_go_client`). Non-ASCII
+  destination domains are refused instead of converted to Punycode.
+- Response: the head is limited to 16 KiB, where Go has no limit, and bytes
+  after the head in the same read are delivered, where the reference loses them
+  in a discarded `bufio.Reader`. Malformed status lines and header lines, 407,
+  5xx and truncated heads are covered by `http_client_tests`; IPv4, IPv6 and
+  domain authorities and early bytes also run end to end.
+- Integration: TCP `proxySettings` in both directions, `probeOutboundUrl`, UDP
+  refusal without dialing, and Android/Apple carrier bootstrap that resolves
+  only the proxy name. Destination domains stay with the proxy.
+
+`scripts/check-http-interop.sh` runs the pinned Go HTTP inbound with Basic and
+open listeners over plain TCP and TLS, in both settings forms, with refused
+wrong and missing credentials, and the Go-client request comparison. Physical
+device routing and HTTP/2 `CONNECT` are not established.
 
 ## Follow-up checks
 
@@ -234,7 +254,8 @@ Record the final decisions for these differences before claiming support:
 - [ ] Add live TCP CONNECT over TLS, an IPv6 proxy carrier, `proxySettings`, and
   `probeOutboundUrl` coverage; distinguish them from UDP TLS control and IPv6
   destination coverage already added in the #87 follow-up.
-- [ ] Resolve and implement the HTTP scope above before claiming #79 complete.
+- [x] Resolve and implement the HTTP scope above; HTTP/2 `CONNECT` and custom
+  `headers` remain unimplemented extensions.
 - [ ] Track SOCKS share-link import separately from outbound protocol support.
 - [ ] Decide whether an absent SOCKS inbound `udp` should follow Xray-core's
   `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).

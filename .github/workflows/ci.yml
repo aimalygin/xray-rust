@@ -367,6 +367,8 @@ jobs:
         run: bash scripts/check-vmess-interop.sh
       - name: Check SOCKS5 TCP, UDP and TUN against pinned Xray-core
         run: bash scripts/check-socks-interop.sh
+      - name: Check HTTP outbound against the pinned Xray HTTP server
+        run: bash scripts/check-http-interop.sh
       - name: Check shared Mux and XUDP interoperability
         run: bash scripts/check-mux-interop.sh
       - name: Check v0.8 clients against pinned independent sing-box
