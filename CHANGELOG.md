@@ -10,6 +10,9 @@ long-term supported release series.
 
 ## Unreleased
 
+- Update webpki-roots to 1.0.11, removing the emSign C1 and C3 trust anchors
+  whose issuing chains include compromised intermediate certificates.
+
 - Update the zstd dependency family to patched releases, fixing the
   abandoned-stream data leak and decompression memory-safety advisories
   reported by RustSec without changing TLS certificate-compression settings.
