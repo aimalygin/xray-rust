@@ -166,9 +166,9 @@ impl Reference {
         }
         let reservation = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let address = reservation.local_addr().unwrap();
-        // All keys are synthetic public test vectors. Xray gVisor rejects inner
-        // loopback destinations, so use a documentation IP and redirect to the
-        // local echo server. No packet is sent to the documentation address.
+        // All keys are synthetic public test vectors. Keep the inner destination
+        // in a documentation range and redirect to the local echo server.
+        // No packet is sent to the documentation address.
         let config = format!(
             r#"{{"log":{{"loglevel":"debug"}},"inbounds":[{{"listen":"127.0.0.1","port":{},"protocol":"wireguard","settings":{{"secretKey":"{}","address":["10.44.0.1/32"],"mtu":1420,"peers":[{{"publicKey":"{}","allowedIPs":["10.44.0.2/32"]}}]}}}}],"outbounds":[{{"protocol":"freedom","settings":{{"redirect":"127.0.0.1:0","finalRules":[{{"action":"allow","ip":["127.0.0.0/8"]}}]}}}}]}}"#,
             address.port(),
@@ -203,7 +203,7 @@ impl Reference {
                 );
                 if std::fs::read_to_string(reference.directory.join("log"))
                     .unwrap()
-                    .contains("core: Xray 26.7.28 started")
+                    .contains("core: Xray 26.10.21 started")
                 {
                     break;
                 }

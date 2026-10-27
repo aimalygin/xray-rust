@@ -744,7 +744,7 @@ fn resolve_xray_checkout() -> PathBuf {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         EXPECTED,
-        "live REALITY oracle checkout must be pinned to v26.7.28"
+        "live REALITY oracle checkout must be pinned to v26.10.21"
     );
     checkout
 }
