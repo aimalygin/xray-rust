@@ -14,11 +14,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
     parse_xray_json, CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings,
-    InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundProxySettings,
-    OutboundSettings, RealitySettings, RealityShortId, RoutingBalancer, RoutingBalancerStrategy,
-    RoutingConfig, RoutingRule, RoutingRuleTarget, SocksInboundSettings, StreamSecurity,
-    StreamSettings, StreamTransport, TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser,
-    WebSocketSettings, XhttpMode, XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
+    InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings, RealitySettings,
+    RealityShortId, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingRule,
+    RoutingRuleTarget, SocksInboundSettings, StreamSecurity, StreamSettings, StreamTransport,
+    TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode,
+    XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
 use xray_proxy::inbound::SocksInboundAuth;
@@ -29,9 +29,9 @@ use xray_transport::{
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
 const XRAY_CORE_EXPECTED_REVISION_ENV: &str = "XRAY_CORE_EXPECTED_REVISION";
-const PINNED_XRAY_CORE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
-// The PQ interop oracle needs a cover origin that accepts X25519MLKEM;
-// RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
+const PINNED_XRAY_CORE_REVISION: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
+// This external-origin legacy suite needs X25519MLKEM support. The hermetic
+// ML-DSA/Vision matrix uses its own local cover origin instead.
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const INNER_TLS_SERVER_NAME: &str = "inner.test";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
@@ -352,30 +352,22 @@ async fn run_local_xray_two_hop_proxy_chain_interop() {
     let middle_server = start_plain_xray_vless_server(&xray_checkout).await;
     let exit_server = start_plain_xray_vless_server(&xray_checkout).await;
     let mut config = rust_core_config_with_security(middle_server.addr, StreamSecurity::None, None);
-    let mut entry = rust_freedom_outbound("entry");
-    entry.proxy_settings = Some(OutboundProxySettings {
-        tag: "middle".to_owned(),
-        transport_layer: true,
-    });
-    let mut middle = rust_vless_outbound(
-        "middle",
-        middle_server.addr,
-        StreamSecurity::None,
-        None,
-        StreamTransport::Raw,
-    );
-    middle.proxy_settings = Some(OutboundProxySettings {
-        tag: "exit".to_owned(),
-        transport_layer: true,
-    });
-    let exit = rust_vless_outbound(
-        "exit",
-        exit_server.addr,
-        StreamSecurity::None,
-        None,
-        StreamTransport::Raw,
-    );
-    config.outbounds = vec![entry, middle, exit];
+    let peer = |tag: &str, addr: SocketAddr| {
+        serde_json::json!({
+        "tag":tag,"protocol":"vless","settings":{"vnext":[{
+            "address":addr.ip().to_string(),"port":addr.port(),
+            "users":[{"id":TEST_UUID,"encryption":"none"}]}]}})
+    };
+    let mut middle = peer("middle", middle_server.addr);
+    middle["streamSettings"] = serde_json::json!({"sockopt":{"dialerProxy":"exit"}});
+    let chain = serde_json::json!({"outbounds":[
+        {"tag":"entry","protocol":"freedom","streamSettings":{"sockopt":{"dialerProxy":"middle"}}},
+        middle, peer("exit", exit_server.addr)
+    ]});
+    config.outbounds = parse_xray_json(&chain.to_string())
+        .expect("v26.10.21 dialerProxy chain")
+        .config
+        .outbounds;
     config.default_outbound_tag = Some("entry".to_owned());
     config.routing = RoutingConfig::default();
 
@@ -524,10 +516,9 @@ fn selected_reality_interop_fingerprints() -> Vec<String> {
         "hellochrome_133",
         "hellofirefox_148",
         "hellosafari_26_3",
-        "helloios_13",
-        "hello360_11_0",
-        "hellochrome_120_pq",
-        "hellofirefox_99",
+        "hellochrome_131",
+        "random",
+        "randomized",
     ]
     .into_iter()
     .map(ToOwned::to_owned)
@@ -544,7 +535,7 @@ fn selected_reality_interop_burst_fingerprints() -> Vec<String> {
             .collect();
     }
 
-    vec!["hellofirefox_99".to_owned()]
+    vec!["hellofirefox_148".to_owned()]
 }
 
 fn selected_reality_interop_burst_flow_count() -> usize {
@@ -1900,24 +1891,6 @@ fn rust_vless_outbound(
     }
 }
 
-fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
-    OutboundConfig {
-        mux: None,
-        tag: Some(tag.to_owned()),
-        proxy_settings: None,
-        stream: StreamSettings {
-            network: Network::Tcp,
-            transport: StreamTransport::Raw,
-            security: StreamSecurity::None,
-            quic_params: None,
-            tcp_fragment: None,
-            udp_noise: None,
-            socket_options: None,
-        },
-        settings: OutboundSettings::Freedom,
-    }
-}
-
 fn rust_reality_vision_core_config(xray_addr: SocketAddr, fingerprint: &str) -> CoreConfig {
     rust_core_config_with_security(
         xray_addr,
@@ -2865,7 +2838,7 @@ fn rust_xhttp_core_config(
             sc_min_posts_interval_ms: exact(1),
             xmux: XhttpXmuxSettings {
                 max_concurrency: exact(1),
-                // The v26.7.28 default is maxConnections=3. Keep this
+                // The v26.10.21 default is maxConnections=3. Keep this
                 // interop scenario on its explicit maxConcurrency policy.
                 max_connections: exact(0),
                 h_max_request_times: exact(64),

@@ -262,7 +262,10 @@ fn mux_is_rejected_and_chaining_is_accepted() {
         {"tag":"exit","protocol":"socks","settings":{"address":"192.0.2.10","port":1080}}
     ]});
     let parsed = parse_xray_json(&chained.to_string()).expect("chained SOCKS parses");
-    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    assert_eq!(parsed.diagnostics.len(), 1);
+    assert!(parsed.diagnostics[0]
+        .message
+        .contains("legacy proxySettings"));
     assert_eq!(
         parsed.config.outbounds[0]
             .proxy_settings

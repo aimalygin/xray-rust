@@ -236,7 +236,7 @@ impl ReferenceServer {
                 .contains(if independent_reference() {
                     "sing-box started ("
                 } else {
-                    "core: Xray 26.7.28 started"
+                    "core: Xray 26.10.21 started"
                 })
             {
                 break;

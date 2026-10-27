@@ -11,6 +11,12 @@ use xray_routing::{Target, TargetAddr};
 use zeroize::Zeroize;
 
 const QUIC_V1: u32 = 1;
+const QUIC_V2: u32 = 0x6b33_43cf;
+// RFC 9369 sections 3.1–3.3.
+const QUIC_V2_INITIAL_SALT: [u8; 20] = [
+    0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93, 0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb,
+    0xf9, 0xbd, 0x2e, 0xd9,
+];
 const QUIC_V1_INITIAL_SALT: [u8; 20] = [
     0x38, 0x76, 0x2c, 0xf7, 0xf5, 0x59, 0x34, 0xb3, 0x4d, 0x17, 0x9a, 0xe6, 0xa4, 0xc8, 0x0c, 0xad,
     0xcc, 0xbb, 0x7f, 0x0a,
@@ -218,7 +224,7 @@ fn sniff_tls_client_hello_body_sni(body: &[u8]) -> Option<String> {
 }
 
 fn sniff_quic_initial_sni(packet: &[u8]) -> Option<String> {
-    // Single-datagram QUIC v1 Initial sniffing, not general QUIC stream reassembly.
+    // Single-datagram QUIC v1/v2 Initial sniffing, not general QUIC stream reassembly.
     let header = parse_quic_initial_header(packet)?;
     let keys = quic_initial_keys(header.version, header.dcid)?;
     let unprotected = unprotect_quic_initial_header(packet, &header, &keys.hp)?;
@@ -269,7 +275,12 @@ fn parse_quic_initial_header(packet: &[u8]) -> Option<QuicInitialHeader<'_>> {
         return None;
     }
     let version = read_u32(packet, 1)?;
-    if version != QUIC_V1 || first & 0x30 != 0 {
+    let initial_type = match version {
+        QUIC_V1 => 0,
+        QUIC_V2 => 0x10,
+        _ => return None,
+    };
+    if first & 0x30 != initial_type {
         return None;
     }
 
@@ -312,7 +323,13 @@ fn parse_quic_initial_header(packet: &[u8]) -> Option<QuicInitialHeader<'_>> {
 fn quic_initial_keys(version: u32, dcid: &[u8]) -> Option<QuicInitialKeys> {
     let salt = match version {
         QUIC_V1 => QUIC_V1_INITIAL_SALT,
+        QUIC_V2 => QUIC_V2_INITIAL_SALT,
         _ => return None,
+    };
+    let labels: [&[u8]; 3] = if version == QUIC_V2 {
+        [b"quicv2 key", b"quicv2 iv", b"quicv2 hp"]
+    } else {
+        [b"quic key", b"quic iv", b"quic hp"]
     };
     let hk = Hkdf::<Sha256>::new(Some(&salt), dcid);
     let mut client_initial_secret = [0; QUIC_CLIENT_INITIAL_SECRET_LEN];
@@ -326,19 +343,19 @@ fn quic_initial_keys(version: u32, dcid: &[u8]) -> Option<QuicInitialKeys> {
         let hk = Hkdf::<Sha256>::from_prk(&client_initial_secret).ok()?;
         let mut key = [0; QUIC_INITIAL_KEY_LEN];
         hk.expand(
-            &tls13_hkdf_label(QUIC_INITIAL_KEY_LEN as u16, b"quic key"),
+            &tls13_hkdf_label(QUIC_INITIAL_KEY_LEN as u16, labels[0]),
             &mut key,
         )
         .ok()?;
         let mut iv = [0; QUIC_INITIAL_IV_LEN];
         hk.expand(
-            &tls13_hkdf_label(QUIC_INITIAL_IV_LEN as u16, b"quic iv"),
+            &tls13_hkdf_label(QUIC_INITIAL_IV_LEN as u16, labels[1]),
             &mut iv,
         )
         .ok()?;
         let mut hp = [0; QUIC_INITIAL_HP_LEN];
         hk.expand(
-            &tls13_hkdf_label(QUIC_INITIAL_HP_LEN as u16, b"quic hp"),
+            &tls13_hkdf_label(QUIC_INITIAL_HP_LEN as u16, labels[2]),
             &mut hp,
         )
         .ok()?;
@@ -355,7 +372,9 @@ fn unprotect_quic_initial_header(
     hp_key: &[u8; QUIC_INITIAL_HP_LEN],
 ) -> Option<QuicUnprotectedHeader> {
     let sample_offset = header.packet_number_offset.checked_add(4)?;
-    let sample = packet.get(sample_offset..sample_offset + QUIC_HP_SAMPLE_LEN)?;
+    let sample = packet
+        .get(..header.payload_end)?
+        .get(sample_offset..sample_offset + QUIC_HP_SAMPLE_LEN)?;
     let mask = aes128_encrypt_block(hp_key, sample)?;
     let first = packet[0] ^ (mask[0] & 0x0f);
     let packet_number_len = usize::from((first & 0x03) + 1);
@@ -705,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_v1_quic_initial_sni() {
+    fn rejects_unknown_quic_version() {
         let mut payload = quic_initial_packet_with_sni("quic.example");
         payload[1..5].copy_from_slice(&2u32.to_be_bytes());
 
@@ -715,6 +734,37 @@ mod tests {
             &payload
         )
         .is_none());
+    }
+
+    #[test]
+    fn sniffs_rfc9369_v2_client_initial_and_rejects_corruption() {
+        // RFC 9369 Appendix A.2: independently published authenticated packet.
+        let hex = include_str!("../../../tests/fixtures/quic/rfc9369-client-initial.hex");
+        let mut packet: Vec<u8> = hex
+            .split_whitespace()
+            .flat_map(|word| {
+                (0..word.len())
+                    .step_by(2)
+                    .map(move |i| u8::from_str_radix(&word[i..i + 2], 16).unwrap())
+            })
+            .collect();
+        assert_eq!(
+            sniff_quic_initial_sni(&packet).as_deref(),
+            Some("example.com")
+        );
+        // Coalesced/padded datagram bytes do not enter the Initial ciphertext.
+        packet.extend_from_slice(&[0; 64]);
+        assert_eq!(
+            sniff_quic_initial_sni(&packet).as_deref(),
+            Some("example.com")
+        );
+        packet[40] ^= 1;
+        assert!(sniff_quic_initial_sni(&packet).is_none());
+        packet[40] ^= 1;
+        packet[0] ^= 0x10; // v2 Retry cannot be treated as a v1 Initial
+        assert!(sniff_quic_initial_sni(&packet).is_none());
+        packet[0] ^= 0x10;
+        assert!(sniff_quic_initial_sni(&packet[..packet.len() - 65]).is_none());
     }
 
     #[test]

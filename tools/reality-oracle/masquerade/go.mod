@@ -11,15 +11,15 @@
 // `go mod tidy` drops the requirement below, because the only file that needs it
 // sits behind a build tag. Edit this file by hand.
 //
-// The Xray-core requirement is release v26.7.28, commit
-// 5ca6f4b7d4dc20a881d4330e498892697627ec0c.
+// The Xray-core requirement is release v26.10.21, commit
+// 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74.
 module xray-rust-tools/masquerade-oracle
 
-go 1.26
+go 1.27
 
-require github.com/xtls/xray-core v1.260327.1-0.20260728075948-5ca6f4b7d4dc
+require github.com/xtls/xray-core v1.260327.1-0.20261021115930-1b1647cd9ddf
 
 require (
-	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )

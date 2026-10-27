@@ -21,7 +21,7 @@ use crate::{
 
 // This is the Xray-core compatibility baseline implemented by the REALITY
 // ClientHello and fingerprint tables, not xray-rust's package version.
-const REALITY_HANDSHAKE_VERSION: [u8; 3] = [26, 7, 28];
+const REALITY_HANDSHAKE_VERSION: [u8; 3] = [26, 10, 21];
 
 pub trait RealityHandshakeContextProvider: Send + Sync {
     fn context(&self) -> RealityHandshakeContext;

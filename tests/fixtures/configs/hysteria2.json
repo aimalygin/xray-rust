@@ -9,7 +9,8 @@
     "streamSettings": {
       "network": "hysteria", "security": "tls",
       "tlsSettings": {"serverName": "server.example", "alpn": ["h3"]},
-      "hysteriaSettings": {"version": 2, "auth": "synthetic-example-auth"}
+      "hysteriaSettings": {"version": 2, "auth": "synthetic-example-auth"},
+      "finalmask": {"quicParams": {"disableChromeParrot": true}}
     }
   }]
 }

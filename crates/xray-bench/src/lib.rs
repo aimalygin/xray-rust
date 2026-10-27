@@ -96,7 +96,7 @@ const TEST_VLESS_UUID_STRING: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const PLACEHOLDER_TLS_CERT_SHA256: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 // The PQ benchmark cases need a cover origin that accepts X25519MLKEM;
-// RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
+// It must negotiate the final hybrid X25519MLKEM768 key share.
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
@@ -112,8 +112,8 @@ const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
 /// network-dependent, so the fixed default may need adjusting per environment.
 const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
-const XRAY_CORE_ORACLE_VERSION: &str = "26.7.28";
-const XRAY_CORE_ORACLE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+const XRAY_CORE_ORACLE_VERSION: &str = "26.10.21";
+const XRAY_CORE_ORACLE_REVISION: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
@@ -11932,7 +11932,7 @@ mod tests {
     #[test]
     fn xray_core_version_output_requires_the_pinned_release() {
         let binary = Path::new("/tmp/xray-core");
-        let pinned = "Xray 26.7.28 (Xray, Penetrates Everything.) 5ca6f4b (go1.26.0 darwin/arm64)\nA unified platform for anti-censorship.\n";
+        let pinned = "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c (go1.27.3 darwin/arm64)\nA unified platform for anti-censorship.\n";
 
         assert!(validate_xray_core_version_output(binary, pinned, None).is_ok());
         assert!(
@@ -11940,16 +11940,16 @@ mod tests {
                 .is_ok()
         );
 
-        let old = "Xray 26.5.9 (Xray, Penetrates Everything.) 1bdb488 (go1.26.0 darwin/arm64)\n";
+        let old = "Xray 26.5.9 (Xray, Penetrates Everything.) 1bdb488 (go1.27.3 darwin/arm64)\n";
         let error = validate_xray_core_version_output(binary, old, None).unwrap_err();
-        assert!(error.to_string().contains("requires Xray 26.7.28"));
+        assert!(error.to_string().contains("requires Xray 26.10.21"));
     }
 
     #[test]
     fn auto_built_xray_core_version_output_requires_the_pinned_revision() {
         let binary = Path::new("/tmp/xray-core");
         let wrong_revision =
-            "Xray 26.7.28 (Xray, Penetrates Everything.) deadbee (go1.26.0 darwin/arm64)\n";
+            "Xray 26.10.21 (Xray, Penetrates Everything.) deadbee (go1.27.3 darwin/arm64)\n";
 
         let error = validate_xray_core_version_output(
             binary,
@@ -11957,18 +11957,19 @@ mod tests {
             Some(XRAY_CORE_ORACLE_REVISION),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("requires revision `5ca6f4b`"));
+        assert!(error.to_string().contains("requires revision `1b1647c`"));
 
         // A caller-supplied official binary must report the pinned release,
         // but it may not carry the checkout's VCS build token.
-        let custom = "Xray 26.7.28 (Xray, Penetrates Everything.) Custom (go1.26.0 darwin/arm64)\n";
+        let custom =
+            "Xray 26.10.21 (Xray, Penetrates Everything.) Custom (go1.27.3 darwin/arm64)\n";
         assert!(validate_xray_core_version_output(binary, custom, None).is_ok());
 
         // Go includes untracked checkout artifacts in its VCS dirty bit. The
         // auto-build path has already verified exact HEAD and no tracked or
         // staged edits, so this form is still the pinned source oracle.
         let untracked_dirty =
-            "Xray 26.7.28 (Xray, Penetrates Everything.) 5ca6f4b-dirty (go1.26.0 darwin/arm64)\n";
+            "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c-dirty (go1.27.3 darwin/arm64)\n";
         assert!(validate_xray_core_version_output(
             binary,
             untracked_dirty,
@@ -14913,7 +14914,7 @@ mod tests {
             "xray-bench",
             "reality-matrix",
             "--fingerprints",
-            "chrome,hellochrome_120_pq",
+            "chrome,hellochrome_131",
             "--traffic",
             "startup-probe,tcp-connect,udp-xudp-echo",
             "--iterations",
@@ -14938,7 +14939,7 @@ mod tests {
         assert_eq!(
             args,
             CliArgs::RealityMatrix(RealityMatrixOptions {
-                fingerprints: vec!["chrome".to_owned(), "hellochrome_120_pq".to_owned()],
+                fingerprints: vec!["chrome".to_owned(), "hellochrome_131".to_owned()],
                 traffic: vec![
                     RealityMatrixTrafficKind::StartupProbe,
                     RealityMatrixTrafficKind::TcpConnect,
@@ -14976,7 +14977,7 @@ mod tests {
             "--xray-rust-version",
             "1659143",
             "--xray-core-version",
-            "v26.7.28",
+            "v26.10.21",
             "--sing-box-version",
             "v1.12.0",
         ])
@@ -14997,9 +14998,7 @@ mod tests {
         };
 
         assert!(options.fingerprints.contains(&"chrome".to_owned()));
-        assert!(options
-            .fingerprints
-            .contains(&"hellochrome_120_pq".to_owned()));
+        assert!(options.fingerprints.contains(&"hellochrome_131".to_owned()));
         assert!(options
             .traffic
             .contains(&RealityMatrixTrafficKind::StartupProbe));
@@ -15081,13 +15080,13 @@ mod tests {
         let config = reality_vision_xudp_config_with_fingerprint(
             18088,
             SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19095)),
-            "hellochrome_120_pq",
+            "hellochrome_131",
         );
         let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
 
         assert_eq!(
             value["outbounds"][0]["streamSettings"]["realitySettings"]["fingerprint"],
-            "hellochrome_120_pq"
+            "hellochrome_131"
         );
     }
 

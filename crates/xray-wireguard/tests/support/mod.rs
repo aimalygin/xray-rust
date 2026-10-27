@@ -162,7 +162,7 @@ impl Reference {
             "wireguard-go reference ready"
         } else {
             command.args(["run", "-config"]);
-            "core: Xray 26.7.28 started"
+            "core: Xray 26.10.21 started"
         };
         let child = command
             .arg(directory.join("config.json"))

@@ -929,6 +929,14 @@ impl Parser<'_> {
         }
         for (index, outbound) in parsed.iter().enumerate() {
             self.validate_tcp_fragment_scope(outbound, index);
+            if outbound.proxy_settings.is_some()
+                && matches!(outbound.stream.security, StreamSecurity::Reality(_))
+            {
+                self.error(
+                    format!("$.outbounds[{index}]"),
+                    "outbound chaining over REALITY is unsupported",
+                );
+            }
         }
         parsed
     }
@@ -1027,13 +1035,6 @@ impl Parser<'_> {
         self.validate_trojan_stream(&settings, &stream, index);
         self.validate_socks_outbound_stream(&settings, &stream, index);
         self.validate_http_outbound_stream(&settings, &stream, index);
-
-        if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
-            self.error(
-                format!("$.outbounds[{index}].proxySettings"),
-                "outbound chaining over REALITY is unsupported",
-            );
-        }
 
         // Xray v26.7.28 applies this policy only to its simplified top-level
         // VLESS settings. Its legacy `vnext` path bypasses that validation.
@@ -1195,8 +1196,25 @@ impl Parser<'_> {
         outbound: &Value,
         index: usize,
     ) -> Option<OutboundProxySettings> {
+        let dialer = outbound
+            .pointer("/streamSettings/sockopt/dialerProxy")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        if let Some(tag) = dialer {
+            if outbound.get("proxySettings").is_some() {
+                self.error(
+                    format!("$.outbounds[{index}].proxySettings"),
+                    "proxySettings and sockopt.dialerProxy cannot be combined",
+                );
+            }
+            return Some(OutboundProxySettings {
+                tag: tag.to_owned(),
+                transport_layer: true,
+            });
+        }
         let proxy = outbound.get("proxySettings")?;
         let path = format!("$.outbounds[{index}].proxySettings");
+        self.warning(&path, "legacy proxySettings: migrate tag to streamSettings.sockopt.dialerProxy; only transport-layer chaining is supported");
         if !proxy.is_object() {
             self.error(path, "outbound proxySettings must be an object");
             return None;

@@ -14,27 +14,39 @@ See [Xray-core differences and verification gaps](xray-core-differences.md)
 for the reference revision, deliberate SOCKS restrictions, mobile integration
 gaps, and pending HTTP decisions from issues #79 and #81.
 
+The active compatibility reference is **Xray-core v26.10.21**; see the
+[migration record](xray-core-v26.10.21-migration.md) for checks and limitations.
+References to earlier versions below describe the origin of unchanged behavior.
+
 ## v0.8 Hysteria carrier additions
 
-Hysteria accepts one Salamander mask and the `udpHop` QUIC override in the
-pinned Xray-core v26.7.28 spelling:
+Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
 
 ```json
 "finalmask": {
-  "udp": [{"type": "salamander", "settings": {"password": "synthetic-example-password"}}],
-  "quicParams": {"udpHop": {"ports": "443,8443-8445", "interval": "5-10"}}
+  "udp": [
+    {"type": "udphop", "settings": {
+      "mode": "intervalLocal,intervalRemote", "remotePorts": "443,8443-8445", "interval": "5-10"
+    }},
+    {"type": "salamander", "settings": {"password": "synthetic-example-password"}}
+  ],
+  "quicParams": {"disableChromeParrot": true}
 }
 ```
 
-Both settings are optional and can be used separately. Passwords contain
-4..4096 UTF-8 bytes and remain redacted/zeroized in typed configuration.
-`packetSize` must be absent, null or zero: Gecko is a different wire protocol
-and is unsupported. One Salamander mask may be combined with one UDP noise mask (below); unknown mask fields fail.
-Port lists preserve order and duplicate weights, with at most 65535 expanded
-entries. Each interval bound defaults from zero to 30 seconds; enabled hopping
-requires ordered bounds of at least five seconds. The first packet already uses
-a randomly selected configured port. Server ports must reach the same QUIC
-server (for example through server-side port redirects).
+Both masks are optional. UDP-hop must be first; the supported mode changes the
+local socket and remote port together. Independent `intervalLocal`,
+`intervalRemote`, `perConnRemote`, nonempty `remoteIPs` and XHTTP H3 hopping are
+rejected. Ports preserve order and duplicate weights, with at most 65535
+expanded entries and at least one port. An omitted/zero interval defaults to
+30 seconds; other bounds must both be at least five seconds. The first packet
+already uses a randomly selected port; all ports must reach the same server.
+The old `quicParams.udpHop` spelling remains accepted with a migration warning;
+combining both spellings fails. Profile import emits the new mask form.
+
+Salamander passwords contain 4..4096 UTF-8 bytes and remain redacted/zeroized.
+`packetSize` must be absent, null or zero; Gecko is unsupported. One noise mask
+may accompany Salamander, after UDP-hop; unknown and duplicate masks fail.
 
 Each hop binds and protects a fresh socket while retaining the authenticated
 QUIC session and its TCP/UDP leases. Quinn retains at most one previous socket
@@ -44,13 +56,32 @@ network rebind closes the stale session. Stop/free aborts the timer. Salamander
 reserves its eight-byte salt in MTU discovery and handles receive GRO segments
 individually. Its bounded receive scratch is 64 KiB per live carrier; send
 scratch is reused. Profiles without either option use the existing UDP path.
-All other explicit Hysteria `quicParams` fields, Brutal, bandwidth overrides,
-QUIC v2 and socket overrides remain unsupported. XHTTP H3 hopping is unchanged.
+Hysteria accepts `disableChromeParrot: true` to acknowledge its native Quinn
+TLS behavior. Without it, parsing warns that ChromeParrot shaping is absent;
+explicit false/null is rejected. Other explicit QUIC overrides, Brutal,
+bandwidth overrides, QUIC v2 transport and socket overrides remain unsupported.
 
 The transport tests exercise TCP, inner TLS, fragmented UDP, automatic hopping,
 manual rebind and rejected socket protection against pinned Xray-core and
 independent official Hysteria v2.12.2. This is client carrier support, not a
 change to the congestion-control parity or published v0.7 artifacts.
+
+## WireGuard destination DNS
+
+`settings.remoteDNS` accepts up to eight usable IP literals. Missing, null or
+empty values select the upstream defaults `1.1.1.1`, `1.0.0.1`,
+`2606:4700:4700::1111`, `2606:4700:4700::1001`. Destination queries use UDP/53
+inside the WireGuard device, with TCP fallback for truncated replies. No host
+DNS fallback occurs. The device owns a 256-entry single-flight cache: answer
+TTL is capped at 300 seconds, negatives last 30 seconds, and stale answers are
+never returned. Closing the outbound cancels pending queries. Its peer endpoint
+continues to use the separate bootstrap resolver and protected outer socket.
+
+Legacy `domainStrategy` emits a warning and controls address-family selection
+only. `allowedIPs` still bounds DNS-server and destination routing. WireGuard
+profile import preserves explicitly supplied DNS addresses in both the profile
+DNS configuration and `remoteDNS`; it never substitutes public resolvers during
+import. Port-qualified/hostname DNS, DoH and DoT are outside this field's contract.
 
 ## v0.8 TLS ClientHello fragmentation
 
@@ -81,8 +112,8 @@ Existing mobile profiles may instead put
 in a dedicated `freedom` outbound's `settings`, then reference its tag with
 `streamSettings.sockopt.dialerProxy`. That handler must use raw TCP with no
 security, socket overrides, mux or proxy chain. The parser normalizes its sole
-fragment transform into the caller's stream. General `dialerProxy` chaining,
-combining two fragment masks, legacy freedom UDP noises, QUIC/H3 fragmentation and split XHTTP
+fragment transform into the caller's stream. Ordinary `dialerProxy` chaining
+is supported separately below. Combining two fragment masks, legacy freedom UDP noises, QUIC/H3 fragmentation and split XHTTP
 downloads remain unsupported. A raw freedom outbound can also fragment an
 application's first complete TLS record directly.
 
@@ -179,8 +210,7 @@ adapter. UDP noise is available through their ordinary JSON configuration.
 The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
 These additions are not part of the published 0.7 artifacts. See the
 [implementation evidence](v08-implementation-plan.md) for verified combinations,
-resource bounds and remaining release gates. The reference stays Xray-core
-v26.7.28; unsupported options fail closed.
+resource bounds and remaining release gates. The active reference is Xray-core v26.10.21; unsupported options fail closed.
 
 | Outbound | Settings | Import |
 | --- | --- | --- |
@@ -388,18 +418,19 @@ empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
 supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
 engines. General VLESS mux, `sendThrough`, multiple VLESS servers, and
 protocol-layer chaining remain unsupported. The supported chaining subset
-uses Xray's outbound `proxySettings` with a non-empty `tag` and an explicit
-`"transportLayer": true`:
+uses `streamSettings.sockopt.dialerProxy` with a nonempty outbound tag:
 
 ```json
 {
   "tag": "entry",
   "protocol": "vless",
-  "proxySettings": { "tag": "exit", "transportLayer": true }
+  "streamSettings": { "sockopt": { "dialerProxy": "exit" } }
 }
 ```
 
-The referenced tag is resolved through the immutable outbound graph before the
+Legacy `proxySettings` with `tag` and `transportLayer: true` is retained with
+a migration warning; Xray v26.10.21 rejects that removed field. Both forms
+cannot be combined. The referenced tag is resolved through the outbound graph before the
 core starts. Missing targets, self-cycles, and multi-node cycles fail closed.
 TCP Freedom and VLESS chains can use raw, TLS, WebSocket, HTTPUpgrade, gRPC,
 and TCP-backed XHTTP carriers. Chained UDP/DNS, protocol-layer
@@ -574,12 +605,11 @@ model's debug output and are never echoed in diagnostics.
   proxies are usually plaintext. Without `tls`, RFC 1929 sends the username and
   password in cleartext, so anyone on the path can read and replay them. Use
   `tls`, or keep a credentialed proxy on loopback or a trusted network.
-- Chaining uses the `proxySettings` subset above with `"transportLayer": true`.
+- Chaining uses `sockopt.dialerProxy` (or the warned legacy `proxySettings` form).
   A SOCKS outbound can be the hop that carries another TCP outbound, and it can
   itself be carried over another outbound's TCP carrier. Chained UDP/DNS,
   including UDP through a chained SOCKS outbound, and REALITY inside a chain
-  stay rejected. `streamSettings.sockopt.dialerProxy`
-  keeps its fragment-only form and cannot route through another proxy.
+  stay rejected. Dedicated fragment handlers still use the normalization described above.
 
 `scripts/check-socks-interop.sh` verifies this subset against pinned Xray-core
 v26.7.28: both settings forms, TCP authentication over plain TCP and UDP
@@ -669,7 +699,7 @@ rather than being converted to Punycode as Go does.
   plaintext. Without `tls`, the Basic credentials and the destination of every
   tunnel travel in cleartext; use `tls`, or keep a credentialed proxy on
   loopback or a trusted network.
-- Chaining uses the `proxySettings` subset above with `"transportLayer": true`
+- Chaining uses `sockopt.dialerProxy` (or the warned legacy `proxySettings` form)
   in both directions: an HTTP outbound can carry another TCP outbound, and it
   can ride another outbound's TCP carrier. `probeOutboundUrl` works through it.
 
@@ -735,6 +765,12 @@ The Xray server unescapes the transport path back, so both round-trip.
 `heartbeatPeriod` is in seconds and applies to WebSocket only. It sends an
 empty ping every period, the first one a full period after connect. Closing
 writes a close frame with code 1000 and no reason before the socket closes.
+
+HTTPUpgrade now sends a fresh 16-byte base64 `Sec-Websocket-Key` and
+`Sec-Websocket-Version: 13`, matching v26.10.21. Explicit canonical spellings
+in the header map override those defaults; arbitrary header key casing keeps
+the existing Go-map compatibility behavior. This still carries a raw upgraded
+stream, without WebSocket data-frame encoding.
 
 #### The masqueraded browser version is redrawn on every start
 
@@ -963,7 +999,12 @@ The H3 path uses a protected UDP socket and the same resolved-candidate Happy
 Eyeballs policy as the other outbounds. Its stock TLS 1.3 config ignores
 `tlsSettings.fingerprint` and the configured ALPN payload after the exact
 `["h3"]` branch is selected, then advertises exactly `h3`; that is the same
-separation Xray makes between its QUIC TLS path and uTLS TCP callback.
+separation between QUIC TLS and the TCP uTLS callback. Xray v26.10.21 now
+adds ChromeParrot shaping; Rust does not reproduce that fingerprint. Set
+`quicParams.disableChromeParrot: true` for the explicitly supported contract.
+Omission warns, while explicit false/null fails. `disableGSO`,
+`disableStatelessReset` and `brutalDisableLossCompensation` are recognized but
+rejected for every value; their runtime controls are not implemented.
 
 `streamSettings.finalmask.quicParams` is parsed for every stream but applied
 only to H3. The phase-one engine implements QUIC v1, Reno, the default/standard
@@ -980,7 +1021,7 @@ initial congestion window, not quic-go's exact controller. Distinct
 `maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
 the transport API, conservative/aggressive BBR profiles, Brutal and
 force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
-a socket. H3 rejects nonempty TCP and UDP masks; the opt-in TCP fragment
+a socket. H3 rejects TCP masks and UDP masks other than the bounded noise mask; the opt-in TCP fragment
 and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively
@@ -1259,10 +1300,10 @@ TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
 names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
-value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
-so eleven of the fourteen names REALITY rejects are usable here; the other
-three — `hello360_7_5` and its aliases `360` and `hello360_auto`, one profile
-under three names — are refused for a separate reason given below.
+value. Plain TLS does not require the final X25519MLKEM768 key share that
+REALITY v26.10.21 requires. Older profiles remain usable here, except
+`hello360_7_5` and its aliases `360` and `hello360_auto`, which are refused
+for the cipher-suite reason given below.
 
 Those 61 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
@@ -1338,9 +1379,25 @@ An IP-literal `serverName` is supported. As in uTLS, the SNI extension is
 elided and the rest of the shape shifts to match, rather than the handshake
 failing.
 
+#### REALITY v26.10.21 profile requirements
+
+The new server requires a final X25519MLKEM768 key share (group `0x11ec`,
+1216 bytes), before any ordinary X25519 key share. Supported fixed profiles
+are Chrome 131/133, Firefox 148 and Safari 26.3, including their current
+`chrome`, `firefox`, `safari` and `_auto` aliases. Older profiles, draft Kyber
+profiles and the frozen randomized snapshots fail parsing with the offending
+JSON path and a suggestion to use a compatible profile. They remain available
+for ordinary TLS where their cipher suites are supported.
+
+For REALITY, `random` and `randomized` each choose independently from those
+four hybrid profiles, once per process. This is a deliberate restriction of
+the upstream random pool, which can still pick a profile the new server
+rejects. The ordinary TLS random pool is unchanged. `randomized` remains a
+browser-profile draw rather than a port of uTLS's randomized-spec generator.
+
 #### What `random` and `randomized` resolve to
 
-`fingerprint: "random"` matches Xray: one of the eleven names in Xray's
+For plain TLS, `fingerprint: "random"` draws one of the eleven names in Xray's
 `ModernFingerprints` table is drawn from the OS CSPRNG the first time the name
 is used, and that draw stands for the rest of the process. Two installs
 therefore send different hellos, while a single install never changes its hello

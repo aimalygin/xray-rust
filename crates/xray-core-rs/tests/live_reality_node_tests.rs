@@ -731,7 +731,7 @@ fn resolve_xray_checkout() -> PathBuf {
             .expect("crate lives under workspace/crates/xray-core-rs")
             .join("Xray-core")
     };
-    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    const EXPECTED: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(&checkout)

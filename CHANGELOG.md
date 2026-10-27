@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
+- Require final X25519MLKEM768 profiles for REALITY and restrict its random pool;
+  verify ML-DSA65 and Vision against the new reference.
+- Add `sockopt.dialerProxy` chaining and the bounded Finalmask UDP-hop form;
+  retain legacy spellings with migration diagnostics and update profile import.
+- Resolve WireGuard destination names through tunnel-owned `remoteDNS` with TTL
+  caching and TCP fallback, keeping peer bootstrap separate.
+- Add HTTPUpgrade WebSocket key/version headers and QUIC v2 Initial sniffing.
+  QUIC transport remains v1, with an explicit native-TLS/ChromeParrot limitation.
+
 - Update webpki-roots to 1.0.11, removing the emSign C1 and C3 trust anchors
   whose issuing chains include compromised intermediate certificates.
 

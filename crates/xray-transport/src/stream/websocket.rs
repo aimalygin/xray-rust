@@ -198,7 +198,7 @@ async fn exchange(
 }
 
 /// 16 random bytes in standard base64, as RFC 6455 §4.1 requires.
-fn client_key() -> String {
+pub(super) fn client_key() -> String {
     let mut nonce = [0u8; 16];
     OsRng.fill_bytes(&mut nonce);
     base64_encode(&nonce, STANDARD_ALPHABET, true)

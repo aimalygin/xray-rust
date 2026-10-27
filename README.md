@@ -1,5 +1,7 @@
 # xray-rust
 
+The development compatibility reference is [Xray-core v26.10.21](docs/xray-core-v26.10.21-migration.md). Dated release and benchmark results below retain their original references.
+
 Project website: [xray-rust.aimalygin.chatgpt.site](https://xray-rust.aimalygin.chatgpt.site)
 
 Mobile repository: [xray-rust-mobile](https://github.com/aimalygin/xray-rust-mobile)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+readonly EXPECTED_XRAY_CORE_REVISION="1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
 
 if [[ -z "${XRAY_CORE_CHECKOUT:-}" ]]; then
   echo "XRAY_CORE_CHECKOUT must point at the pinned Xray-core checkout" >&2
@@ -56,8 +56,8 @@ export XRAY_DOWNLOAD_ORACLE="$scheduled_tmp/download-oracle"
 export XRAY_VLESS_ENCRYPTION_ORACLE="$scheduled_tmp/encryption-oracle"
 export XRAY_VLESS_FULL_BINARY="$xray_core_binary"
 
-export XRAY_REALITY_INTEROP_FINGERPRINTS="chrome,hellochrome_133,hellofirefox_148,hellosafari_26_3,helloios_13,hello360_11_0,hellochrome_120_pq,hellofirefox_99"
-export XRAY_REALITY_INTEROP_BURST_FINGERPRINTS="hellofirefox_99"
+export XRAY_REALITY_INTEROP_FINGERPRINTS="chrome,hellochrome_133,hellofirefox_148,hellosafari_26_3,hellochrome_131,random,randomized"
+export XRAY_REALITY_INTEROP_BURST_FINGERPRINTS="hellofirefox_148"
 export XRAY_REALITY_INTEROP_BURST_FLOWS="32"
 export XRAY_XHTTP_INTEROP_CASES="all"
 

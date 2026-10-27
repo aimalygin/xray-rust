@@ -20,8 +20,8 @@ JSON reports, exit codes and exclusive geodata lookup. See
 ### Tagged release candidates
 
 A tagged release candidate adds a blocking `rc-interop` gate. That job checks
-out Xray-core `v26.7.28` at the exact commit
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c` and invokes only
+out Xray-core `v26.10.21` at the exact commit
+`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74` and invokes only
 `scripts/check-rc-interop.sh` for release interoperability. The script verifies
 the checkout independently and does not accept a revision override. A tagged
 RC therefore cannot publish unless this exact compatibility gate passes.
@@ -38,9 +38,9 @@ Reproduce the pinned scheduled gate from the xray-rust repository root with a
 clean checkout at the audited commit:
 
 ```sh
-git -C "/absolute/path/to/Xray-core-v26.7.28" switch --detach \
-  5ca6f4b7d4dc20a881d4330e498892697627ec0c
-XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core-v26.7.28" \
+git -C "/absolute/path/to/Xray-core-v26.10.21" switch --detach \
+  1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
+XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core-v26.10.21" \
   bash scripts/check-scheduled-pinned-interop.sh
 ```
 
@@ -283,8 +283,8 @@ root.
 
 ## Local Xray-core interoperability
 
-By default, the local interop suite pins Xray-core `v26.7.28` at
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c` and rejects a checkout at any
+By default, the local interop suite pins Xray-core `v26.10.21` at
+`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74` and rejects a checkout at any
 other `HEAD`. The scheduled `main` smoke may override that default only with
 the full lowercase commit already resolved from, and equal to, the selected
 checkout's `HEAD`; it never accepts `main` or `HEAD` as the override. Provide an
@@ -294,7 +294,7 @@ checkout itself clean:
 
 ```sh
 export XRAY_CORE_CHECKOUT="/absolute/path/to/Xray-core"
-git -C "$XRAY_CORE_CHECKOUT" switch --detach v26.7.28
+git -C "$XRAY_CORE_CHECKOUT" switch --detach v26.10.21
 git -C "$XRAY_CORE_CHECKOUT" rev-parse --verify HEAD
 ```
 
@@ -576,7 +576,7 @@ on-device responsibilities.
 ## Independent XHTTP download gate
 
 Run `bash scripts/check-xhttp-download-oracle.sh` with the exact clean
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c` checkout. This gate is part of the
+`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74` checkout. This gate is part of the
 blocking `go-oracles` job for ordinary changes and releases. It checks the
 shared Rust/Go configuration fixtures and builds all three local helper
 processes from pinned sources. The application matrix covers independent

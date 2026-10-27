@@ -29,7 +29,7 @@ grep -Fq -- '-Zsanitizer=address' "$HARDENING" || \
 grep -Fq 'routing_policy_concurrency_model' "$HARDENING" || \
   die 'host hardening omits the routing publication concurrency model'
 
-grep -Fq '5ca6f4b7d4dc20a881d4330e498892697627ec0c' "$NETEM" || \
+grep -Fq '1b1647cd9ddf0abc34b981d4611fc03bcac1ca74' "$NETEM" || \
   die 'controlled-network gate does not pin Xray-core'
 grep -Fq 'tc qdisc replace dev lo root netem' "$NETEM" || \
   die 'controlled-network gate does not install netem'

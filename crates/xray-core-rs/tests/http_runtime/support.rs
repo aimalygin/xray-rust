@@ -296,7 +296,7 @@ impl XrayServer {
         let deadline = tokio::time::Instant::now() + DEADLINE;
         loop {
             assert!(self.child.try_wait().unwrap().is_none(), "Xray exited");
-            if self.log().contains("core: Xray 26.7.28 started") {
+            if self.log().contains("core: Xray 26.10.21 started") {
                 return;
             }
             assert!(
