@@ -145,13 +145,13 @@ mod stream_httpupgrade_tests {
     #[tokio::test]
     async fn websocket_header_defaults_preserve_explicit_values_and_vary_per_dial() {
         let mut default_keys = Vec::new();
-        for explicit in [false, false, true] {
+        for explicit in [None, None, Some("configured-key"), Some("")] {
             let (listener, addr) = loopback().await;
             let recorded = serve_once(listener, ACCEPTED);
             let mut settings = config("/ws");
-            if explicit {
+            if let Some(key) = explicit {
                 settings.headers = vec![
-                    ("Sec-Websocket-Key".into(), "configured-key".into()),
+                    ("Sec-Websocket-Key".into(), key.into()),
                     ("Sec-Websocket-Version".into(), "custom-version".into()),
                 ];
             }
@@ -165,8 +165,8 @@ mod stream_httpupgrade_tests {
                 .find_map(|line| line.strip_prefix("Sec-Websocket-Key: "))
                 .unwrap();
             assert_eq!(request.matches("Sec-Websocket-Key:").count(), 1);
-            if explicit {
-                assert_eq!(key, "configured-key");
+            if let Some(expected) = explicit {
+                assert_eq!(key, expected);
                 assert!(request.contains("Sec-Websocket-Version: custom-version\r\n"));
             } else {
                 default_keys.push(key.to_owned());

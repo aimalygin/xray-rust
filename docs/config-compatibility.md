@@ -772,6 +772,13 @@ in the header map override those defaults; arbitrary header key casing keeps
 the existing Go-map compatibility behavior. This still carries a raw upgraded
 stream, without WebSocket data-frame encoding.
 
+The pinned independent sing-box 1.13.20 server rejects a nonempty WebSocket key
+with HTTP 404. For that server, set
+`httpupgradeSettings.headers: {"Sec-Websocket-Key": ""}` explicitly (including
+that spelling). The independent Trojan/VMess matrix uses this override; a
+separate negative check verifies rejection of the new default. Xray-core
+v26.10.21 interop retains the default nonempty key.
+
 #### The masqueraded browser version is redrawn on every start
 
 A **known divergence**, and the one place the header block differs from Xray's.

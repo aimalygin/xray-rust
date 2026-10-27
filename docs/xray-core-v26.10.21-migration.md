@@ -51,6 +51,9 @@ Local evidence on macOS arm64 (Rust 1.96.0, Go 1.27.3):
   filtering, UDP truncation/TCP fallback and close cancellation pass over a
   real encrypted tunnel. Four existing runtime/lifecycle tests also pass.
 - HTTPUpgrade and QUIC v2 RFC 9369 Initial fixture tests pass.
+- Independent sing-box 1.13.20 needs an explicit empty `Sec-Websocket-Key` for
+  HTTPUpgrade. The carrier matrix covers that override; the default nonempty
+  key is separately checked for rejection. Xray-core uses the new default.
 
 The complete Rust workspace and all-target/all-feature Clippy pass locally.
 CI guard checks pass. Native WireGuard recovery/roaming and the updated DNS/TUN
