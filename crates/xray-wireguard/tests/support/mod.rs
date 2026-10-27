@@ -187,6 +187,34 @@ impl Reference {
         self.child.wait().unwrap();
     }
 
+    /// Route tunnel DNS/53 to an unprivileged loopback fixture while preserving
+    /// other destination ports. Both independent and Xray peers stay local.
+    pub async fn redirect_dns(&mut self, port: u16) {
+        assert_ne!(port, 0);
+        self.crash();
+        let path = self.directory.join("config.json");
+        let mut config: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        if self.startup == "wireguard-go reference ready" {
+            config["dnsRedirectPort"] = serde_json::json!(port);
+        } else {
+            config["outbounds"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({
+                    "tag":"dns-fixture","protocol":"freedom","settings":{
+                        "redirect":format!("127.0.0.1:{port}"),
+                        "finalRules":[{"action":"allow","ip":["127.0.0.0/8"]}]
+                    }
+                }));
+            config["routing"] = serde_json::json!({"rules":[{
+                "type":"field","port":"53","outboundTag":"dns-fixture"
+            }]});
+        }
+        std::fs::write(path, config.to_string()).unwrap();
+        self.restart().await;
+    }
+
     /// Reuse the exact config and UDP endpoint, but discard all server sessions.
     pub async fn restart(&mut self) {
         assert!(self.child.try_wait().unwrap().is_some(), "crash first");

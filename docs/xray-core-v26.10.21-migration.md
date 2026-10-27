@@ -52,8 +52,11 @@ Local evidence on macOS arm64 (Rust 1.96.0, Go 1.27.3):
   real encrypted tunnel. Four existing runtime/lifecycle tests also pass.
 - HTTPUpgrade and QUIC v2 RFC 9369 Initial fixture tests pass.
 
-The Rust workspace, CI guard, native-reference and mobile checks are being
-completed on this candidate. Physical-device routing and new performance
+The complete Rust workspace and all-target/all-feature Clippy pass locally.
+CI guard checks pass. Native WireGuard recovery/roaming and the updated DNS/TUN
+fixture pass as well; the fixture redirects DNS/53 to an unprivileged loopback
+server while preserving ordinary destination ports. Mobile checks and PR CI
+are being completed on this candidate. Physical-device routing and new performance
 numbers have not been requalified; historical reports are not relabeled.
 C ABI remains 1.12. QUIC transport is v1/native Quinn TLS, without ChromeParrot;
 new protocol families and scripting remain stage 2.
