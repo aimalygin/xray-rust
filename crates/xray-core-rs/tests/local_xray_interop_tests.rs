@@ -1210,6 +1210,9 @@ impl Drop for TempDir {
 
 impl Drop for XrayServer {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("{}", self.logs());
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -1756,12 +1759,118 @@ async fn start_xray_vless_client(
     }
 }
 
+// A successful connect to a freshly released ephemeral port does not prove
+// that our child is ready: another concurrent fixture can own it, and Linux
+// can even establish a TCP self-connection before the server binds. Wait for
+// this child's startup record before touching its listening port.
+async fn wait_for_xray_startup(child: &mut Child, stdout_path: &Path, stderr_path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = child.try_wait().expect("check xray process status");
+        let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
+        let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
+        assert!(
+            status.is_none(),
+            "xray exited before startup: {status:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        if stdout.lines().chain(stderr.lines()).any(|line| {
+            line.split_once("core: Xray ")
+                .is_some_and(|(_, message)| message.ends_with(" started"))
+        }) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "xray did not report startup\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn xray_readiness_requires_its_own_startup_record_even_when_port_is_occupied() {
+    let temp_dir = create_temp_dir("xray-readiness");
+    let stdout_path = temp_dir.path.join("stdout");
+    let stderr_path = temp_dir.path.join("stderr");
+    // Keep an unrelated child alive without starting Xray or requiring Go.
+    let child = Command::new("sh")
+        .args(["-c", "read -r line"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let tcp = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let udp = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let mut server = XrayServer {
+        child,
+        _temp_dir: temp_dir,
+        addr: tcp.local_addr().unwrap(),
+        stdout_path,
+        stderr_path,
+        tls_client_config: None,
+    };
+    for is_udp in [false, true] {
+        fs::write(&server.stdout_path, "Xray test version banner\n").unwrap();
+        fs::write(&server.stderr_path, "").unwrap();
+        let addr = if is_udp {
+            udp.local_addr().unwrap()
+        } else {
+            server.addr
+        };
+        let wait = async {
+            if is_udp {
+                wait_for_udp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            } else {
+                wait_for_tcp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            }
+        };
+        assert!(timeout(Duration::from_millis(150), wait).await.is_err());
+        fs::write(&server.stderr_path, "[Warning] core: Xray test started\n").unwrap();
+        timeout(Duration::from_secs(1), async {
+            if is_udp {
+                wait_for_udp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            } else {
+                wait_for_tcp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
 async fn wait_for_tcp_listener(
     child: &mut Child,
     addr: SocketAddr,
     stdout_path: &Path,
     stderr_path: &Path,
 ) {
+    wait_for_xray_startup(child, stdout_path, stderr_path).await;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray process status") {
@@ -1792,6 +1901,7 @@ async fn wait_for_udp_listener(
     stdout_path: &Path,
     stderr_path: &Path,
 ) {
+    wait_for_xray_startup(child, stdout_path, stderr_path).await;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray process status") {
