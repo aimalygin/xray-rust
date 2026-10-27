@@ -82,7 +82,8 @@ class XrayHysteriaNativeTest {
             "outbounds":[{"protocol":"hysteria","settings":{
             "version":2,"address":"127.0.0.1","port":443},"streamSettings":{
             "network":"hysteria","security":"tls","tlsSettings":{"serverName":"localhost"},
-            "hysteriaSettings":{"version":2,"auth":"synthetic-test-password"}}}]}"""
+            "hysteriaSettings":{"version":2,"auth":"synthetic-test-password"},
+            "finalmask":{"quicParams":{"disableChromeParrot":true}}}}]}"""
         val core = XrayCore.create(config, hysteriaStreamLimits = XrayHysteriaStreamLimits(256, 128))
         core.use {
             assertEquals(0L, it.rebindHysteria())
