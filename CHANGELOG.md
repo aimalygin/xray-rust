@@ -10,6 +10,10 @@ long-term supported release series.
 
 ## Unreleased
 
+- Update the zstd dependency family to patched releases, fixing the
+  abandoned-stream data leak and decompression memory-safety advisories
+  reported by RustSec without changing TLS certificate-compression settings.
+
 - Honour `"udp": false` on the SOCKS inbound. Previously the flag was only
   type-checked and `UDP ASSOCIATE` was relayed anyway. Like Xray-core, the
   request now gets `REP = 0x07` (command not supported) with a `0.0.0.0:0`
