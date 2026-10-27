@@ -152,15 +152,16 @@ fn find_header_end(buffer: &[u8]) -> Option<usize> {
 
 /// A stream that drains a leading buffer before delegating to the socket.
 ///
-/// The buffer holds whatever arrived in the same read as the response headers.
-pub(crate) struct PrefixedStream {
+/// The buffer holds whatever arrived in the same read as the response headers;
+/// the HTTP CONNECT outbound uses it for the same reason.
+pub struct PrefixedStream {
     inner: BoxedTransportStream,
     prefix: Vec<u8>,
     consumed: usize,
 }
 
 impl PrefixedStream {
-    pub(crate) fn new(inner: BoxedTransportStream, prefix: Vec<u8>) -> Self {
+    pub fn new(inner: BoxedTransportStream, prefix: Vec<u8>) -> Self {
         Self {
             inner,
             prefix,

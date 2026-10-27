@@ -2273,6 +2273,263 @@
       }
     },
     {
+      "name": "http-outbound-flat",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": false
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "http",
+            "settings": {
+              "address": "proxy.example",
+              "port": 3128,
+              "user": "synthetic-user",
+              "level": 0,
+              "email": "synthetic@example.test",
+              "headers": {}
+            },
+            "streamSettings": {
+              "network": "raw",
+              "security": "tls",
+              "tlsSettings": {
+                "serverName": "proxy.example",
+                "alpn": [
+                  "http/1.1"
+                ]
+              }
+            }
+          }
+        ],
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "HTTP_OUTBOUND": "/outbounds/0/settings"
+      }
+    },
+    {
+      "name": "http-outbound-legacy",
+      "accepted": true,
+      "config": {
+        "inbounds": [
+          {
+            "tag": "socks-in",
+            "protocol": "socks",
+            "listen": "127.0.0.1",
+            "port": 1080,
+            "settings": {
+              "auth": "noauth",
+              "udp": false
+            }
+          }
+        ],
+        "outbounds": [
+          {
+            "tag": "proxy",
+            "protocol": "http",
+            "settings": {
+              "servers": [
+                {
+                  "address": "192.0.2.20",
+                  "port": 3128,
+                  "users": [
+                    {
+                      "user": "synthetic-user",
+                      "pass": "synthetic-pass",
+                      "level": 1,
+                      "email": "synthetic@example.test"
+                    }
+                  ]
+                }
+              ]
+            },
+            "streamSettings": {
+              "network": "tcp",
+              "security": "none"
+            }
+          }
+        ],
+        "routing": {
+          "domainStrategy": "AsIs",
+          "rules": []
+        }
+      },
+      "objects": {
+        "HTTP_OUTBOUND": "/outbounds/0/settings",
+        "HTTP_OUTBOUND_SERVER": "/outbounds/0/settings/servers/0",
+        "HTTP_OUTBOUND_USER": "/outbounds/0/settings/servers/0/users/0"
+      }
+    },
+    {
+      "name": "http-outbound-mixed-forms",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings",
+      "base": "http-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/address": "192.0.2.21"
+      }
+    },
+    {
+      "name": "http-outbound-two-servers",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.servers",
+      "base": "http-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/servers": [
+          {
+            "address": "192.0.2.20",
+            "port": 3128,
+            "users": [
+              {
+                "user": "synthetic-user",
+                "pass": "synthetic-pass",
+                "level": 1,
+                "email": "synthetic@example.test"
+              }
+            ]
+          },
+          {
+            "address": "192.0.2.20",
+            "port": 3128,
+            "users": [
+              {
+                "user": "synthetic-user",
+                "pass": "synthetic-pass",
+                "level": 1,
+                "email": "synthetic@example.test"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "http-outbound-two-users",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.servers[0].users",
+      "base": "http-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/users": [
+          {
+            "user": "synthetic-user",
+            "pass": "synthetic-pass",
+            "level": 1,
+            "email": "synthetic@example.test"
+          },
+          {
+            "user": "synthetic-user",
+            "pass": "synthetic-pass",
+            "level": 1,
+            "email": "synthetic@example.test"
+          }
+        ]
+      }
+    },
+    {
+      "name": "http-outbound-user-without-name",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.servers[0].users[0]",
+      "base": "http-outbound-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/users/0": {
+          "pass": "synthetic-pass"
+        }
+      }
+    },
+    {
+      "name": "http-outbound-colon-user",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.user",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/user": "synthetic:user"
+      }
+    },
+    {
+      "name": "http-outbound-custom-headers",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.headers",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/headers": {
+          "User-Agent": "synthetic"
+        }
+      }
+    },
+    {
+      "name": "http-outbound-zero-port",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.port",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/settings/port": 0
+      }
+    },
+    {
+      "name": "http-outbound-mux",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].mux.enabled",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/mux": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "http-outbound-non-raw-network",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.network",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/streamSettings/network": "ws"
+      }
+    },
+    {
+      "name": "http-outbound-h2-alpn",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.tlsSettings.alpn",
+      "base": "http-outbound-flat",
+      "set": {
+        "/outbounds/0/streamSettings/tlsSettings/alpn": [
+          "h2",
+          "http/1.1"
+        ]
+      }
+    },
+    {
+      "name": "http-outbound-reality",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].streamSettings.security",
+      "base": "http-outbound-legacy",
+      "set": {
+        "/outbounds/0/streamSettings": {
+          "network": "raw",
+          "security": "reality",
+          "realitySettings": {
+            "serverName": "server.example",
+            "fingerprint": "chrome",
+            "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+            "shortId": "02030405"
+          }
+        }
+      }
+    },
+    {
       "name": "tcp-tlshello-finalmask",
       "accepted": true,
       "config": {

@@ -296,6 +296,8 @@ pub enum CoreError {
     #[error(transparent)]
     Socks(#[from] xray_proxy::outbound::SocksClientError),
     #[error(transparent)]
+    Http(#[from] xray_proxy::outbound::HttpClientError),
+    #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),

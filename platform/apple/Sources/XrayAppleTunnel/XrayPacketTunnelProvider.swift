@@ -1501,7 +1501,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     // schema; credentials and inner WireGuard addresses never enter DNS lookup.
     private static func outboundBootstrapAddresses(_ outbound: [String: Any]) throws -> [String] {
         let protocolName = (outbound["protocol"] as? String)?.lowercased()
-        guard ["vless", "vmess", "trojan", "shadowsocks", "socks", "hysteria", "wireguard"].contains(protocolName) else { return [] }
+        guard ["vless", "vmess", "trojan", "shadowsocks", "socks", "http", "hysteria", "wireguard"].contains(protocolName) else { return [] }
         guard let settings = outbound["settings"] as? [String: Any] else {
             throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
         }
@@ -1517,7 +1517,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 return address
             }
-        case "trojan", "shadowsocks", "socks":
+        case "trojan", "shadowsocks", "socks", "http":
             let address: String
             if let flatAddress = settings["address"] as? String {
                 address = flatAddress
@@ -1528,7 +1528,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 address = serverAddress
             }
-            if protocolName == "socks" {
+            if protocolName == "socks" || protocolName == "http" {
                 // Match the core parser for lookup/exclusions only; preserve
                 // the original settings and TLS metadata in the prepared JSON.
                 let host = address.hasPrefix("[") && address.hasSuffix("]")

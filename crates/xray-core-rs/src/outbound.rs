@@ -10,6 +10,8 @@ mod trojan;
 pub use trojan::TrojanOutbound;
 mod socks;
 pub use socks::SocksOutbound;
+mod http;
+pub use http::HttpOutbound;
 pub(crate) mod hysteria;
 pub use hysteria::HysteriaOutbound;
 pub(crate) mod wireguard;
@@ -353,6 +355,7 @@ pub enum TcpOutbound {
     Vless(Box<VlessTcpOutbound>),
     Trojan(TrojanOutbound),
     Socks(SocksOutbound),
+    Http(HttpOutbound),
     Vmess(VmessOutbound),
     Shadowsocks2022(Shadowsocks2022Outbound),
     Hysteria(HysteriaOutbound),
@@ -638,6 +641,7 @@ impl TcpOutbound {
             | Self::Vmess(_)
             | Self::Trojan(_)
             | Self::Socks(_)
+            | Self::Http(_)
             | Self::Shadowsocks2022(_)
             | Self::Hysteria(_)
             | Self::Wireguard(_) => None,
@@ -691,6 +695,15 @@ impl ResolvedTcpConnector for OutboundProxyTcpConnector {
                 .await
                 .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
             TcpOutbound::Socks(outbound) => outbound
+                .open_resolved(
+                    original_target,
+                    &self.server_candidates,
+                    &[],
+                    &self.transport_dialer,
+                )
+                .await
+                .map_err(|error| TransportError::ChainedOutbound(error.to_string())),
+            TcpOutbound::Http(outbound) => outbound
                 .open_resolved(
                     original_target,
                     &self.server_candidates,
@@ -769,6 +782,11 @@ fn prepare_outbound_proxy_dialer<'a>(
                     .await?
                     .into_boxed_slice()
             }
+            TcpOutbound::Http(outbound) if requires_local_resolution => {
+                resolve_server_candidates(outbound.server(), dns_resolver)
+                    .await?
+                    .into_boxed_slice()
+            }
             TcpOutbound::Vmess(outbound) if requires_local_resolution => {
                 resolve_server_candidates(outbound.server(), dns_resolver)
                     .await?
@@ -781,6 +799,7 @@ fn prepare_outbound_proxy_dialer<'a>(
             }
             TcpOutbound::Trojan(_) => Box::default(),
             TcpOutbound::Socks(_) => Box::default(),
+            TcpOutbound::Http(_) => Box::default(),
             TcpOutbound::Vmess(_) => Box::default(),
             TcpOutbound::Shadowsocks2022(_) => Box::default(),
             TcpOutbound::Wireguard(_) => {
@@ -812,6 +831,7 @@ fn proxy_chain_requires_local_resolution(proxy: &TcpOutbound) -> bool {
         TcpOutbound::Vless(_)
         | TcpOutbound::Trojan(_)
         | TcpOutbound::Socks(_)
+        | TcpOutbound::Http(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
@@ -933,6 +953,7 @@ pub enum OutboundNodeKind {
     Dns,
     Blackhole,
     Socks,
+    Http,
     Selector,
 }
 
@@ -1147,6 +1168,7 @@ impl OutboundGraph {
                     OutboundSettings::Dns(_) => OutboundNodeKind::Dns,
                     OutboundSettings::Blackhole(_) => OutboundNodeKind::Blackhole,
                     OutboundSettings::Socks(_) => OutboundNodeKind::Socks,
+                    OutboundSettings::Http(_) => OutboundNodeKind::Http,
                 },
             })
             .collect::<Vec<_>>();
@@ -3101,6 +3123,9 @@ impl OutboundFactory {
             OutboundSettings::Socks(_) => SocksOutbound::new(outbound)
                 .map(TcpOutbound::Socks)
                 .map_err(CachedOutboundError::from_core_error),
+            OutboundSettings::Http(_) => HttpOutbound::new(outbound)
+                .map(TcpOutbound::Http)
+                .map_err(CachedOutboundError::from_core_error),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
@@ -3169,6 +3194,7 @@ impl OutboundFactory {
             OutboundSettings::Socks(_) => SocksOutbound::new(outbound)
                 .map(UdpOutbound::Socks)
                 .map_err(CachedOutboundError::from_core_error),
+            OutboundSettings::Http(_) => Err(CachedOutboundError::UnsupportedOutboundNetwork),
             OutboundSettings::Blackhole(_) => Err(CachedOutboundError::BlackholeOutbound),
             OutboundSettings::Freedom => {
                 if !stream_transport_is_dialable(&outbound.stream) {
@@ -3227,7 +3253,8 @@ impl OutboundFactory {
             | OutboundSettings::Vmess(_)
             | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_)
-            | OutboundSettings::Socks(_) => Err(CachedOutboundError::NoSupportedOutbound),
+            | OutboundSettings::Socks(_)
+            | OutboundSettings::Http(_) => Err(CachedOutboundError::NoSupportedOutbound),
         }
     }
 }
@@ -3272,6 +3299,7 @@ fn build_tcp_outbound(outbound: &OutboundConfig) -> Result<TcpOutbound, CoreErro
         }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Socks(_) => SocksOutbound::new(outbound).map(TcpOutbound::Socks),
+        OutboundSettings::Http(_) => HttpOutbound::new(outbound).map(TcpOutbound::Http),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
         OutboundSettings::Freedom => {
             if !stream_transport_is_dialable(&outbound.stream) {
@@ -3301,6 +3329,7 @@ fn build_udp_outbound(outbound: &OutboundConfig) -> Result<UdpOutbound, CoreErro
         }
         OutboundSettings::Dns(_) => Err(CoreError::NoSupportedOutbound),
         OutboundSettings::Socks(_) => SocksOutbound::new(outbound).map(UdpOutbound::Socks),
+        OutboundSettings::Http(_) => Err(CoreError::UnsupportedOutboundNetwork),
         OutboundSettings::Blackhole(_) => Err(CoreError::BlackholeOutbound),
         OutboundSettings::Freedom => {
             if !stream_transport_is_dialable(&outbound.stream) {
@@ -3611,6 +3640,13 @@ async fn open_plain_tcp_stream_with_resolvers_and_dialer(
             }
         }
         TcpOutbound::Socks(outbound) => {
+            if requires_local_resolution {
+                Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer)).await
+            } else {
+                Box::pin(outbound.open_resolved(target, &[], &[], transport_dialer)).await
+            }
+        }
+        TcpOutbound::Http(outbound) => {
             if requires_local_resolution {
                 Box::pin(outbound.open(target, bootstrap_resolver, transport_dialer)).await
             } else {

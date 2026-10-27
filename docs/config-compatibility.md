@@ -321,9 +321,9 @@ subset rather than full Xray sniffing behavior.
 
 ## Outbounds and streams
 
-`freedom`, `vless`, `dns`, `blackhole`, and `socks` are supported. DNS outbound
-settings are described below, and [blackhole](#blackhole-outbound) and
-[SOCKS](#socks-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
+`freedom`, `vless`, `dns`, `blackhole`, `socks`, and `http` are supported. DNS
+outbound settings are described below, and [blackhole](#blackhole-outbound),
+[SOCKS](#socks-outbound) and [HTTP](#http-outbound) after the TLS notes. VLESS accepts one `vnext` server with one or more UUID users, but the
 runtime currently selects the first user. With `encryption: "none"`, optional
 `level` and these flow values are accepted:
 
@@ -587,8 +587,93 @@ TCP chaining, or `probeOutboundUrl` interoperability.
 Mobile carrier preparation is tracked separately in
 [PR #86](https://github.com/aimalygin/xray-rust/pull/86). UDP support does not
 remove the requirement to pin proxy hostnames before entering `StaticOnly`
-mode or to install Apple carrier exclusions. HTTP outbound in #79 remains
-unimplemented.
+mode or to install Apple carrier exclusions. The HTTP outbound from #79 is
+described [below](#http-outbound).
+
+### HTTP outbound
+
+`http` asks an upstream HTTP/1.1 proxy for a `CONNECT` tunnel (RFC 9110
+section 9.3.6), optionally with Basic authentication (RFC 7617). It accepts
+both settings shapes of Xray-core v26.7.28:
+
+```json
+{ "tag": "upstream", "protocol": "http",
+  "settings": { "address": "192.0.2.20", "port": 3128,
+                "user": "synthetic-user", "pass": "synthetic-pass" },
+  "streamSettings": { "security": "tls",
+                      "tlsSettings": { "serverName": "proxy.example" } } }
+```
+
+```json
+{ "tag": "upstream", "protocol": "http",
+  "settings": { "servers": [{ "address": "192.0.2.20", "port": 3128,
+    "users": [{ "user": "synthetic-user", "pass": "synthetic-pass" }] }] } }
+```
+
+Server rules match the [SOCKS outbound](#socks-outbound): the forms cannot be
+mixed, `servers` holds exactly one entry and `users` at most one, the address
+is an IP literal (brackets allowed) or a 1–255 character domain without
+whitespace or control characters, the port is nonzero, `level` (0–255) selects
+the policy level with or without credentials, and `email` is type-checked and
+ignored. Unknown keys fail parsing.
+
+Credentials are absent, which sends no `Proxy-Authorization`, or a `user` of
+1–1024 bytes without `:` and an optional `pass` of at most 1024 bytes; neither
+may contain control characters, which RFC 7617 excludes. A missing `pass` is
+the empty password, so a token-only proxy works as in Xray. Xray silently drops
+a flat `pass` without `user`, ignores an empty `user`, and sends empty Basic
+credentials for `users: [{}]`; xray-rust rejects all three. Credentials are
+redacted from the parsed model's debug output and never echoed in diagnostics.
+
+Xray's `headers` map adds request headers whose values are Go templates. That
+is not implemented: `headers` is accepted only as `null` or `{}` and any header
+fails parsing. The `CONNECT` request is otherwise byte-for-byte the one the
+pinned Go client writes: `Host`, then `User-Agent`, then the remaining headers
+sorted by name, with `Proxy-Authorization`, `Proxy-Connection: Keep-Alive` and
+Xray's Chrome navigation masquerade block, whose browser versions are drawn as
+described [for WebSocket](#the-masqueraded-browser-version-is-redrawn-on-every-start).
+The request target is `host:port`, with IPv6 in brackets and IPv4-mapped IPv6
+sent as IPv4. Domains are passed to the proxy unresolved; a domain outside the
+RFC 3986 `reg-name` characters, including a non-ASCII name, fails the flow
+rather than being converted to Punycode as Go does.
+
+- Only status 200 opens the tunnel, as in the pinned Xray client, although RFC
+  9110 allows any 2xx; 407 and every other status fail the flow without echoing
+  the proxy's reason phrase. The status line must be `HTTP/1.0` or `HTTP/1.1`,
+  header lines must be well formed (bare `LF` line ends and obs-fold are
+  accepted), and `Content-Length` or `Transfer-Encoding` on the 200 are ignored
+  as RFC 9110 requires.
+- The response head, plus any tunnel bytes read with it, is limited to 16 KiB;
+  Go reads it without a limit. Bytes that arrive after the head in the same
+  read are delivered to the client first. Xray reads the head through a
+  `bufio.Reader` it then discards, so it loses them.
+- `streamSettings` may select only `raw`/`tcp` with `security` `none` or `tls`.
+  TLS always offers exactly `http/1.1` in ALPN, including with a uTLS
+  `fingerprint` whose profile carries `h2`, and `alpn` may only be absent,
+  empty or `["http/1.1"]`. Xray also speaks HTTP/2 `CONNECT` when the proxy
+  negotiates `h2`; that path is not implemented, so a proxy that accepts only
+  HTTP/2 fails the TLS handshake. Other networks and REALITY fail parsing.
+- Only TCP is supported. UDP routed to an HTTP outbound is refused without
+  dialing the proxy, and DNS queries over UDP through it fail, so use `tcp://`
+  DNS servers on such a route. Enabled `mux` fails parsing.
+- A plaintext public server is accepted, because HTTP proxies are usually
+  plaintext. Without `tls`, the Basic credentials and the destination of every
+  tunnel travel in cleartext; use `tls`, or keep a credentialed proxy on
+  loopback or a trusted network.
+- Chaining uses the `proxySettings` subset above with `"transportLayer": true`
+  in both directions: an HTTP outbound can carry another TCP outbound, and it
+  can ride another outbound's TCP carrier. `probeOutboundUrl` works through it.
+
+`scripts/check-http-interop.sh` verifies this subset against the pinned
+Xray-core v26.7.28 HTTP inbound: both settings forms, Basic and no-auth tunnels
+to IPv4 and Xray-resolved domain targets over plain TCP and TLS with a `chrome`
+fingerprint, and refused wrong or missing credentials. It also captures the
+pinned Go client's `CONNECT` and compares it with ours. In-process tests cover
+IPv6 targets, early tunnel bytes, every refused status, the ALPN offer with
+unshaped, `chrome` and `firefox` hellos against a server that prefers `h2`, UDP
+refusal, chaining both ways and outbound probes. Android and Apple prepare the
+proxy's carrier hostname like a SOCKS server's. Tests use loopback; they do not
+establish physical-device VPN routing.
 
 ### WebSocket and HTTPUpgrade
 
