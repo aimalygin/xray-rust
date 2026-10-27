@@ -10,6 +10,10 @@ long-term supported release series.
 
 ## Unreleased
 
+- Update the zstd dependency family to patched releases, fixing the
+  abandoned-stream data leak and decompression memory-safety advisories
+  reported by RustSec without changing TLS certificate-compression settings.
+
 - Android: share snapshot/enum decoding and VLESS parameter validation without
   changing their accepted values or errors. VPN session shutdown retains later
   cleanup failures as suppressed exceptions on the original error; descriptor

@@ -74,7 +74,7 @@ webpki-roots = "1"
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
-zstd = { version = "0.14.2", default-features = false }
+zstd = { version = "0.14.3", default-features = false }
 
 [profile.release]
 codegen-units = 1
