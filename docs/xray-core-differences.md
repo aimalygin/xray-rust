@@ -54,6 +54,7 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | #81: Android cleanup/helpers | Stage 1 merged in #82; stage 2 cleanup follows separately; stage 3 helpers remain optional | Host SDK work; preserve documented ownership and lifecycle rules |
 | #79: HTTP outbound | HTTP/1.1 CONNECT, optional Basic auth, flat or legacy settings, raw TCP with none/TLS (`http/1.1` ALPN), TCP only | Tested subset of the pinned Xray client; status 200 only, no HTTP/2 or custom headers, bounded head, early bytes kept |
 | #86: mobile SOCKS bootstrap | Android and Apple prepare SOCKS carrier hosts/literals before VPN setup; Apple excludes carrier routes | Integration gap fixed; destination DNS remains at the proxy |
+| SOCKS inbound `udp` | `"udp": false` refuses `UDP ASSOCIATE` without a relay; an absent `udp` keeps it enabled | Explicit `false` matches the reference; the absent default differs and is an open question below |
 
 ## Password-protected SOCKS UDP: deliberate restriction
 
@@ -91,6 +92,43 @@ cover `socks_password_udp_association_refuses_undeclared_client_endpoint` and
 sender arriving first. Preserve those tests if this policy changes. Accepting
 the first local sender again would remove the protection; any proposal to
 broaden compatibility must explain how it retains the intended isolation.
+
+## SOCKS inbound `udp`: `false` and the absent default
+
+Earlier releases only type-checked `settings.udp` and answered `UDP ASSOCIATE`
+whatever its value, so profiles that set `"udp": false` to keep UDP off the
+local proxy got no effect. The runtime now honours it.
+
+Source-derived: the pinned Xray-core [server](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/socks/protocol.go#L171-L175)
+checks `UdpEnabled` right after the command byte, writes `REP = 0x07` with a
+`0.0.0.0:0` bind address and fails the handshake before it
+[creates a relay socket](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/socks/protocol.go#L206); the inbound then
+closes the connection. Its [JSON loader](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/infra/conf/socks.go#L34) reads
+`udp` into a Go `bool`, so an absent field means `false`.
+
+Tested on loopback against the pinned v26.7.28 binary: with `"udp": false`, an
+absent `udp`, or no `settings` object, `UDP ASSOCIATE` for `0.0.0.0:0` or for
+a declared `127.0.0.1` endpoint is answered `05 07 00 01 00 00 00 00 00 00` and
+the connection is closed. Under `password` the same reply follows a successful
+login. `CONNECT` succeeds on each of these inbounds; `"udp": true` relays.
+
+xray-rust now gives the explicit `false` case the same reply, creates no relay
+socket, dials nothing and closes the control connection, for noauth and
+password inbounds; `CONNECT` is unchanged. The
+[runtime tests](../crates/xray-core-rs/tests/runtime_data_path_tests/socks_inbound_udp.rs)
+`socks_udp_false_refuses_udp_associate_without_relay_or_dial`,
+`socks_password_udp_false_refuses_udp_associate_after_login` and
+`socks_udp_true_or_absent_keeps_relaying` cover this with a counting socket
+protector. Two differences remain:
+
+- An absent `udp` keeps `UDP ASSOCIATE` enabled; Xray-core refuses it.
+  Adopting the reference default would turn UDP off for existing profiles that
+  omit the field, so it is left for a maintainer decision rather than changed
+  silently.
+- Xray-core replies as soon as it has read the command byte; xray-rust first
+  reads the complete request, including the address. A client that sends the
+  request in one write sees the same bytes. A malformed address after the UDP
+  command gets the general failure reply (`0x01`) here.
 
 ## SOCKS outbound: supported subset and evidence
 
@@ -219,6 +257,8 @@ device routing and HTTP/2 `CONNECT` are not established.
 - [x] Resolve and implement the HTTP scope above; HTTP/2 `CONNECT` and custom
   `headers` remain unimplemented extensions.
 - [ ] Track SOCKS share-link import separately from outbound protocol support.
+- [ ] Decide whether an absent SOCKS inbound `udp` should follow Xray-core's
+  `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).
 - [ ] Keep #81 cleanup separate from new SDK API/lifecycle behavior and verify
   each against the documented FFI/host contract.
 

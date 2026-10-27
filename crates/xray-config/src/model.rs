@@ -520,9 +520,30 @@ pub enum SniffingDestination {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InboundProtocol {
     Tproxy(TproxySettings),
-    Socks(xray_proxy::inbound::SocksInboundAuth),
+    Socks(SocksInboundSettings),
     Http,
     Tun,
+}
+
+/// SOCKS5 inbound settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SocksInboundSettings {
+    pub auth: xray_proxy::inbound::SocksInboundAuth,
+    /// Accept `UDP ASSOCIATE`. When false the request is refused with
+    /// `REP = 0x07`, as Xray-core does for `"udp": false`. The parser keeps an
+    /// absent `udp` enabled, unlike Xray-core, which reads it as false.
+    pub udp: bool,
+}
+
+impl Default for SocksInboundSettings {
+    /// No authentication, UDP enabled: what the parser builds when `settings`
+    /// or its `auth` and `udp` fields are absent.
+    fn default() -> Self {
+        Self {
+            auth: xray_proxy::inbound::SocksInboundAuth::NoAuth,
+            udp: true,
+        }
+    }
 }
 
 /// Linux transparent interception; the operator owns routing/firewall rules.

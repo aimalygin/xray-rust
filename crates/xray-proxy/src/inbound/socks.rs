@@ -16,6 +16,8 @@ pub(crate) const METHOD_NONE_ACCEPTABLE: u8 = 0xff;
 pub(crate) const PASSWORD_AUTH_VERSION: u8 = 0x01;
 pub(crate) const PASSWORD_AUTH_SUCCESS: u8 = 0x00;
 const PASSWORD_AUTH_FAILURE: u8 = 0x01;
+const REPLY_GENERAL_FAILURE: u8 = 0x01;
+const REPLY_COMMAND_NOT_SUPPORTED: u8 = 0x07;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SocksParseError {
@@ -323,11 +325,25 @@ pub async fn write_socks5_success_with_bind<W: AsyncWrite + Unpin>(
         .map_err(|_| SocksParseError::Io)
 }
 
-pub async fn write_socks5_failure<W: AsyncWrite + Unpin>(
+pub async fn write_socks5_failure<W: AsyncWrite + Unpin>(writer: W) -> Result<(), SocksParseError> {
+    write_socks5_error(writer, REPLY_GENERAL_FAILURE).await
+}
+
+/// Refuses a request with `REP = 0x07` (command not supported) and a
+/// `0.0.0.0:0` bind address, the reply Xray-core sends for `UDP ASSOCIATE`
+/// on an inbound with `"udp": false`.
+pub async fn write_socks5_command_not_supported<W: AsyncWrite + Unpin>(
+    writer: W,
+) -> Result<(), SocksParseError> {
+    write_socks5_error(writer, REPLY_COMMAND_NOT_SUPPORTED).await
+}
+
+async fn write_socks5_error<W: AsyncWrite + Unpin>(
     mut writer: W,
+    reply: u8,
 ) -> Result<(), SocksParseError> {
     writer
-        .write_all(&[5, 1, 0, 1, 0, 0, 0, 0, 0, 0])
+        .write_all(&[5, reply, 0, 1, 0, 0, 0, 0, 0, 0])
         .await
         .map_err(|_| SocksParseError::Io)
 }

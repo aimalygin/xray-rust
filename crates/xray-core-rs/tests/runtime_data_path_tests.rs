@@ -49,7 +49,7 @@ use xray_config::{
     InboundSniffingConfig, IpCidr, IpMatcherSet, Network, OutboundConfig, OutboundSettings,
     PolicyConfig, PolicyLevelConfig, RealitySettings, RealityShortId, RoutingConfig,
     RoutingDomainStrategy, RoutingPortRange, RoutingRule, RoutingRuleTarget, SniffingDestination,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    SocksInboundSettings, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
@@ -75,6 +75,8 @@ mod tun_admission;
 
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
+#[path = "runtime_data_path_tests/socks_inbound_udp.rs"]
+mod socks_inbound_udp;
 #[path = "runtime_data_path_tests/socks_outbound.rs"]
 mod socks_outbound;
 
@@ -3718,12 +3720,14 @@ async fn run_socks_to_freedom_echo_scenario() {
 
 fn runtime_config_with_password_socks_inbound() -> CoreConfig {
     let mut config = runtime_config_with_freedom_outbound();
-    config.inbounds[0].protocol =
-        InboundProtocol::Socks(SocksInboundAuth::Password(vec![SocksAccount::new(
+    config.inbounds[0].protocol = InboundProtocol::Socks(SocksInboundSettings {
+        auth: SocksInboundAuth::Password(vec![SocksAccount::new(
             b"synthetic-user",
             b"synthetic-pass",
         )
-        .unwrap()]));
+        .unwrap()]),
+        udp: true,
+    });
     config
 }
 

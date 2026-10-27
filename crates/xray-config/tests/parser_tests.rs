@@ -12,9 +12,9 @@ use xray_config::{
     DnsQueryStrategy, DnsServerConfig, DnsServerEndpoint, DnsServerTransport, DomainMatcherSet,
     HappyEyeballsSettings, InboundProtocol, IpCidr, Network, OutboundSettings, QuicBbrProfile,
     QuicCongestion, QuicIntervalRange, QuicParamsSettings, QuicUdpHopSettings, RealityShortId,
-    RoutingDomainStrategy, RoutingRuleTarget, SniffingDestination, StreamSecurity, StreamTransport,
-    TargetAddr, XhttpMode, XhttpPaddingMethod, XhttpPaddingPlacement, XhttpPlacement, XhttpRange,
-    XhttpSettings, XhttpUplinkDataPlacement,
+    RoutingDomainStrategy, RoutingRuleTarget, SniffingDestination, SocksInboundSettings,
+    StreamSecurity, StreamTransport, TargetAddr, XhttpMode, XhttpPaddingMethod,
+    XhttpPaddingPlacement, XhttpPlacement, XhttpRange, XhttpSettings, XhttpUplinkDataPlacement,
 };
 use xray_proxy::inbound::{SocksAccount, SocksInboundAuth};
 
@@ -938,14 +938,54 @@ fn parses_socks_inbound_password_accounts_without_leaking_them() {
 
     assert_eq!(
         parsed.config.inbounds[0].protocol,
-        InboundProtocol::Socks(SocksInboundAuth::Password(vec![
-            SocksAccount::new(b"first-user", b"first-pass").unwrap(),
-            SocksAccount::new(b"synthetic-user", b"synthetic-pass").unwrap(),
-        ]))
+        InboundProtocol::Socks(SocksInboundSettings {
+            auth: SocksInboundAuth::Password(vec![
+                SocksAccount::new(b"first-user", b"first-pass").unwrap(),
+                SocksAccount::new(b"synthetic-user", b"synthetic-pass").unwrap(),
+            ]),
+            udp: true,
+        })
     );
     assert!(parsed.diagnostics.is_empty());
     let debug = format!("{:?}", parsed.config);
     assert!(!debug.contains("synthetic-pass") && !debug.contains("first-pass"));
+}
+
+#[test]
+fn parses_socks_inbound_udp_flag_and_keeps_absent_udp_enabled() {
+    let password = r#""auth": "password", "accounts": [{ "user": "synthetic-user", "pass": "synthetic-pass" }]"#;
+    for (extra, udp, requires_password) in [
+        (r#""settings": { "udp": false }"#.to_owned(), false, false),
+        (
+            r#""settings": { "auth": "noauth", "udp": true }"#.to_owned(),
+            true,
+            false,
+        ),
+        // Xray-core reads an absent `udp` as false; this runtime keeps UDP
+        // ASSOCIATE enabled, as before, until that default is decided.
+        (
+            r#""settings": { "auth": "noauth" }"#.to_owned(),
+            true,
+            false,
+        ),
+        (String::new(), true, false),
+        (
+            format!(r#""settings": {{ {password}, "udp": false }}"#),
+            false,
+            true,
+        ),
+        (format!(r#""settings": {{ {password} }}"#), true, true),
+    ] {
+        let parsed = parse_xray_json(&raw_with_inbound_extra(&extra)).expect("config should parse");
+
+        let InboundProtocol::Socks(socks) = &parsed.config.inbounds[0].protocol else {
+            panic!("expected a socks inbound for {extra}");
+        };
+        assert_eq!(socks.udp, udp, "{extra}");
+        assert_eq!(socks.auth.requires_password(), requires_password, "{extra}");
+        assert!(parsed.diagnostics.is_empty(), "{extra}");
+    }
+    assert!(SocksInboundSettings::default().udp);
 }
 
 #[test]

@@ -166,7 +166,7 @@ objects! {
         "RFC 1929 credentials; user and pass are required strings of 1..255 UTF-8 bytes. Credentials are redacted."),
     SOCKS_SETTINGS: ("$.inbounds[].settings (socks)",
         ["auth", "accounts", "udp", "ip", "userLevel", "allowUnauthenticatedLan"],
-        "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. ip is ignored; udp and userLevel are parsed."),
+        "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. udp false refuses UDP ASSOCIATE with REP 0x07 as Xray-core does; an absent udp keeps it enabled, unlike Xray-core. ip is ignored; userLevel is parsed."),
     SOCKS_OUTBOUND: ("$.outbounds[].settings (socks)",
         ["address", "port", "user", "pass", "level", "email", "servers"],
         "One flattened server or exactly one servers entry; mixing forms is rejected. user and pass are both absent (no authentication) or both strings of 1..255 UTF-8 bytes (RFC 1929); credentials are redacted. Level 0..255; email is type-checked and ignored. TCP CONNECT only over raw/tcp with none or TLS security; no Mux or UDP. Without TLS the credentials travel in cleartext."),

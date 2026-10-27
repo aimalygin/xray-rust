@@ -1081,7 +1081,7 @@
         "allowUnauthenticatedLan"
       ],
       "id": "SOCKS_SETTINGS",
-      "notes": "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. ip is ignored; udp and userLevel are parsed."
+      "notes": "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. udp false refuses UDP ASSOCIATE with REP 0x07 as Xray-core does; an absent udp keeps it enabled, unlike Xray-core. ip is ignored; userLevel is parsed."
     },
     {
       "context": "$.outbounds[].settings (socks)",

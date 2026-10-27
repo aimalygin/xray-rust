@@ -637,7 +637,9 @@ impl Parser<'_> {
     fn parse_inbound(&mut self, inbound: &Value, index: usize) -> Option<InboundConfig> {
         let protocol_path = format!("$.inbounds[{index}].protocol");
         let protocol = match self.string_at(inbound, "protocol") {
-            Some("socks") => InboundProtocol::Socks(self.parse_socks_inbound_auth(inbound, index)),
+            Some("socks") => {
+                InboundProtocol::Socks(self.parse_socks_inbound_settings(inbound, index))
+            }
             Some("http") => InboundProtocol::Http,
             Some("tun") => InboundProtocol::Tun,
             Some("dokodemo-door") => InboundProtocol::Tproxy(self.parse_tproxy(inbound, index)?),
@@ -885,7 +887,6 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::SOCKS_SETTINGS);
-        self.optional_bool_at(settings, "udp", format!("{settings_path}.udp"));
     }
 
     fn validate_http_inbound_settings(&mut self, settings: &Value, index: usize) {
