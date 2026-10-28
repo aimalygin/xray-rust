@@ -712,7 +712,7 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
     for token in [
         "InetAddress.getAllByName(domain)",
         "collectOutboundBootstrapDomains(root, carrierBootstrapDomains)",
-        "\"vless\", \"vmess\", \"trojan\", \"shadowsocks\", \"hysteria\", \"wireguard\"",
+        "\"vless\", \"vmess\", \"trojan\", \"shadowsocks\", \"socks\", \"http\", \"hysteria\", \"wireguard\"",
         "wireguardBootstrapHost(peers.getJSONObject(it).getString(\"endpoint\"))",
         "exactDnsHostIdentity(key)",
         "':' !in key",

@@ -273,8 +273,12 @@ The selected test mode, transport, and trusted upstream remain selected when a
 new VLESS URL is imported; choose `Config JSON` to disable the override.
 
 Before applying Network Extension DNS and routes, the provider bootstraps every
-domain VLESS/Hysteria 2 server, every WireGuard peer endpoint host, and every
-domain-valued classic, TCP, DoT, DoH, or DoQ DNS endpoint. An IP-literal stream URL needs no system lookup. URL modes use their
+domain VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP, and Hysteria 2 server, every
+WireGuard peer endpoint host, and every domain-valued classic, TCP, DoT, DoH, or
+DoQ DNS endpoint. SOCKS and HTTP preparation supports both flat settings and the
+legacy single-entry `servers` form; it resolves only the proxy endpoint,
+leaving destination-domain resolution to the proxy. An IP-literal stream URL needs
+no system lookup. URL modes use their
 embedded/default port for endpoint safety checks and pin a domain host
 into `dns.hosts`; the original server URI, object policy fields, and `tag` stay
 unchanged. Existing bare or `full:<domain>` exact `dns.hosts` mappings are
@@ -286,13 +290,13 @@ Existing terminal IP arrays are retained and deduplicated in order.
 IPv4-mapped IPv6 carrier addresses are normalized to IPv4 so Rust socket
 selection and Apple `/32` exclusions stay aligned.
 DNS64-synthesized IPv6 results are accepted on IPv6-only networks. The original
-VLESS/Hysteria address, WireGuard endpoint string, and
+proxy server address, WireGuard endpoint string, and
 `NETunnelProviderProtocol.serverAddress` remain metadata rather than being
 replaced by one candidate, so exact-domain routing, SNI, and other metadata do
 not change.
 
-The provider collects every IPv4/IPv6 outer carrier endpoint from VLESS and
-Hysteria servers, all WireGuard peers, their bootstrap mappings, and the
+The provider collects every IPv4/IPv6 outer carrier endpoint from these proxy
+servers, all WireGuard peers, their bootstrap mappings, and the
 configured server address. WireGuard inner addresses and `allowedIPs` do not
 become carrier exclusions. See the [v0.7 bootstrap contract](../../docs/v07-mobile-bootstrap.md).
 Before creating the Rust core it installs an excluded `/32` or `/128` route for

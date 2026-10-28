@@ -294,6 +294,10 @@ pub enum CoreError {
     #[error(transparent)]
     Trojan(#[from] xray_proxy::trojan::WireError),
     #[error(transparent)]
+    Socks(#[from] xray_proxy::outbound::SocksClientError),
+    #[error(transparent)]
+    Http(#[from] xray_proxy::outbound::HttpClientError),
+    #[error(transparent)]
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),
@@ -1137,7 +1141,7 @@ impl Core {
                     tproxy_inbounds.push((socks::tproxy::bind(inbound, settings)?, inbound));
                     continue;
                 }
-                InboundProtocol::Socks | InboundProtocol::Http => {}
+                InboundProtocol::Socks(_) | InboundProtocol::Http => {}
                 InboundProtocol::Tun => {
                     tun_inbounds.push((
                         inbound.tag.clone(),
@@ -1196,8 +1200,9 @@ impl Core {
             let dns_resolvers = runtime_dns_resolvers.clone();
             let transport_dialer = Arc::clone(&self.transport_dialer);
             let task = match protocol {
-                InboundProtocol::Socks => tokio::spawn(socks::serve_socks_listener(
+                InboundProtocol::Socks(settings) => tokio::spawn(socks::serve_socks_listener(
                     listener,
+                    Arc::new(settings),
                     inbound_tag,
                     Arc::clone(&config),
                     Arc::clone(&outbound_router),

@@ -128,7 +128,10 @@ fn live_core_config() -> CoreConfig {
     let config = parsed.config;
     assert_eq!(config.inbounds.len(), 1, "live test uses one SOCKS inbound");
     assert_eq!(config.inbounds[0].tag.as_deref(), Some(LIVE_SOCKS_TAG));
-    assert_eq!(config.inbounds[0].protocol, InboundProtocol::Socks);
+    assert_eq!(
+        config.inbounds[0].protocol,
+        InboundProtocol::Socks(Default::default())
+    );
     assert!(
         config.outbounds.iter().any(|outbound| {
             matches!(outbound.settings, OutboundSettings::Vless(_))
@@ -728,7 +731,7 @@ fn resolve_xray_checkout() -> PathBuf {
             .expect("crate lives under workspace/crates/xray-core-rs")
             .join("Xray-core")
     };
-    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    const EXPECTED: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(&checkout)
@@ -741,7 +744,7 @@ fn resolve_xray_checkout() -> PathBuf {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         EXPECTED,
-        "live REALITY oracle checkout must be pinned to v26.7.28"
+        "live REALITY oracle checkout must be pinned to v26.10.21"
     );
     checkout
 }

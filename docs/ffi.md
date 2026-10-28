@@ -483,6 +483,10 @@ Ownership policies:
 - `OWNED`: ownership transfers after a successful call; the caller must not
   close the fd.
 
+While running, the fd bridge holds one private close-on-exec duplicate for
+async readiness. Stopping the bridge closes that duplicate and applies the
+ownership policy above to the original fd.
+
 Replacing a configured fd with a different one closes the old fd when its
 policy was `OWNED`. Reconfiguring the same numeric fd transfers its packet
 format and close policy without closing it.

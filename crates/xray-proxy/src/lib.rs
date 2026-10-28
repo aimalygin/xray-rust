@@ -5,6 +5,7 @@ mod record_buffer;
 pub mod hysteria;
 pub mod inbound;
 pub mod mux;
+pub mod outbound;
 pub mod shadowsocks2022;
 pub mod trojan;
 pub mod vless;

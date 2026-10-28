@@ -155,22 +155,16 @@ object XrayVlessUrlImporter {
             encryption != "none" && network in networkAliases -> {
                 requireValue(network, "type", networkAliases.toList())
                 requireValue(flow, "flow", listOf("", VISION_FLOW, VISION_UDP_443_FLOW))
-                rejectUnsupportedSecurityValues(query)
-                for (name in listOf("host", "path", "mode", "extra")) {
-                    if (query.value(name) != null) throw importError(XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
-                        "VLESS URL contains unsupported `$name`.", parameter = name)
-                }
+                query.rejectParameters("pcs", "vcn", "ech", "echQuery", rejectEmpty = false)
+                query.rejectParameters("host", "path", "mode", "extra")
                 val rawSecurity = when (security) {
                     "none" -> {
-                        rejectRealityOnlyValues(query)
-                        for (name in listOf("sni", "fp", "alpn", "allowInsecure")) {
-                            if (query.value(name) != null) throw importError(XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
-                                "VLESS URL contains unsupported `$name`.", parameter = name)
-                        }
+                        query.rejectParameters("pbk", "sid", "spx", "pqv")
+                        query.rejectParameters("sni", "fp", "alpn", "allowInsecure")
                         StreamSecurity.None
                     }
                     "tls" -> {
-                        rejectRealityOnlyValues(query)
+                        query.rejectParameters("pbk", "sid", "spx", "pqv")
                         val tls = tlsParameters(query, host)
                         if (tls.allowInsecure == true) throw unsupportedValue("allowInsecure", "true", "false")
                         StreamSecurity.Tls(tls)
@@ -197,11 +191,11 @@ object XrayVlessUrlImporter {
                 val mode = query.optional("mode", "auto").ifEmpty { "auto" }
                 requireValue(mode, "mode", listOf("auto", "packet-up", "stream-up", "stream-one"))
                 val extra = query.value("extra")?.let(::decodeXhttpExtra)
-                rejectUnsupportedSecurityValues(query)
+                query.rejectParameters("pcs", "vcn", "ech", "echQuery", rejectEmpty = false)
                 val xhttpSecurity = when (security) {
                     "none" -> StreamSecurity.None
                     "tls" -> {
-                        rejectRealityOnlyValues(query)
+                        query.rejectParameters("pbk", "sid", "spx", "pqv")
                         val tls = tlsParameters(query, host)
                         if (encryption != "none" && tls.allowInsecure == true) throw unsupportedValue("allowInsecure", "true", "false")
                         StreamSecurity.Tls(tls)
@@ -300,30 +294,6 @@ object XrayVlessUrlImporter {
             mldsa65Verify = query.optional("pqv", "").ifEmpty { null },
             flow = null,
         )
-    }
-
-    private fun rejectUnsupportedSecurityValues(query: QueryValues) {
-        for (name in listOf("pcs", "vcn", "ech", "echQuery")) {
-            if (!query.value(name).isNullOrEmpty()) {
-                throw importError(
-                    XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
-                    "VLESS URL contains unsupported `$name`.",
-                    parameter = name,
-                )
-            }
-        }
-    }
-
-    private fun rejectRealityOnlyValues(query: QueryValues) {
-        for (name in listOf("pbk", "sid", "spx", "pqv")) {
-            if (query.value(name) != null) {
-                throw importError(
-                    XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
-                    "VLESS URL contains unsupported `$name`.",
-                    parameter = name,
-                )
-            }
-        }
     }
 
     private fun validateRealityCompatibilityValues(query: QueryValues) {
@@ -625,6 +595,19 @@ object XrayVlessUrlImporter {
         fun optional(name: String, default: String): String = value(name) ?: default
 
         fun value(name: String): String? = values[name.lowercase(Locale.ROOT)]
+
+        fun rejectParameters(vararg names: String, rejectEmpty: Boolean = true) {
+            for (name in names) {
+                val value = value(name) ?: continue
+                if (rejectEmpty || value.isNotEmpty()) {
+                    throw importError(
+                        XrayVlessUrlImportErrorCode.UnsupportedQueryParameter,
+                        "VLESS URL contains unsupported `$name`.",
+                        parameter = name,
+                    )
+                }
+            }
+        }
 
         fun rejectDuplicates(names: List<String>) {
             names.firstOrNull { it.lowercase(Locale.ROOT) in duplicateNames }?.let { name ->

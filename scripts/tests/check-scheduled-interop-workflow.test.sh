@@ -252,13 +252,13 @@ expected_rc_interop="$(cat <<'EXPECTED'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: XTLS/Xray-core
-          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
           path: Xray-core
           persist-credentials: false
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.96.0 --profile minimal
@@ -285,13 +285,13 @@ expected_scheduled_pinned="$(cat <<'EXPECTED'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: XTLS/Xray-core
-          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
           path: Xray-core
           persist-credentials: false
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.96.0 --profile minimal
@@ -382,6 +382,7 @@ expected_rust="$(cat <<'EXPECTED'
           python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison scripts.tests.test_v08_android_fixture
           python3 -m unittest scripts.tests.test_source_tag_ci
           python3 scripts/tests/set-xray-ss2022-udp-pmtu.test.py
+          python3 scripts/tests/check-gradle-verification.test.py
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28

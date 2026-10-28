@@ -7,8 +7,8 @@ TEST_ROOT="$(mktemp -d)"
 TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 
-EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
-BROAD_FINGERPRINTS="chrome,hellochrome_133,hellofirefox_148,hellosafari_26_3,helloios_13,hello360_11_0,hellochrome_120_pq,hellofirefox_99"
+EXPECTED_XRAY_CORE_REVISION="1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+BROAD_FINGERPRINTS="chrome,hellochrome_133,hellofirefox_148,hellosafari_26_3,hellochrome_131,random,randomized"
 
 FAKE_BIN="$TEST_ROOT/bin"
 FAKE_CORE="$TEST_ROOT/Xray-core"
@@ -325,7 +325,7 @@ assert_prefix_count() {
 }
 
 assert_line_count 1 \
-  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --skip vless_encryption:: --skip xhttp_download:: --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_99|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
+  "test|command=test --locked -p xray-core-rs --test local_xray_interop_tests -- --ignored --skip vless_encryption:: --skip xhttp_download:: --skip rust_socks_client_reaches_target_through_remote_xhttp_profile --nocapture --test-threads=1|fingerprints=$BROAD_FINGERPRINTS|burst_fingerprints=hellofirefox_148|burst_flows=32|xhttp_cases=all|goflags=unset|goexperiment=unset|core_expected_revision=unset|goenv=off|gowork=off|gotoolchain=local|cgo=0"
 assert_line_count 1 \
   'build|command=build --locked --release -p xray-cli --bin xray-rust'
 

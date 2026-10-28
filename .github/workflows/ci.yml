@@ -250,6 +250,7 @@ jobs:
           python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison scripts.tests.test_v08_android_fixture
           python3 -m unittest scripts.tests.test_source_tag_ci
           python3 scripts/tests/set-xray-ss2022-udp-pmtu.test.py
+          python3 scripts/tests/check-gradle-verification.test.py
           bash scripts/tests/bench-xhttp-memory.test.sh
           if [[ -f docs/benchmarks/results/2026-08-29-v26.7.28/manifest.json ]]; then
             python3 scripts/check-benchmark-publication.py docs/benchmarks/results/2026-08-29-v26.7.28
@@ -304,12 +305,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # One toolchain builds the oracle modules and the direct WireGuard
-      # reference. The root declares `go 1.24`, masquerade and gRPC `go 1.26`,
-      # and WireGuard `go 1.26.5`; a `go` directive is a minimum.
-      # The committed fixtures reproduce byte for byte
-      # under 1.24.0, 1.26.0, 1.26.3 and 1.26.5, so the pin below is a pin, not
-      # a constraint.
+      # The pinned Xray-core v26.10.21 source requires Go 1.27.
+      # Use one exact toolchain for all oracle and interoperability checks.
       #
       # Every locally committed module's `go.sum` is listed: the cache key uses these
       # paths alone, so a module missing from the list has its dependencies
@@ -317,7 +314,7 @@ jobs:
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.3"
           cache-dependency-path: |
             go.sum
             tools/reality-oracle/masquerade/go.sum
@@ -331,7 +328,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
           path: Xray-core
           persist-credentials: false
 
@@ -364,6 +361,10 @@ jobs:
 
       - name: Check VMess AEAD pinned Xray interoperability
         run: bash scripts/check-vmess-interop.sh
+      - name: Check SOCKS5 TCP, UDP and TUN against pinned Xray-core
+        run: bash scripts/check-socks-interop.sh
+      - name: Check HTTP outbound against the pinned Xray HTTP server
+        run: bash scripts/check-http-interop.sh
       - name: Check shared Mux and XUDP interoperability
         run: bash scripts/check-mux-interop.sh
       - name: Check v0.8 clients against pinned independent sing-box
@@ -412,14 +413,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
           path: Xray-core
           persist-credentials: false
 
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
 
       - name: Install pinned Rust toolchain
@@ -447,14 +448,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
           path: Xray-core
           persist-credentials: false
 
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
 
       - name: Install pinned Rust toolchain
@@ -595,14 +596,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 5ca6f4b7d4dc20a881d4330e498892697627ec0c
+          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
           path: Xray-core
           persist-credentials: false
 
       - name: Install pinned Go toolchain
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.5"
+          go-version: "1.27.3"
           cache-dependency-path: Xray-core/go.sum
 
       - name: Install pinned Rust toolchain

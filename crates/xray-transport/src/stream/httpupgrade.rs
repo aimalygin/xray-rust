@@ -54,6 +54,15 @@ pub async fn connect_httpupgrade(
     headers.set("Connection", "Upgrade");
     headers.set("Upgrade", "websocket");
 
+    // Go Header.Values/Set canonicalize WebSocket to Websocket. Config keys
+    // retain their literal spelling, matching upstream AddHeader semantics.
+    if headers.get("Sec-Websocket-Key").is_none() {
+        headers.set("Sec-Websocket-Key", &super::websocket::client_key());
+    }
+    if headers.get("Sec-Websocket-Version").is_none() {
+        headers.set("Sec-Websocket-Version", "13");
+    }
+
     let request = serialize_request(
         "GET",
         &escape_decoded_path(&config.path),
@@ -152,15 +161,16 @@ fn find_header_end(buffer: &[u8]) -> Option<usize> {
 
 /// A stream that drains a leading buffer before delegating to the socket.
 ///
-/// The buffer holds whatever arrived in the same read as the response headers.
-pub(crate) struct PrefixedStream {
+/// The buffer holds whatever arrived in the same read as the response headers;
+/// the HTTP CONNECT outbound uses it for the same reason.
+pub struct PrefixedStream {
     inner: BoxedTransportStream,
     prefix: Vec<u8>,
     consumed: usize,
 }
 
 impl PrefixedStream {
-    pub(crate) fn new(inner: BoxedTransportStream, prefix: Vec<u8>) -> Self {
+    pub fn new(inner: BoxedTransportStream, prefix: Vec<u8>) -> Self {
         Self {
             inner,
             prefix,

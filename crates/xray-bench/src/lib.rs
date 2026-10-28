@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::io::{self, Read as IoRead, Write as IoWrite};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener};
 #[cfg(unix)]
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{
@@ -96,7 +96,7 @@ const TEST_VLESS_UUID_STRING: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const PLACEHOLDER_TLS_CERT_SHA256: &str =
     "0000000000000000000000000000000000000000000000000000000000000000";
 // The PQ benchmark cases need a cover origin that accepts X25519MLKEM;
-// RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
+// It must negotiate the final hybrid X25519MLKEM768 key share.
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
 const REALITY_PUBLIC_KEY: &str = "E59WjnvZcQMu7tR7_BgyhycuEdBS-CtKxfImRCdAvFM";
@@ -112,8 +112,8 @@ const REALITY_FIXTURE_WARMUP: Duration = Duration::from_secs(8);
 /// network-dependent, so the fixed default may need adjusting per environment.
 const REALITY_FIXTURE_WARMUP_MS_ENV: &str = "XRAY_BENCH_REALITY_WARMUP_MS";
 const SING_BOX_BUILD_TAGS: &str = "with_gvisor,with_utls,badlinkname,tfogo_checklinkname0";
-const XRAY_CORE_ORACLE_VERSION: &str = "26.7.28";
-const XRAY_CORE_ORACLE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+const XRAY_CORE_ORACLE_VERSION: &str = "26.10.21";
+const XRAY_CORE_ORACLE_REVISION: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
 const TCP_PROTOCOL: u8 = 6;
 const UDP_PROTOCOL: u8 = 17;
 const DARWIN_UTUN_HEADER_LEN: usize = 4;
@@ -2961,14 +2961,17 @@ pub async fn run_tun_udp_freedom_workload(
 }
 
 #[cfg(unix)]
-#[derive(Debug, Clone, Copy)]
-struct TunFdRef(RawFd);
-
-#[cfg(unix)]
-impl AsRawFd for TunFdRef {
-    fn as_raw_fd(&self) -> RawFd {
-        self.0
+fn register_tun_fd(fd: RawFd) -> io::Result<AsyncFd<OwnedFd>> {
+    // Give the registration its own lifetime without taking the caller's fd.
+    let duplicate = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 0) };
+    if duplicate < 0 {
+        return Err(io::Error::last_os_error());
     }
+    // SAFETY: fcntl returned a new open descriptor that we alone own.
+    let duplicate = unsafe { OwnedFd::from_raw_fd(duplicate) };
+    // SAFETY: AsyncFd owns the duplicate, whose descriptor stays open and
+    // unchanged until the registration is dropped, including task cancellation.
+    unsafe { AsyncFd::register(duplicate) }.map_err(io::Error::from)
 }
 
 #[cfg(unix)]
@@ -3081,9 +3084,8 @@ async fn run_tun_dns_udp_workload(
         .connections
         .saturating_mul(2)
         .clamp(1, TUN_FAKE_DNS_MAX_IN_FLIGHT);
-    // `RunningEngine` owns and closes the descriptor after the workload. This wrapper only
-    // registers that live descriptor with Tokio; dropping it must not close the underlying fd.
-    let tun = AsyncFd::new(TunFdRef(tun_fd)).map_err(|source| BenchError::Io {
+    // Keep RunningEngine ownership intact while registering a private duplicate.
+    let tun = register_tun_fd(tun_fd).map_err(|source| BenchError::Io {
         action: "registering benchmark TUN fd for async readiness".to_owned(),
         source,
     })?;
@@ -3274,7 +3276,7 @@ async fn run_tun_dns_tcp_workload(
         ));
     }
 
-    let tun = AsyncFd::new(TunFdRef(tun_fd)).map_err(|source| BenchError::Io {
+    let tun = register_tun_fd(tun_fd).map_err(|source| BenchError::Io {
         action: "registering benchmark TUN fd for DNS-over-TCP readiness".to_owned(),
         source,
     })?;
@@ -3570,7 +3572,7 @@ fn tun_dns_tcp_poll_delay(active: &mut [TunDnsTcpConnection]) -> Duration {
 
 #[cfg(unix)]
 async fn wait_tun_dns_tcp_io(
-    tun: &AsyncFd<TunFdRef>,
+    tun: &AsyncFd<OwnedFd>,
     send_frame: Option<&[u8]>,
     can_receive: bool,
     read_buffer: &mut [u8],
@@ -4725,7 +4727,7 @@ fn tun_fake_dns_timeout_error(
 
 #[cfg(unix)]
 async fn wait_tun_fake_dns_io(
-    tun: &AsyncFd<TunFdRef>,
+    tun: &AsyncFd<OwnedFd>,
     send_frame: Option<&[u8]>,
     can_receive: bool,
     buffer: &mut [u8],
@@ -4759,7 +4761,7 @@ async fn wait_tun_fake_dns_io(
 
 #[cfg(unix)]
 async fn write_tun_frame_ready(
-    tun: &AsyncFd<TunFdRef>,
+    tun: &AsyncFd<OwnedFd>,
     frame: &[u8],
 ) -> Result<Instant, BenchError> {
     loop {
@@ -4782,7 +4784,7 @@ async fn write_tun_frame_ready(
 
 #[cfg(unix)]
 async fn read_tun_frame_ready(
-    tun: &AsyncFd<TunFdRef>,
+    tun: &AsyncFd<OwnedFd>,
     buffer: &mut [u8],
 ) -> Result<usize, BenchError> {
     loop {
@@ -9335,7 +9337,7 @@ async fn measure_phase2_connection_registry(
     let mut core = Core::new(CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("bench-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: Ipv4Addr::LOCALHOST.to_string(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -10661,7 +10663,7 @@ fn route_probe_config(
     Ok(CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("bench-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -11669,6 +11671,30 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn registered_tun_remains_usable_after_the_original_owner_is_dropped() {
+        let (host, mut peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        host.set_nonblocking(true).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        let registered = register_tun_fd(host.as_raw_fd()).unwrap();
+        drop(host);
+
+        timeout(
+            Duration::from_secs(1),
+            write_tun_frame_ready(&registered, b"packet"),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let mut received = [0; 6];
+        peer.read_exact(&mut received).unwrap();
+        assert_eq!(&received, b"packet");
+
+        drop(registered);
+        assert_eq!(peer.read(&mut received).unwrap(), 0);
+    }
+
     #[test]
     fn xray_core_output_path_is_scoped_to_the_pinned_oracle() {
         let path = xray_core_oracle_binary_path(Path::new("target/bench-bin"));
@@ -11906,7 +11932,7 @@ mod tests {
     #[test]
     fn xray_core_version_output_requires_the_pinned_release() {
         let binary = Path::new("/tmp/xray-core");
-        let pinned = "Xray 26.7.28 (Xray, Penetrates Everything.) 5ca6f4b (go1.26.0 darwin/arm64)\nA unified platform for anti-censorship.\n";
+        let pinned = "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c (go1.27.3 darwin/arm64)\nA unified platform for anti-censorship.\n";
 
         assert!(validate_xray_core_version_output(binary, pinned, None).is_ok());
         assert!(
@@ -11914,16 +11940,16 @@ mod tests {
                 .is_ok()
         );
 
-        let old = "Xray 26.5.9 (Xray, Penetrates Everything.) 1bdb488 (go1.26.0 darwin/arm64)\n";
+        let old = "Xray 26.5.9 (Xray, Penetrates Everything.) 1bdb488 (go1.27.3 darwin/arm64)\n";
         let error = validate_xray_core_version_output(binary, old, None).unwrap_err();
-        assert!(error.to_string().contains("requires Xray 26.7.28"));
+        assert!(error.to_string().contains("requires Xray 26.10.21"));
     }
 
     #[test]
     fn auto_built_xray_core_version_output_requires_the_pinned_revision() {
         let binary = Path::new("/tmp/xray-core");
         let wrong_revision =
-            "Xray 26.7.28 (Xray, Penetrates Everything.) deadbee (go1.26.0 darwin/arm64)\n";
+            "Xray 26.10.21 (Xray, Penetrates Everything.) deadbee (go1.27.3 darwin/arm64)\n";
 
         let error = validate_xray_core_version_output(
             binary,
@@ -11931,18 +11957,19 @@ mod tests {
             Some(XRAY_CORE_ORACLE_REVISION),
         )
         .unwrap_err();
-        assert!(error.to_string().contains("requires revision `5ca6f4b`"));
+        assert!(error.to_string().contains("requires revision `1b1647c`"));
 
         // A caller-supplied official binary must report the pinned release,
         // but it may not carry the checkout's VCS build token.
-        let custom = "Xray 26.7.28 (Xray, Penetrates Everything.) Custom (go1.26.0 darwin/arm64)\n";
+        let custom =
+            "Xray 26.10.21 (Xray, Penetrates Everything.) Custom (go1.27.3 darwin/arm64)\n";
         assert!(validate_xray_core_version_output(binary, custom, None).is_ok());
 
         // Go includes untracked checkout artifacts in its VCS dirty bit. The
         // auto-build path has already verified exact HEAD and no tracked or
         // staged edits, so this form is still the pinned source oracle.
         let untracked_dirty =
-            "Xray 26.7.28 (Xray, Penetrates Everything.) 5ca6f4b-dirty (go1.26.0 darwin/arm64)\n";
+            "Xray 26.10.21 (Xray, Penetrates Everything.) 1b1647c-dirty (go1.27.3 darwin/arm64)\n";
         assert!(validate_xray_core_version_output(
             binary,
             untracked_dirty,
@@ -13110,13 +13137,12 @@ mod tests {
             action: "setting test Core TUN fd nonblocking".to_owned(),
             source,
         })?;
-        let fd =
-            Arc::new(
-                AsyncFd::new(TunFdRef(engine_fd.raw())).map_err(|source| BenchError::Io {
-                    action: "registering test Core TUN fd".to_owned(),
-                    source,
-                })?,
-            );
+        let fd = Arc::new(
+            register_tun_fd(engine_fd.raw()).map_err(|source| BenchError::Io {
+                action: "registering test Core TUN fd".to_owned(),
+                source,
+            })?,
+        );
         let inbound = core.tun_handle();
         let outbound = core.tun_handle();
 
@@ -13395,7 +13421,7 @@ mod tests {
             engine_fd,
             workload_fd,
         } = create_tun_socket_pair().unwrap();
-        let tun = AsyncFd::new(TunFdRef(workload_fd.raw())).unwrap();
+        let tun = register_tun_fd(workload_fd.raw()).unwrap();
         let immediate_response = [0_u8; DARWIN_UTUN_HEADER_LEN];
         write_tun_frame(engine_fd.raw(), &immediate_response).unwrap();
         let readable = timeout(Duration::from_secs(1), tun.readable())
@@ -14888,7 +14914,7 @@ mod tests {
             "xray-bench",
             "reality-matrix",
             "--fingerprints",
-            "chrome,hellochrome_120_pq",
+            "chrome,hellochrome_131",
             "--traffic",
             "startup-probe,tcp-connect,udp-xudp-echo",
             "--iterations",
@@ -14913,7 +14939,7 @@ mod tests {
         assert_eq!(
             args,
             CliArgs::RealityMatrix(RealityMatrixOptions {
-                fingerprints: vec!["chrome".to_owned(), "hellochrome_120_pq".to_owned()],
+                fingerprints: vec!["chrome".to_owned(), "hellochrome_131".to_owned()],
                 traffic: vec![
                     RealityMatrixTrafficKind::StartupProbe,
                     RealityMatrixTrafficKind::TcpConnect,
@@ -14951,7 +14977,7 @@ mod tests {
             "--xray-rust-version",
             "1659143",
             "--xray-core-version",
-            "v26.7.28",
+            "v26.10.21",
             "--sing-box-version",
             "v1.12.0",
         ])
@@ -14972,9 +14998,7 @@ mod tests {
         };
 
         assert!(options.fingerprints.contains(&"chrome".to_owned()));
-        assert!(options
-            .fingerprints
-            .contains(&"hellochrome_120_pq".to_owned()));
+        assert!(options.fingerprints.contains(&"hellochrome_131".to_owned()));
         assert!(options
             .traffic
             .contains(&RealityMatrixTrafficKind::StartupProbe));
@@ -15056,13 +15080,13 @@ mod tests {
         let config = reality_vision_xudp_config_with_fingerprint(
             18088,
             SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 19095)),
-            "hellochrome_120_pq",
+            "hellochrome_131",
         );
         let value = serde_json::from_str::<serde_json::Value>(&config).unwrap();
 
         assert_eq!(
             value["outbounds"][0]["streamSettings"]["realitySettings"]["fingerprint"],
-            "hellochrome_120_pq"
+            "hellochrome_131"
         );
     }
 

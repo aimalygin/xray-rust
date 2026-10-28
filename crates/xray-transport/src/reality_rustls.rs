@@ -26,7 +26,7 @@ use crate::{
         RealityHandshakeInput, RealityMldsa65CertificateInput, RealityPreparedClientHello,
     },
     reality_connector::{RealityClientHelloRequest, RealityTlsSession, RealityTlsSessionProvider},
-    utls_profiles::{profile_for_fingerprint, UtlsClientHelloProfile},
+    utls_profiles::{reality_profile_for_fingerprint, UtlsClientHelloProfile},
     utls_shaping::{apply_utls_profile, retain_profile_certificate_decompressors},
     BoxedTransportStream, CapturedStream, PenetratingTlsStream, ServerReadLog, TransportError,
 };
@@ -173,7 +173,7 @@ impl RustlsRealityPlan {
         auth_key: [u8; 32],
         finalizer: Option<Arc<dyn FinalizesClientHello>>,
     ) -> Result<Vec<u8>, TransportError> {
-        let profile = profile_for_fingerprint(fingerprint).ok_or_else(|| {
+        let profile = reality_profile_for_fingerprint(fingerprint).ok_or_else(|| {
             TransportError::TlsConfig(format!(
                 "unsupported REALITY uTLS fingerprint profile: {fingerprint}"
             ))
@@ -519,7 +519,7 @@ impl RustlsRealityTlsSession {
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin + 'static,
     {
-        let profile = profile_for_fingerprint(&self.fingerprint).ok_or_else(|| {
+        let profile = reality_profile_for_fingerprint(&self.fingerprint).ok_or_else(|| {
             TransportError::TlsConfig(format!(
                 "unsupported REALITY uTLS fingerprint profile: {}",
                 self.fingerprint
@@ -849,7 +849,7 @@ mod tests {
             ("firefox", BTreeSet::from([1u16, 2u16, 3u16])),
             ("android", BTreeSet::new()),
         ] {
-            let profile = profile_for_fingerprint(fingerprint)
+            let profile = crate::utls_profiles::profile_for_fingerprint(fingerprint)
                 .unwrap_or_else(|| panic!("{fingerprint}: profile must exist"));
             let config = reality_client_config(
                 RealityVerificationMaterial::Static {

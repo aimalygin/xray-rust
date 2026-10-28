@@ -1501,7 +1501,7 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
     // schema; credentials and inner WireGuard addresses never enter DNS lookup.
     private static func outboundBootstrapAddresses(_ outbound: [String: Any]) throws -> [String] {
         let protocolName = (outbound["protocol"] as? String)?.lowercased()
-        guard ["vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard"].contains(protocolName) else { return [] }
+        guard ["vless", "vmess", "trojan", "shadowsocks", "socks", "http", "hysteria", "wireguard"].contains(protocolName) else { return [] }
         guard let settings = outbound["settings"] as? [String: Any] else {
             throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
         }
@@ -1517,11 +1517,23 @@ open class XrayPacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 return address
             }
-        case "trojan", "shadowsocks":
-            if let address = settings["address"] as? String { return [address] }
-            guard let servers = settings["servers"] as? [[String: Any]], servers.count == 1,
-                  let address = servers[0]["address"] as? String else {
-                throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+        case "trojan", "shadowsocks", "socks", "http":
+            let address: String
+            if let flatAddress = settings["address"] as? String {
+                address = flatAddress
+            } else {
+                guard let servers = settings["servers"] as? [[String: Any]], servers.count == 1,
+                      let serverAddress = servers[0]["address"] as? String else {
+                    throw XrayPacketTunnelProviderError.outboundServerResolutionFailed
+                }
+                address = serverAddress
+            }
+            if protocolName == "socks" || protocolName == "http" {
+                // Match the core parser for lookup/exclusions only; preserve
+                // the original settings and TLS metadata in the prepared JSON.
+                let host = address.hasPrefix("[") && address.hasSuffix("]")
+                    ? String(address.dropFirst().dropLast()) : address
+                return [host.trimmingCharacters(in: .whitespacesAndNewlines)]
             }
             return [address]
         case "hysteria":

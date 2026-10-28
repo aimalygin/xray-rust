@@ -4,10 +4,11 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use xray_proxy::inbound::{
-    encode_socks5_udp_datagram, negotiate_socks5_no_auth, parse_http_connect, parse_socks5_connect,
-    parse_socks5_request, parse_socks5_request_message, parse_socks5_udp_datagram,
-    write_socks5_failure, write_socks5_success, write_socks5_success_with_bind, HttpParseError,
-    SocksCommand, SocksParseError,
+    encode_socks5_udp_datagram, negotiate_socks5, negotiate_socks5_no_auth, parse_http_connect,
+    parse_socks5_connect, parse_socks5_request, parse_socks5_request_message,
+    parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
+    write_socks5_success, write_socks5_success_with_bind, HttpParseError, SocksAccount,
+    SocksCommand, SocksInboundAuth, SocksParseError, MAX_SOCKS_CREDENTIAL_LENGTH,
 };
 use xray_routing::{Network, Target, TargetAddr};
 
@@ -99,6 +100,133 @@ async fn socks5_negotiate_rejects_when_no_auth_is_absent() {
     );
 }
 
+fn password_auth() -> SocksInboundAuth {
+    SocksInboundAuth::Password(vec![
+        SocksAccount::new(b"first-user", b"first-pass").unwrap(),
+        SocksAccount::new(b"synthetic-user", b"synthetic-pass").unwrap(),
+    ])
+}
+
+fn password_request(user: &[u8], pass: &[u8]) -> Vec<u8> {
+    let mut request = vec![1, u8::try_from(user.len()).unwrap()];
+    request.extend_from_slice(user);
+    request.push(u8::try_from(pass.len()).unwrap());
+    request.extend_from_slice(pass);
+    request
+}
+
+#[tokio::test]
+async fn socks5_password_auth_accepts_any_configured_account() {
+    let (mut client, server) = tokio::io::duplex(64);
+    let server_task = tokio::spawn(async move { negotiate_socks5(server, &password_auth()).await });
+
+    client.write_all(&[5, 2, 0, 2]).await.unwrap();
+    let mut selection = [0; 2];
+    client.read_exact(&mut selection).await.unwrap();
+    assert_eq!(selection, [5, 2]);
+
+    client
+        .write_all(&password_request(b"synthetic-user", b"synthetic-pass"))
+        .await
+        .unwrap();
+    let mut status = [0; 2];
+    client.read_exact(&mut status).await.unwrap();
+
+    assert_eq!(status, [1, 0]);
+    server_task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn socks5_password_auth_rejects_wrong_credentials() {
+    let attempts: [(&[u8], &[u8]); 3] = [
+        (b"synthetic-user", b"wrong-pass"),
+        (b"wrong-user", b"synthetic-pass"),
+        (b"first-user", b"synthetic-pass"),
+    ];
+    for (user, pass) in attempts {
+        let (mut client, server) = tokio::io::duplex(64);
+        let server_task =
+            tokio::spawn(async move { negotiate_socks5(server, &password_auth()).await });
+
+        client.write_all(&[5, 1, 2]).await.unwrap();
+        let mut selection = [0; 2];
+        client.read_exact(&mut selection).await.unwrap();
+        client
+            .write_all(&password_request(user, pass))
+            .await
+            .unwrap();
+        let mut status = [0; 2];
+        client.read_exact(&mut status).await.unwrap();
+
+        assert_eq!(status, [1, 1]);
+        assert_eq!(
+            server_task.await.unwrap(),
+            Err(SocksParseError::AuthenticationFailed)
+        );
+    }
+}
+
+#[tokio::test]
+async fn socks5_password_auth_never_selects_no_auth() {
+    let (mut client, server) = tokio::io::duplex(64);
+    let server_task = tokio::spawn(async move { negotiate_socks5(server, &password_auth()).await });
+
+    client.write_all(&[5, 1, 0]).await.unwrap();
+    let mut reply = [0; 2];
+    client.read_exact(&mut reply).await.unwrap();
+
+    assert_eq!(reply, [5, 0xff]);
+    assert_eq!(
+        server_task.await.unwrap(),
+        Err(SocksParseError::NoAcceptableMethods)
+    );
+}
+
+#[tokio::test]
+async fn socks5_password_auth_rejects_unknown_subnegotiation_version() {
+    let (mut client, server) = tokio::io::duplex(64);
+    let server_task = tokio::spawn(async move { negotiate_socks5(server, &password_auth()).await });
+
+    client.write_all(&[5, 1, 2]).await.unwrap();
+    let mut selection = [0; 2];
+    client.read_exact(&mut selection).await.unwrap();
+    client.write_all(&[5]).await.unwrap();
+    let mut status = [0; 2];
+    client.read_exact(&mut status).await.unwrap();
+
+    assert_eq!(status, [1, 1]);
+    assert_eq!(
+        server_task.await.unwrap(),
+        Err(SocksParseError::UnsupportedAuthVersion(5))
+    );
+}
+
+#[tokio::test]
+async fn socks5_password_auth_fails_on_truncated_credentials() {
+    let mut stream = CountingIo::new([5, 1, 2, 1, 14, b's', b'y', b'n']);
+
+    assert_eq!(
+        negotiate_socks5(&mut stream, &password_auth()).await,
+        Err(SocksParseError::Io)
+    );
+    assert_eq!(stream.output, [5, 2]);
+}
+
+#[test]
+fn socks_accounts_enforce_rfc1929_lengths_and_redact_debug() {
+    let longest = vec![b'a'; MAX_SOCKS_CREDENTIAL_LENGTH];
+    let too_long = vec![b'a'; MAX_SOCKS_CREDENTIAL_LENGTH + 1];
+    assert!(SocksAccount::new(&longest, &longest).is_some());
+    assert!(SocksAccount::new(b"", b"synthetic-pass").is_none());
+    assert!(SocksAccount::new(b"synthetic-user", b"").is_none());
+    assert!(SocksAccount::new(&too_long, b"synthetic-pass").is_none());
+    assert!(SocksAccount::new(b"synthetic-user", &too_long).is_none());
+
+    let debug = format!("{:?}", password_auth());
+    assert!(!debug.contains("synthetic"), "{debug}");
+    assert!(debug.contains("<redacted>"), "{debug}");
+}
+
 #[tokio::test]
 async fn socks5_negotiate_no_auth_reads_greeting_with_two_io_reads() {
     let mut stream = CountingIo::new([5, 2, 2, 0]);
@@ -159,12 +287,16 @@ async fn socks5_reply_writers_emit_ipv4_success_and_failure() {
 
     write_socks5_success(&mut output).await.unwrap();
     write_socks5_failure(&mut output).await.unwrap();
+    write_socks5_command_not_supported(&mut output)
+        .await
+        .unwrap();
 
     assert_eq!(
         output,
         vec![
             5, 0, 0, 1, 0, 0, 0, 0, 0, 0, // success
             5, 1, 0, 1, 0, 0, 0, 0, 0, 0, // general failure
+            5, 7, 0, 1, 0, 0, 0, 0, 0, 0, // command not supported, as Xray-core sends it
         ]
     );
 }

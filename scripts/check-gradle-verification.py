@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check Gradle SHA-256 locks against canonical Maven SHA-1 sidecars."""
+"""Check Gradle SHA-256 locks against canonical Maven checksum sidecars."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import xml.etree.ElementTree as ET
 
@@ -73,50 +74,64 @@ def verify_remote(item: tuple[tuple[str, ...], str, str]) -> str:
     raise VerificationError(f"{label}: no canonical repository matched: {'; '.join(failures)}")
 
 
+def download(url: str, destination: pathlib.Path) -> subprocess.CompletedProcess:
+    # curl can truncate its --output file before retrying a partial transfer.
+    # A stdout pipe cannot retract bytes already consumed by the verifier.
+    return subprocess.run(
+        [*curl_arguments(url), "--output", str(destination)],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+
 def verify_remote_url(url: str, expected_sha256: str, label: str) -> None:
     try:
-        sidecar = ""
-        sidecar_algorithm = ""
-        # Some canonical Maven metadata artifacts publish only an MD5 sidecar.
-        # The artifact itself is still fetched over HTTPS and must match the
-        # independently recorded Gradle SHA-256; the sidecar binds it to the
-        # canonical repository's published object.
-        for algorithm, pattern in (("sha256", SHA256), ("sha1", SHA1), ("md5", MD5)):
-            sidecar_result = subprocess.run(
-                curl_arguments(f"{url}.{algorithm}"),
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if sidecar_result.returncode == 0:
-                candidate = sidecar_result.stdout.decode("ascii", "strict").strip().split()[0].lower()
-                if not pattern.fullmatch(candidate):
-                    raise VerificationError(f"{label}: invalid canonical {algorithm} sidecar")
-                sidecar = candidate
-                sidecar_algorithm = algorithm
-                break
-        if not sidecar_algorithm:
-            raise VerificationError(f"{label}: canonical repository has no checksum sidecar")
-        published = hashlib.new(sidecar_algorithm, usedforsecurity=False)
-        sha256 = hashlib.sha256()
-        process = subprocess.Popen(
-            curl_arguments(url), stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        assert process.stdout is not None
-        while chunk := process.stdout.read(1024 * 1024):
-            published.update(chunk)
-            sha256.update(chunk)
-        _, stderr = process.communicate()
-        if process.returncode != 0:
-            raise VerificationError(
-                f"{label}: canonical download failed: {stderr.decode(errors='replace').strip()}"
-            )
-    except (OSError, UnicodeError, subprocess.CalledProcessError) as error:
+        with tempfile.TemporaryDirectory(prefix="xray-gradle-verify-") as directory:
+            sidecar_path = pathlib.Path(directory) / "sidecar"
+            artifact_path = pathlib.Path(directory) / "artifact"
+            sidecar = ""
+            sidecar_algorithm = ""
+            # Some canonical Maven metadata artifacts publish only an MD5 sidecar.
+            # The artifact itself is still fetched over HTTPS and must match the
+            # independently recorded Gradle SHA-256; the sidecar binds it to the
+            # canonical repository's published object.
+            for algorithm, pattern in (("sha256", SHA256), ("sha1", SHA1), ("md5", MD5)):
+                sidecar_result = download(f"{url}.{algorithm}", sidecar_path)
+                if sidecar_result.returncode == 0:
+                    fields = sidecar_path.read_text(encoding="ascii").split()
+                    candidate = fields[0].lower() if fields else ""
+                    if not pattern.fullmatch(candidate):
+                        raise VerificationError(f"{label}: invalid canonical {algorithm} sidecar")
+                    sidecar = candidate
+                    sidecar_algorithm = algorithm
+                    break
+            if not sidecar_algorithm:
+                raise VerificationError(f"{label}: canonical repository has no checksum sidecar")
+            result = download(url, artifact_path)
+            if result.returncode != 0:
+                raise VerificationError(
+                    f"{label}: canonical download failed: "
+                    f"{result.stderr.decode(errors='replace').strip()}"
+                )
+            published = hashlib.new(sidecar_algorithm, usedforsecurity=False)
+            sha256 = hashlib.sha256()
+            with artifact_path.open("rb") as artifact:
+                while chunk := artifact.read(1024 * 1024):
+                    published.update(chunk)
+                    sha256.update(chunk)
+    except (OSError, UnicodeError) as error:
         raise VerificationError(f"{label}: canonical download failed: {error}") from error
     if published.hexdigest() != sidecar:
-        raise VerificationError(f"{label}: artifact differs from its canonical sidecar")
+        raise VerificationError(
+            f"{label}: artifact differs from its canonical {sidecar_algorithm} sidecar "
+            f"(expected {sidecar}, downloaded {published.hexdigest()})"
+        )
     if sha256.hexdigest() != expected_sha256:
-        raise VerificationError(f"{label}: artifact differs from Gradle SHA-256 metadata")
+        raise VerificationError(
+            f"{label}: artifact differs from Gradle SHA-256 metadata "
+            f"(expected {expected_sha256}, downloaded {sha256.hexdigest()})"
+        )
 
 
 def parse_metadata(path: pathlib.Path, allow_generated: bool):

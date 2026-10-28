@@ -3,6 +3,173 @@ use async_trait::async_trait;
 use std::sync::atomic::AtomicUsize;
 use tokio::sync::Notify;
 
+#[path = "../../../../xray-wireguard/tests/support/mod.rs"]
+mod reference;
+
+/// Exercises the actual DNS carrier, including TTL expiry and TCP retry, over
+/// encrypted WireGuard packets to the pinned Go reference. All DNS stays local
+/// to the test via the reference's documentation-IP redirect.
+#[tokio::test]
+#[ignore = "requires XRAY_WIREGUARD_BINARY or NATIVE_WIREGUARD_BINARY"]
+async fn wireguard_runtime_remote_dns_ttl_tcp_fallback_and_cancellation() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, UdpSocket};
+    use x25519_dalek::{PublicKey, StaticSecret};
+
+    fn response(query: &[u8], tcp: bool) -> Vec<u8> {
+        let label = &query[13..13 + usize::from(query[12])];
+        let flags: u16 = if label == b"missing" {
+            0x8183
+        } else if label == b"fallback" && !tcp {
+            0x8380
+        } else {
+            0x8180
+        };
+        let mut reply = query.to_vec();
+        reply[2..4].copy_from_slice(&flags.to_be_bytes());
+        reply[6..12].fill(0);
+        if flags == 0x8180 {
+            reply[7] = 1;
+            // A / IN, one-second TTL, synthetic address.
+            reply.extend_from_slice(&[0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 1, 0, 4, 198, 51, 100, 7]);
+        }
+        reply
+    }
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = tcp.local_addr().unwrap().port();
+        let udp = UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, port))
+            .await
+            .unwrap();
+        let queries = Arc::new(Mutex::new(
+            std::collections::HashMap::<Vec<u8>, usize>::new(),
+        ));
+        let pending = Arc::new(Notify::new());
+        let udp_task = {
+            let queries = queries.clone();
+            let pending = pending.clone();
+            tokio::spawn(async move {
+                let mut buffer = [0; 4096];
+                loop {
+                    let (n, peer) = udp.recv_from(&mut buffer).await.unwrap();
+                    let query = &buffer[..n];
+                    let label = &query[13..13 + usize::from(query[12])];
+                    *queries.lock().unwrap().entry(label.to_vec()).or_default() += 1;
+                    if label == b"pending" {
+                        pending.notify_one();
+                        continue;
+                    }
+                    let reply = response(query, false);
+                    let mut unrelated = reply.clone();
+                    unrelated[0] ^= 0xff;
+                    udp.send_to(&unrelated, peer).await.unwrap();
+                    udp.send_to(&reply, peer).await.unwrap();
+                }
+            })
+        };
+        let tcp_queries = Arc::new(AtomicUsize::new(0));
+        let tcp_task = {
+            let tcp_queries = tcp_queries.clone();
+            tokio::spawn(async move {
+                loop {
+                    let (mut stream, _) = tcp.accept().await.unwrap();
+                    let n = usize::from(stream.read_u16().await.unwrap());
+                    let mut query = vec![0; n];
+                    stream.read_exact(&mut query).await.unwrap();
+                    tcp_queries.fetch_add(1, Ordering::SeqCst);
+                    let reply = response(&query, true);
+                    stream.write_u16(reply.len() as u16).await.unwrap();
+                    stream.write_all(&reply).await.unwrap();
+                    stream.shutdown().await.unwrap();
+                }
+            })
+        };
+        let server_key = StaticSecret::from([0x53; 32]);
+        let server = reference::Reference::start_custom(
+            &server_key,
+            &PublicKey::from(&StaticSecret::from([0x42; 32])),
+            None,
+            std::net::Ipv4Addr::LOCALHOST.into(),
+            port,
+        )
+        .await;
+        let mut config = configured();
+        let OutboundSettings::Wireguard(settings) = &mut config.settings else {
+            panic!()
+        };
+        settings.addresses.retain(IpAddr::is_ipv4);
+        settings.remote_dns = vec!["198.51.100.53".parse().unwrap()];
+        settings.peers[0].endpoint = TargetAddr::Ip(server.address.ip());
+        settings.peers[0].port = server.address.port();
+        settings.peers[0].public_key = xray_proxy::wireguard::KeyMaterial::parse(
+            &PublicKey::from(&server_key)
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+        )
+        .unwrap();
+        let outbound = WireguardOutbound::new(&config).unwrap();
+        let host_dns = PendingDns::default();
+        let dialer = TransportDialer::system().unwrap();
+        let destination = |name: &str| {
+            Target::new(
+                RoutingTargetAddr::Domain(format!("{name}.example")),
+                443,
+                RoutingNetwork::Udp,
+            )
+        };
+        for _ in 0..2 {
+            outbound
+                .open_udp(&destination("cached"), &host_dns, &host_dns, &dialer)
+                .await
+                .unwrap();
+        }
+        assert_eq!(queries.lock().unwrap().get(b"cached".as_slice()), Some(&1));
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        outbound
+            .open_udp(&destination("cached"), &host_dns, &host_dns, &dialer)
+            .await
+            .unwrap();
+        assert_eq!(queries.lock().unwrap().get(b"cached".as_slice()), Some(&2));
+        outbound
+            .open_udp(&destination("fallback"), &host_dns, &host_dns, &dialer)
+            .await
+            .unwrap();
+        assert_eq!(tcp_queries.load(Ordering::SeqCst), 1);
+        for _ in 0..2 {
+            assert!(outbound
+                .open_udp(&destination("missing"), &host_dns, &host_dns, &dialer)
+                .await
+                .is_err());
+        }
+        assert_eq!(queries.lock().unwrap().get(b"missing".as_slice()), Some(&1));
+        let target = destination("pending");
+        let attempt = outbound.open_udp(&target, &host_dns, &host_dns, &dialer);
+        tokio::pin!(attempt);
+        tokio::select! {
+            _ = pending.notified() => {},
+            _ = &mut attempt => panic!("pending DNS completed before close"),
+        }
+        outbound.close();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(1), attempt)
+                .await
+                .unwrap(),
+            Err(CoreError::Wireguard(Error::Closed))
+        ));
+        assert_eq!(
+            host_dns.calls.load(Ordering::SeqCst),
+            0,
+            "destination DNS must never reach the host resolver"
+        );
+        udp_task.abort();
+        tcp_task.abort();
+    })
+    .await
+    .unwrap();
+}
+
 fn configured() -> OutboundConfig {
     xray_config::parse_xray_json(include_str!(
         "../../../../../tests/fixtures/configs/wireguard.json"

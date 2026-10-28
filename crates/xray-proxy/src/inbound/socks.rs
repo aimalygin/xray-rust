@@ -1,9 +1,23 @@
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use bytes::Bytes;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use xray_routing::{Network, Target, TargetAddr};
+use zeroize::Zeroizing;
+
+/// RFC 1929 caps both the username and the password at 255 bytes.
+pub const MAX_SOCKS_CREDENTIAL_LENGTH: usize = u8::MAX as usize;
+
+pub(crate) const METHOD_NO_AUTH: u8 = 0x00;
+pub(crate) const METHOD_PASSWORD: u8 = 0x02;
+pub(crate) const METHOD_NONE_ACCEPTABLE: u8 = 0xff;
+pub(crate) const PASSWORD_AUTH_VERSION: u8 = 0x01;
+pub(crate) const PASSWORD_AUTH_SUCCESS: u8 = 0x00;
+const PASSWORD_AUTH_FAILURE: u8 = 0x01;
+const REPLY_GENERAL_FAILURE: u8 = 0x01;
+const REPLY_COMMAND_NOT_SUPPORTED: u8 = 0x07;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SocksParseError {
@@ -25,6 +39,10 @@ pub enum SocksParseError {
     PayloadTooLarge,
     #[error("no acceptable socks authentication methods")]
     NoAcceptableMethods,
+    #[error("unsupported socks username/password version {0}")]
+    UnsupportedAuthVersion(u8),
+    #[error("socks username/password authentication failed")]
+    AuthenticationFailed,
     #[error("io error")]
     Io,
 }
@@ -47,7 +65,88 @@ pub struct SocksUdpDatagram {
     pub payload: Bytes,
 }
 
-pub async fn negotiate_socks5_no_auth<S>(mut stream: S) -> Result<(), SocksParseError>
+/// One RFC 1929 username/password pair accepted by a SOCKS inbound.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SocksAccount {
+    user: Zeroizing<Vec<u8>>,
+    pass: Zeroizing<Vec<u8>>,
+}
+
+impl SocksAccount {
+    /// Returns `None` unless both values contain 1..=255 bytes.
+    pub fn new(user: &[u8], pass: &[u8]) -> Option<Self> {
+        let valid = |value: &[u8]| (1..=MAX_SOCKS_CREDENTIAL_LENGTH).contains(&value.len());
+        (valid(user) && valid(pass)).then(|| Self {
+            user: Zeroizing::new(user.to_vec()),
+            pass: Zeroizing::new(pass.to_vec()),
+        })
+    }
+
+    /// The username, 1..=255 bytes. It is a credential: never log it.
+    pub fn user(&self) -> &[u8] {
+        &self.user
+    }
+
+    /// The password, 1..=255 bytes. It is a credential: never log it.
+    pub fn pass(&self) -> &[u8] {
+        &self.pass
+    }
+
+    /// Compares both halves in constant time and always checks both.
+    fn matches(&self, user: &[u8], pass: &[u8]) -> bool {
+        use aws_lc_rs::constant_time::verify_slices_are_equal;
+        let user_matches = verify_slices_are_equal(&self.user, user).is_ok();
+        let pass_matches = verify_slices_are_equal(&self.pass, pass).is_ok();
+        user_matches & pass_matches
+    }
+}
+
+impl fmt::Debug for SocksAccount {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SocksAccount")
+            .field("user", &"<redacted>")
+            .field("pass", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Authentication required by a SOCKS inbound.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SocksInboundAuth {
+    #[default]
+    NoAuth,
+    /// RFC 1929 username/password; the list is never empty when built by the parser.
+    Password(Vec<SocksAccount>),
+}
+
+impl SocksInboundAuth {
+    pub const fn requires_password(&self) -> bool {
+        matches!(self, Self::Password(_))
+    }
+
+    /// The RFC 1928 method code this inbound selects.
+    const fn method(&self) -> u8 {
+        match self {
+            Self::NoAuth => METHOD_NO_AUTH,
+            Self::Password(_) => METHOD_PASSWORD,
+        }
+    }
+}
+
+pub async fn negotiate_socks5_no_auth<S>(stream: S) -> Result<(), SocksParseError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    negotiate_socks5(stream, &SocksInboundAuth::NoAuth).await
+}
+
+/// Runs SOCKS5 method selection and, for [`SocksInboundAuth::Password`], the
+/// RFC 1929 sub-negotiation. Only the method matching `auth` is ever selected.
+pub async fn negotiate_socks5<S>(
+    mut stream: S,
+    auth: &SocksInboundAuth,
+) -> Result<(), SocksParseError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -70,19 +169,73 @@ where
         .await
         .map_err(|_| SocksParseError::Io)?;
 
-    if methods.contains(&0) {
+    let wanted = auth.method();
+    if !methods.contains(&wanted) {
         stream
-            .write_all(&[5, 0])
+            .write_all(&[5, METHOD_NONE_ACCEPTABLE])
             .await
             .map_err(|_| SocksParseError::Io)?;
+        return Err(SocksParseError::NoAcceptableMethods);
+    }
+    stream
+        .write_all(&[5, wanted])
+        .await
+        .map_err(|_| SocksParseError::Io)?;
+
+    match auth {
+        SocksInboundAuth::NoAuth => Ok(()),
+        SocksInboundAuth::Password(accounts) => verify_password(&mut stream, accounts).await,
+    }
+}
+
+/// RFC 1929: `VER=1 | ULEN | UNAME | PLEN | PASSWD`, answered with `VER=1 | STATUS`.
+async fn verify_password<S>(
+    stream: &mut S,
+    accounts: &[SocksAccount],
+) -> Result<(), SocksParseError>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let version = stream.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    if version != PASSWORD_AUTH_VERSION {
+        let _ = stream
+            .write_all(&[PASSWORD_AUTH_VERSION, PASSWORD_AUTH_FAILURE])
+            .await;
+        return Err(SocksParseError::UnsupportedAuthVersion(version));
+    }
+    let user = read_credential(stream).await?;
+    let pass = read_credential(stream).await?;
+    // `fold` with a non-short-circuit `|` checks every account, so the timing
+    // does not reveal which one matched; `any` would stop at the first.
+    let accepted = accounts.iter().fold(false, |accepted, account| {
+        accepted | account.matches(&user, &pass)
+    });
+    let status = if accepted {
+        PASSWORD_AUTH_SUCCESS
+    } else {
+        PASSWORD_AUTH_FAILURE
+    };
+    stream
+        .write_all(&[PASSWORD_AUTH_VERSION, status])
+        .await
+        .map_err(|_| SocksParseError::Io)?;
+    if accepted {
         Ok(())
     } else {
-        stream
-            .write_all(&[5, 0xff])
-            .await
-            .map_err(|_| SocksParseError::Io)?;
-        Err(SocksParseError::NoAcceptableMethods)
+        Err(SocksParseError::AuthenticationFailed)
     }
+}
+
+async fn read_credential<R: AsyncRead + Unpin>(
+    reader: &mut R,
+) -> Result<Zeroizing<Vec<u8>>, SocksParseError> {
+    let length = reader.read_u8().await.map_err(|_| SocksParseError::Io)?;
+    let mut value = Zeroizing::new(vec![0; usize::from(length)]);
+    reader
+        .read_exact(&mut value)
+        .await
+        .map_err(|_| SocksParseError::Io)?;
+    Ok(value)
 }
 
 pub async fn parse_socks5_request_message<R: AsyncRead + Unpin>(
@@ -114,62 +267,7 @@ pub async fn parse_socks5_request_message<R: AsyncRead + Unpin>(
         SocksCommand::Connect => Network::Tcp,
         SocksCommand::UdpAssociate => Network::Udp,
     };
-    let address_type = head[3];
-    let (addr, port) = match address_type {
-        1 => {
-            let mut raw = [0; 6];
-            reader
-                .read_exact(&mut raw)
-                .await
-                .map_err(|_| SocksParseError::Io)?;
-            let port = u16::from_be_bytes([raw[4], raw[5]]);
-            (
-                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::from([raw[0], raw[1], raw[2], raw[3]]))),
-                port,
-            )
-        }
-        3 => {
-            let mut len = [0; 1];
-            reader
-                .read_exact(&mut len)
-                .await
-                .map_err(|_| SocksParseError::Io)?;
-            let len = usize::from(len[0]);
-            if len == 0 {
-                return Err(SocksParseError::InvalidDomain);
-            }
-
-            let mut domain_and_port = vec![0; len + 2];
-            reader
-                .read_exact(&mut domain_and_port)
-                .await
-                .map_err(|_| SocksParseError::Io)?;
-            let port = u16::from_be_bytes([domain_and_port[len], domain_and_port[len + 1]]);
-            (
-                TargetAddr::Domain(
-                    String::from_utf8(domain_and_port[..len].to_vec())
-                        .map_err(|_| SocksParseError::InvalidDomain)?,
-                ),
-                port,
-            )
-        }
-        4 => {
-            let mut raw = [0; 18];
-            reader
-                .read_exact(&mut raw)
-                .await
-                .map_err(|_| SocksParseError::Io)?;
-            let port = u16::from_be_bytes([raw[16], raw[17]]);
-            (
-                TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from([
-                    raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7], raw[8], raw[9],
-                    raw[10], raw[11], raw[12], raw[13], raw[14], raw[15],
-                ]))),
-                port,
-            )
-        }
-        other => return Err(SocksParseError::UnsupportedAddressType(other)),
-    };
+    let (addr, port) = read_socks5_address(&mut reader, head[3]).await?;
 
     Ok(SocksRequest {
         command,
@@ -227,11 +325,25 @@ pub async fn write_socks5_success_with_bind<W: AsyncWrite + Unpin>(
         .map_err(|_| SocksParseError::Io)
 }
 
-pub async fn write_socks5_failure<W: AsyncWrite + Unpin>(
+pub async fn write_socks5_failure<W: AsyncWrite + Unpin>(writer: W) -> Result<(), SocksParseError> {
+    write_socks5_error(writer, REPLY_GENERAL_FAILURE).await
+}
+
+/// Refuses a request with `REP = 0x07` (command not supported) and a
+/// `0.0.0.0:0` bind address, the reply Xray-core sends for `UDP ASSOCIATE`
+/// on an inbound with `"udp": false`.
+pub async fn write_socks5_command_not_supported<W: AsyncWrite + Unpin>(
+    writer: W,
+) -> Result<(), SocksParseError> {
+    write_socks5_error(writer, REPLY_COMMAND_NOT_SUPPORTED).await
+}
+
+async fn write_socks5_error<W: AsyncWrite + Unpin>(
     mut writer: W,
+    reply: u8,
 ) -> Result<(), SocksParseError> {
     writer
-        .write_all(&[5, 1, 0, 1, 0, 0, 0, 0, 0, 0])
+        .write_all(&[5, reply, 0, 1, 0, 0, 0, 0, 0, 0])
         .await
         .map_err(|_| SocksParseError::Io)
 }
@@ -272,7 +384,81 @@ pub fn parse_socks5_udp_datagram(raw: &[u8]) -> Result<SocksUdpDatagram, SocksPa
     })
 }
 
-fn encode_target_addr(output: &mut Vec<u8>, addr: &TargetAddr) -> Result<(), SocksParseError> {
+/// Why a SOCKS5 `ADDR | PORT` field could not be read.
+pub(crate) enum AddressReadError {
+    Io(std::io::Error),
+    /// A zero-length or non-UTF-8 domain.
+    InvalidDomain,
+    UnsupportedType(u8),
+}
+
+impl From<AddressReadError> for SocksParseError {
+    fn from(error: AddressReadError) -> Self {
+        match error {
+            AddressReadError::Io(_) => Self::Io,
+            AddressReadError::InvalidDomain => Self::InvalidDomain,
+            AddressReadError::UnsupportedType(other) => Self::UnsupportedAddressType(other),
+        }
+    }
+}
+
+/// Reads the `ADDR | PORT` that follows an already-read `ATYP`. Only exact
+/// reads are used, so nothing past the port is consumed. Shared by the request
+/// parser and the client-side reply reader.
+pub(crate) async fn read_socks5_address<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    address_type: u8,
+) -> Result<(TargetAddr, u16), AddressReadError> {
+    match address_type {
+        1 => {
+            let mut raw = [0; 6];
+            reader
+                .read_exact(&mut raw)
+                .await
+                .map_err(AddressReadError::Io)?;
+            let [a, b, c, d, high, low] = raw;
+            Ok((
+                TargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(a, b, c, d))),
+                u16::from_be_bytes([high, low]),
+            ))
+        }
+        3 => {
+            let len = usize::from(reader.read_u8().await.map_err(AddressReadError::Io)?);
+            if len == 0 {
+                return Err(AddressReadError::InvalidDomain);
+            }
+            let mut domain_and_port = vec![0; len + 2];
+            reader
+                .read_exact(&mut domain_and_port)
+                .await
+                .map_err(AddressReadError::Io)?;
+            let port = u16::from_be_bytes([domain_and_port[len], domain_and_port[len + 1]]);
+            domain_and_port.truncate(len);
+            let domain =
+                String::from_utf8(domain_and_port).map_err(|_| AddressReadError::InvalidDomain)?;
+            Ok((TargetAddr::Domain(domain), port))
+        }
+        4 => {
+            let mut raw = [0; 18];
+            reader
+                .read_exact(&mut raw)
+                .await
+                .map_err(AddressReadError::Io)?;
+            let mut octets = [0; 16];
+            octets.copy_from_slice(&raw[..16]);
+            Ok((
+                TargetAddr::Ip(IpAddr::V6(Ipv6Addr::from(octets))),
+                u16::from_be_bytes([raw[16], raw[17]]),
+            ))
+        }
+        other => Err(AddressReadError::UnsupportedType(other)),
+    }
+}
+
+pub(crate) fn encode_target_addr(
+    output: &mut Vec<u8>,
+    addr: &TargetAddr,
+) -> Result<(), SocksParseError> {
     match addr {
         TargetAddr::Ip(IpAddr::V4(addr)) => {
             output.push(1);

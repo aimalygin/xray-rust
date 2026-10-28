@@ -5,6 +5,8 @@ package org.xrayrust.mobile
 internal object XrayVlessEncryption {
     const val expected = "none or bounded mlkem768x25519plus.{native|xorpub|random}.{1rtt|0rtt}.[padding.]<1-8 public keys>"
     private const val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    private val supportedModes = setOf("native", "xorpub", "random")
+    private val supportedRoundTrips = setOf("1rtt", "0rtt")
     private val lowOrder = setOf(
         "0000000000000000000000000000000000000000000000000000000000000000",
         "0100000000000000000000000000000000000000000000000000000000000000",
@@ -20,8 +22,8 @@ internal object XrayVlessEncryption {
         if (value.toByteArray(Charsets.UTF_8).size > 16_384) return false
         val parts = value.split('.')
         if (parts.size < 4 || parts[0] != "mlkem768x25519plus" ||
-            parts[1] !in setOf("native", "xorpub", "random") ||
-            parts[2] !in setOf("1rtt", "0rtt")) return false
+            parts[1] !in supportedModes ||
+            parts[2] !in supportedRoundTrips) return false
         val keyStart = (3 until parts.size).firstOrNull { parts[it].length >= 20 } ?: return false
         val padding = parts.subList(3, keyStart)
         val keys = parts.subList(keyStart, parts.size)

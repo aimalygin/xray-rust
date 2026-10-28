@@ -14,9 +14,8 @@
     {
       "tag": "entry",
       "protocol": "freedom",
-      "proxySettings": {
-        "tag": "exit",
-        "transportLayer": true
+      "streamSettings": {
+        "sockopt": { "dialerProxy": "exit" }
       }
     },
     {

@@ -2,6 +2,7 @@ package org.xrayrust.mobile
 
 import android.content.pm.PackageManager.NameNotFoundException
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.ErrnoException
 import android.system.Os
@@ -261,6 +262,28 @@ internal fun joinXrayPumpThreadUninterruptibly(thread: Thread?) {
     }
 }
 
+/** Keep attempting shutdown steps, retaining the first error and later diagnostics. */
+internal class XrayShutdownFailures {
+    private var firstFailure: Throwable? = null
+
+    fun capture(block: () -> Unit) {
+        try {
+            block()
+        } catch (error: Throwable) {
+            val first = firstFailure
+            if (first == null) {
+                firstFailure = error
+            } else if (first !== error) {
+                first.addSuppressed(error)
+            }
+        }
+    }
+
+    fun throwIfAny() {
+        firstFailure?.let { throw it }
+    }
+}
+
 internal fun isRecoverablePacketPushFailure(error: Throwable): Boolean =
     error is XrayCoreException
 
@@ -432,26 +455,15 @@ open class XrayVpnService : VpnService() {
             } else {
                 return XrayTunnelStartOutcome.Started(session)
             }
-        } catch (_: StartCancelledException) {
-            cleanupUnpublishedSession(
-                tunnel = tunnel,
-                core = xrayCore,
-                coreStarted = coreStarted,
-            )
-            return XrayTunnelStartOutcome.Cancelled
-        } catch (_: AndroidDnsBootstrapCancelledException) {
-            cleanupUnpublishedSession(
-                tunnel = tunnel,
-                core = xrayCore,
-                coreStarted = coreStarted,
-            )
-            return XrayTunnelStartOutcome.Cancelled
         } catch (error: Throwable) {
             cleanupUnpublishedSession(
                 tunnel = tunnel,
                 core = xrayCore,
                 coreStarted = coreStarted,
             )
+            if (error is StartCancelledException || error is AndroidDnsBootstrapCancelledException) {
+                return XrayTunnelStartOutcome.Cancelled
+            }
             return if (lifecycle.isStartFailureReportable(attempt) &&
                 !Thread.currentThread().isInterrupted
             ) {
@@ -537,6 +549,10 @@ open class XrayVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addAddress("fd00:7872::1", 128)
             .addRoute("::", 0)
+        if (Build.VERSION.SDK_INT >= 29) {
+            // A VPN of an app targeting API 29+ is metered by default, even on Wi-Fi.
+            builder.setMetered(false)
+        }
         try {
             builder.addDisallowedApplication(packageName)
         } catch (_: NameNotFoundException) {
@@ -602,21 +618,19 @@ open class XrayVpnService : VpnService() {
                 if (read < 0) {
                     throw EOFException("Android VPN tunnel reached EOF")
                 }
-                if (read > 0) {
-                    try {
-                        session.core.pushPacket(packetBuffer, read)
-                    } catch (error: Throwable) {
-                        // Queue saturation is currently surfaced through the same
-                        // public exception as other TUN push errors. PacketTooLarge
-                        // is excluded by the MTU-sized buffer, and QueueClosed also
-                        // wakes the outbound poll worker with a terminal error.
-                        // Therefore push-side core errors are packet drops; I/O and
-                        // outbound poll/write failures own terminal teardown.
-                        if (!isRecoverablePacketPushFailure(error)) {
-                            throw error
-                        }
-                        Thread.yield()
+                try {
+                    session.core.pushPacket(packetBuffer, read)
+                } catch (error: Throwable) {
+                    // Queue saturation is currently surfaced through the same
+                    // public exception as other TUN push errors. PacketTooLarge
+                    // is excluded by the MTU-sized buffer, and QueueClosed also
+                    // wakes the outbound poll worker with a terminal error.
+                    // Therefore push-side core errors are packet drops; I/O and
+                    // outbound poll/write failures own terminal teardown.
+                    if (!isRecoverablePacketPushFailure(error)) {
+                        throw error
                     }
+                    Thread.yield()
                 }
             }
         } catch (error: Throwable) {
@@ -691,16 +705,7 @@ open class XrayVpnService : VpnService() {
                 return
             }
 
-            var firstFailure: Throwable? = null
-            fun capture(block: () -> Unit) {
-                try {
-                    block()
-                } catch (error: Throwable) {
-                    if (firstFailure == null) {
-                        firstFailure = error
-                    }
-                }
-            }
+            val failures = XrayShutdownFailures()
 
             inboundThread?.interrupt()
             outboundThread?.interrupt()
@@ -708,20 +713,20 @@ open class XrayVpnService : VpnService() {
             if (backend == XrayTunBackend.PacketPump) {
                 // Closing first unblocks FileInputStream.read. The Rust core does
                 // not own this fd in packet-pump mode.
-                capture { tunnel.close() }
+                failures.capture { tunnel.close() }
                 joinXrayPumpThreadUninterruptibly(inboundThread)
                 joinXrayPumpThreadUninterruptibly(outboundThread)
-                capture { core.stop() }
-                capture { core.close() }
+                failures.capture { core.stop() }
+                failures.capture { core.close() }
             } else {
                 // Rust owns active tasks over a borrowed descriptor. Stop and free
                 // them before closing the ParcelFileDescriptor.
-                capture { core.stop() }
-                capture { core.close() }
-                capture { tunnel.close() }
+                failures.capture { core.stop() }
+                failures.capture { core.close() }
+                failures.capture { tunnel.close() }
             }
 
-            firstFailure?.let { throw it }
+            failures.throwIfAny()
         }
     }
 

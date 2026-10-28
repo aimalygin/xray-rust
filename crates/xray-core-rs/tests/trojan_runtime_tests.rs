@@ -109,6 +109,49 @@ async fn trojan_runtime_carriers_socks_http_udp_accounting_and_close() {
 }
 
 #[tokio::test]
+#[ignore = "requires pinned sing-box; run scripts/check-v08-independent-interop.sh"]
+async fn httpupgrade_independent_reference_rejects_default_websocket_key() {
+    use std::sync::Arc;
+    use xray_core_rs::{open_tcp_stream_with_resolver_and_dialer, CoreError, OutboundRouter};
+    use xray_transport::TransportError;
+    if !independent_reference() {
+        return;
+    }
+    let server = ReferenceServer::start("httpupgrade").await;
+    timeout(DEADLINE, async {
+        let (address, _echo) = tcp_echo().await;
+        let (_, _, bootstrap, dialer) = server.core();
+        let target = Target::new(TargetAddr::Ip(address.ip()), address.port(), Network::Tcp);
+        let mut profile = server.profile();
+        profile["outbounds"][0]["streamSettings"]["httpupgradeSettings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("headers");
+        let config = xray_config::parse_xray_json(&profile.to_string())
+            .unwrap()
+            .config;
+        let router = OutboundRouter::new(Arc::new(config));
+        let outbound = router.select_tcp_outbound().unwrap();
+        match open_tcp_stream_with_resolver_and_dialer(
+            &outbound,
+            &target,
+            bootstrap.as_ref(),
+            &dialer,
+        )
+        .await
+        {
+            Err(CoreError::Transport(TransportError::HttpUpgradeRejected(message))) => {
+                assert_eq!(message, "unexpected status line `HTTP/1.1 404 Not Found`");
+            }
+            Err(error) => panic!("expected HTTPUpgrade 404, got {error}"),
+            Ok(_) => panic!("pinned sing-box unexpectedly accepted a nonempty WebSocket key"),
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 #[ignore = "requires pinned Xray; run scripts/check-trojan-interop.sh"]
 async fn trojan_runtime_rejects_wrong_password_and_untrusted_peer() {
     use std::sync::Arc;

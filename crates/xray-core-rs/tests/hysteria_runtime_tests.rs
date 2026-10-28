@@ -42,15 +42,18 @@ async fn run_parsed_salamander_hop_profile(noise_before: Option<bool>) {
         let unused = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         profile["outbounds"][0]["settings"]["port"] = serde_json::json!(unused.local_addr().unwrap().port());
         profile["outbounds"][0]["streamSettings"]["finalmask"] = serde_json::json!({
-            "udp":[{"type":"salamander","settings":{"password":support::server::SALAMANDER_PASSWORD}}],
-            "quicParams":{"udpHop":{"ports":hop_port,"interval":5}}
+            "udp":[
+                {"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote","remotePorts":hop_port,"interval":5}},
+                {"type":"salamander","settings":{"password":support::server::SALAMANDER_PASSWORD}}
+            ],
+            "quicParams":{"disableChromeParrot":true}
         });
         if let Some(before) = noise_before {
             let noise = serde_json::json!({"type":"noise","settings":{"noise":[
                 {"type":"str","packet":"synthetic-noise","delay":"1-3"},
                 {"rand":"16-24","delay":1}, {"type":"base64","packet":"AAEC"}]}});
             let masks = profile["outbounds"][0]["streamSettings"]["finalmask"]["udp"].as_array_mut().unwrap();
-            if before { masks.insert(0,noise); } else { masks.push(noise); }
+            if before { masks.insert(1,noise); } else { masks.push(noise); }
         }
         let parsed = xray_config::parse_xray_json(&profile.to_string()).unwrap();
         let protector = Arc::new(Protector::default());

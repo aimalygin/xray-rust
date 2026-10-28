@@ -185,21 +185,29 @@ impl Parser<'_> {
             let [target_index] = matches.as_slice() else {
                 self.error(
                     path,
-                    "fragment dialerProxy must reference exactly one existing outbound tag",
+                    "dialerProxy must reference exactly one existing outbound tag",
                 );
                 continue;
             };
             let target = &outbounds[*target_index];
-            if *target_index == index
+            if *target_index == index {
+                self.error(path, "dialerProxy cannot reference its own outbound");
+                continue;
+            }
+            if target.stream.tcp_fragment.is_none()
                 || !matches!(target.settings, OutboundSettings::Freedom)
+            {
+                // Ordinary transport-layer chaining is compiled and cycle-checked
+                // by the same core graph as the legacy proxySettings form.
+                continue;
+            }
+            if !matches!(target.settings, OutboundSettings::Freedom)
                 || target.stream.security != StreamSecurity::None
                 || target.stream.transport != StreamTransport::Raw
                 || target.proxy_settings.is_some()
                 || target.mux.is_some()
                 || target.stream.socket_options.is_some()
                 || target.stream.quic_params.is_some()
-                || target.stream.tcp_fragment.is_none()
-                || outbounds[index].proxy_settings.is_some()
                 || outbounds[index].stream.tcp_fragment.is_some()
             {
                 self.error(path, "dialerProxy supports only a dedicated raw freedom fragment outbound, without chaining, socket overrides, mux or a second fragment mask");
@@ -211,6 +219,7 @@ impl Parser<'_> {
             // to chain and the existing REALITY-over-proxy restriction stays intact.
             let fragment = target.stream.tcp_fragment.clone();
             outbounds[index].stream.tcp_fragment = fragment;
+            outbounds[index].proxy_settings = None;
         }
     }
 

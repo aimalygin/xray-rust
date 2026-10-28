@@ -498,7 +498,7 @@ private fun collectOutboundBootstrapDomains(
     for (outboundIndex in 0 until outbounds.length()) {
         val outbound = outbounds.optJSONObject(outboundIndex) ?: continue
         val protocol = outbound.optString("protocol").lowercase(Locale.ROOT)
-        if (protocol !in listOf("vless", "vmess", "trojan", "shadowsocks", "hysteria", "wireguard")) continue
+        if (protocol !in listOf("vless", "vmess", "trojan", "shadowsocks", "socks", "http", "hysteria", "wireguard")) continue
         val settings = outbound.getJSONObject("settings")
         val addresses = when (protocol) {
             "vless", "vmess" -> {
@@ -508,7 +508,7 @@ private fun collectOutboundBootstrapDomains(
                     (0 until servers.length()).map { servers.getJSONObject(it).getString("address") }
                 }
             }
-            "trojan", "shadowsocks" -> {
+            "trojan", "shadowsocks", "socks", "http" -> {
                 if (settings.has("address")) listOf(settings.getString("address"))
                 else {
                     val servers = settings.getJSONArray("servers")
@@ -525,7 +525,10 @@ private fun collectOutboundBootstrapDomains(
                 }
             }
         }
-        for (address in addresses) {
+        for (rawAddress in addresses) {
+            // Match the core SOCKS/HTTP parsers' bracket/whitespace normalization
+            // for lookup only; preserve the original settings and TLS metadata.
+            val address = if (protocol == "socks" || protocol == "http") rawAddress.removeSurrounding("[", "]").trim() else rawAddress
             require(address.isNotEmpty()) { "carrier bootstrap host must not be empty" }
             if (isIpLiteral(address)) {
                 require(canonicalIpAddress(address) !in XRAY_TUN_OWNED_ADDRESSES) {

@@ -51,7 +51,7 @@ pub(crate) use xhttp::{
 pub use grpc::test_only as grpc_test_only;
 pub use grpc::{resolve_user_agent, Authority, GrpcConfig, GrpcTransport, HeaderValue};
 pub use http_headers::{serialize_request, HeaderMap};
-pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig};
+pub use httpupgrade::{connect_httpupgrade, HttpUpgradeConfig, PrefixedStream};
 pub use masquerade::{
     apply_masquerade, apply_masquerade_with_versions, BrowserVersions, VersionOffsets,
 };

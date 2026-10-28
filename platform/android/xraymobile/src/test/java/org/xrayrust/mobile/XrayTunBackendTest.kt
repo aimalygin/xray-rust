@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,6 +18,44 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class XrayTunBackendTest {
+    @Test
+    fun shutdownRetainsLaterFailuresAndStillAttemptsEveryStep() {
+        val failures = XrayShutdownFailures()
+        val stopped = IllegalStateException("synthetic stop failure")
+        val freed = IllegalStateException("synthetic free failure")
+        val closed = IllegalStateException("synthetic close failure")
+        val steps = mutableListOf<String>()
+
+        failures.capture { steps += "stop"; throw stopped }
+        failures.capture { steps += "free"; throw freed }
+        failures.capture { steps += "close"; throw closed }
+        failures.capture { steps += "finish" }
+
+        assertEquals(listOf("stop", "free", "close", "finish"), steps)
+        val error = assertThrows(IllegalStateException::class.java) { failures.throwIfAny() }
+        assertSame(stopped, error)
+        assertEquals(listOf(freed, closed), error.suppressed.toList())
+    }
+
+    @Test
+    fun shutdownDoesNotSuppressAnExceptionOntoItself() {
+        val failures = XrayShutdownFailures()
+        val error = IllegalStateException("synthetic shared failure")
+        failures.capture { throw error }
+        failures.capture { throw error }
+        assertSame(error, assertThrows(IllegalStateException::class.java) { failures.throwIfAny() })
+        assertTrue(error.suppressed.isEmpty())
+    }
+
+    @Test
+    fun successfulShutdownHasNoFailure() {
+        val failures = XrayShutdownFailures()
+        var completed = false
+        failures.capture { completed = true }
+        failures.throwIfAny()
+        assertTrue(completed)
+    }
+
     @Test
     fun directFileDescriptorBackendIsTheDefault() {
         assertEquals(XrayTunBackend.FileDescriptor, DEFAULT_XRAY_TUN_BACKEND)

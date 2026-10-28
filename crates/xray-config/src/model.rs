@@ -520,9 +520,30 @@ pub enum SniffingDestination {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InboundProtocol {
     Tproxy(TproxySettings),
-    Socks,
+    Socks(SocksInboundSettings),
     Http,
     Tun,
+}
+
+/// SOCKS5 inbound settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SocksInboundSettings {
+    pub auth: xray_proxy::inbound::SocksInboundAuth,
+    /// Accept `UDP ASSOCIATE`. When false the request is refused with
+    /// `REP = 0x07`, as Xray-core does for `"udp": false`. The parser keeps an
+    /// absent `udp` enabled, unlike Xray-core, which reads it as false.
+    pub udp: bool,
+}
+
+impl Default for SocksInboundSettings {
+    /// No authentication, UDP enabled: what the parser builds when `settings`
+    /// or its `auth` and `udp` fields are absent.
+    fn default() -> Self {
+        Self {
+            auth: xray_proxy::inbound::SocksInboundAuth::NoAuth,
+            udp: true,
+        }
+    }
 }
 
 /// Linux transparent interception; the operator owns routing/firewall rules.
@@ -574,6 +595,8 @@ pub enum OutboundProtocol {
     Hysteria,
     Wireguard,
     Blackhole,
+    Socks,
+    Http,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -587,6 +610,8 @@ pub enum OutboundSettings {
     Hysteria(HysteriaOutboundSettings),
     Wireguard(WireguardOutboundSettings),
     Blackhole(BlackholeOutboundSettings),
+    Socks(SocksOutboundSettings),
+    Http(HttpOutboundSettings),
 }
 
 impl OutboundSettings {
@@ -601,6 +626,8 @@ impl OutboundSettings {
             Self::Hysteria(_) => OutboundProtocol::Hysteria,
             Self::Wireguard(_) => OutboundProtocol::Wireguard,
             Self::Blackhole(_) => OutboundProtocol::Blackhole,
+            Self::Socks(_) => OutboundProtocol::Socks,
+            Self::Http(_) => OutboundProtocol::Http,
         }
     }
 }
@@ -628,6 +655,8 @@ pub struct WireguardOutboundSettings {
     pub addresses: Vec<std::net::IpAddr>,
     pub mtu: u16,
     pub domain_strategy: WireguardDomainStrategy,
+    /// Literal DNS servers contacted through the WireGuard tunnel.
+    pub remote_dns: Vec<std::net::IpAddr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -811,6 +840,33 @@ impl fmt::Debug for TrojanOutboundSettings {
             .field("level", &self.level)
             .finish()
     }
+}
+
+/// Xray `socks` outbound settings: one SOCKS5 server reached over the
+/// configured stream, with optional RFC 1929 credentials.
+///
+/// `Debug` is safe to log: [`SocksAccount`](xray_proxy::inbound::SocksAccount)
+/// redacts both credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SocksOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub account: Option<xray_proxy::inbound::SocksAccount>,
+    pub level: u32,
+}
+
+/// Xray `http` outbound settings: one HTTP/1.1 proxy reached over the
+/// configured stream and asked for a `CONNECT` tunnel, with optional Basic
+/// credentials.
+///
+/// `Debug` is safe to log: [`HttpAccount`](xray_proxy::outbound::HttpAccount)
+/// redacts both credentials.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HttpOutboundSettings {
+    pub server: TargetAddr,
+    pub port: u16,
+    pub account: Option<xray_proxy::outbound::HttpAccount>,
+    pub level: u32,
 }
 
 #[derive(Clone, PartialEq, Eq)]

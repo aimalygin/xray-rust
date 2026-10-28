@@ -49,14 +49,16 @@ use xray_config::{
     InboundSniffingConfig, IpCidr, IpMatcherSet, Network, OutboundConfig, OutboundSettings,
     PolicyConfig, PolicyLevelConfig, RealitySettings, RealityShortId, RoutingConfig,
     RoutingDomainStrategy, RoutingPortRange, RoutingRule, RoutingRuleTarget, SniffingDestination,
-    StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
+    SocksInboundSettings, StreamSecurity, StreamSettings, StreamTransport, TargetAddr, TlsSettings,
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
     ConnectionState, Core, CoreError, DnsBootstrapMode, OutboundRouter, RuntimeLogConfig,
     RuntimeLogger, TcpOutbound, TunRuntimeOptions, TunRuntimeProfile, VlessTcpOutbound,
 };
-use xray_proxy::inbound::{encode_socks5_udp_datagram, parse_socks5_udp_datagram};
+use xray_proxy::inbound::{
+    encode_socks5_udp_datagram, parse_socks5_udp_datagram, SocksAccount, SocksInboundAuth,
+};
 use xray_proxy::vless::{
     encode_udp_packet, encode_xudp_keep_packet, read_udp_packet, read_xudp_packet,
     unpad_vision_block, VisionCommand, VisionPadding,
@@ -73,6 +75,10 @@ mod tun_admission;
 
 #[path = "runtime_data_path_tests/blackhole.rs"]
 mod blackhole;
+#[path = "runtime_data_path_tests/socks_inbound_udp.rs"]
+mod socks_inbound_udp;
+#[path = "runtime_data_path_tests/socks_outbound.rs"]
+mod socks_outbound;
 
 #[path = "runtime_data_path_tests/tun_download_backpressure.rs"]
 mod tun_download_backpressure;
@@ -102,6 +108,8 @@ fn compile_vless_tcp_outbound_one_shot(config: &CoreConfig) -> Result<VlessTcpOu
         | TcpOutbound::FreedomHappyEyeballs(_)
         | TcpOutbound::FreedomFragment(_)
         | TcpOutbound::Trojan(_)
+        | TcpOutbound::Socks(_)
+        | TcpOutbound::Http(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Hysteria(_)
@@ -418,7 +426,7 @@ fn runtime_config_with_freedom_outbound() -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -720,7 +728,7 @@ fn runtime_socks_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig 
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -831,7 +839,7 @@ fn runtime_socks_config_with_tls_vision_vless_domain_server(
     let mut config =
         runtime_tun_config_with_tls_vision_vless_domain_server(domain, port, server_name);
     config.inbounds[0].tag = Some("socks-in".to_owned());
-    config.inbounds[0].protocol = InboundProtocol::Socks;
+    config.inbounds[0].protocol = InboundProtocol::Socks(Default::default());
     config
 }
 
@@ -839,7 +847,7 @@ fn runtime_config_with_routed_freedom_outbound(unused_proxy_port: u16) -> CoreCo
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -876,7 +884,7 @@ fn runtime_config_with_domain_routed_freedom_outbound(unused_proxy_port: u16) ->
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -942,7 +950,7 @@ fn runtime_config_with_ip_routed_freedom_outbound(unused_proxy_port: u16) -> Cor
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -1025,7 +1033,7 @@ fn runtime_config_with_vless_server(vless_addr: SocketAddr) -> CoreConfig {
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -1073,7 +1081,7 @@ fn runtime_config_with_vless_domain_server(domain: &str, port: u16) -> CoreConfi
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -1101,7 +1109,7 @@ fn runtime_config_with_tls_vless_domain_server(
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,
@@ -2128,6 +2136,36 @@ async fn socks_policy_vless_user_level_conn_idle_closes_idle_tunnel() {
     timeout(
         Duration::from_secs(2),
         run_socks_policy_vless_user_level_conn_idle_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_password_inbound_tunnels_only_after_rfc1929_success() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_password_freedom_echo_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_password_udp_association_refuses_undeclared_client_endpoint() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_password_udp_undeclared_client_scenario(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn socks_password_udp_association_ignores_other_local_senders() {
+    timeout(
+        Duration::from_secs(2),
+        run_socks_password_udp_client_lock_scenario(),
     )
     .await
     .unwrap();
@@ -3680,6 +3718,163 @@ async fn run_socks_to_freedom_echo_scenario() {
         .unwrap();
 }
 
+fn runtime_config_with_password_socks_inbound() -> CoreConfig {
+    let mut config = runtime_config_with_freedom_outbound();
+    config.inbounds[0].protocol = InboundProtocol::Socks(SocksInboundSettings {
+        auth: SocksInboundAuth::Password(vec![SocksAccount::new(
+            b"synthetic-user",
+            b"synthetic-pass",
+        )
+        .unwrap()]),
+        udp: true,
+    });
+    config
+}
+
+async fn socks5_password_login(client: &mut TcpStream, user: &[u8], pass: &[u8]) -> u8 {
+    client.write_all(&[5, 1, 2]).await.unwrap();
+    let mut method = [0; 2];
+    client.read_exact(&mut method).await.unwrap();
+    assert_eq!(method, [5, 2]);
+
+    let mut request = vec![1, u8::try_from(user.len()).unwrap()];
+    request.extend_from_slice(user);
+    request.push(u8::try_from(pass.len()).unwrap());
+    request.extend_from_slice(pass);
+    client.write_all(&request).await.unwrap();
+    let mut status = [0; 2];
+    client.read_exact(&mut status).await.unwrap();
+    assert_eq!(status[0], 1);
+    status[1]
+}
+
+async fn run_socks_password_freedom_echo_scenario() {
+    let (echo_addr, echo_handle) = spawn_echo_server().await;
+    let SocketAddr::V4(echo_v4) = echo_addr else {
+        panic!("echo server binds IPv4 loopback");
+    };
+    let mut core = Core::new(runtime_config_with_password_socks_inbound()).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut rejected = TcpStream::connect(socks_addr).await.unwrap();
+    assert_eq!(
+        socks5_password_login(&mut rejected, b"synthetic-user", b"wrong-pass").await,
+        1
+    );
+    let mut byte = [0; 1];
+    assert_eq!(rejected.read(&mut byte).await.unwrap(), 0);
+
+    let mut no_auth = TcpStream::connect(socks_addr).await.unwrap();
+    no_auth.write_all(&[5, 1, 0]).await.unwrap();
+    let mut method = [0; 2];
+    no_auth.read_exact(&mut method).await.unwrap();
+    assert_eq!(method, [5, 0xff]);
+
+    let mut client = TcpStream::connect(socks_addr).await.unwrap();
+    assert_eq!(
+        socks5_password_login(&mut client, b"synthetic-user", b"synthetic-pass").await,
+        0
+    );
+    let mut request = vec![5, 1, 0, 1];
+    request.extend_from_slice(&echo_v4.ip().octets());
+    request.extend_from_slice(&echo_v4.port().to_be_bytes());
+    client.write_all(&request).await.unwrap();
+    let mut reply = [0; 10];
+    client.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[..2], [5, 0]);
+
+    client.write_all(b"hello password socks").await.unwrap();
+    let mut echoed = vec![0; "hello password socks".len()];
+    client.read_exact(&mut echoed).await.unwrap();
+    assert_eq!(echoed, b"hello password socks");
+
+    drop(client);
+    core.stop().await.unwrap();
+    timeout(Duration::from_secs(1), echo_handle)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn run_socks_password_udp_client_lock_scenario() {
+    let (echo_addr, echo_handle) = spawn_udp_echo_server().await;
+    let mut core = Core::new(runtime_config_with_password_socks_inbound()).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let client = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let intruder = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let mut control = TcpStream::connect(socks_addr).await.unwrap();
+    assert_eq!(
+        socks5_password_login(&mut control, b"synthetic-user", b"synthetic-pass").await,
+        0
+    );
+    let mut associate = vec![5, 3, 0, 1, 127, 0, 0, 1];
+    associate.extend_from_slice(&client.local_addr().unwrap().port().to_be_bytes());
+    control.write_all(&associate).await.unwrap();
+    let mut reply = [0; 10];
+    control.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[..4], [5, 0, 0, 1]);
+    let relay_addr = socks5_ipv4_reply_addr(reply);
+    let target = Target::new(
+        RoutingTargetAddr::Ip(echo_addr.ip()),
+        echo_addr.port(),
+        RoutingNetwork::Udp,
+    );
+    let mut response = vec![0; 2048];
+
+    intruder.send_to(&[0xff; 3], relay_addr).await.unwrap();
+    let foreign = encode_socks5_udp_datagram(&target, b"foreign sender").unwrap();
+    intruder.send_to(&foreign, relay_addr).await.unwrap();
+    assert!(
+        timeout(
+            Duration::from_millis(200),
+            intruder.recv_from(&mut response)
+        )
+        .await
+        .is_err(),
+        "a datagram from another local socket must not use the association"
+    );
+
+    let request = encode_socks5_udp_datagram(&target, b"declared client").unwrap();
+    client.send_to(&request, relay_addr).await.unwrap();
+    let (len, _) = client.recv_from(&mut response).await.unwrap();
+    let response = parse_socks5_udp_datagram(&response[..len]).unwrap();
+    assert_eq!(&response.payload[..], b"declared client");
+
+    drop(control);
+    core.stop().await.unwrap();
+    echo_handle.abort();
+}
+
+async fn run_socks_password_udp_undeclared_client_scenario() {
+    let mut core = Core::new(runtime_config_with_password_socks_inbound()).unwrap();
+    core.start().await.unwrap();
+    let socks_addr = core.inbound_addr(Some("socks-in")).unwrap();
+
+    let mut control = TcpStream::connect(socks_addr).await.unwrap();
+    assert_eq!(
+        socks5_password_login(&mut control, b"synthetic-user", b"synthetic-pass").await,
+        0
+    );
+    control
+        .write_all(&[5, 3, 0, 1, 0, 0, 0, 0, 0, 0])
+        .await
+        .unwrap();
+    let mut reply = [0; 10];
+    control.read_exact(&mut reply).await.unwrap();
+    assert_eq!(
+        reply,
+        [5, 1, 0, 1, 0, 0, 0, 0, 0, 0],
+        "an association without a declared client endpoint must not expose a relay"
+    );
+    let mut byte = [0; 1];
+    assert_eq!(control.read(&mut byte).await.unwrap(), 0);
+
+    core.stop().await.unwrap();
+}
+
 async fn run_socks_policy_handshake_timeout_scenario() {
     let config = runtime_socks_config_with_level_0_policy(PolicyLevelConfig {
         handshake: Some(0),
@@ -3840,7 +4035,7 @@ async fn run_socks_udp_resolved_ip_routed_freedom_echo_scenario(strategy: Routin
         addr: echo_addr,
     };
     let mut config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "socks-in",
         allocate_unused_loopback_port(),
     );
@@ -5622,7 +5817,7 @@ async fn run_socks_udp_dns_outbound_direct_tcp_scenario() {
         ..DnsOutboundSettings::default()
     };
     let config = runtime_listener_config_with_dns_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "socks-in",
         settings,
         vec![Network::Udp],
@@ -5706,7 +5901,7 @@ async fn run_socks_tcp_dns_outbound_policy_stream_scenario() {
         ..DnsOutboundSettings::default()
     };
     let config = runtime_listener_config_with_dns_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "socks-in",
         settings,
         vec![Network::Tcp],
@@ -5813,7 +6008,7 @@ async fn run_external_dns_tag_cannot_bypass_drop_scenario() {
         ..DnsOutboundSettings::default()
     };
     let mut config = runtime_listener_config_with_dns_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "managed-dns-tag",
         settings,
         vec![Network::Udp],
@@ -5853,7 +6048,7 @@ async fn run_core_wide_fake_dns_socks_to_http_scenario() {
     let (udp_echo_addr, udp_echo_handle) = spawn_udp_echo_server().await;
     let fake_ip_pool = IpCidr::new(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15).unwrap();
     let mut config = runtime_listener_config_with_dns_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "socks-in",
         DnsOutboundSettings::default(),
         vec![Network::Tcp],
@@ -8945,7 +9140,7 @@ async fn run_socks_mapped_fake_ip_http_sniffing_precedence_scenario() {
     let conflicting_domain = "sniffed-b.example";
     let (echo_addr, echo_handle) = spawn_echo_server().await;
     let mut config = runtime_listener_config_with_dns_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "socks-in",
         DnsOutboundSettings::default(),
         vec![Network::Tcp],
@@ -9105,7 +9300,7 @@ async fn run_socks_to_resolved_ip_routed_freedom_echo_scenario(strategy: Routing
         addr: echo_addr,
     };
     let mut config = runtime_config_with_ip_if_non_match_routed_freedom_outbound(
-        InboundProtocol::Socks,
+        InboundProtocol::Socks(Default::default()),
         "socks-in",
         allocate_unused_loopback_port(),
     );
@@ -11431,6 +11626,10 @@ async fn socks5_udp_associate(client: &mut TcpStream) -> SocketAddr {
     let mut reply = [0; 10];
     client.read_exact(&mut reply).await.unwrap();
     assert_eq!(&reply[..4], &[5, 0, 0, 1]);
+    socks5_ipv4_reply_addr(reply)
+}
+
+fn socks5_ipv4_reply_addr(reply: [u8; 10]) -> SocketAddr {
     SocketAddr::from((
         Ipv4Addr::new(reply[4], reply[5], reply[6], reply[7]),
         u16::from_be_bytes([reply[8], reply[9]]),
@@ -12081,12 +12280,14 @@ async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
 #[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
     timeout(wireguard_support::DEADLINE, async {
-        let server = wireguard_support::ReferenceServer::start().await;
         let upstream = spawn_observed_udp_dns_a_server(wireguard_support::INNER_IP).await;
+        let server = wireguard_support::ReferenceServer::start_with_dns(upstream.addr().port()).await;
         let upstream_probe = upstream.probe();
         let (echo_address, _tcp) = wireguard_support::tcp_echo().await;
         let (_, protector, _, dialer) = wireguard_support::core(&server);
         let mut json = wireguard_support::profile(server.address);
+        json["outbounds"][0]["settings"]["remoteDNS"] = serde_json::json!(["198.51.100.53"]);
+        json["outbounds"][0]["settings"]["address"] = serde_json::json!(["10.44.0.2"]);
         json["dns"] = serde_json::json!({
             "queryStrategy":"UseIPv4", "hosts":{"bootstrap.example":"127.0.0.1"},
             "servers":[{"address":"198.51.100.7","port":upstream.addr().port()}]

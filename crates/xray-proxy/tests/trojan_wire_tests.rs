@@ -28,7 +28,7 @@ fn request_and_udp_bytes_match_pinned_xray() {
     .unwrap();
     assert_eq!(
         fixture["xrayCoreCommit"],
-        "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+        "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
     );
     for case in fixture["trojanRequests"].as_array().unwrap() {
         let auth = TrojanAuth::new(case["password"].as_str().unwrap()).unwrap();
