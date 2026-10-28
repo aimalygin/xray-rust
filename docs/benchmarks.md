@@ -57,6 +57,14 @@ python3 scripts/publish-migration-benchmarks.py charts \
 Never overwrite an attempt directory. The full collector rejects protocol,
 cleanup and observer failures, any observed compiler, an external process
 using at least one CPU core, or total external use of at least two cores.
+When a live progress UI itself causes CPU spikes, `--control-dir DIR` pauses
+before the first pair and between completed pairs after at least 20 seconds.
+It writes `paused.json`; a controller resumes by writing its exact `token` to
+`resume.txt`. The collector waits another three seconds for rendering to
+settle. Send UI updates only while paused, then wait silently for the next
+checkpoint. These waits are outside measured pairs and are recorded in each
+manifest; the workload, order, binary inputs and quality thresholds are unchanged.
+
 One-second observations retain lighter desktop load; they cannot prove a
 fully idle machine or detect every brief process. Smoke timing is never
 publishable, including smoke attempts that passed under background load.

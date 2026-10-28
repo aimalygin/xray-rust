@@ -232,12 +232,29 @@ def clean(run):
             and not q['compiler_load_detected'] and not q['heavy_external_load'])
 
 
+
+def progress_pause(control, block, completed, cooldown=3):
+    """UI updates happen only with no measured client or fixture alive."""
+    control.mkdir(parents=True, exist_ok=True)
+    token = f'{os.getpid()}:{block}:{completed}'
+    paused, resume = control / 'paused.json', control / 'resume.txt'
+    b.save(paused, {'token': token, 'block': block, 'completed': completed})
+    try:
+        while not resume.exists() or resume.read_text().strip() != token:
+            time.sleep(.1)
+    finally:
+        paused.unlink(missing_ok=True)
+    resume.unlink(missing_ok=True)
+    time.sleep(cooldown)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--profile', choices=PROFILES, action='append')
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--control-dir', type=Path, help='cooperative UI pauses between pairs; resume.txt must echo paused.json token')
     a = parser.parse_args()
     if a.profile and len(a.profile) != len(set(a.profile)):
         raise ValueError('duplicate profile')
@@ -273,8 +290,12 @@ def main():
         'started_unix': time.time(), 'scope': 'Rust before/after; common v26.10.21 server; local synthetic traffic; stock workers',
         'quality_policy': 'fail on compiler, observer/cleanup/protocol error, external process >=100% CPU or aggregate >=200%; retain failed blocks',
         'ordering': 'five adjacent AB/BA pairs per case; first position alternates across cases; no performance-based retries'}
+    manifest['progress_policy'] = 'initial and >=20s between-pair pauses; token resume then 3s cooldown' if a.control_dir else 'no cooperative pauses'
     b.save(output / 'manifest.json', manifest)
     try:
+        if a.control_dir:
+            progress_pause(a.control_dir, output.name, 0)
+        last_pause = time.monotonic()
         for case in selected:
             for repeat in range(1, manifest['repeats'] + 1):
                 client_order = order(indexes[case['id']], repeat)
@@ -301,6 +322,9 @@ def main():
                             raise RuntimeError('failed or contaminated trial; entire block retained')
                 if c.followup.inventory(paths.values()):
                     raise RuntimeError('fixture process survived cleanup')
+                if a.control_dir and time.monotonic() - last_pause >= 20:
+                    progress_pause(a.control_dir, output.name, len(manifest['runs']))
+                    last_pause = time.monotonic()
         if any(b.sha(p) != digest for p, digest in hashes.items()):
             raise RuntimeError('input changed during measurement')
         manifest['status'] = 'pass'

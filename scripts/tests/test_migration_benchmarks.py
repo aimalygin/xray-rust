@@ -28,6 +28,27 @@ class MigrationTests(unittest.TestCase):
                 self.assertEqual(sum(o[0] == version for o in orders), 5)
             self.assertNotEqual(m.order(index, 1), m.order(index, 2))
 
+    def test_progress_pause_waits_for_the_exact_token_before_resuming(self):
+        import json
+        import threading
+        import time
+        with tempfile.TemporaryDirectory() as temp:
+            control = Path(temp)
+            (control / 'resume.txt').write_text('stale-token')
+            thread = threading.Thread(target=m.progress_pause, args=(control, 'block', 10, 0))
+            thread.start()
+            deadline = time.monotonic() + 2
+            while not (control / 'paused.json').exists() and time.monotonic() < deadline:
+                time.sleep(.01)
+            time.sleep(.02)
+            self.assertTrue(thread.is_alive())
+            state = json.loads((control / 'paused.json').read_text())
+            self.assertEqual(state['completed'], 10)
+            (control / 'resume.txt').write_text(state['token'])
+            thread.join(2)
+            self.assertFalse(thread.is_alive())
+            self.assertFalse((control / 'paused.json').exists())
+
     def test_protocol_cleanup_observer_and_contamination_errors_fail_closed(self):
         clean = dict(returncode=0, process_group_empty_after_run=True, surviving_process_group=False,
                      remaining_engine_processes=[], ambient_cpu=dict(observer_errors=[], compiler_load_detected=[], heavy_external_load=False))
