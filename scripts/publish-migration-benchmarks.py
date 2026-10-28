@@ -242,6 +242,25 @@ def charts(report, summary):
     plt.close(fig)
 
 
+    names = [(p, path) for p in m.PROFILES for path in ('socks', 'tun') if f'{p}-{path}-tcp-latency-1' in rows]
+    cols = [(kind, n) for kind in ('tcp-latency', 'udp') for n in (1, 8)]
+    fig, axes = plt.subplots(1, 3, figsize=(13, len(names) * .4 + 1.8), layout='constrained')
+    for ax, quantile in zip(axes, ('median', 'p95', 'p99')):
+        metric = 'latency_' + quantile + '_us'
+        data = np.array([[100 * (rows[f'{p}-{path}-{kind}-{n}']['after_over_before'][metric]['median'] - 1)
+                          for kind, n in cols] for p, path in names])
+        ax.imshow(-data, cmap='RdYlGn', vmin=-20, vmax=20, aspect='auto')
+        for (i, j), value in np.ndenumerate(data):
+            ax.text(j, i, f'{value:+.0f}', ha='center', va='center', fontsize=9)
+        ax.set_xticks(range(len(cols)), [f'{"TCP" if k == "tcp-latency" else "UDP"} {n}' for k, n in cols]); ax.xaxis.tick_top()
+        ax.set_yticks(range(len(names)), [f'{p} · {path}' for p, path in names] if ax == axes[0] else [])
+        ax.set_title(quantile + ' latency change % · lower is better', pad=25, fontsize=10)
+    fig.suptitle('All echo cases · median of five paired after/before ratios\nGreen = lower latency; color saturates at ±20%. Raw microseconds and ranges are in results.csv.', fontsize=12)
+    for suffix in ('svg', 'png'):
+        fig.savefig(report / f'latency-changes.{suffix}', dpi=150)
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=('collect', 'verify', 'charts'))
