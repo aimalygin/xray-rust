@@ -106,6 +106,10 @@ class XrayProfileImporterNativeTest {
         assertEquals("Tunnel 🔑", wireguard.name)
         val config = JSONObject(wireguard.configJson)
         assertEquals(2, config.getJSONArray("outbounds").getJSONObject(1).getJSONObject("settings").getJSONArray("peers").length())
+        val remoteDns = config.getJSONArray("outbounds").getJSONObject(1).getJSONObject("settings").getJSONArray("remoteDNS")
+        assertEquals(2, remoteDns.length())
+        assertEquals("192.0.2.53", remoteDns.getString(0))
+        assertEquals("2001:db8::53", remoteDns.getString(1))
         assertFalse(config.getJSONObject("dns").has("fakeIp"))
     }
 

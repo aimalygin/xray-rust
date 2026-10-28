@@ -655,6 +655,8 @@ pub struct WireguardOutboundSettings {
     pub addresses: Vec<std::net::IpAddr>,
     pub mtu: u16,
     pub domain_strategy: WireguardDomainStrategy,
+    /// Literal DNS servers contacted through the WireGuard tunnel.
+    pub remote_dns: Vec<std::net::IpAddr>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

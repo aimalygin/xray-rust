@@ -4468,6 +4468,28 @@ pub(crate) fn profile_for_fingerprint(
     }
 }
 
+/// REALITY has its own cached draws so every choice meets the new server's
+/// hybrid key-share requirement. Ordinary TLS retains the full browser pool.
+pub(crate) fn reality_profile_for_fingerprint(
+    fingerprint: &str,
+) -> Option<&'static UtlsClientHelloProfile> {
+    let fingerprint = xray_utls::normalize_reality_supported_fingerprint(fingerprint)?;
+    static RANDOM: OnceLock<&'static str> = OnceLock::new();
+    static RANDOMIZED: OnceLock<&'static str> = OnceLock::new();
+    let draw = || {
+        let names = xray_utls::XRAY_REALITY_MODERN_FINGERPRINTS;
+        let mut entropy = [0u8; 8];
+        let _ = OsRng.try_fill_bytes(&mut entropy);
+        let index = (u128::from(u64::from_be_bytes(entropy)) * names.len() as u128) >> 64;
+        names[index as usize]
+    };
+    named_profile(match fingerprint {
+        "random" => RANDOM.get_or_init(draw),
+        "randomized" => RANDOMIZED.get_or_init(draw),
+        name => name,
+    })
+}
+
 /// The name `random` resolves to for the rest of this process.
 fn process_random_fingerprint() -> &'static str {
     static DRAWN: OnceLock<&'static str> = OnceLock::new();

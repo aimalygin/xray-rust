@@ -1,4 +1,5 @@
 //! Lazy shared WireGuard device with separate bootstrap and destination DNS.
+mod dns;
 use super::*;
 use xray_config::{WireguardDomainStrategy, WireguardOutboundSettings};
 use xray_wireguard::{Client, Config, Error, PeerConfig};
@@ -15,6 +16,7 @@ struct Owner {
 }
 struct Cached {
     client: Client,
+    dns: Arc<dyn DnsResolver>,
     protector: Option<Arc<dyn xray_transport::SocketProtector>>,
 }
 impl std::fmt::Debug for Cached {
@@ -40,6 +42,11 @@ impl WireguardOutbound {
             || outbound.stream.quic_params.is_some()
             || outbound.stream.socket_options.is_some()
             || outbound.proxy_settings.is_some()
+            || settings.remote_dns.is_empty()
+            || settings.remote_dns.len() > 8
+            || settings.remote_dns.iter().any(|ip| ip.is_unspecified() || ip.is_multicast()
+                || matches!(ip, IpAddr::V4(v4) if *v4 == std::net::Ipv4Addr::BROADCAST)
+                || matches!(ip, IpAddr::V6(v6) if v6.is_unicast_link_local() || v6.to_ipv4_mapped().is_some()))
             || settings.peers.iter().any(|p| matches!(&p.endpoint, TargetAddr::Domain(d) if d.is_empty() || d.len() > 253 || !d.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b))))
         {
             return Err(CoreError::UnsupportedOutboundNetwork);
@@ -85,7 +92,7 @@ impl WireguardOutbound {
         &self,
         bootstrap: &dyn DnsResolver,
         dialer: &TransportDialer,
-    ) -> Result<Client, CoreError> {
+    ) -> Result<(Client, Arc<dyn DnsResolver>), CoreError> {
         let _admission = self.0.connecting.lock().await;
         if *self.0.shutdown.borrow() {
             return Err(Error::Closed.into());
@@ -97,7 +104,7 @@ impl WireguardOutbound {
                 if !same_protector(&cached.protector, &protector) {
                     return Err(Error::Configuration.into());
                 }
-                return Ok(cached.client.clone());
+                return Ok((cached.client.clone(), cached.dns.clone()));
             }
             slot.take();
         }
@@ -131,11 +138,13 @@ impl WireguardOutbound {
         if self.0.network_generation.load(Ordering::Acquire) != generation {
             client.rebind();
         }
+        let dns = dns::resolver(client.clone(), &self.0.settings.remote_dns);
         *slot = Some(Cached {
             client: client.clone(),
+            dns: dns.clone(),
             protector,
         });
-        Ok(client)
+        Ok((client, dns))
     }
     async fn destinations(
         &self,
@@ -189,13 +198,13 @@ impl WireguardOutbound {
     pub(crate) async fn open_tcp(
         &self,
         target: &Target,
-        destination: &dyn DnsResolver,
+        _destination: &dyn DnsResolver,
         bootstrap: &dyn DnsResolver,
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, CoreError> {
         self.bounded(async {
-            let addresses = self.destinations(target, destination).await?;
-            let client = self.client(bootstrap, dialer).await?;
+            let (client, dns) = self.client(bootstrap, dialer).await?;
+            let addresses = self.destinations(target, dns.as_ref()).await?;
             let mut error = Error::NoRoute;
             let last = addresses.len() - 1;
             for (index, address) in addresses.into_iter().enumerate() {
@@ -221,22 +230,19 @@ impl WireguardOutbound {
     pub(crate) async fn open_udp(
         &self,
         target: &Target,
-        destination: &dyn DnsResolver,
+        _destination: &dyn DnsResolver,
         bootstrap: &dyn DnsResolver,
         dialer: &TransportDialer,
     ) -> Result<xray_wireguard::UdpSession, CoreError> {
         self.bounded(async {
+            let (client, dns) = self.client(bootstrap, dialer).await?;
             let address = self
-                .destinations(target, destination)
+                .destinations(target, dns.as_ref())
                 .await?
                 .into_iter()
                 .next()
                 .ok_or(Error::NoRoute)?;
-            Ok(self
-                .client(bootstrap, dialer)
-                .await?
-                .open_udp(address)
-                .await?)
+            Ok(client.open_udp(address).await?)
         })
         .await
     }

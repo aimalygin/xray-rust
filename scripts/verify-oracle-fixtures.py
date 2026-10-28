@@ -67,11 +67,11 @@ GRPC_MODULE = "tools/reality-oracle/grpc"
 # an optional local reference checkout. Go pseudo-versions only carry twelve
 # hexadecimal characters, so keep the release tag and full object ID here and
 # verify the checkout against the latter whenever one is available.
-XRAY_CORE_TAG = "v26.7.28"
-XRAY_CORE_COMMIT = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
-XRAY_CORE_MODULE_VERSION = "v1.260327.1-0.20260728075948-5ca6f4b7d4dc"
-XRAY_CORE_MODULE_SUM = "h1:fkOkmgHWbF2Q8MdV9VxrsyxRz4OndcrUXUkh1ANBTg0="
-XRAY_CORE_GO_MOD_SUM = "h1:wukQoBGnQ6GaLTGuKwv8rCTgf80QxPj+6iznDZHQEWo="
+XRAY_CORE_TAG = "v26.10.21"
+XRAY_CORE_COMMIT = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+XRAY_CORE_MODULE_VERSION = "v1.260327.1-0.20261021115930-1b1647cd9ddf"
+XRAY_CORE_MODULE_SUM = "h1:Eqz6sj4Up2NtymyVY2UtXNpHZqJGrMwKsXnGOySyUNI="
+XRAY_CORE_GO_MOD_SUM = "h1:rbK8dL0A1f4uYpNa3ljvB1U5qrcb4KQ4Pxb8yGdWZXo="
 XRAY_CORE_MODULES = (MASQUERADE_MODULE, GRPC_MODULE)
 XRAY_CORE_ALLOWED_UNTRACKED = frozenset(("xray", "xray.exe", "target/"))
 
@@ -176,7 +176,7 @@ def verify_xray_core_checkout(checkout: Path) -> None:
 
 
 def verify_xray_core_source_pin() -> None:
-    """Require every oracle source to resolve to Xray-core v26.7.28.
+    """Require every oracle source to resolve to Xray-core v26.10.21.
 
     CI needs no Xray-core checkout because the Go modules consume the immutable
     pseudo-version. A developer checkout remains optional for the same reason,

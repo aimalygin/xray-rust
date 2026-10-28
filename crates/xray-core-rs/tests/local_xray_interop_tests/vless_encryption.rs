@@ -163,6 +163,99 @@ async fn full_xray_encrypted_raw_tls_reality() {
     }
 }
 
+#[tokio::test]
+#[ignore = "requires pinned Xray and local cover oracle; run scripts/check-vless-encryption-oracle.sh"]
+async fn full_xray_encrypted_reality_mldsa65_vision_profiles() {
+    let matrix = FullMatrix::new();
+    let generate = || {
+        let output = Command::new(&matrix.oracle)
+            .args(["keypair", "mldsa65"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    let keys = generate();
+    let wrong = generate();
+    let xray = start_xray_vless_server_customized(
+        &matrix.checkout,
+        XrayVlessServerConfig {
+            security: XrayInboundSecurity::Reality,
+            transport: XrayInboundTransport::Raw,
+            flow: Some("xtls-rprx-vision"),
+        },
+        |json| {
+            let settings = &mut json["inbounds"][0]["streamSettings"]["realitySettings"];
+            settings["dest"] = matrix.origin_address.clone();
+            settings["serverNames"] = serde_json::json!(["encryption-oracle.test"]);
+            settings["show"] = false.into();
+            settings["mldsa65Seed"] = keys["private"].clone();
+        },
+    )
+    .await;
+    let outbound = |fingerprint: &str, key: &serde_json::Value| {
+        let config = serde_json::json!({"outbounds":[{"protocol":"vless",
+            "settings":{"vnext":[{"address":"127.0.0.1","port":xray.addr.port(),
+                "users":[{"id":TEST_UUID,"encryption":"none","flow":"xtls-rprx-vision"}]}]},
+            "streamSettings":{"network":"tcp","security":"reality","realitySettings":{
+                "serverName":"encryption-oracle.test","fingerprint":fingerprint,
+                "publicKey":REALITY_PUBLIC_KEY_BASE64,"shortId":REALITY_SHORT_ID_HEX,
+                "mldsa65Verify":key}}}]});
+        let config = parse_xray_json(&config.to_string()).unwrap().config;
+        let TcpOutbound::Vless(outbound) = OutboundRouter::new(Arc::new(config))
+            .select_tcp_outbound()
+            .unwrap()
+        else {
+            panic!("VLESS required")
+        };
+        *outbound
+    };
+    let dialer = TransportDialer::system().unwrap();
+    let dummy = Target::new(TargetAddr::Ip(Ipv4Addr::LOCALHOST.into()), 9, Network::Tcp);
+    // Train the local cover detector before asserting application traffic.
+    let warmup = outbound("chrome", &keys["public"]);
+    let _ = timeout(
+        Duration::from_secs(5),
+        open_vless_tcp_stream_with_resolver_and_dialer(
+            &warmup,
+            &dummy,
+            &SystemDnsResolver,
+            &dialer,
+        ),
+    )
+    .await;
+    for fingerprint in [
+        "chrome",
+        "hellochrome_131",
+        "firefox",
+        "safari",
+        "random",
+        "randomized",
+    ] {
+        let outbound = outbound(fingerprint, &keys["public"]);
+        for inner_tls in [false, true] {
+            eprintln!("REALITY/ML-DSA profile {fingerprint}, inner TLS: {inner_tls}");
+            timeout(
+                Duration::from_secs(20),
+                matrix_tcp(&outbound, &dialer, inner_tls),
+            )
+            .await
+            .unwrap_or_else(|_| panic!("{fingerprint}: REALITY/ML-DSA/Vision timed out"));
+        }
+    }
+    let bad = outbound("chrome", &wrong["public"]);
+    let rejected = timeout(
+        Duration::from_secs(5),
+        open_vless_tcp_stream_with_resolver_and_dialer(&bad, &dummy, &SystemDnsResolver, &dialer),
+    )
+    .await
+    .expect("verification must terminate");
+    assert!(
+        rejected.is_err(),
+        "wrong ML-DSA verification key must fail closed"
+    );
+}
+
 struct FullMatrix {
     checkout: PathBuf,
     oracle: std::ffi::OsString,

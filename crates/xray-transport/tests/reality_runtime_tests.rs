@@ -344,7 +344,7 @@ fn fixed_context() -> RealityHandshakeContext {
 fn system_reality_context_advertises_xray_v26_7_28_compatibility() {
     let context = SystemRealityHandshakeContextProvider.context();
 
-    assert_eq!(context.version, [26, 7, 28]);
+    assert_eq!(context.version, [26, 10, 21]);
 }
 
 async fn spawn_accept_once() -> (SocketAddr, tokio::task::JoinHandle<()>) {

@@ -29,7 +29,7 @@ fn binary_kdf_and_both_aeads_match_pinned_go_vectors() {
     .unwrap();
     assert_eq!(
         fixture["upstream"],
-        "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+        "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
     );
     for vector in fixture["vectors"].as_array().unwrap() {
         let context = unhex(vector["context"].as_str().unwrap());

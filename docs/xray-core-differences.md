@@ -13,12 +13,34 @@ The [configuration contract](config-compatibility.md) remains authoritative for
 accepted fields. This document records consequences, evidence, and follow-up
 checks; it does not expand the supported configuration surface.
 
+## v26.10.21 migration in progress
+
+The active oracle pin is now `1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`
+(v26.10.21), built with Go 1.27.3. The dated main evidence below remains
+historical. See the [migration checklist](xray-core-v26.10.21-migration.md)
+for completion and pending checks.
+
+REALITY now rejects old/draft key-share profiles before dialing and draws
+`random`/`randomized` from the four supported hybrid profiles. Plain TLS keeps
+its existing profile support. The new SS2022 oracle imports Xray's replacement
+implementation directly; its deterministic vectors canonicalize only its
+internal wall-clock timestamp after authenticating the generated ciphertext.
+Oversized SS2022 keys are no longer accepted upstream; Rust's legacy key
+normalization remains a compatibility difference, not proof that such a
+profile can be loaded unchanged in the new Xray.
+
+The new SS2022 server also updates a UDP session's return connection after an
+authenticated packet arrives from a new source address. The recovery matrix
+checks roaming against Xray and retains the older fixed-return-address
+expectation for the independent sing-box pin; both also test session reopening,
+peer restart, response authentication and replay rejection.
+
 ## Reference and evidence
 
 Integration status reviewed on 2026-10-25 against xray-rust main
 `957827b26c3afdc3420f85bb7ef0568824cebfa5` and Xray-core **v26.7.28**,
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. The upstream pin is enforced by
-[verify-oracle-fixtures.py](../scripts/verify-oracle-fixtures.py). These findings
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. The active (newer) pin is enforced by
+[verify-oracle-fixtures.py](../scripts/verify-oracle-fixtures.py). These historical findings
 do not establish compatibility with every later Xray-core revision.
 
 The [main CI run](https://github.com/aimalygin/xray-rust/actions/runs/40207537967)

@@ -12280,12 +12280,14 @@ async fn wireguard_runtime_tun_tcp_udp_and_host_close() {
 #[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
 async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
     timeout(wireguard_support::DEADLINE, async {
-        let server = wireguard_support::ReferenceServer::start().await;
         let upstream = spawn_observed_udp_dns_a_server(wireguard_support::INNER_IP).await;
+        let server = wireguard_support::ReferenceServer::start_with_dns(upstream.addr().port()).await;
         let upstream_probe = upstream.probe();
         let (echo_address, _tcp) = wireguard_support::tcp_echo().await;
         let (_, protector, _, dialer) = wireguard_support::core(&server);
         let mut json = wireguard_support::profile(server.address);
+        json["outbounds"][0]["settings"]["remoteDNS"] = serde_json::json!(["198.51.100.53"]);
+        json["outbounds"][0]["settings"]["address"] = serde_json::json!(["10.44.0.2"]);
         json["dns"] = serde_json::json!({
             "queryStrategy":"UseIPv4", "hosts":{"bootstrap.example":"127.0.0.1"},
             "servers":[{"address":"198.51.100.7","port":upstream.addr().port()}]

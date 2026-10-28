@@ -46,7 +46,13 @@ func loopbackTarget(id stack.TransportEndpointID, redirect uint16) (string, bool
 	return "", false
 }
 
-func attachForwarder(t *packetTun, redirect uint16) (func(), error) {
+func attachForwarder(t *packetTun, redirect, dnsRedirect uint16) (func(), error) {
+	targetFor := func(id stack.TransportEndpointID) (string, bool) {
+		if id.LocalPort == 53 && dnsRedirect != 0 {
+			return loopbackTarget(id, dnsRedirect)
+		}
+		return loopbackTarget(id, redirect)
+	}
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
@@ -113,7 +119,7 @@ func attachForwarder(t *packetTun, redirect uint16) (func(), error) {
 		}
 	}
 	tcpForwarder := tcp.NewForwarder(s, 0, 32, func(r *tcp.ForwarderRequest) {
-		target, allowed := loopbackTarget(r.ID(), redirect)
+		target, allowed := targetFor(r.ID())
 		if !allowed || !claim() {
 			r.Complete(true)
 			return
@@ -146,7 +152,7 @@ func attachForwarder(t *packetTun, redirect uint16) (func(), error) {
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 	udpForwarder := udp.NewForwarder(s, func(r *udp.ForwarderRequest) bool {
-		target, allowed := loopbackTarget(r.ID(), redirect)
+		target, allowed := targetFor(r.ID())
 		if !allowed || !claim() {
 			return false
 		}

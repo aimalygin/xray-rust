@@ -54,6 +54,15 @@ pub async fn connect_httpupgrade(
     headers.set("Connection", "Upgrade");
     headers.set("Upgrade", "websocket");
 
+    // Go Header.Values/Set canonicalize WebSocket to Websocket. Config keys
+    // retain their literal spelling, matching upstream AddHeader semantics.
+    if headers.get("Sec-Websocket-Key").is_none() {
+        headers.set("Sec-Websocket-Key", &super::websocket::client_key());
+    }
+    if headers.get("Sec-Websocket-Version").is_none() {
+        headers.set("Sec-Websocket-Version", "13");
+    }
+
     let request = serialize_request(
         "GET",
         &escape_decoded_path(&config.path),

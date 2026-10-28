@@ -222,7 +222,7 @@ pub enum RealityError {
     #[error("unsupported REALITY fingerprint {0}")]
     UnsupportedRealityFingerprint(String),
     #[error(
-        "REALITY fingerprint {0} does not support REALITY because it has no X25519-compatible key share"
+        "REALITY fingerprint {0} requires an X25519MLKEM768 key share for REALITY v26.10.21; use chrome, firefox, safari, or random"
     )]
     RealityFingerprintNotRealityCapable(String),
     #[error("failed to generate REALITY ClientHello: {0}")]

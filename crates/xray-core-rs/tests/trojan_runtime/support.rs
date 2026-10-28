@@ -82,7 +82,15 @@ impl ReferenceServer {
         let mut stream = json!({"network":network,"security":"tls","tlsSettings":{"serverName":"localhost","alpn":[if matches!(network,"grpc"|"xhttp") {"h2"} else {"http/1.1"}]}});
         match network {
             "ws" => stream["wsSettings"] = json!({"path":"/trojan"}),
-            "httpupgrade" => stream["httpupgradeSettings"] = json!({"path":"/trojan"}),
+            "httpupgrade" => {
+                stream["httpupgradeSettings"] = json!({"path":"/trojan"});
+                if independent {
+                    // sing-box 1.13.20 rejects nonempty WebSocket keys. Xray's
+                    // new defaults can be overridden with this explicit empty
+                    // header; keep the positive independent carrier coverage.
+                    stream["httpupgradeSettings"]["headers"] = json!({"Sec-Websocket-Key":""});
+                }
+            }
             "grpc" => stream["grpcSettings"] = json!({"serviceName":"trojan"}),
             "xhttp" => {
                 stream["xhttpSettings"] =
@@ -236,7 +244,7 @@ impl ReferenceServer {
                 .contains(if independent_reference() {
                     "sing-box started ("
                 } else {
-                    "core: Xray 26.7.28 started"
+                    "core: Xray 26.10.21 started"
                 })
             {
                 break;

@@ -5542,7 +5542,10 @@ fn finalmask_quic_params_full_v26_surface_is_normalized() {
     ))
     .expect("full finalmask QUIC parameters should parse");
 
-    assert!(parsed.diagnostics.is_empty());
+    assert!(parsed
+        .diagnostics
+        .iter()
+        .any(|d| d.message.contains("legacy udpHop")));
     assert_eq!(
         parsed.config.outbounds[0].stream.quic_params,
         Some(QuicParamsSettings {
@@ -6210,7 +6213,7 @@ fn parses_xray_core_reality_fingerprints() {
 }
 
 #[test]
-fn rejects_known_reality_fingerprints_without_x25519_key_share() {
+fn rejects_known_reality_fingerprints_without_final_hybrid_key_share() {
     for fingerprint in xray_utls::XRAY_REALITY_INCAPABLE_FINGERPRINTS {
         let raw = vless_raw_with_reality_settings(&format!(
             r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "{fingerprint}""#,
@@ -6228,7 +6231,7 @@ fn rejects_known_reality_fingerprints_without_x25519_key_share() {
         assert!(
             err.diagnostics[0]
                 .message
-                .contains("does not support REALITY"),
+                .contains("requires an X25519MLKEM768 key share"),
             "{fingerprint}: {}",
             err.diagnostics[0].message
         );
@@ -6273,8 +6276,12 @@ fn rejects_unsupported_reality_fingerprint_with_path() {
 
 fn assert_parse_error_path(raw: &str, path: &str) {
     let err = parse_xray_json(raw).unwrap_err();
-    assert_eq!(err.diagnostics[0].severity, DiagnosticSeverity::Error);
-    assert_eq!(err.diagnostics[0].path.as_deref(), Some(path));
+    let error = err
+        .diagnostics
+        .iter()
+        .find(|d| d.severity == DiagnosticSeverity::Error)
+        .unwrap();
+    assert_eq!(error.path.as_deref(), Some(path));
 }
 
 fn assert_dns_server_zero_port_rejected(server: &str) {

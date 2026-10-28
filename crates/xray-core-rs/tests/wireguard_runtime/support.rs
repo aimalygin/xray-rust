@@ -25,6 +25,11 @@ pub struct ReferenceServer {
     _reference: reference::Reference,
 }
 impl ReferenceServer {
+    pub async fn start_with_dns(port: u16) -> Self {
+        let mut server = Self::start().await;
+        server._reference.redirect_dns(port).await;
+        server
+    }
     pub async fn start() -> Self {
         Self::start_with_psk(None).await
     }

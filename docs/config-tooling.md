@@ -88,7 +88,7 @@ treat reports as profile-related data rather than public telemetry.
 directories used by the embedding. Core graph/carrier compilation, socket
 binding, host VPN policy and network availability are subsequent checks. For
 example, missing outbound targets, cycles, some Vision/carrier combinations,
-and nonempty QUIC UDP hopping are rejected later by core compilation. An empty
+and nonempty XHTTP H3 UDP hopping are rejected later by core compilation. An empty
 model is currently parser-valid. Tooling preserves this behavior rather than
 silently changing load semantics.
 
@@ -126,7 +126,7 @@ parsed model without exposing it in a report.
 
 ## Maintenance and verification
 
-`surface.rs` owns the 72 recognized object-key sets used by parser rejection
+`surface.rs` owns the recognized object-key sets used by parser rejection
 and contract generation. `parser/dns.rs` owns DNS clients, hosts, fake IP and
 DNS outbound rules; `parser/stream.rs` owns stream/carrier/security selection.
 They join the previously extracted routing, VLESS and XHTTP modules. This

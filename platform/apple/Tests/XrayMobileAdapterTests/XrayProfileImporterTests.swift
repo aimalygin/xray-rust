@@ -73,6 +73,10 @@ final class XrayProfileImporterTests: XCTestCase {
         XCTAssertTrue(profile.configJSON.contains("preSharedKey"))
         XCTAssertTrue(profile.configJSON.contains("198.51.100.7/32"))
         XCTAssertFalse(profile.configJSON.contains("fakeIp"))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any])
+        let outbounds = try XCTUnwrap(root["outbounds"] as? [[String: Any]])
+        let settings = try XCTUnwrap(outbounds[1]["settings"] as? [String: Any])
+        XCTAssertEqual(settings["remoteDNS"] as? [String], ["192.0.2.53", "2001:db8::53"])
         try XrayMobileDNSPreflight.validate(profile.configJSON)
         _ = try XrayCore(configJSON: profile.configJSON)
     }
