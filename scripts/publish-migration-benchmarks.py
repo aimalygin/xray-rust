@@ -61,6 +61,8 @@ def validate_trial(case, run, result, inputs):
     require(result['idle_connections'] == 0 and not result['prepare_client'] and not result['client_env'], 'non-stock client')
     require(result['warmup'] == (case['path'] == 'socks'), 'warmup mismatch')
     require(result['client_preface'] == (case['path'] == 'socks' and case['traffic'] in m.BULK), 'preface mismatch')
+    expected_flows = 1 if case['path'] == 'tun' and case['traffic'] == 'tcp-latency' else case['connections']
+    require(result['concurrent_flows'] == expected_flows, 'concurrency changed')
     count = case['connections'] * case['iterations'] * case['payload_size']
     require(result['bytes_sent'] == (0 if case['traffic'] == 'download' else count), 'sent byte count mismatch')
     require(result['bytes_received'] == (0 if case['traffic'] == 'upload' else count), 'received byte count mismatch')
@@ -263,7 +265,7 @@ def charts(report, summary):
         ax.set_xticks(range(len(cols)), [f'{"TCP" if k == "tcp-latency" else "UDP"} {n}' for k, n in cols]); ax.xaxis.tick_top()
         ax.set_yticks(range(len(names)), [f'{p} · {path}' for p, path in names] if ax == axes[0] else [])
         ax.set_title(quantile + ' latency change % · lower is better', pad=25, fontsize=10)
-    fig.suptitle('All echo cases · median of five paired after/before ratios\nGreen = lower latency; color saturates at ±20%. Raw microseconds and ranges are in results.csv.', fontsize=12)
+    fig.suptitle('All echo cases · median of five paired after/before ratios\nGreen = lower latency; color saturates at ±20%. TUN TCP echo connections are sequential.', fontsize=12)
     for suffix in ('svg', 'png'):
         fig.savefig(report / f'latency-changes.{suffix}', dpi=150)
     plt.close(fig)

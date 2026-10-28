@@ -88,7 +88,7 @@ class PublicationTests(unittest.TestCase):
             ambient_cpu=dict(samples=[{}], observer_errors=[], compiler_load_detected=[], heavy_external_load=False))
         result = {k: case[k] for k in ('path', 'traffic', 'connections', 'iterations', 'payload_size')}
         count = case['connections'] * case['iterations'] * case['payload_size']
-        result.update(status='pass', engine_sha256='abc', idle_connections=0, prepare_client=False, client_env={},
+        result.update(status='pass', concurrent_flows=1, engine_sha256='abc', idle_connections=0, prepare_client=False, client_env={},
             warmup=True, client_preface=True, bytes_sent=count, bytes_received=0, transfer_seconds=1,
             peak_rss_kib=1024, samples=[{}, {}], throughput_mib_s=count / 2**20, cpu_millis=100,
             client_startup_seconds=.1, latency_us=None, ready_latency_us=None)
