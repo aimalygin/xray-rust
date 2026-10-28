@@ -66,10 +66,6 @@ class MigrationTests(unittest.TestCase):
             self.assertNotEqual(first, m.configs('reality-vision', path, '127.0.0.1:12345')[0]['outbounds'][0]['streamSettings']['realitySettings']['publicKey'])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class PublicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -94,10 +90,14 @@ class PublicationTests(unittest.TestCase):
         self.assertIsNone(self.p.paired([0] * 5, after))
 
     def test_public_manifest_omits_unrelated_process_identity_without_changing_cpu_evidence(self):
-        source = {'runs': [{'ambient_cpu': {'samples': [dict(external_cpu_percent=125, top_external=[dict(name='Private App', pid=123, cpu_percent=80)])]}}]}
+        source = {'runs': [{'ambient_cpu': {'compiler_load_detected': [], 'samples': [dict(compiler_load_detected=[], external_cpu_percent=125, top_external=[dict(name='Private App', pid=123, cpu_percent=80)])]}}]}
         redacted = self.p.public_manifest(source)
         sample = redacted['runs'][0]['ambient_cpu']['samples'][0]
         self.assertNotIn('top_external', sample)
         self.assertEqual(sample['external_cpu_percent'], 125)
         self.assertEqual(sample['peak_external_process_cpu_percent'], 80)
         self.assertIn('top_external', source['runs'][0]['ambient_cpu']['samples'][0])
+
+
+if __name__ == '__main__':
+    unittest.main()

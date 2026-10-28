@@ -43,6 +43,9 @@ def require(condition, message):
 def public_manifest(value):
     value = copy.deepcopy(value)
     for run in value['runs']:
+        for item in [run['ambient_cpu'], *run['ambient_cpu']['samples']]:
+            for compiler in item['compiler_load_detected']:
+                compiler.pop('pid', None)
         for sample in run['ambient_cpu']['samples']:
             top = sample.pop('top_external')
             sample['peak_external_process_cpu_percent'] = max((p['cpu_percent'] for p in top), default=0)
@@ -247,6 +250,8 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
     if args.action == 'collect':
+        if not args.campaign or not args.accepted:
+            parser.error('collect requires --campaign and --accepted')
         summary = collect(args.campaign, args.accepted, args.report)
     else:
         entries, index = archive_entries(args.report)
