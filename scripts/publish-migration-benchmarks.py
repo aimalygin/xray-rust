@@ -112,6 +112,9 @@ def summarize(entries, accepted):
                 require('--release' in inputs[name]['command'] and '--locked' in inputs[name]['command']
                         and inputs[name]['incremental'] is False and inputs[name]['rustflags'] is None, 'nonstandard build')
         require(manifest['inputs'] == inputs, 'binary/build identities changed across blocks')
+        require(json.loads(entries['build-inputs.json']) == inputs, 'archived build inputs mismatch')
+        input_hashes = [v for k, v in manifest['file_hashes'].items() if k.endswith('/inputs.json')]
+        require(input_hashes == [digest(entries['build-inputs.json'])], 'build input file hash mismatch')
         hosts.append({k: manifest['host'][k] for k in ('cpu', 'model', 'memory_bytes', 'logical_cpus', 'os')})
         require(hosts[-1] == hosts[0], 'measurement host changed')
         cases = {case['id']: case for case in manifest['cases']}
@@ -165,7 +168,7 @@ def archive_entries(report):
 def collect(campaign, accepted, report):
     require(not report.exists(), 'report directory already exists')
     require(accepted and len(accepted) == len(set(accepted)), 'missing/duplicate accepted blocks')
-    entries, attempts = {}, []
+    entries, attempts = {'build-inputs.json': (campaign / 'inputs.json').read_bytes()}, []
     for path in sorted(campaign.glob('*/manifest.json')):
         block = path.parent.name
         manifest = json.loads(path.read_text())
