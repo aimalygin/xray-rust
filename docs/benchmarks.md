@@ -2,12 +2,74 @@
 
 The benchmark harness compares `xray-rust`, the cloned Xray-core, and sing-box under the same compatible local workloads. It is a process-level harness: each engine runs as a child process with an equivalent generated config, the workload sends validated traffic through SOCKS5, and the harness samples OS RSS/CPU counters while the process is alive.
 
-The active Xray-core oracle is `v26.7.28` at
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. Auto-builds require that exact
+The active Xray-core oracle is `v26.10.21` at
+`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`. Auto-builds require that exact
 checkout and reject source changes; caller-supplied binaries must report Xray
-`26.7.28` and are identified by their executable SHA-256. Published
-`v26.5.9` sections below are retained as historical result groups, not as the
-current harness target.
+`26.10.21` and are identified by their executable SHA-256. Published
+`v26.7.28` and `v26.5.9` groups retain their original inputs and results.
+
+## Paired migration measurements
+
+`scripts/run-migration-benchmarks.py` compares frozen Rust release builds from
+before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration. Both use the
+same post-migration driver and the same local Xray-core v26.10.21 server, so
+this controls for server and driver changes. It does not measure old versus
+new Go Xray, SDK packaging, mobile-device energy or WAN behavior.
+
+The fixed matrix has 200 cases: seven Trojan/SS2022/VMess cipher profiles;
+VLESS/TLS, REALITY/Vision, WS, HTTPUpgrade, gRPC and XHTTP H1/H2/H3;
+Hysteria2 and WireGuard; and Freedom controls. It covers one/eight connections,
+TCP upload/download/duplex, and TCP/UDP echo where supported. TUN is the
+in-process FD test path; it does not change host routes. TUN TCP echo exercises
+its connections sequentially (one concurrently active). SOCKS uses a verified
+warmup; bulk SOCKS also sends a verified preface before the transfer window.
+The current matrix and byte counts are in the collector's `cases()` function.
+
+Build both clients with the same Rust toolchain and `cargo build --locked
+--release -p xray-cli`; build the driver from `53756fe` with `-p xray-bench`.
+Freeze copies of the binaries before building another revision in a shared
+target directory. `inputs.json` binds each client/driver to its source commit,
+tree, Cargo.lock hash, compiler, release command and executable SHA-256. It
+also binds the clean reference and the local REALITY cover-origin helper.
+Complete builds and tests before collecting measurements.
+
+```sh
+# Python >=3.11; Go 1.27.3 must be on PATH for reference identity verification.
+python3 scripts/run-migration-benchmarks.py \
+  --inputs /absolute/campaign/inputs.json \
+  --output /absolute/campaign/smoke --smoke
+
+# Five AB/BA pairs per case. An optional --profile selects a complete block.
+python3 scripts/run-migration-benchmarks.py \
+  --inputs /absolute/campaign/inputs.json \
+  --output /absolute/campaign/full
+
+python3 scripts/publish-migration-benchmarks.py collect \
+  --campaign /absolute/campaign --accepted full \
+  --report docs/benchmarks/results/NEW-DATED-GROUP
+python3 scripts/publish-migration-benchmarks.py verify \
+  --report docs/benchmarks/results/NEW-DATED-GROUP
+# Chart dependencies: matplotlib==3.10.8, numpy==2.3.5.
+python3 scripts/publish-migration-benchmarks.py charts \
+  --report docs/benchmarks/results/NEW-DATED-GROUP
+```
+
+Never overwrite an attempt directory. The full collector rejects protocol,
+cleanup and observer failures, any observed compiler, an external process
+using at least one CPU core, or total external use of at least two cores.
+One-second observations retain lighter desktop load; they cannot prove a
+fully idle machine or detect every brief process. Smoke timing is never
+publishable, including smoke attempts that passed under background load.
+
+Publication requires all 2,000 successful trials with exact payload counts,
+stock worker settings, fixed inputs and five pairs per case. It preserves
+failed and smoke attempts in the numeric archive, omitting generated keys,
+configs, application logs and unrelated process identities. Medians/min/max
+are accompanied by per-repeat ratios and exact empirical percentile bootstrap
+intervals over the five pairs. Those intervals are descriptive, have limited
+resolution and are not adjusted for 200-case multiple comparisons. A zero CPU
+counter denominator yields an unavailable ratio, not an invented speedup.
+Charts show sampled process RSS, not physical footprint or system-wide memory.
 
 ## v0.8 candidate protocol comparisons
 
@@ -42,8 +104,8 @@ The official GitHub latest-release response fetched on 2026-08-31 resolved
 stable sing-box `v1.13.20`. RC4 pins that tag, revision
 `56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`, the exact
 `with_gvisor,with_utls,badlinkname,tfogo_checklinkname0` build tags, and the
-measured binary SHA-256. Xray-core remains exact `v26.7.28` at the full commit
-above. A new comparator or date must create a new result group; dated evidence
+measured binary SHA-256. That historical RC4 group pins Xray-core `v26.7.28` at
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. A new comparator or date must create a new result group; dated evidence
 never overwrites historical charts.
 
 Three reviewed boundaries are disclosed rather than repaired by selecting a
