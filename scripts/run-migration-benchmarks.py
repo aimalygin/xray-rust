@@ -291,7 +291,13 @@ def main():
                         manifest['runs'].append(result)
                         b.save(output / 'manifest.json', manifest)
                         print(name, result['returncode'], round(result['seconds'], 2), flush=True)
-                        if not clean(result):
+                        # Smoke validates functionality only; its timing is never
+                        # publishable. Preserve background-load evidence but do
+                        # not let it prevent checking the remaining fixtures.
+                        functional = copy.deepcopy(result)
+                        if a.smoke:
+                            functional['ambient_cpu']['heavy_external_load'] = False
+                        if not clean(functional):
                             raise RuntimeError('failed or contaminated trial; entire block retained')
                 if c.followup.inventory(paths.values()):
                     raise RuntimeError('fixture process survived cleanup')

@@ -68,3 +68,36 @@ class MigrationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PublicationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('publisher', Path(__file__).resolve().parents[1] / 'publish-migration-benchmarks.py')
+        cls.p = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.p)
+
+    def test_missing_matrix_and_smoke_cannot_be_published(self):
+        with self.assertRaisesRegex(ValueError, 'incomplete 200-case'):
+            self.p.summarize({}, [])
+        import json
+        entry = {'smoke/manifest.json': json.dumps(dict(status='pass', smoke=True, repeats=1))}
+        with self.assertRaisesRegex(ValueError, 'non-publication'):
+            self.p.summarize(entry, ['smoke'])
+
+    def test_pairing_is_by_repeat_not_ratio_of_independent_medians(self):
+        before, after = [1, 10, 100, 1000, 10000], [2, 10, 50, 2000, 10000]
+        r = self.p.paired(before, after)
+        self.assertEqual(r['samples'], [2, 1, .5, 2, 1])
+        self.assertEqual(r['median'], 1)
+        self.assertEqual(r['bootstrap_95_percentile'], [.5, 2])
+        self.assertIsNone(self.p.paired([0] * 5, after))
+
+    def test_public_manifest_omits_unrelated_process_identity_without_changing_cpu_evidence(self):
+        source = {'runs': [{'ambient_cpu': {'samples': [dict(external_cpu_percent=125, top_external=[dict(name='Private App', pid=123, cpu_percent=80)])]}}]}
+        redacted = self.p.public_manifest(source)
+        sample = redacted['runs'][0]['ambient_cpu']['samples'][0]
+        self.assertNotIn('top_external', sample)
+        self.assertEqual(sample['external_cpu_percent'], 125)
+        self.assertEqual(sample['peak_external_process_cpu_percent'], 80)
+        self.assertIn('top_external', source['runs'][0]['ambient_cpu']['samples'][0])
