@@ -10,6 +10,10 @@ checkout and reject source changes; caller-supplied binaries must report Xray
 
 ## Paired migration measurements
 
+The [2026-10-27/28 report](benchmarks/results/2026-10-27-v26.10.21-migration/README.md)
+contains the completed 200-case, 2,000-trial comparison, all repeated samples,
+rejected attempts and charts.
+
 `scripts/run-migration-benchmarks.py` compares frozen Rust release builds from
 before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration. Both use the
 same post-migration driver and the same local Xray-core v26.10.21 server, so
@@ -62,14 +66,17 @@ before the first pair and between completed pairs after at least 20 seconds.
 It writes `paused.json`; a controller resumes by writing its exact `token` to
 `resume.txt`. The collector waits another three seconds for rendering to
 settle. Send UI updates only while paused, then wait silently for the next
-checkpoint. These waits are outside measured pairs and are recorded in each
-manifest; the workload, order, binary inputs and quality thresholds are unchanged.
+checkpoint. These waits are outside measured pairs; manifests retain wall-clock
+bounds and archived controller provenance records the additional 8/20-second
+settling waits. The workload, order, binary inputs and quality thresholds are
+unchanged.
 
 One-second observations retain lighter desktop load; they cannot prove a
 fully idle machine or detect every brief process. Smoke timing is never
 publishable, including smoke attempts that passed under background load.
 
-Publication requires all 2,000 successful trials with exact payload counts,
+Publication requires all successful full blocks (no silently discarded successes)
+and all 2,000 successful trials with exact payload counts,
 stock worker settings, fixed inputs and five pairs per case. It preserves
 failed and smoke attempts in the numeric archive, omitting generated keys,
 configs, application logs and unrelated process identities. Medians/min/max
@@ -98,9 +105,9 @@ its verification script reconstructs the published summaries. Overall CPU and
 throughput parity is not yet met. These host SOCKS measurements do not replace
 candidate-bound device, WAN or TUN acceptance.
 
-## Current RC4 publication
+## Historical RC4 publication
 
-The current immutable evidence is the
+The immutable RC4 evidence is the
 [2026-08-31 Xray-core v26.7.28 result group](benchmarks/results/2026-08-31-v26.7.28/README.md).
 It contains exactly 139 release series and 695 embedded results, five clean
 runs per series. Its manifest is checked by

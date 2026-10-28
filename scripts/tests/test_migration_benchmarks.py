@@ -42,7 +42,7 @@ class MigrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             control = Path(temp)
             (control / 'resume.txt').write_text('stale-token')
-            thread = threading.Thread(target=m.progress_pause, args=(control, 'block', 10, 0))
+            thread = threading.Thread(target=m.progress_pause, args=(control, 'block', 10, 0), daemon=True)
             thread.start()
             deadline = time.monotonic() + 2
             while not (control / 'paused.json').exists() and time.monotonic() < deadline:
@@ -119,7 +119,7 @@ class PublicationTests(unittest.TestCase):
         result.update(status='pass', concurrent_flows=1, engine_sha256='abc', idle_connections=0, prepare_client=False, client_env={},
             warmup=True, client_preface=True, bytes_sent=count, bytes_received=0, transfer_seconds=1,
             peak_rss_kib=1024, samples=[{}, {}], throughput_mib_s=count / 2**20, cpu_millis=100,
-            client_startup_seconds=.1, latency_us=None, ready_latency_us=None)
+            client_startup_seconds=.1, client_startup_cpu_millis=10, client_cpu_total_millis=110, latency_us=None, ready_latency_us=None)
         inputs = {'before': {'sha256': 'abc'}}
         self.assertEqual(self.p.validate_trial(case, run, result, inputs)['rss_mib'], 1)
         for key, value in [('engine_sha256', 'wrong'), ('bytes_sent', count - 1), ('connections', 8),
@@ -128,6 +128,15 @@ class PublicationTests(unittest.TestCase):
             bad = copy.deepcopy(result); bad[key] = value
             with self.assertRaises(ValueError, msg=key):
                 self.p.validate_trial(case, run, bad, inputs)
+
+    def test_successful_full_blocks_cannot_be_silently_discarded(self):
+        attempts = [dict(block='full', status='pass', smoke=False),
+                    dict(block='retry', status='pass', smoke=False),
+                    dict(block='failed', status='failed', smoke=False),
+                    dict(block='smoke', status='pass', smoke=True)]
+        with self.assertRaisesRegex(ValueError, 'no cherry-picking'):
+            self.p.validate_selection(attempts, ['full'])
+        self.p.validate_selection(attempts, ['full', 'retry'])
 
     def test_pairing_is_by_repeat_not_ratio_of_independent_medians(self):
         before, after = [1, 10, 100, 1000, 10000], [2, 10, 50, 2000, 10000]
