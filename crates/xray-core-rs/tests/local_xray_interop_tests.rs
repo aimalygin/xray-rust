@@ -14,13 +14,14 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{sleep, timeout, Duration, Instant};
 use xray_config::{
     parse_xray_json, CoreConfig, DomainMatcherSet, GrpcSettings, HttpUpgradeSettings,
-    InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundProxySettings,
-    OutboundSettings, RealitySettings, RealityShortId, RoutingBalancer, RoutingBalancerStrategy,
-    RoutingConfig, RoutingRule, RoutingRuleTarget, StreamSecurity, StreamSettings, StreamTransport,
+    InboundConfig, InboundProtocol, Network, OutboundConfig, OutboundSettings, RealitySettings,
+    RealityShortId, RoutingBalancer, RoutingBalancerStrategy, RoutingConfig, RoutingRule,
+    RoutingRuleTarget, SocksInboundSettings, StreamSecurity, StreamSettings, StreamTransport,
     TargetAddr, TlsSettings, VlessOutboundSettings, VlessUser, WebSocketSettings, XhttpMode,
     XhttpSettings, XhttpUplinkDataPlacement, XhttpXmuxSettings,
 };
 use xray_core_rs::Core;
+use xray_proxy::inbound::SocksInboundAuth;
 use xray_transport::{
     DnsResolver, SystemDnsResolver, TlsConnector, TransportDialer, TransportError,
 };
@@ -28,9 +29,9 @@ use xray_transport::{
 const TEST_UUID: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
 const TLS_SERVER_NAME: &str = "vless.test";
 const XRAY_CORE_EXPECTED_REVISION_ENV: &str = "XRAY_CORE_EXPECTED_REVISION";
-const PINNED_XRAY_CORE_REVISION: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
-// The PQ interop oracle needs a cover origin that accepts X25519MLKEM;
-// RFC 2606 example origins reject the `hellochrome_120_pq` handshake.
+const PINNED_XRAY_CORE_REVISION: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
+// This external-origin legacy suite needs X25519MLKEM support. The hermetic
+// ML-DSA/Vision matrix uses its own local cover origin instead.
 const REALITY_SERVER_NAME: &str = "www.google.com";
 const INNER_TLS_SERVER_NAME: &str = "inner.test";
 const REALITY_PRIVATE_KEY: &str = "aGSYystUbf59_9_6LKRxD27rmSW_-2_nyd9YG_Gwbks";
@@ -351,30 +352,22 @@ async fn run_local_xray_two_hop_proxy_chain_interop() {
     let middle_server = start_plain_xray_vless_server(&xray_checkout).await;
     let exit_server = start_plain_xray_vless_server(&xray_checkout).await;
     let mut config = rust_core_config_with_security(middle_server.addr, StreamSecurity::None, None);
-    let mut entry = rust_freedom_outbound("entry");
-    entry.proxy_settings = Some(OutboundProxySettings {
-        tag: "middle".to_owned(),
-        transport_layer: true,
-    });
-    let mut middle = rust_vless_outbound(
-        "middle",
-        middle_server.addr,
-        StreamSecurity::None,
-        None,
-        StreamTransport::Raw,
-    );
-    middle.proxy_settings = Some(OutboundProxySettings {
-        tag: "exit".to_owned(),
-        transport_layer: true,
-    });
-    let exit = rust_vless_outbound(
-        "exit",
-        exit_server.addr,
-        StreamSecurity::None,
-        None,
-        StreamTransport::Raw,
-    );
-    config.outbounds = vec![entry, middle, exit];
+    let peer = |tag: &str, addr: SocketAddr| {
+        serde_json::json!({
+        "tag":tag,"protocol":"vless","settings":{"vnext":[{
+            "address":addr.ip().to_string(),"port":addr.port(),
+            "users":[{"id":TEST_UUID,"encryption":"none"}]}]}})
+    };
+    let mut middle = peer("middle", middle_server.addr);
+    middle["streamSettings"] = serde_json::json!({"sockopt":{"dialerProxy":"exit"}});
+    let chain = serde_json::json!({"outbounds":[
+        {"tag":"entry","protocol":"freedom","streamSettings":{"sockopt":{"dialerProxy":"middle"}}},
+        middle, peer("exit", exit_server.addr)
+    ]});
+    config.outbounds = parse_xray_json(&chain.to_string())
+        .expect("v26.10.21 dialerProxy chain")
+        .config
+        .outbounds;
     config.default_outbound_tag = Some("entry".to_owned());
     config.routing = RoutingConfig::default();
 
@@ -523,10 +516,9 @@ fn selected_reality_interop_fingerprints() -> Vec<String> {
         "hellochrome_133",
         "hellofirefox_148",
         "hellosafari_26_3",
-        "helloios_13",
-        "hello360_11_0",
-        "hellochrome_120_pq",
-        "hellofirefox_99",
+        "hellochrome_131",
+        "random",
+        "randomized",
     ]
     .into_iter()
     .map(ToOwned::to_owned)
@@ -543,7 +535,7 @@ fn selected_reality_interop_burst_fingerprints() -> Vec<String> {
             .collect();
     }
 
-    vec!["hellofirefox_99".to_owned()]
+    vec!["hellofirefox_148".to_owned()]
 }
 
 fn selected_reality_interop_burst_flow_count() -> usize {
@@ -1218,6 +1210,9 @@ impl Drop for TempDir {
 
 impl Drop for XrayServer {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("{}", self.logs());
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -1764,12 +1759,118 @@ async fn start_xray_vless_client(
     }
 }
 
+// A successful connect to a freshly released ephemeral port does not prove
+// that our child is ready: another concurrent fixture can own it, and Linux
+// can even establish a TCP self-connection before the server binds. Wait for
+// this child's startup record before touching its listening port.
+async fn wait_for_xray_startup(child: &mut Child, stdout_path: &Path, stderr_path: &Path) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = child.try_wait().expect("check xray process status");
+        let stdout = fs::read_to_string(stdout_path).unwrap_or_default();
+        let stderr = fs::read_to_string(stderr_path).unwrap_or_default();
+        assert!(
+            status.is_none(),
+            "xray exited before startup: {status:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        if stdout.lines().chain(stderr.lines()).any(|line| {
+            line.split_once("core: Xray ")
+                .is_some_and(|(_, message)| message.ends_with(" started"))
+        }) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "xray did not report startup\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn xray_readiness_requires_its_own_startup_record_even_when_port_is_occupied() {
+    let temp_dir = create_temp_dir("xray-readiness");
+    let stdout_path = temp_dir.path.join("stdout");
+    let stderr_path = temp_dir.path.join("stderr");
+    // Keep an unrelated child alive without starting Xray or requiring Go.
+    let child = Command::new("sh")
+        .args(["-c", "read -r line"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let tcp = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let udp = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let mut server = XrayServer {
+        child,
+        _temp_dir: temp_dir,
+        addr: tcp.local_addr().unwrap(),
+        stdout_path,
+        stderr_path,
+        tls_client_config: None,
+    };
+    for is_udp in [false, true] {
+        fs::write(&server.stdout_path, "Xray test version banner\n").unwrap();
+        fs::write(&server.stderr_path, "").unwrap();
+        let addr = if is_udp {
+            udp.local_addr().unwrap()
+        } else {
+            server.addr
+        };
+        let wait = async {
+            if is_udp {
+                wait_for_udp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            } else {
+                wait_for_tcp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            }
+        };
+        assert!(timeout(Duration::from_millis(150), wait).await.is_err());
+        fs::write(&server.stderr_path, "[Warning] core: Xray test started\n").unwrap();
+        timeout(Duration::from_secs(1), async {
+            if is_udp {
+                wait_for_udp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            } else {
+                wait_for_tcp_listener(
+                    &mut server.child,
+                    addr,
+                    &server.stdout_path,
+                    &server.stderr_path,
+                )
+                .await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+}
+
 async fn wait_for_tcp_listener(
     child: &mut Child,
     addr: SocketAddr,
     stdout_path: &Path,
     stderr_path: &Path,
 ) {
+    wait_for_xray_startup(child, stdout_path, stderr_path).await;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray process status") {
@@ -1800,6 +1901,7 @@ async fn wait_for_udp_listener(
     stdout_path: &Path,
     stderr_path: &Path,
 ) {
+    wait_for_xray_startup(child, stdout_path, stderr_path).await;
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("check xray process status") {
@@ -1896,24 +1998,6 @@ fn rust_vless_outbound(
                 level: 0,
             }],
         }),
-    }
-}
-
-fn rust_freedom_outbound(tag: &str) -> OutboundConfig {
-    OutboundConfig {
-        mux: None,
-        tag: Some(tag.to_owned()),
-        proxy_settings: None,
-        stream: StreamSettings {
-            network: Network::Tcp,
-            transport: StreamTransport::Raw,
-            security: StreamSecurity::None,
-            quic_params: None,
-            tcp_fragment: None,
-            udp_noise: None,
-            socket_options: None,
-        },
-        settings: OutboundSettings::Freedom,
     }
 }
 
@@ -2597,7 +2681,16 @@ async fn rust_socks_client_reaches_target_through_remote_xhttp_profile() {
         .iter_mut()
         .find(|inbound| inbound.tag.as_deref() == Some("socks-in"))
         .unwrap_or_else(|| panic!("{CONFIG_ENV} must contain a socks-in inbound"));
-    assert_eq!(inbound.protocol, InboundProtocol::Socks(Default::default()));
+    assert!(
+        matches!(
+            &inbound.protocol,
+            InboundProtocol::Socks(SocksInboundSettings {
+                auth: SocksInboundAuth::NoAuth,
+                ..
+            })
+        ),
+        "{CONFIG_ENV} socks-in must be a noauth SOCKS inbound"
+    );
     inbound.listen = Ipv4Addr::LOCALHOST.to_string();
     inbound.port = 0;
 
@@ -2855,7 +2948,7 @@ fn rust_xhttp_core_config(
             sc_min_posts_interval_ms: exact(1),
             xmux: XhttpXmuxSettings {
                 max_concurrency: exact(1),
-                // The v26.7.28 default is maxConnections=3. Keep this
+                // The v26.10.21 default is maxConnections=3. Keep this
                 // interop scenario on its explicit maxConcurrency policy.
                 max_connections: exact(0),
                 h_max_request_times: exact(64),

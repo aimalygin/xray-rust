@@ -447,6 +447,7 @@ impl RoutedDnsQueryTransport {
             }
             outbound @ (TcpOutbound::Trojan(_)
             | TcpOutbound::Socks(_)
+            | TcpOutbound::Http(_)
             | TcpOutbound::Vmess(_)
             | TcpOutbound::Shadowsocks2022(_)
             | TcpOutbound::Vless(_)
@@ -473,6 +474,7 @@ impl RoutedDnsQueryTransport {
                     TcpOutbound::Vless(_)
                         | TcpOutbound::Trojan(_)
                         | TcpOutbound::Socks(_)
+                        | TcpOutbound::Http(_)
                         | TcpOutbound::Vmess(_)
                         | TcpOutbound::Shadowsocks2022(_)
                 ) && server_socket_has_nonzero_scope(server)

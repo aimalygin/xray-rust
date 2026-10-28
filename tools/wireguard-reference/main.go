@@ -20,13 +20,14 @@ import (
 )
 
 type config struct {
-	Listen       string `json:"listen"`
-	PrivateKey   string `json:"privateKey"`
-	PeerKey      string `json:"peerKey"`
-	PresharedKey string `json:"presharedKey"`
-	RedirectPort uint16 `json:"redirectPort"`
-	PacketSocket string `json:"packetSocket"`
-	PacketClient string `json:"packetClient"`
+	Listen          string `json:"listen"`
+	PrivateKey      string `json:"privateKey"`
+	PeerKey         string `json:"peerKey"`
+	PresharedKey    string `json:"presharedKey"`
+	RedirectPort    uint16 `json:"redirectPort"`
+	DNSRedirectPort uint16 `json:"dnsRedirectPort"`
+	PacketSocket    string `json:"packetSocket"`
+	PacketClient    string `json:"packetClient"`
 	// Optional raw-client mode for engine comparisons. It never installs routes.
 	Endpoint string `json:"endpoint"`
 	Verbose  bool   `json:"verbose"`
@@ -80,7 +81,7 @@ func run(c config) error {
 	tun := newPacketTun()
 	defer tun.Close()
 	if c.PacketSocket == "" {
-		closeStack, err := attachForwarder(tun, c.RedirectPort)
+		closeStack, err := attachForwarder(tun, c.RedirectPort, c.DNSRedirectPort)
 		if err != nil {
 			return err
 		}

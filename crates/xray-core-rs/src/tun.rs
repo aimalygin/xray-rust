@@ -2805,6 +2805,7 @@ async fn open_tcp_bridge_stream(
             }
             TcpOutbound::Trojan(_)
             | TcpOutbound::Socks(_)
+            | TcpOutbound::Http(_)
             | TcpOutbound::Vmess(_)
             | TcpOutbound::Shadowsocks2022(_)
             | TcpOutbound::Vless(_)
@@ -2822,6 +2823,7 @@ async fn open_tcp_bridge_stream(
             }
             TcpOutbound::Trojan(_)
             | TcpOutbound::Socks(_)
+            | TcpOutbound::Http(_)
             | TcpOutbound::Vmess(_)
             | TcpOutbound::Shadowsocks2022(_)
             | TcpOutbound::Vless(_)
@@ -2833,6 +2835,7 @@ async fn open_tcp_bridge_stream(
                     TcpOutbound::Vless(_)
                         | TcpOutbound::Trojan(_)
                         | TcpOutbound::Socks(_)
+                        | TcpOutbound::Http(_)
                         | TcpOutbound::Vmess(_)
                         | TcpOutbound::Shadowsocks2022(_)
                 ) && upstream
@@ -2854,6 +2857,7 @@ async fn open_tcp_bridge_stream(
         | TcpOutbound::FreedomFragment(_) => context.dns_resolver.as_ref(),
         TcpOutbound::Trojan(_)
         | TcpOutbound::Socks(_)
+        | TcpOutbound::Http(_)
         | TcpOutbound::Vmess(_)
         | TcpOutbound::Shadowsocks2022(_)
         | TcpOutbound::Vless(_)
@@ -3252,6 +3256,9 @@ async fn bridge_tcp_flow_inner(
                 effective_policy_for_level(&context.config, Some(outbound.level())).handshake
             }
             TcpOutbound::Socks(outbound) => {
+                effective_policy_for_level(&context.config, Some(outbound.level())).handshake
+            }
+            TcpOutbound::Http(outbound) => {
                 effective_policy_for_level(&context.config, Some(outbound.level())).handshake
             }
             TcpOutbound::Vmess(outbound) => {

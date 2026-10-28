@@ -1439,15 +1439,10 @@ mod utls_tls_shaping_tests {
         }
     }
 
-    /// Together the two lists above are Xray's REALITY-incapable set, and this
-    /// is what keeps them exhaustive as profiles are added.
-    ///
-    /// A profile with no TLS 1.3 declares no key share, and a REALITY
-    /// ClientHello without an X25519 key share has nowhere to put its
-    /// authentication -- so Xray's REALITY-incapable set is exactly the set of
-    /// TLS-1.2-era parrots, under every alias.
+    /// TLS 1.2 profiles are still rejected by REALITY. The new hybrid
+    /// requirement additionally rejects some TLS 1.3 profiles.
     #[test]
-    fn the_tls12_era_lists_cover_every_reality_incapable_fingerprint() {
+    fn all_tls12_era_profiles_remain_reality_incapable() {
         let listed = TLS12_ERA_FINGERPRINTS
             .iter()
             .chain(UNNEGOTIABLE_FINGERPRINTS)
@@ -1456,6 +1451,6 @@ mod utls_tls_shaping_tests {
             .iter()
             .collect::<BTreeSet<_>>();
 
-        assert_eq!(listed, reality_incapable);
+        assert!(listed.is_subset(&reality_incapable));
     }
 }

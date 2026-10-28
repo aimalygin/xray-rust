@@ -13,12 +13,34 @@ The [configuration contract](config-compatibility.md) remains authoritative for
 accepted fields. This document records consequences, evidence, and follow-up
 checks; it does not expand the supported configuration surface.
 
+## v26.10.21 migration in progress
+
+The active oracle pin is now `1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`
+(v26.10.21), built with Go 1.27.3. The dated main evidence below remains
+historical. See the [migration checklist](xray-core-v26.10.21-migration.md)
+for completion and pending checks.
+
+REALITY now rejects old/draft key-share profiles before dialing and draws
+`random`/`randomized` from the four supported hybrid profiles. Plain TLS keeps
+its existing profile support. The new SS2022 oracle imports Xray's replacement
+implementation directly; its deterministic vectors canonicalize only its
+internal wall-clock timestamp after authenticating the generated ciphertext.
+Oversized SS2022 keys are no longer accepted upstream; Rust's legacy key
+normalization remains a compatibility difference, not proof that such a
+profile can be loaded unchanged in the new Xray.
+
+The new SS2022 server also updates a UDP session's return connection after an
+authenticated packet arrives from a new source address. The recovery matrix
+checks roaming against Xray and retains the older fixed-return-address
+expectation for the independent sing-box pin; both also test session reopening,
+peer restart, response authentication and replay rejection.
+
 ## Reference and evidence
 
 Integration status reviewed on 2026-10-25 against xray-rust main
 `957827b26c3afdc3420f85bb7ef0568824cebfa5` and Xray-core **v26.7.28**,
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. The upstream pin is enforced by
-[verify-oracle-fixtures.py](../scripts/verify-oracle-fixtures.py). These findings
+`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. The active (newer) pin is enforced by
+[verify-oracle-fixtures.py](../scripts/verify-oracle-fixtures.py). These historical findings
 do not establish compatibility with every later Xray-core revision.
 
 The [main CI run](https://github.com/aimalygin/xray-rust/actions/runs/40207537967)
@@ -52,8 +74,9 @@ This establishes the listed tests on the combined tree, not NAT or device proof.
 | #84 / #87 / #79: SOCKS outbound | TCP CONNECT and UDP ASSOCIATE, noauth or password, flat or legacy settings, raw TCP with none/TLS control security | Tested subset of Xray-core; UDP relay datagrams remain plain and transport restrictions remain |
 | #82 / #81: Android fixes | VPN metering policy, cached native FFI information, checked stats array length | Host SDK behavior, not an Xray network protocol extension |
 | #81: Android cleanup/helpers | Stage 1 merged in #82; stage 2 cleanup follows separately; stage 3 helpers remain optional | Host SDK work; preserve documented ownership and lifecycle rules |
-| #79: HTTP outbound | Not implemented | Proposed CONNECT/Basic-auth/TLS support; scope decisions and checks remain below |
+| #79: HTTP outbound | HTTP/1.1 CONNECT, optional Basic auth, flat or legacy settings, raw TCP with none/TLS (`http/1.1` ALPN), TCP only | Tested subset of the pinned Xray client; status 200 only, no HTTP/2 or custom headers, bounded head, early bytes kept |
 | #86: mobile SOCKS bootstrap | Android and Apple prepare SOCKS carrier hosts/literals before VPN setup; Apple excludes carrier routes | Integration gap fixed; destination DNS remains at the proxy |
+| SOCKS inbound `udp` | `"udp": false` refuses `UDP ASSOCIATE` without a relay; an absent `udp` keeps it enabled | Explicit `false` matches the reference; the absent default differs and is an open question below |
 
 ## Password-protected SOCKS UDP: deliberate restriction
 
@@ -91,6 +114,43 @@ cover `socks_password_udp_association_refuses_undeclared_client_endpoint` and
 sender arriving first. Preserve those tests if this policy changes. Accepting
 the first local sender again would remove the protection; any proposal to
 broaden compatibility must explain how it retains the intended isolation.
+
+## SOCKS inbound `udp`: `false` and the absent default
+
+Earlier releases only type-checked `settings.udp` and answered `UDP ASSOCIATE`
+whatever its value, so profiles that set `"udp": false` to keep UDP off the
+local proxy got no effect. The runtime now honours it.
+
+Source-derived: the pinned Xray-core [server](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/socks/protocol.go#L171-L175)
+checks `UdpEnabled` right after the command byte, writes `REP = 0x07` with a
+`0.0.0.0:0` bind address and fails the handshake before it
+[creates a relay socket](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/socks/protocol.go#L206); the inbound then
+closes the connection. Its [JSON loader](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/infra/conf/socks.go#L34) reads
+`udp` into a Go `bool`, so an absent field means `false`.
+
+Tested on loopback against the pinned v26.7.28 binary: with `"udp": false`, an
+absent `udp`, or no `settings` object, `UDP ASSOCIATE` for `0.0.0.0:0` or for
+a declared `127.0.0.1` endpoint is answered `05 07 00 01 00 00 00 00 00 00` and
+the connection is closed. Under `password` the same reply follows a successful
+login. `CONNECT` succeeds on each of these inbounds; `"udp": true` relays.
+
+xray-rust now gives the explicit `false` case the same reply, creates no relay
+socket, dials nothing and closes the control connection, for noauth and
+password inbounds; `CONNECT` is unchanged. The
+[runtime tests](../crates/xray-core-rs/tests/runtime_data_path_tests/socks_inbound_udp.rs)
+`socks_udp_false_refuses_udp_associate_without_relay_or_dial`,
+`socks_password_udp_false_refuses_udp_associate_after_login` and
+`socks_udp_true_or_absent_keeps_relaying` cover this with a counting socket
+protector. Two differences remain:
+
+- An absent `udp` keeps `UDP ASSOCIATE` enabled; Xray-core refuses it.
+  Adopting the reference default would turn UDP off for existing profiles that
+  omit the field, so it is left for a maintainer decision rather than changed
+  silently.
+- Xray-core replies as soon as it has read the command byte; xray-rust first
+  reads the complete request, including the address. A client that sends the
+  request in one write sees the same bytes. A malformed address after the UDP
+  command gets the general failure reply (`0x01`) here.
 
 ## SOCKS outbound: supported subset and evidence
 
@@ -162,29 +222,49 @@ hosts/aliases, literal normalization, and tunnel-owned address rejection.
 They passed in combined main CI. Physical-device routing is not established by
 those host tests.
 
-## HTTP outbound: proposed scope, not implemented support
+## HTTP outbound: implemented scope
 
-The #79 request for CONNECT, optional Basic authentication, TCP-only operation,
-and plain TCP or TLS follows the pinned
+The [#79 proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
+is implemented against the HTTP/1.1 path of the pinned
 [Xray HTTP client](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/http/client.go).
-The [next-PR proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
-requests HTTP/1.1 with matching ALPN and status 200, plus chain/probe/mobile
-integration. Contributor confirmation and implementation are still pending.
-Record the final decisions for these differences before claiming support:
+The decisions it asked for, with their evidence:
 
-- HTTP/1.1 versus HTTP/2: the reference supports both. If the first version
-  implements only HTTP/1.1, constrain TLS ALPN accordingly and document the
-  unsupported HTTP/2 path rather than negotiating a protocol it cannot speak.
-- CONNECT success: the reference accepts only status 200; the issue sketch
-  accepts all 2xx, consistent with
-  [RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6).
-  Choose and test the behavior explicitly.
-- The reference accepts flat and legacy settings and custom `headers`. Define
-  the initial parser surface, including `level`/`email`, and reject unsupported
-  options rather than implying that accepting them implements their behavior.
-- Bound response-header parsing and retain bytes immediately following the
-  CONNECT response. Cover authentication failure, malformed responses, TLS,
-  IPv4/IPv6/domain authorities, chaining, probes, and mobile carrier bootstrap.
+- HTTP/1.1 only. TLS always offers exactly `http/1.1`, also for a shaped uTLS
+  hello whose profile carries `h2`, and `tlsSettings.alpn` is limited to absent,
+  `[]` or `["http/1.1"]`. The reference also negotiates `h2` and then sends an
+  HTTP/2 `CONNECT`; a proxy that accepts only HTTP/2 therefore fails the
+  handshake here. `http_runtime_offers_only_http11_over_tls` checks the agreed
+  protocol against a server that prefers `h2` with unshaped, `chrome` and
+  `firefox` hellos; without the forced offer the shaped hello agrees `h2`.
+- Status 200 only, as in the reference, rather than every 2xx that
+  [RFC 9110 section 9.3.6](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.6)
+  allows. 204 is refused like 403, 407 and 502 (`connect_accepts_only_status_200`,
+  `http_runtime_refuses_every_status_but_200`).
+- Parser surface: flat and legacy `servers` forms; `level` selects policy with
+  or without credentials; `email` is type-checked and ignored; `headers` is
+  accepted only as `null` or `{}`. The reference's custom headers are Go
+  templates expanded per flow; any header fails parsing instead of being
+  ignored. A lone `pass`, an empty `user`, a `user` containing `:` and a
+  `users` entry without `user` are rejected, where the reference drops or
+  sends them. Credentials are limited to 1024 bytes each, the reference has no
+  limit.
+- Request: byte-for-byte the pinned Go client's, including the browser
+  masquerade block and header order, except the browser versions drawn per
+  process (`http_runtime_request_matches_the_pinned_go_client`). Non-ASCII
+  destination domains are refused instead of converted to Punycode.
+- Response: the head is limited to 16 KiB, where Go has no limit, and bytes
+  after the head in the same read are delivered, where the reference loses them
+  in a discarded `bufio.Reader`. Malformed status lines and header lines, 407,
+  5xx and truncated heads are covered by `http_client_tests`; IPv4, IPv6 and
+  domain authorities and early bytes also run end to end.
+- Integration: TCP `proxySettings` in both directions, `probeOutboundUrl`, UDP
+  refusal without dialing, and Android/Apple carrier bootstrap that resolves
+  only the proxy name. Destination domains stay with the proxy.
+
+`scripts/check-http-interop.sh` runs the pinned Go HTTP inbound with Basic and
+open listeners over plain TCP and TLS, in both settings forms, with refused
+wrong and missing credentials, and the Go-client request comparison. Physical
+device routing and HTTP/2 `CONNECT` are not established.
 
 ## Follow-up checks
 
@@ -196,8 +276,11 @@ Record the final decisions for these differences before claiming support:
 - [ ] Add live TCP CONNECT over TLS, an IPv6 proxy carrier, `proxySettings`, and
   `probeOutboundUrl` coverage; distinguish them from UDP TLS control and IPv6
   destination coverage already added in the #87 follow-up.
-- [ ] Resolve and implement the HTTP scope above before claiming #79 complete.
+- [x] Resolve and implement the HTTP scope above; HTTP/2 `CONNECT` and custom
+  `headers` remain unimplemented extensions.
 - [ ] Track SOCKS share-link import separately from outbound protocol support.
+- [ ] Decide whether an absent SOCKS inbound `udp` should follow Xray-core's
+  `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).
 - [ ] Keep #81 cleanup separate from new SDK API/lifecycle behavior and verify
   each against the documented FFI/host contract.
 

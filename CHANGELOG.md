@@ -10,6 +10,33 @@ long-term supported release series.
 
 ## Unreleased
 
+- Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
+- Require final X25519MLKEM768 profiles for REALITY and restrict its random pool;
+  verify ML-DSA65 and Vision against the new reference.
+- Add `sockopt.dialerProxy` chaining and the bounded Finalmask UDP-hop form;
+  retain legacy spellings with migration diagnostics and update profile import.
+- Resolve WireGuard destination names through tunnel-owned `remoteDNS` with TTL
+  caching and TCP fallback, keeping peer bootstrap separate.
+- Add HTTPUpgrade WebSocket key/version headers and QUIC v2 Initial sniffing.
+  QUIC transport remains v1, with an explicit native-TLS/ChromeParrot limitation.
+
+- Update webpki-roots to 1.0.11, removing the emSign C1 and C3 trust anchors
+  whose issuing chains include compromised intermediate certificates.
+
+- Update the zstd dependency family to patched releases, fixing the
+  abandoned-stream data leak and decompression memory-safety advisories
+  reported by RustSec without changing TLS certificate-compression settings.
+
+- Honour `"udp": false` on the SOCKS inbound. Previously the flag was only
+  type-checked and `UDP ASSOCIATE` was relayed anyway. Like Xray-core, the
+  request now gets `REP = 0x07` (command not supported) with a `0.0.0.0:0`
+  bind address, after login under `password`; no relay socket is created,
+  nothing is dialed and the control connection is closed. `CONNECT` is
+  unaffected. An absent `udp` still enables `UDP ASSOCIATE`, unlike Xray-core,
+  which treats it as `false`; this is an open compatibility question. In the
+  Rust model, `InboundProtocol::Socks` now carries `SocksInboundSettings`
+  (`auth` and `udp`), whose default keeps UDP enabled.
+
 - Android: share snapshot/enum decoding and VLESS parameter validation without
   changing their accepted values or errors. VPN session shutdown retains later
   cleanup failures as suppressed exceptions on the original error; descriptor
@@ -48,6 +75,17 @@ long-term supported release series.
   and IPv4-mapped proxy literals select IPv4 for both sockets. Pinned Xray-core
   interop covers UDP, TLS control, IPv4/IPv6/domain targets, and TUN UDP/DNS;
   the password-inbound restriction on undeclared UDP ports remains in force.
+
+- Add the Xray `http` outbound: HTTP/1.1 `CONNECT` with optional Basic
+  credentials, in the flat and legacy `servers` forms, over raw/tcp with none
+  or TLS security. TLS offers only `http/1.1`, also under a uTLS fingerprint,
+  and only status 200 opens the tunnel, as in Xray. The request matches the
+  Go client's, masquerade headers included. The response head is limited to
+  16 KiB and tunnel bytes that arrive with it are kept, where Xray loses them.
+  Custom `headers`, HTTP/2, UDP, Mux, a lone `pass`, an empty `user` or one
+  containing `:`, other networks and REALITY fail closed; without TLS the
+  credentials travel in cleartext. Android and Apple prepare the proxy host
+  before VPN setup like a SOCKS server's (#79).
 
 - Fix false checksum failures in Gradle provenance verification after a partial
   download is retried. Verify completed temporary files against both canonical

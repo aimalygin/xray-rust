@@ -13,11 +13,11 @@ use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::{mpsc, watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::{AbortHandle, Id as TaskId, JoinSet};
-use xray_config::{CoreConfig, InboundSniffingConfig};
+use xray_config::{CoreConfig, InboundSniffingConfig, SocksInboundSettings};
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, negotiate_socks5, parse_socks5_request_message,
-    parse_socks5_udp_datagram, write_socks5_failure, write_socks5_success,
-    write_socks5_success_with_bind, SocksCommand, SocksInboundAuth,
+    parse_socks5_udp_datagram, write_socks5_command_not_supported, write_socks5_failure,
+    write_socks5_success, write_socks5_success_with_bind, SocksCommand,
 };
 use xray_proxy::vless::{
     encode_xudp_keep_packet, encode_xudp_new_packet, read_udp_packet, read_xudp_packet,
@@ -182,7 +182,7 @@ struct SocksUdpFlowEntry {
 )]
 pub async fn serve_socks_listener(
     listener: TcpListener,
-    auth: Arc<SocksInboundAuth>,
+    settings: Arc<SocksInboundSettings>,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
@@ -237,7 +237,7 @@ pub async fn serve_socks_listener(
                     }
                 };
                 accept_backoff.reset();
-                let auth = Arc::clone(&auth);
+                let settings = Arc::clone(&settings);
                 let inbound_tag = inbound_tag.clone();
                 let config = Arc::clone(&config);
                 let outbound_router = Arc::clone(&outbound_router);
@@ -251,7 +251,7 @@ pub async fn serve_socks_listener(
                 connections.spawn(async move {
                     handle_socks_connection(
                         stream,
-                        &auth,
+                        &settings,
                         inbound_tag,
                         config,
                         outbound_router,
@@ -310,7 +310,7 @@ impl SocksUdpClientLock {
 )]
 async fn handle_socks_connection(
     mut inbound: TcpStream,
-    auth: &SocksInboundAuth,
+    settings: &SocksInboundSettings,
     inbound_tag: Option<String>,
     config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
@@ -323,6 +323,7 @@ async fn handle_socks_connection(
     shutdown: watch::Receiver<bool>,
     udp_budgets: SocksUdpBudgets,
 ) {
+    let auth = &settings.auth;
     if tokio::time::timeout(policy.handshake, negotiate_socks5(&mut inbound, auth))
         .await
         .ok()
@@ -361,6 +362,12 @@ async fn handle_socks_connection(
             .await;
         }
         SocksCommand::UdpAssociate => {
+            // Like Xray-core, `"udp": false` refuses before a relay socket or
+            // client lock exists; returning closes the control connection.
+            if !settings.udp {
+                let _ = write_socks5_command_not_supported(&mut inbound).await;
+                return;
+            }
             let client_lock = if auth.requires_password() {
                 let Some(lock) =
                     SocksUdpClientLock::for_request(&request.target, inbound.peer_addr().ok())
@@ -567,6 +574,14 @@ async fn handle_socks_connect<const SOCKS_REPLY: bool>(
             )
         }
         TcpOutbound::Socks(outbound) => {
+            let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
+            (
+                outbound_policy.handshake,
+                policy.conn_idle.min(outbound_policy.conn_idle),
+                outbound_policy.relay_buffer_size(),
+            )
+        }
+        TcpOutbound::Http(outbound) => {
             let outbound_policy = effective_policy_for_level(&config, Some(outbound.level()));
             (
                 outbound_policy.handshake,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+readonly EXPECTED_XRAY_CORE_REVISION="1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
 readonly WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly OUTPUT_ARGUMENT="${1:-target/benchmarks/v05-controlled-network}"
 readonly DELAY_MS="${XRAY_NETEM_DELAY_MS:-40}"

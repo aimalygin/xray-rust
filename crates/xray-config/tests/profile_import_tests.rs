@@ -13,8 +13,13 @@ fn hysteria_imports_salamander_and_bounded_port_lists_without_dropping_options()
         let imported = import_profile(ProfileFormat::Hysteria2, &text, None, &[]).unwrap();
         let config: serde_json::Value = serde_json::from_str(&imported.config_json).unwrap();
         let mask = &config["outbounds"][0]["streamSettings"]["finalmask"];
-        assert_eq!(mask["udp"][0]["settings"]["password"], "test+pass");
-        assert_eq!(mask["quicParams"]["udpHop"]["ports"], "443,8443-8445");
+        assert_eq!(mask["udp"][1]["settings"]["password"], "test+pass");
+        assert_eq!(mask["udp"][0]["type"], "udphop");
+        assert_eq!(
+            mask["udp"][0]["settings"]["mode"],
+            "intervalLocal,intervalRemote"
+        );
+        assert_eq!(mask["udp"][0]["settings"]["remotePorts"], "443,8443-8445");
         assert!(!format!("{imported:?}").contains("test+pass"));
     }
     for authority in ["server.example:443-445", "[2001:db8::1]:443-445"] {
@@ -28,7 +33,8 @@ fn hysteria_imports_salamander_and_bounded_port_lists_without_dropping_options()
         let config: serde_json::Value = serde_json::from_str(&imported.config_json).unwrap();
         assert_eq!(config["outbounds"][0]["settings"]["port"], 443);
         assert_eq!(
-            config["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"]["udpHop"]["ports"],
+            config["outbounds"][0]["streamSettings"]["finalmask"]["udp"][0]["settings"]
+                ["remotePorts"],
             "443-445"
         );
     }

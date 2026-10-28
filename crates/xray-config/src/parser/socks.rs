@@ -1,19 +1,31 @@
 use super::*;
+use crate::SocksInboundSettings;
 use xray_proxy::inbound::{SocksAccount, SocksInboundAuth};
 
 /// Bounds the per-handshake account scan; RFC 1929 has no limit of its own.
 const MAX_SOCKS_ACCOUNTS: usize = 64;
 
 impl Parser<'_> {
-    pub(super) fn parse_socks_inbound_auth(
+    pub(super) fn parse_socks_inbound_settings(
         &mut self,
         inbound: &Value,
         index: usize,
-    ) -> SocksInboundAuth {
+    ) -> SocksInboundSettings {
         let Some(settings) = inbound.get("settings").filter(|value| value.is_object()) else {
-            return SocksInboundAuth::NoAuth;
+            return SocksInboundSettings::default();
         };
         let path = format!("$.inbounds[{index}].settings");
+        SocksInboundSettings {
+            auth: self.parse_socks_inbound_auth(settings, &path),
+            // Xray-core reads an absent `udp` as false; keeping it enabled
+            // preserves this runtime's earlier behavior until that is decided.
+            udp: self
+                .optional_bool_at(settings, "udp", format!("{path}.udp"))
+                .unwrap_or(true),
+        }
+    }
+
+    fn parse_socks_inbound_auth(&mut self, settings: &Value, path: &str) -> SocksInboundAuth {
         let auth = self
             .optional_string_at(settings, "auth", format!("{path}.auth"))
             .unwrap_or("noauth");
@@ -30,7 +42,7 @@ impl Parser<'_> {
                 }
                 SocksInboundAuth::NoAuth
             }
-            "password" => self.parse_socks_accounts(settings, &path),
+            "password" => self.parse_socks_accounts(settings, path),
             other => {
                 self.error(
                     format!("{path}.auth"),

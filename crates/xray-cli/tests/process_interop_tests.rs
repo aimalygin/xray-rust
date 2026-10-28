@@ -345,7 +345,7 @@ fn resolve_xray_checkout() -> PathBuf {
 }
 
 fn assert_xray_checkout_revision(checkout: &Path) {
-    const EXPECTED: &str = "5ca6f4b7d4dc20a881d4330e498892697627ec0c";
+    const EXPECTED: &str = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74";
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(checkout)
@@ -358,7 +358,7 @@ fn assert_xray_checkout_revision(checkout: &Path) {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout).trim(),
         EXPECTED,
-        "Xray-core process interop checkout must be pinned to v26.7.28"
+        "Xray-core process interop checkout must be pinned to v26.10.21"
     );
 }
 

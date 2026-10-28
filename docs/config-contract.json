@@ -133,6 +133,11 @@
             "version": 2
           },
           "streamSettings": {
+            "finalmask": {
+              "quicParams": {
+                "disableChromeParrot": true
+              }
+            },
             "hysteriaSettings": {
               "auth": "synthetic-example-auth",
               "version": 2
@@ -523,7 +528,7 @@
         "fallbackTag"
       ],
       "id": "BALANCER",
-      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
     },
     {
       "context": "$.routing.balancers[].strategy",
@@ -765,6 +770,42 @@
       "notes": "accounts must be empty; allowTransparent cannot be true. timeout is accepted for compatibility."
     },
     {
+      "context": "$.outbounds[].settings (http)",
+      "fields": [
+        "address",
+        "port",
+        "user",
+        "pass",
+        "level",
+        "email",
+        "headers",
+        "servers"
+      ],
+      "id": "HTTP_OUTBOUND",
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected, while headers belongs to both. Credentials are absent (no authentication) or a user of 1..1024 bytes without `:` plus an optional pass of at most 1024 bytes, neither with control characters (RFC 7617 Basic); a lone pass is rejected and credentials are redacted. Level 0..255; email is type-checked and ignored. headers is accepted only as null or an empty object. HTTP/1.1 CONNECT only, status 200 required, over raw/tcp with none or TLS whose ALPN is empty or http/1.1; no Mux or UDP. Without TLS the credentials travel in cleartext."
+    },
+    {
+      "context": "$.outbounds[].settings.servers[0] (http)",
+      "fields": [
+        "address",
+        "port",
+        "users"
+      ],
+      "id": "HTTP_OUTBOUND_SERVER",
+      "notes": "Nonempty address and nonzero port. users is absent, empty or exactly one entry."
+    },
+    {
+      "context": "$.outbounds[].settings.servers[0].users[0] (http)",
+      "fields": [
+        "user",
+        "pass",
+        "level",
+        "email"
+      ],
+      "id": "HTTP_OUTBOUND_USER",
+      "notes": "user is required (1..1024 bytes, no `:`); pass is optional (at most 1024 bytes); neither may contain control characters; level 0..255. Email is type-checked and ignored. Credentials are redacted."
+    },
+    {
       "context": "$.inbounds[] (dokodemo-door)",
       "fields": [
         "tag",
@@ -831,7 +872,7 @@
         "costs"
       ],
       "id": "LEAST_LOAD",
-      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
     },
     {
       "context": "$.routing.balancers[].strategy.settings.costs[]",
@@ -863,7 +904,7 @@
         "enableConcurrency"
       ],
       "id": "OBSERVATORY",
-      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
     },
     {
       "context": "$.outbounds[]",
@@ -877,7 +918,7 @@
         "sendThrough"
       ],
       "id": "OUTBOUND",
-      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, SOCKS5 (CONNECT and UDP ASSOCIATE), Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
+      "notes": "freedom, blackhole, dns, VLESS, Trojan, Shadowsocks 2022, VMess AEAD, SOCKS5 (CONNECT and UDP ASSOCIATE), HTTP/1.1 CONNECT, Hysteria 2 and a bounded WireGuard client subset. sendThrough is rejected whenever present, including null. First outbound is the default. Tag graph validation is a later core compilation step."
     },
     {
       "context": "$.policy",
@@ -886,7 +927,7 @@
         "system"
       ],
       "id": "POLICY",
-      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
     },
     {
       "context": "$.policy.levels.*",
@@ -900,7 +941,7 @@
         "bufferSize"
       ],
       "id": "POLICY_LEVEL",
-      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
     },
     {
       "context": "$.policy.system",
@@ -920,7 +961,7 @@
         "transportLayer"
       ],
       "id": "PROXY",
-      "notes": "Requires nonempty tag and transportLayer=true. REALITY chains fail parsing; missing targets, cycles and additional carrier constraints are validated by core compilation."
+      "notes": "Legacy form with migration warning; prefer sockopt.dialerProxy. Requires nonempty tag and transportLayer=true. REALITY chains fail parsing; cycles and additional carrier constraints are validated by core compilation."
     },
     {
       "context": "streamSettings.finalmask.quicParams",
@@ -938,10 +979,14 @@
         "maxIdleTimeout",
         "keepAlivePeriod",
         "disablePathMTUDiscovery",
-        "maxIncomingStreams"
+        "maxIncomingStreams",
+        "disableChromeParrot",
+        "disableGSO",
+        "disableStatelessReset",
+        "brutalDisableLossCompensation"
       ],
       "id": "QUIC_PARAMS",
-      "notes": "Phase-one XHTTP H3 subset only. Values and cross-field bounds are checked by the parser and carrier compilation; listing a field does not enable every upstream profile."
+      "notes": "Bounded XHTTP H3 subset; Hysteria accepts only legacy udpHop and disableChromeParrot=true. Native Quinn TLS has no ChromeParrot shaping. disableGSO, disableStatelessReset and brutalDisableLossCompensation are recognized but rejected, including false/null. Carrier compilation checks additional bounds."
     },
     {
       "context": "streamSettings.tcpSettings; streamSettings.rawSettings",
@@ -1023,7 +1068,7 @@
         "dialerProxy"
       ],
       "id": "SOCKOPT",
-      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
+      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
     },
     {
       "context": "$.inbounds[].settings.accounts[] (socks)",
@@ -1045,7 +1090,7 @@
         "allowUnauthenticatedLan"
       ],
       "id": "SOCKS_SETTINGS",
-      "notes": "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. ip is ignored; udp and userLevel are parsed."
+      "notes": "auth is noauth (default) or password. password requires 1..64 accounts and makes the inbound offer only RFC 1929 username/password; accounts must be empty or absent with noauth. udp false refuses UDP ASSOCIATE with REP 0x07 as Xray-core does; an absent udp keeps it enabled, unlike Xray-core. ip is ignored; userLevel is parsed."
     },
     {
       "context": "$.outbounds[].settings (socks)",
@@ -1126,10 +1171,11 @@
         "mtu",
         "reserved",
         "domainStrategy",
-        "noKernelTun"
+        "noKernelTun",
+        "remoteDNS"
       ],
       "id": "WIREGUARD",
-      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK; nonzero reserved bytes, custom streams and chaining are unsupported."
+      "notes": "1..8 distinct peers, at most 256 total allowed-IP prefixes, up to one local address per family, MTU 1280..1420; userspace TCP and MTU-sized UDP. Optional 32-byte PSK. remoteDNS accepts up to 8 IP literals, default Cloudflare IPv4/IPv6; destination DNS runs through the tunnel with bounded TTL caching. domainStrategy is legacy address-family selection. Nonzero reserved bytes, custom streams and chaining are unsupported."
     },
     {
       "context": "$.outbounds[].settings.peers[] (wireguard)",
@@ -1172,6 +1218,17 @@
       "notes": "Hysteria2 only: numeric or comma/range ports with bounded hop intervals and protected socket replacement. Existing streams survive hops and host rebind. XHTTP H3 rejects nonempty hopping."
     },
     {
+      "context": "streamSettings.finalmask.udp[].settings (udphop)",
+      "fields": [
+        "mode",
+        "interval",
+        "remoteIPs",
+        "remotePorts"
+      ],
+      "id": "UDP_HOP_MASK",
+      "notes": "Hysteria only, first UDP mask: mode intervalLocal,intervalRemote, nonempty remotePorts and empty remoteIPs. Default interval 30 seconds, minimum 5. Independent modes, perConnRemote and remote IP hopping are rejected."
+    },
+    {
       "context": "$.outbounds[].settings (shadowsocks)",
       "fields": [
         "address",
@@ -1183,7 +1240,7 @@
         "servers"
       ],
       "id": "SHADOWSOCKS",
-      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. SS2022 only: three blake3 methods; base64 PSKs, at most 8192 encoded bytes and 8 AES identity keys. ChaCha requires one key. Oversized keys normalize like the pinned peer."
+      "notes": "One flattened server or exactly one servers entry; mixing forms is rejected. SS2022 only: three blake3 methods; base64 PSKs, at most 8192 encoded bytes and 8 AES identity keys. ChaCha requires one key. Oversized keys retain legacy normalization; v26.10.21 requires exact-length keys, so portable profiles must use exact lengths."
     },
     {
       "context": "$.outbounds[].settings.servers[0] (shadowsocks)",

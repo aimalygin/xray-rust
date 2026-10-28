@@ -44,7 +44,19 @@ impl Parser<'_> {
                 "REALITY only supports RAW, XHTTP and gRPC for now",
             );
         }
-        let quic_params = self.parse_quic_params(stream, stream_network, index);
+        let mut quic_params = self.parse_quic_params(stream, stream_network, index);
+        if let Some(hop) = self.parse_udp_hop_mask(stream, stream_network, index) {
+            if stream
+                .and_then(|s| s.pointer("/finalmask/quicParams/udpHop"))
+                .is_some()
+            {
+                self.error(
+                    format!("$.outbounds[{index}].streamSettings.finalmask"),
+                    "legacy quicParams.udpHop and an udphop mask cannot be combined",
+                );
+            }
+            quic_params.get_or_insert_with(Default::default).udp_hop = hop;
+        }
         let tcp_fragment = self.parse_tcp_fragment_mask(stream, index);
         let udp_noise = self.parse_udp_noise(stream, index);
         let socket_options = self.parse_socket_options(stream, index);
@@ -53,6 +65,23 @@ impl Parser<'_> {
         }
         self.validate_unconsumed_transport_settings(stream, stream_network, index);
         let transport = self.parse_stream_transport(stream, stream_network, index)?;
+        let is_quic = stream_network == StreamNetwork::Hysteria
+            || stream_network == StreamNetwork::Xhttp
+                && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
+        let chrome_parrot =
+            stream.and_then(|s| s.pointer("/finalmask/quicParams/disableChromeParrot"));
+        if is_quic && chrome_parrot != Some(&Value::Bool(true)) {
+            self.warning(format!("$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"),
+                "QUIC uses native Quinn TLS, without Xray ChromeParrot fingerprint shaping; set disableChromeParrot=true to acknowledge this compatibility limit");
+        }
+        if !is_quic && chrome_parrot.is_some() {
+            self.error(
+                format!(
+                    "$.outbounds[{index}].streamSettings.finalmask.quicParams.disableChromeParrot"
+                ),
+                "disableChromeParrot requires Hysteria or XHTTP with exact h3 ALPN",
+            );
+        }
         if let StreamTransport::Xhttp(xhttp) = &transport {
             if let Some(download) = &xhttp.download {
                 if security != StreamSecurity::None
@@ -489,7 +518,7 @@ impl Parser<'_> {
         Some(parsed)
     }
 
-    /// Parses Xray v26.7.28's stream-wide `finalmask.quicParams` block.
+    /// Parses the supported stream-wide `finalmask.quicParams` subset.
     ///
     /// `quicParams` is a Go pointer, so `None` deliberately distinguishes an
     /// absent/null pointer from an explicitly present, default-valued object.
@@ -522,12 +551,30 @@ impl Parser<'_> {
             return None;
         }
         self.reject_unknown_fields(quic, &quic_path, &surface::QUIC_PARAMS);
+        if let Some(value) = quic.get("disableChromeParrot") {
+            if value != &Value::Bool(true) {
+                self.error(format!("{quic_path}.disableChromeParrot"),
+                    "only disableChromeParrot=true is supported; ChromeParrot fingerprint shaping is unavailable");
+            }
+        }
+        for key in [
+            "disableGSO",
+            "disableStatelessReset",
+            "brutalDisableLossCompensation",
+        ] {
+            if quic.get(key).is_some() {
+                self.error(
+                    format!("{quic_path}.{key}"),
+                    format!("QUIC override `{key}` is unsupported by the current Rust carrier"),
+                );
+            }
+        }
         if network == StreamNetwork::Hysteria {
             for key in quic.as_object().expect("checked object").keys() {
-                if key != "udpHop" {
+                if !matches!(key.as_str(), "udpHop" | "disableChromeParrot") {
                     self.error(
                         format!("{quic_path}.{key}"),
-                        "Hysteria only supports the udpHop QUIC override",
+                        "Hysteria supports legacy udpHop and disableChromeParrot=true only",
                     );
                 }
             }
@@ -702,20 +749,32 @@ impl Parser<'_> {
             return Some(QuicUdpHopSettings::default());
         }
         let udp_hop_path = format!("{quic_path}.udpHop");
+        self.warning(&udp_hop_path, "legacy udpHop: migrate to finalmask.udp udphop with mode=intervalLocal,intervalRemote and remotePorts");
+        self.parse_udp_hop_fields(udp_hop, &udp_hop_path, "ports")
+    }
+
+    pub(super) fn parse_udp_hop_fields(
+        &mut self,
+        udp_hop: &Value,
+        udp_hop_path: &str,
+        ports_key: &str,
+    ) -> Option<QuicUdpHopSettings> {
         if !udp_hop.is_object() {
             self.error(udp_hop_path, "udpHop must be an object or null");
             return None;
         }
-        self.reject_unknown_fields(udp_hop, &udp_hop_path, &surface::UDP_HOP);
+        if ports_key == "ports" {
+            self.reject_unknown_fields(udp_hop, udp_hop_path, &surface::UDP_HOP);
+        }
 
-        let ports = match udp_hop.get("ports") {
+        let ports = match udp_hop.get(ports_key) {
             None | Some(Value::Null) => Vec::new(),
             Some(Value::Number(number)) => match number.as_u64() {
                 Some(0) => Vec::new(),
                 Some(port) if port <= u16::MAX as u64 => vec![port as u16],
                 _ => {
                     self.error(
-                        format!("{udp_hop_path}.ports"),
+                        format!("{udp_hop_path}.{ports_key}"),
                         "udpHop ports must be 0 or a port in 1..=65535",
                     );
                     return None;
@@ -724,13 +783,13 @@ impl Parser<'_> {
             Some(Value::String(ports)) => match parse_quic_udp_hop_ports(ports) {
                 Ok(ports) => ports,
                 Err(message) => {
-                    self.error(format!("{udp_hop_path}.ports"), message);
+                    self.error(format!("{udp_hop_path}.{ports_key}"), message);
                     return None;
                 }
             },
             Some(_) => {
                 self.error(
-                    format!("{udp_hop_path}.ports"),
+                    format!("{udp_hop_path}.{ports_key}"),
                     "udpHop ports must be an integer, comma-separated string, or null",
                 );
                 return None;
@@ -834,8 +893,8 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(socket_options, &socket_options_path, &surface::SOCKOPT);
-        // The bounded freedom-fragment dialerProxy form is resolved across
-        // outbounds after parsing, then normalized into tcp_fragment.
+        // Chaining is parsed on the outbound; dedicated freedom fragment
+        // handlers are normalized across outbounds after parsing.
         self.nullable_string_at(
             socket_options,
             "dialerProxy",
@@ -1337,7 +1396,7 @@ impl Parser<'_> {
             self.error(
                 fingerprint_path,
                 format!(
-                    "reality fingerprint `{fingerprint}` does not support REALITY because it has no X25519-compatible key share"
+                    "reality fingerprint `{fingerprint}` requires an X25519MLKEM768 key share for REALITY v26.10.21; use chrome, firefox, safari, or random"
                 ),
             );
             return None;

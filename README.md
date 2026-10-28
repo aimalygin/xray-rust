@@ -1,5 +1,7 @@
 # xray-rust
 
+The development compatibility reference is [Xray-core v26.10.21](docs/xray-core-v26.10.21-migration.md). Dated release and benchmark results below retain their original references.
+
 Project website: [xray-rust.aimalygin.chatgpt.site](https://xray-rust.aimalygin.chatgpt.site)
 
 Mobile repository: [xray-rust-mobile](https://github.com/aimalygin/xray-rust-mobile)
@@ -79,7 +81,7 @@ and canonical SDK artifacts remain pending.
 | Area | Implemented | Important limits |
 | --- | --- | --- |
 | Local inbounds | SOCKS5 no-auth or RFC 1929 password `CONNECT` and `UDP ASSOCIATE`, HTTP `CONNECT`, TUN | Password-protected SOCKS UDP requires a declared client endpoint; no HTTP inbound authentication or server-side Xray protocols |
-| Outbounds | Freedom/direct, Xray-compatible blackhole, VLESS, Hysteria 2, WireGuard, Trojan, Shadowsocks 2022, VMess AEAD, SOCKS5 `CONNECT` and `UDP ASSOCIATE` with optional RFC 1929 credentials, DNS, health-aware selector groups including bounded `leastLoad`, and validated transport-layer TCP chaining | No Shadowsocks AEAD-2017, legacy VMess authentication, SOCKS outbound Mux, server-side proxy protocols, or chaining outside the documented TCP subset |
+| Outbounds | Freedom/direct, Xray-compatible blackhole, VLESS, Hysteria 2, WireGuard, Trojan, Shadowsocks 2022, VMess AEAD, SOCKS5 `CONNECT` and `UDP ASSOCIATE` with optional RFC 1929 credentials, HTTP/1.1 `CONNECT` with optional Basic credentials, DNS, health-aware selector groups including bounded `leastLoad`, and validated transport-layer TCP chaining | No Shadowsocks AEAD-2017, legacy VMess authentication, SOCKS outbound Mux, HTTP/2 `CONNECT` or HTTP outbound UDP, server-side proxy protocols, or chaining outside the documented TCP subset |
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, atomic rule/geodata snapshot replacement, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection including routed `tls://` DoT, routed/local HTTP/2 DoH, and provider-local `quic+local://` DoQ, routed multi-address resolution, TTL-aware positive/negative cache with bounded stale-while-revalidate, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | Full config and outbound/balancer topology replacement still requires a new core; no UDP/protocol-layer outbound chaining, `UseSystem` route probing, per-server cache policy, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |

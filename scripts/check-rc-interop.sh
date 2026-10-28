@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+readonly EXPECTED_XRAY_CORE_REVISION="1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
 readonly WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 if [[ -z "${XRAY_CORE_CHECKOUT:-}" ]]; then
@@ -43,10 +43,10 @@ env \
 
 # The encryption/download/v0.8 carrier suites require extra local oracle processes and run
 # in the blocking go-oracles job through their dedicated guarded scripts.
-# Keep the tag gate representative but bounded: classic and PQ REALITY,
+# Keep the tag gate representative but bounded: hybrid REALITY browser profiles,
 # reduced burst concurrency, and an XHTTP slice spanning all modes plus
 # H1/H2/H3. The ignored suite still exercises every supported stream family.
-export XRAY_REALITY_INTEROP_FINGERPRINTS="chrome,hellochrome_120_pq"
+export XRAY_REALITY_INTEROP_FINGERPRINTS="chrome,hellochrome_131"
 export XRAY_REALITY_INTEROP_BURST_FINGERPRINTS="chrome"
 export XRAY_REALITY_INTEROP_BURST_FLOWS="8"
 export XRAY_XHTTP_INTEROP_CASES="h1-none-packet-up,h1-tls-stream-up,h2-tls-stream-one,h2-reality-packet-up,h3-tls-stream-up"

@@ -3272,6 +3272,9 @@ async fn open_raw_dns_tcp_candidate(
         TcpOutbound::Socks(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.level())).handshake
         }
+        TcpOutbound::Http(outbound) => {
+            effective_policy_for_level(&context.config, Some(outbound.level())).handshake
+        }
         TcpOutbound::Vmess(outbound) => {
             effective_policy_for_level(&context.config, Some(outbound.level())).handshake
         }

@@ -6,7 +6,7 @@ SCRIPT_UNDER_TEST="$WORKSPACE_ROOT/scripts/check-rc-interop.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 
-EXPECTED_XRAY_CORE_REVISION="5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+EXPECTED_XRAY_CORE_REVISION="1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
 HOSTILE_XRAY_CORE_EXPECTED_REVISION="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 FAKE_BIN="$TEST_ROOT/bin"
