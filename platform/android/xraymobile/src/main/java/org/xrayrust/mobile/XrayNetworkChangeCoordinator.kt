@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
+import android.os.Parcel
 import java.io.Closeable
 import java.util.concurrent.Executor
 
@@ -53,7 +54,7 @@ class XrayNetworkChangeCoordinator(
                 override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) =
                     events.capabilities(network, NetworkCapabilities(capabilities))
                 override fun onLinkPropertiesChanged(network: Network, properties: LinkProperties) =
-                    events.properties(network, LinkProperties(properties))
+                    events.properties(network, copyLinkProperties(properties))
                 override fun onBlockedStatusChanged(network: Network, blocked: Boolean) =
                     events.blocked(network, blocked)
                 override fun onLost(network: Network) = events.lost(network)
@@ -84,7 +85,7 @@ class XrayNetworkChangeCoordinator(
         },
         selectAndApply = { observations, previous ->
             selectAndApply(observations.map {
-                XrayUnderlyingNetwork(it.network, NetworkCapabilities(it.capabilities), LinkProperties(it.properties))
+                XrayUnderlyingNetwork(it.network, NetworkCapabilities(it.capabilities), copyLinkProperties(it.properties))
             }, previous)
         },
         onResult = onResult,
@@ -104,4 +105,17 @@ class XrayNetworkChangeCoordinator(
     }, initialNetwork)
 
     override fun close() = state.close()
+}
+
+// LinkProperties' copy constructor is hidden from the public Android SDK. Parcelable preserves
+// all fields supported by the running OS without relying on hidden APIs or a partial field list.
+private fun copyLinkProperties(source: LinkProperties): LinkProperties {
+    val parcel = Parcel.obtain()
+    return try {
+        source.writeToParcel(parcel, 0)
+        parcel.setDataPosition(0)
+        LinkProperties.CREATOR.createFromParcel(parcel)
+    } finally {
+        parcel.recycle()
+    }
 }
