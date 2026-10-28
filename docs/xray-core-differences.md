@@ -170,13 +170,31 @@ profile importers.
 [check-socks-interop.sh](../scripts/check-socks-interop.sh) runs a real pinned
 Xray-core SOCKS server against the Rust client. Its
 [runtime test](../crates/xray-core-rs/tests/socks_runtime_tests.rs) covers both
-settings shapes, password/noauth, wrong/missing credentials, IPv4 and remote
-domain resolution, 64 KiB payloads, socket protection, and connection inventory.
+settings shapes, password/noauth, wrong/missing credentials, IPv4/IPv6 and remote
+domain destinations, 64 KiB payloads, socket protection, and connection inventory.
+The TCP matrix runs over both plain TCP and TLS, using an IPv4 carrier resolved
+through the injected bootstrap resolver and a real IPv6 proxy listener on `::1`.
 Separate [client tests](../crates/xray-proxy/tests/socks_client_tests.rs) cover
 IPv6 address encoding, malformed/truncated replies, and preserving tunnel data
-after the reply. These are different evidence levels: this TCP test does not
-currently cover IPv6 destinations, TLS, `proxySettings`, or `probeOutboundUrl`. The UDP test
-coverage below does not establish those TCP combinations.
+after the reply.
+
+The [integration tests](../crates/xray-core-rs/tests/socks_runtime/integration.rs)
+add these independently exercised cases:
+
+- TCP TLS rejects both an untrusted certificate and a trusted certificate with
+  the wrong server name.
+- SOCKS carried over HTTP and HTTP carried over SOCKS use two real pinned Go
+  proxies, with password authentication at both hops. Both legacy
+  `proxySettings` and `sockopt.dialerProxy` run with plain and TLS SOCKS carriers.
+  Each proxy receives its expected domain target; the local resolver accepts
+  only the outer carrier name. Invalid credentials at either hop fail the flow.
+- `probeOutboundUrl` explicitly selects SOCKS while the default outbound is
+  Blackhole. HTTP health requests traverse IPv4/IPv6, plain/TLS SOCKS carriers,
+  both settings forms and password/noauth servers. The endpoint records the
+  original path, query and Host; 204 is reachable, 503 is an HTTP-status failure,
+  and a wrong proxy password produces a transport failure without reaching the
+  endpoint. The health URL in this matrix is HTTP; TLS here protects the proxy
+  connection.
 
 The merged #87 follow-up extends the pinned script with UDP in both settings
 forms, password/noauth and wrong/missing credentials, plain/TLS control
@@ -187,12 +205,21 @@ unspecified relay IP must use the actual connected TCP peer after a candidate
 fallback, and that an IPv4-mapped IPv6 proxy literal needs an IPv4 UDP socket,
 matching the TCP connection and #86's Apple carrier exclusions.
 
-These tests passed locally and in combined main CI against the pinned Go
-revision. They do not prove physical-device routing, NAT traversal, an IPv6
-proxy carrier, TLS TCP CONNECT,
-`proxySettings` or `probeOutboundUrl` interoperability. TLS protects only the
-SOCKS control connection; UDP relay datagrams remain plain. UDP proxy chaining
-and Mux remain rejected. No C ABI or host ownership contract changes are needed.
+The earlier UDP/TUN cases passed locally and in combined main CI. On 2026-10-28,
+the extended suite passed locally at xray-rust
+[`b39987b560b59a213cd0f22e56cd2b208bd3678f`](https://github.com/aimalygin/xray-rust/commit/b39987b560b59a213cd0f22e56cd2b208bd3678f)
+against the clean Xray-core v26.10.21 checkout
+`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`: eight SOCKS runtime tests and the
+separate TUN UDP/DNS test, with no failures or skips in that script. The affected
+data-path suite passed 203 tests; 14 external-fixture tests were left to their
+dedicated scripts. Targeted all-feature Clippy and workflow-policy checks passed.
+The existing `go-oracles` CI job runs the same pinned script, including the new
+TCP, chain and probe cases.
+
+These loopback tests do not establish physical-device routing or NAT traversal.
+For UDP, TLS protects only the SOCKS control connection; relay datagrams remain
+plain. UDP proxy chaining and Mux remain rejected. No C ABI or host ownership
+contract changes are needed.
 
 ## Mobile SDK and the resolved SOCKS bootstrap gap
 
@@ -273,9 +300,9 @@ device routing and HTTP/2 `CONNECT` are not established.
   regression. The foreign-first-sender protection tests remain green.
 - [x] Integrate #86 Android and Apple SOCKS bootstrap fixes and verify the
   combined #86/#87 main tree without changing destination DNS semantics.
-- [ ] Add live TCP CONNECT over TLS, an IPv6 proxy carrier, `proxySettings`, and
-  `probeOutboundUrl` coverage; distinguish them from UDP TLS control and IPv6
-  destination coverage already added in the #87 follow-up.
+- [x] Add live TCP CONNECT over TLS, IPv6 proxy carriers and destinations,
+  `proxySettings` / `sockopt.dialerProxy`, and `probeOutboundUrl` coverage. The
+  TCP cases are separate from UDP TLS-control coverage; see the evidence above.
 - [x] Resolve and implement the HTTP scope above; HTTP/2 `CONNECT` and custom
   `headers` remain unimplemented extensions.
 - [ ] Track SOCKS share-link import separately from outbound protocol support.

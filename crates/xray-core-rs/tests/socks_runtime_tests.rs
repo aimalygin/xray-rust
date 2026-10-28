@@ -10,13 +10,13 @@ mod hysteria_support;
 use hysteria_support::{tcp_echo, udp_echo, Bootstrap, Protector, Task};
 use serde_json::{json, Value};
 use std::{
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     sync::{atomic::Ordering, Arc},
     time::Duration,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream, UdpSocket},
+    net::{TcpListener, TcpStream, UdpSocket},
     time::timeout,
 };
 use xray_core_rs::Core;
@@ -28,19 +28,23 @@ use xray_transport::{TlsConnector, TransportDialer};
 #[path = "socks_runtime/support.rs"]
 mod support;
 use support::*;
+#[path = "socks_runtime/integration.rs"]
+mod integration;
 const PAYLOAD_LEN: usize = 64 * 1024;
-
-fn core(settings: Value) -> (Core, Arc<Protector>, Arc<Bootstrap>) {
-    core_with_tls(settings, None)
-}
 
 fn core_with_tls(
     settings: Value,
     tls: Option<TlsConnector>,
 ) -> (Core, Arc<Protector>, Arc<Bootstrap>) {
+    core_with_profile(profile(settings, tls.is_some()), tls)
+}
+
+fn core_with_profile(
+    profile: Value,
+    tls: Option<TlsConnector>,
+) -> (Core, Arc<Protector>, Arc<Bootstrap>) {
     let protector = Arc::new(Protector::default());
     let bootstrap = Arc::new(Bootstrap::default());
-    let profile = profile(settings, tls.is_some());
     let dialer = Arc::new(
         tls.map_or_else(
             || TransportDialer::system().unwrap(),
@@ -58,8 +62,9 @@ fn core_with_tls(
     )
 }
 
+#[derive(Clone, Copy)]
 enum Destination<'a> {
-    Ipv4(SocketAddr),
+    Ip(SocketAddr),
     Domain(&'a str, u16),
 }
 
@@ -72,12 +77,16 @@ async fn connect(proxy: SocketAddr, destination: Destination<'_>) -> (TcpStream,
     assert_eq!(method, [5, 0]);
     let mut request = vec![5, 1, 0];
     match destination {
-        Destination::Ipv4(SocketAddr::V4(target)) => {
+        Destination::Ip(SocketAddr::V4(target)) => {
             request.push(1);
             request.extend_from_slice(&target.ip().octets());
             request.extend_from_slice(&target.port().to_be_bytes());
         }
-        Destination::Ipv4(target) => panic!("not IPv4: {target}"),
+        Destination::Ip(SocketAddr::V6(target)) => {
+            request.push(4);
+            request.extend_from_slice(&target.ip().octets());
+            request.extend_from_slice(&target.port().to_be_bytes());
+        }
         Destination::Domain(domain, port) => {
             request.extend_from_slice(&[3, domain.len() as u8]);
             request.extend_from_slice(domain.as_bytes());
@@ -101,24 +110,26 @@ async fn echo_round_trip(stream: &mut TcpStream, len: usize) {
     assert!(received == payload, "echoed bytes differ");
 }
 
-async fn assert_tunnels(settings: Value, echo: SocketAddr) {
-    let (mut core, protector, bootstrap) = core(settings);
+async fn assert_tunnels(
+    server: &XrayServer,
+    settings: Value,
+    destinations: &[Destination<'_>],
+    expect_bootstrap: bool,
+) {
+    let (mut core, protector, bootstrap) = core_with_tls(settings, server.connector.clone());
     core.start().await.unwrap();
     let proxy = core.inbound_addr(Some("socks-in")).unwrap();
     let mut open = Vec::new();
-    for destination in [
-        Destination::Ipv4(echo),
-        Destination::Domain(REMOTE_DOMAIN, echo.port()),
-    ] {
+    for &destination in destinations {
         let (mut stream, reply) = connect(proxy, destination).await;
         assert_eq!(reply, 0, "the tunnel must open");
         echo_round_trip(&mut stream, PAYLOAD_LEN).await;
         open.push(stream);
     }
     assert!(protector.0.load(Ordering::SeqCst) > 0);
-    assert!(bootstrap.0.load(Ordering::SeqCst) > 0);
+    assert_eq!(bootstrap.0.load(Ordering::SeqCst) > 0, expect_bootstrap);
     let snapshot = core.connection_snapshot();
-    assert_eq!(snapshot.connections.len(), 2);
+    assert_eq!(snapshot.connections.len(), destinations.len());
     assert!(snapshot
         .connections
         .iter()
@@ -130,10 +141,10 @@ async fn assert_tunnels(settings: Value, echo: SocketAddr) {
 /// The flow fails, and Xray logs `reason` for one more inbound connection.
 async fn assert_refused(server: &XrayServer, settings: Value, echo: SocketAddr, reason: &str) {
     let before = server.log().matches(reason).count();
-    let (mut core, _, _) = core(settings);
+    let (mut core, _, _) = core_with_tls(settings, server.connector.clone());
     core.start().await.unwrap();
     let proxy = core.inbound_addr(Some("socks-in")).unwrap();
-    let (_stream, reply) = connect(proxy, Destination::Ipv4(echo)).await;
+    let (_stream, reply) = connect(proxy, Destination::Ip(echo)).await;
     assert_ne!(reply, 0, "a rejected login must not open the tunnel");
     core.stop().await.unwrap();
     while server.log().matches(reason).count() == before {
@@ -141,31 +152,95 @@ async fn assert_refused(server: &XrayServer, settings: Value, echo: SocketAddr, 
     }
 }
 
-#[tokio::test]
-#[ignore = "requires pinned Xray; run scripts/check-socks-interop.sh"]
-async fn socks_runtime_password_and_noauth_against_pinned_xray() {
-    let server = XrayServer::start().await;
+async fn tcp_matrix(carrier: IpAddr, tls: bool) {
     timeout(DEADLINE * 3, async {
+        let server = XrayServer::start_on(carrier, tls).await;
         let (echo, _echo) = tcp_echo().await;
+        let (echo6, _echo6) = ipv6_tcp_echo().await;
         assert_eq!(echo.ip(), Ipv4Addr::LOCALHOST);
+        let destinations = [
+            Destination::Ip(echo),
+            Destination::Ip(echo6),
+            Destination::Domain(REMOTE_DOMAIN, echo.port()),
+        ];
+        // IPv4 exercises carrier bootstrap; IPv6 connects to an actual ::1
+        // listener. The destination domain is accepted only by Xray's DNS.
+        let address = if carrier.is_ipv4() {
+            "bootstrap.example"
+        } else {
+            "::1"
+        };
         for form in [Form::Flat, Form::Servers] {
-            eprintln!("SOCKS outbound form: {form:?}");
+            eprintln!("SOCKS TCP {form:?}, carrier={carrier}, TLS={tls}");
             let account = Some((USER, PASS));
-            assert_tunnels(outbound_settings(form, server.password, account), echo).await;
+            assert_tunnels(
+                &server,
+                outbound_settings_at(form, address, server.password, account),
+                &destinations,
+                carrier.is_ipv4(),
+            )
+            .await;
             eprintln!("password passed");
-            assert_tunnels(outbound_settings(form, server.noauth, None), echo).await;
+            assert_tunnels(
+                &server,
+                outbound_settings_at(form, address, server.noauth, None),
+                &destinations,
+                carrier.is_ipv4(),
+            )
+            .await;
             eprintln!("noauth passed");
             let wrong = Some((USER, "synthetic-wrong-pass"));
-            let settings = outbound_settings(form, server.password, wrong);
+            let settings = outbound_settings_at(form, address, server.password, wrong);
             assert_refused(&server, settings, echo, "invalid username or password").await;
             eprintln!("wrong password refused");
-            let settings = outbound_settings(form, server.password, None);
+            let settings = outbound_settings_at(form, address, server.password, None);
             assert_refused(&server, settings, echo, "no matching auth method").await;
             eprintln!("missing credentials refused");
         }
     })
     .await
     .unwrap();
+}
+
+async fn ipv6_tcp_echo() -> (SocketAddr, Task) {
+    let listener = TcpListener::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = Task(tokio::spawn(async move {
+        let mut connections = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let (socket, _) = accepted.unwrap();
+                    connections.spawn(async move {
+                        let (mut read, mut write) = socket.into_split();
+                        let _ = tokio::io::copy(&mut read, &mut write).await;
+                    });
+                },
+                _ = connections.join_next(), if !connections.is_empty() => {}
+            }
+        }
+    }));
+    (address, task)
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-socks-interop.sh"]
+async fn socks_runtime_password_and_noauth_against_pinned_xray() {
+    tcp_matrix(Ipv4Addr::LOCALHOST.into(), false).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-socks-interop.sh"]
+async fn socks_runtime_tcp_tls_against_pinned_xray() {
+    tcp_matrix(Ipv4Addr::LOCALHOST.into(), true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-socks-interop.sh"]
+async fn socks_runtime_tcp_ipv6_carrier_against_pinned_xray() {
+    for tls in [false, true] {
+        tcp_matrix(Ipv6Addr::LOCALHOST.into(), tls).await;
+    }
 }
 
 async fn associate(proxy: SocketAddr) -> (TcpStream, UdpSocket, SocketAddr) {
@@ -323,7 +398,7 @@ async fn socks_runtime_pinned_xray_client_preserves_password_udp_restriction() {
         .await;
         let proxy = SocketAddr::from((Ipv4Addr::LOCALHOST, server.noauth));
         let (echo, _echo) = tcp_echo().await;
-        let (mut stream, reply) = connect(proxy, Destination::Ipv4(echo)).await;
+        let (mut stream, reply) = connect(proxy, Destination::Ip(echo)).await;
         assert_eq!(reply, 0, "the pinned Go client authenticates for TCP");
         echo_round_trip(&mut stream, 64).await;
         let (echo, _udp) = udp_echo().await;
