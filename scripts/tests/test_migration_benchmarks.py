@@ -81,6 +81,26 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'non-publication'):
             self.p.summarize(entry, ['smoke'])
 
+    def test_runtime_validation_rejects_wrong_binary_axes_bytes_and_overrides(self):
+        case = m.cases()[0]
+        run = dict(version='before', output_relative='trial', returncode=0,
+            process_group_empty_after_run=True, surviving_process_group=False, remaining_engine_processes=[],
+            ambient_cpu=dict(samples=[{}], observer_errors=[], compiler_load_detected=[], heavy_external_load=False))
+        result = {k: case[k] for k in ('path', 'traffic', 'connections', 'iterations', 'payload_size')}
+        count = case['connections'] * case['iterations'] * case['payload_size']
+        result.update(status='pass', engine_sha256='abc', idle_connections=0, prepare_client=False, client_env={},
+            warmup=True, client_preface=True, bytes_sent=count, bytes_received=0, transfer_seconds=1,
+            peak_rss_kib=1024, samples=[{}, {}], throughput_mib_s=count / 2**20, cpu_millis=100,
+            client_startup_seconds=.1, latency_us=None, ready_latency_us=None)
+        inputs = {'before': {'sha256': 'abc'}}
+        self.assertEqual(self.p.validate_trial(case, run, result, inputs)['rss_mib'], 1)
+        for key, value in [('engine_sha256', 'wrong'), ('bytes_sent', count - 1), ('connections', 8),
+                           ('client_env', {'TOKIO_WORKER_THREADS': '1'}), ('warmup', False),
+                           ('throughput_mib_s', 123), ('status', 'fail')]:
+            bad = copy.deepcopy(result); bad[key] = value
+            with self.assertRaises(ValueError, msg=key):
+                self.p.validate_trial(case, run, bad, inputs)
+
     def test_pairing_is_by_repeat_not_ratio_of_independent_medians(self):
         before, after = [1, 10, 100, 1000, 10000], [2, 10, 50, 2000, 10000]
         r = self.p.paired(before, after)
