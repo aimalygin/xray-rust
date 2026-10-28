@@ -94,7 +94,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         .unwrap_or(1420);
     let mut root = SecretJson(json!({"inbounds":[inbound()],
         "outbounds":[{"tag":"direct","protocol":"freedom","settings":{}},
-            {"tag":"proxy","protocol":"wireguard","settings":{"secretKey":secret,"address":addresses,"mtu":mtu,"peers":[]}}],
+            {"tag":"proxy","protocol":"wireguard","settings":{"secretKey":secret,"address":addresses,"mtu":mtu,"peers":[],"remoteDNS":dns}}],
         "dns":{"servers":dns},
         "routing":{"domainStrategy":"IPOnDemand","rules":[]}}));
     let mut all_prefixes = Vec::new();

@@ -1,10 +1,13 @@
 mod blackhole;
 mod dns;
 mod fragment;
+mod http_outbound;
 mod hysteria;
 mod noise;
 mod routing;
 mod shadowsocks;
+mod socks;
+mod socks_outbound;
 mod stream;
 mod tproxy;
 mod trojan;
@@ -634,7 +637,9 @@ impl Parser<'_> {
     fn parse_inbound(&mut self, inbound: &Value, index: usize) -> Option<InboundConfig> {
         let protocol_path = format!("$.inbounds[{index}].protocol");
         let protocol = match self.string_at(inbound, "protocol") {
-            Some("socks") => InboundProtocol::Socks,
+            Some("socks") => {
+                InboundProtocol::Socks(self.parse_socks_inbound_settings(inbound, index))
+            }
             Some("http") => InboundProtocol::Http,
             Some("tun") => InboundProtocol::Tun,
             Some("dokodemo-door") => InboundProtocol::Tproxy(self.parse_tproxy(inbound, index)?),
@@ -665,7 +670,7 @@ impl Parser<'_> {
             .to_owned();
         let allow_unauthenticated_lan =
             self.parse_allow_unauthenticated_lan(inbound, index, &protocol);
-        if matches!(protocol, InboundProtocol::Socks | InboundProtocol::Http)
+        if matches!(protocol, InboundProtocol::Socks(_) | InboundProtocol::Http)
             && !is_loopback_listener(&listen)
         {
             if allow_unauthenticated_lan {
@@ -706,7 +711,7 @@ impl Parser<'_> {
         index: usize,
         protocol: &InboundProtocol,
     ) -> bool {
-        if !matches!(protocol, InboundProtocol::Socks | InboundProtocol::Http) {
+        if !matches!(protocol, InboundProtocol::Socks(_) | InboundProtocol::Http) {
             return false;
         }
         let Some(settings) = inbound.get("settings").filter(|value| value.is_object()) else {
@@ -743,7 +748,7 @@ impl Parser<'_> {
         };
 
         match protocol {
-            InboundProtocol::Socks => self.validate_socks_inbound_settings(settings, index),
+            InboundProtocol::Socks(_) => self.validate_socks_inbound_settings(settings, index),
             InboundProtocol::Http => self.validate_http_inbound_settings(settings, index),
             InboundProtocol::Tun | InboundProtocol::Tproxy(_) => {}
         }
@@ -882,21 +887,6 @@ impl Parser<'_> {
         }
 
         self.reject_unknown_fields(settings, &settings_path, &surface::SOCKS_SETTINGS);
-
-        if let Some(auth) =
-            self.optional_string_at(settings, "auth", format!("{settings_path}.auth"))
-        {
-            if auth != "noauth" {
-                self.error(
-                    format!("{settings_path}.auth"),
-                    format!("unsupported socks auth `{auth}`"),
-                );
-            }
-        }
-
-        self.reject_non_empty_array(settings, "accounts", format!("{settings_path}.accounts"));
-
-        self.optional_bool_at(settings, "udp", format!("{settings_path}.udp"));
     }
 
     fn validate_http_inbound_settings(&mut self, settings: &Value, index: usize) {
@@ -939,6 +929,14 @@ impl Parser<'_> {
         }
         for (index, outbound) in parsed.iter().enumerate() {
             self.validate_tcp_fragment_scope(outbound, index);
+            if outbound.proxy_settings.is_some()
+                && matches!(outbound.stream.security, StreamSecurity::Reality(_))
+            {
+                self.error(
+                    format!("$.outbounds[{index}]"),
+                    "outbound chaining over REALITY is unsupported",
+                );
+            }
         }
         parsed
     }
@@ -959,6 +957,8 @@ impl Parser<'_> {
             Some("hysteria") => OutboundProtocol::Hysteria,
             Some("wireguard") => OutboundProtocol::Wireguard,
             Some("blackhole") => OutboundProtocol::Blackhole,
+            Some("socks") => OutboundProtocol::Socks,
+            Some("http") => OutboundProtocol::Http,
             Some(protocol) => {
                 self.error(
                     protocol_path,
@@ -1002,6 +1002,12 @@ impl Parser<'_> {
             OutboundProtocol::Blackhole => {
                 OutboundSettings::Blackhole(self.parse_blackhole_settings(outbound, index)?)
             }
+            OutboundProtocol::Socks => {
+                OutboundSettings::Socks(self.parse_socks_outbound_settings(outbound, index)?)
+            }
+            OutboundProtocol::Http => {
+                OutboundSettings::Http(self.parse_http_outbound_settings(outbound, index)?)
+            }
         };
         let mut stream = self.parse_stream_settings(outbound, index)?;
         if protocol == OutboundProtocol::Freedom {
@@ -1027,13 +1033,8 @@ impl Parser<'_> {
         let proxy_settings = self.parse_outbound_proxy_settings(outbound, index);
         self.validate_hysteria_pair(&settings, &stream, proxy_settings.is_some(), index);
         self.validate_trojan_stream(&settings, &stream, index);
-
-        if proxy_settings.is_some() && matches!(stream.security, StreamSecurity::Reality(_)) {
-            self.error(
-                format!("$.outbounds[{index}].proxySettings"),
-                "outbound chaining over REALITY is unsupported",
-            );
-        }
+        self.validate_socks_outbound_stream(&settings, &stream, index);
+        self.validate_http_outbound_stream(&settings, &stream, index);
 
         // Xray v26.7.28 applies this policy only to its simplified top-level
         // VLESS settings. Its legacy `vnext` path bypasses that validation.
@@ -1056,7 +1057,12 @@ impl Parser<'_> {
             | OutboundSettings::Vmess(_)
             | OutboundSettings::Shadowsocks2022(_)
             | OutboundSettings::Wireguard(_)
-            | OutboundSettings::Blackhole(_) => false,
+            | OutboundSettings::Blackhole(_)
+            // SOCKS5 and HTTP proxies are commonly plaintext; RFC 1929 and
+            // Basic credentials then travel in cleartext, which is
+            // documented, not rejected.
+            | OutboundSettings::Socks(_)
+            | OutboundSettings::Http(_) => false,
         };
         if rejects_plaintext_server {
             self.error(
@@ -1190,8 +1196,25 @@ impl Parser<'_> {
         outbound: &Value,
         index: usize,
     ) -> Option<OutboundProxySettings> {
+        let dialer = outbound
+            .pointer("/streamSettings/sockopt/dialerProxy")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        if let Some(tag) = dialer {
+            if outbound.get("proxySettings").is_some() {
+                self.error(
+                    format!("$.outbounds[{index}].proxySettings"),
+                    "proxySettings and sockopt.dialerProxy cannot be combined",
+                );
+            }
+            return Some(OutboundProxySettings {
+                tag: tag.to_owned(),
+                transport_layer: true,
+            });
+        }
         let proxy = outbound.get("proxySettings")?;
         let path = format!("$.outbounds[{index}].proxySettings");
+        self.warning(&path, "legacy proxySettings: migrate tag to streamSettings.sockopt.dialerProxy; only transport-layer chaining is supported");
         if !proxy.is_object() {
             self.error(path, "outbound proxySettings must be an object");
             return None;

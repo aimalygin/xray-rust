@@ -40,7 +40,7 @@ fn config_with_outbounds(outbounds: Vec<OutboundConfig>, default: Option<&str>) 
     CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks-in".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 0,
             allow_unauthenticated_lan: false,

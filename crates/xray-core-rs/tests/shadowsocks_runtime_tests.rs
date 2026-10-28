@@ -41,9 +41,9 @@ async fn shadowsocks_runtime_udp_reopens_after_port_change_and_survives_server_r
             let rebound = UdpSocket::bind("127.0.0.1:0").await.unwrap();
             assert_ne!(first.local_addr().unwrap(), rebound.local_addr().unwrap());
             let mut old_response: Option<Vec<u8>> = None;
-            // Both pinned servers retain the first UDP return address for a
-            // cryptographic session. Verify that limitation, then reopen the
-            // client session on the new path before restarting the server.
+            // Xray v26.10.21 authenticates each packet and updates its session's
+            // return connection; the independent sing-box pin retains the first
+            // address. Verify both contracts, then reopen and restart the peer.
             for (phase, socket) in [&first, &rebound, &rebound, &rebound]
                 .into_iter()
                 .enumerate()
@@ -59,7 +59,11 @@ async fn shadowsocks_runtime_udp_reopens_after_port_change_and_survives_server_r
                 let request = session.encode(&target, &payload).unwrap();
                 socket.send_to(&request, server.address).await.unwrap();
                 let mut response = vec![0; 9000];
-                let return_socket = if phase == 1 { &first } else { socket };
+                let return_socket = if phase == 1 && independent_reference() {
+                    &first
+                } else {
+                    socket
+                };
                 let (length, source) = return_socket.recv_from(&mut response).await.unwrap();
                 assert_eq!(source, server.address);
                 response.truncate(length);

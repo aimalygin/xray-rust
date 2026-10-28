@@ -6,11 +6,13 @@ import (
 	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -67,7 +69,7 @@ func vectors() error {
 		Upstream string   `json:"upstream"`
 		Vectors  []vector `json:"vectors"`
 		CTR      string   `json:"ctr"`
-	}{Upstream: "5ca6f4b7d4dc20a881d4330e498892697627ec0c"}
+	}{Upstream: "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"}
 	material := pattern(96)
 	for _, n := range []int{0, 16, 63, 64, 65, 1023, 1024, 1025, 1120, 1216, 16645} {
 		context := pattern(n)
@@ -315,6 +317,17 @@ func serveConnection(server *encryption.ServerInstance, conn *fragmentConn, appl
 }
 
 func generateKeypair(kind string) (private, public []byte, err error) {
+	if kind == "mldsa65" {
+		seed := make([]byte, 32)
+		if _, err := io.ReadFull(rand.Reader, seed); err != nil {
+			return nil, nil, err
+		}
+		key, err := mldsa.NewPrivateKey(mldsa.MLDSA65(), seed)
+		if err != nil {
+			return nil, nil, err
+		}
+		return seed, key.PublicKey().Bytes(), nil
+	}
 	if kind == "x25519" {
 		key, err := ecdh.X25519().GenerateKey(rand.Reader)
 		if err != nil {
@@ -349,6 +362,9 @@ func origin() error {
 		return err
 	}
 	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"encryption-oracle.test"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	// REALITY replaces this certificate flight with its ML-DSA certificate
+	// while preserving the cover record length; leave room for its signature.
+	template.ExtraExtensions = []pkix.Extension{{Id: []int{1, 3, 6, 1, 4, 1, 55555, 1}, Value: make([]byte, 4096)}}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		return err

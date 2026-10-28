@@ -31,6 +31,10 @@ Regenerate it with `cargo run --locked -p xray-config --example config_contract`
 see [configuration tooling](docs/config-tooling.md) for the output command and
 focused parser/CLI checks. Do not advertise an ignored input as runtime support.
 
+Protocol compatibility changes should update the relevant entries in
+[Xray-core differences and verification gaps](docs/xray-core-differences.md),
+distinguishing tested behavior, source-derived conclusions, and pending checks.
+
 Before publishing or rewriting a branch, scan all reachable history as
 documented in `docs/verification.md`. The history scan fails if a retired
 live-profile value is carried by any commit other than the two pre-release

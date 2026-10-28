@@ -7,7 +7,7 @@ readonly TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 python3 "$WORKSPACE_ROOT/scripts/verify-hysteria-reference.py" "$CHECKOUT"
-env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0 \
+env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off GOTOOLCHAIN=go1.27.3 CGO_ENABLED=0 \
   go -C "$CHECKOUT/app" build -mod=readonly -trimpath -buildvcs=false -o "$TEST_ROOT/hysteria" .
 # Building the reference must not silently update its dependency graph.
 python3 "$WORKSPACE_ROOT/scripts/verify-hysteria-reference.py" "$CHECKOUT"

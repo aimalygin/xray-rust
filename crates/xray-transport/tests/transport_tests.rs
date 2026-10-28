@@ -25,6 +25,29 @@ mod transport_tests {
         TlsClientConfig, TlsConnector, TransportConnector, TransportDialer, TransportError,
     };
 
+    #[test]
+    fn public_roots_exclude_compromised_emsign_c1_and_c3() {
+        // SHA-256 of the trust anchors' DER SubjectPublicKeyInfo contents.
+        // These keys must stay distrusted even if a later bundle reissues a
+        // certificate with a different subject or certificate fingerprint.
+        // https://github.com/rustls/webpki-roots/pull/136
+        let distrusted_keys = [
+            "a9f0857aaeb802a83a2902c6b3377ab7c5c346eea60e4bbf0f0afde7902df814",
+            "19eb98b5bf0464fc9740e91ce7b4661194a08b838b72a71e38d7b4372d09a990",
+        ];
+        assert!(!webpki_roots::TLS_SERVER_ROOTS.is_empty());
+        for root in webpki_roots::TLS_SERVER_ROOTS {
+            let fingerprint = format!(
+                "{:x}",
+                Sha256::digest(root.subject_public_key_info.as_ref())
+            );
+            assert!(
+                !distrusted_keys.contains(&fingerprint.as_str()),
+                "distrusted emSign key returned to the TLS root store: {fingerprint}"
+            );
+        }
+    }
+
     #[derive(Debug)]
     struct RecordingRealityEngine {
         stream: Mutex<Option<tokio::io::DuplexStream>>,

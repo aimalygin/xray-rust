@@ -14,9 +14,6 @@ const TLS_GROUP_SECP256R1: u16 = 0x0017;
 const TLS_GROUP_X25519_MLKEM768: u16 = 0x11ec;
 const TLS_GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
 const X25519_PUBLIC_KEY_LEN: usize = 32;
-const CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON: &str =
-    include_str!("../../../tests/fixtures/reality/clienthello_shape_hellochrome_100.json");
-
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
 struct ClientHelloShape {
     fingerprint: String,
@@ -236,6 +233,20 @@ fn rustls_reality_provider_uses_prepared_x25519_material_for_all_reality_capable
         let expected_x25519_public_key = x25519_public_key(prepared.local_x25519_private_key);
         let key_shares = key_share_payloads(&prepared.raw_client_hello)
             .unwrap_or_else(|error| panic!("{fingerprint}: key_share payloads: {error}"));
+        let hybrid = key_shares
+            .iter()
+            .position(|share| share.group == TLS_GROUP_X25519_MLKEM768)
+            .unwrap_or_else(|| panic!("{fingerprint}: missing final hybrid share"));
+        assert_eq!(key_shares[hybrid].key_exchange.len(), 1216, "{fingerprint}");
+        if let Some(classic) = key_shares
+            .iter()
+            .position(|share| share.group == TLS_GROUP_X25519)
+        {
+            assert!(
+                hybrid < classic,
+                "{fingerprint}: hybrid must precede ordinary X25519"
+            );
+        }
         let mut x25519_compatible_shares = 0;
 
         for key_share in key_shares {
@@ -291,31 +302,19 @@ fn rustls_reality_provider_uses_prepared_x25519_material_for_all_reality_capable
 }
 
 #[test]
-fn rustls_reality_provider_matches_utls_hellochrome_100_shape_oracle() {
-    let mut expected: ClientHelloShape =
-        serde_json::from_str(CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON)
-            .expect("uTLS ClientHello shape fixture should decode");
-    apply_provider_cipher_filter(&mut expected);
+fn reality_provider_rejects_legacy_profiles_before_dialing() {
     let provider = RustlsRealityTlsSessionProvider::new();
-
-    let session = provider
-        .create_session(RealityClientHelloRequest {
-            server_name: "example.com",
-            fingerprint: "hellochrome_100",
-        })
-        .expect("hellochrome_100 REALITY session should be created");
-    let prepared = session
-        .prepared_client_hello()
-        .expect("prepared ClientHello should be available");
-    let actual = parse_client_hello_shape(
-        "hellochrome_100",
-        "Chrome-100",
-        "example.com",
-        &prepared.raw_client_hello,
-    )
-    .expect("rustls ClientHello shape should parse");
-
-    assert_eq!(actual, expected);
+    for fingerprint in xray_utls::XRAY_REALITY_INCAPABLE_FINGERPRINTS {
+        assert!(
+            provider
+                .create_session(RealityClientHelloRequest {
+                    server_name: "example.com",
+                    fingerprint,
+                })
+                .is_err(),
+            "{fingerprint}"
+        );
+    }
 }
 
 #[test]
@@ -423,6 +422,17 @@ fn rustls_reality_provider_raw_clienthello_matches_utls_oracle_for_risky_fingerp
 
     for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
         let fingerprint = *fingerprint;
+        if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
+            // These fixtures remain covered by plain-TLS shaping tests. New
+            // REALITY servers reject them before authenticating the client.
+            assert!(provider
+                .create_session(RealityClientHelloRequest {
+                    server_name: "example.com",
+                    fingerprint,
+                })
+                .is_err());
+            continue;
+        }
         let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let session = provider
             .create_session(RealityClientHelloRequest {
@@ -449,6 +459,17 @@ fn rustls_reality_provider_final_reality_clienthello_matches_utls_oracle_for_ris
 
     for (fingerprint, oracle) in RISKY_FINGERPRINT_RAW_ORACLES {
         let fingerprint = *fingerprint;
+        if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
+            // These fixtures remain covered by plain-TLS shaping tests. New
+            // REALITY servers reject them before authenticating the client.
+            assert!(provider
+                .create_session(RealityClientHelloRequest {
+                    server_name: "example.com",
+                    fingerprint,
+                })
+                .is_err());
+            continue;
+        }
         let expected = utls_client_hello_raw_from_fixture(fingerprint, oracle);
         let expected_raw = decode_hex(&expected.client_hello_hex)
             .unwrap_or_else(|error| panic!("{fingerprint}: Go raw hex decode: {error}"));
@@ -1168,7 +1189,7 @@ fn collect_fingerprint_parity_results() -> Vec<FingerprintParityResult> {
                 )
             } else if !xray_utls::is_reality_fingerprint_supported(fingerprint) {
                 Err(
-                    "skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello has no X25519-compatible key_share"
+                    "skipped: fingerprint is known in xray-core/uTLS but is not REALITY-capable because its ClientHello lacks the required final X25519MLKEM768 key_share"
                         .to_owned(),
                 )
             } else {
@@ -1328,7 +1349,7 @@ fn build_fingerprint_parity_report(results: &[FingerprintParityResult]) -> Strin
     .unwrap();
     writeln!(
         report,
-        "- The `not-reality-capable` rows are TLS1.2-only uTLS fingerprints with no X25519-compatible key_share extension. That is not a shaped-rustls primitive gap: REALITY cannot derive the server-side shared secret without a ClientHello X25519 public key. xray-rust intentionally rejects these before ClientHello generation."
+        "- The `not-reality-capable` rows lack the final X25519MLKEM768 key_share required by REALITY v26.10.21 before optional ordinary X25519. xray-rust rejects them before ClientHello generation; older profiles remain available for plain TLS."
     )
     .unwrap();
     writeln!(

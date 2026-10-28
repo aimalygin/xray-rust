@@ -114,6 +114,42 @@ impl Parser<'_> {
             {
                 return None;
             }
+            let remote_dns = match settings.get("remoteDNS") {
+                None | Some(Value::Null) => Vec::new(),
+                Some(Value::Array(values)) if values.len() <= 8 => values
+                    .iter()
+                    .map(|v| {
+                        v.as_str()?
+                            .parse::<IpAddr>()
+                            .ok()
+                            .filter(|ip| usable_ip(*ip))
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+                _ => {
+                    self.error(
+                        format!("{path}.remoteDNS"),
+                        "remoteDNS must be an array of at most 8 usable IP literals",
+                    );
+                    return None;
+                }
+            };
+            let remote_dns = if remote_dns.is_empty() {
+                [
+                    "1.1.1.1",
+                    "1.0.0.1",
+                    "2606:4700:4700::1111",
+                    "2606:4700:4700::1001",
+                ]
+                .into_iter()
+                .map(|ip| ip.parse().unwrap())
+                .collect()
+            } else {
+                remote_dns
+            };
+            if settings.get("domainStrategy").is_some() {
+                self.warning(format!("{path}.domainStrategy"),
+                    "legacy WireGuard domainStrategy is retained only for address-family selection; destination DNS now uses remoteDNS through the tunnel");
+            }
             let domain_strategy = match settings
                 .get("domainStrategy")
                 .map(Value::as_str)
@@ -134,6 +170,7 @@ impl Parser<'_> {
                 addresses,
                 mtu,
                 domain_strategy,
+                remote_dns,
             })
         })();
         if parsed.is_none() {

@@ -4,6 +4,7 @@ use xray_transport::hysteria::{HysteriaError, HysteriaUdpSession};
 
 pub(crate) enum Session {
     Trojan(trojan::UdpSession),
+    Socks(socks::UdpSession),
     Vmess(vmess::UdpSession),
     Shadowsocks2022(Box<shadowsocks::UdpSession>),
     Hysteria(HysteriaUdpSession),
@@ -29,6 +30,9 @@ pub(crate) async fn open(
             outbound
                 .open_udp(target, bootstrap, dialer, global_id)
                 .await?,
+        )),
+        UdpOutbound::Socks(outbound) => Ok(Session::Socks(
+            outbound.open_udp(target, bootstrap, dialer).await?,
         )),
         UdpOutbound::Vmess(outbound) => Ok(Session::Vmess(
             outbound
@@ -56,6 +60,7 @@ impl Session {
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
             Self::Trojan(session) => session.send(target, payload).await,
+            Self::Socks(session) => session.send(target, payload).await,
             Self::Vmess(session) => session.send(target, payload).await,
             Self::Shadowsocks2022(session) => session.send(target, payload).await,
             Self::Hysteria(session) => Ok(session.send(target, payload).await?),
@@ -70,6 +75,7 @@ impl Session {
     pub(crate) async fn recv(&self) -> Result<Datagram, CoreError> {
         match self {
             Self::Trojan(session) => session.recv().await,
+            Self::Socks(session) => session.recv().await,
             Self::Vmess(session) => session.recv().await,
             Self::Shadowsocks2022(session) => session.recv().await,
             Self::Hysteria(session) => {

@@ -219,6 +219,7 @@ impl RoutedDnsQueryTransport {
 
         match outbound {
             outbound @ (UdpOutbound::Trojan(_)
+            | UdpOutbound::Socks(_)
             | UdpOutbound::Vmess(_)
             | UdpOutbound::Shadowsocks2022(_)
             | UdpOutbound::Hysteria(_)
@@ -445,6 +446,8 @@ impl RoutedDnsQueryTransport {
                 .await?
             }
             outbound @ (TcpOutbound::Trojan(_)
+            | TcpOutbound::Socks(_)
+            | TcpOutbound::Http(_)
             | TcpOutbound::Vmess(_)
             | TcpOutbound::Shadowsocks2022(_)
             | TcpOutbound::Vless(_)
@@ -470,6 +473,8 @@ impl RoutedDnsQueryTransport {
                     outbound.primary(),
                     TcpOutbound::Vless(_)
                         | TcpOutbound::Trojan(_)
+                        | TcpOutbound::Socks(_)
+                        | TcpOutbound::Http(_)
                         | TcpOutbound::Vmess(_)
                         | TcpOutbound::Shadowsocks2022(_)
                 ) && server_socket_has_nonzero_scope(server)

@@ -253,6 +253,49 @@ impl TransportDialer {
         .await
     }
 
+    /// Opens a direct raw TCP/TLS carrier and returns the actual TCP peer.
+    ///
+    /// Protocols such as SOCKS UDP need the winner of the candidate race when
+    /// the server advertises an unspecified relay IP. A chained stream cannot
+    /// supply that direct-peer guarantee and is rejected before dialing.
+    pub async fn connect_raw_stream_with_peer(
+        &self,
+        config: &ConnectorConfig,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<(BoxedTransportStream, SocketAddr), TransportError> {
+        if self.resolved_tcp_connector.is_some() {
+            return Err(TransportError::UnsupportedChainedTransport(
+                "UDP association",
+            ));
+        }
+        // Validate TLS before opening the protected socket, as connect_stream does.
+        let prepared = match config {
+            ConnectorConfig::Tcp => None,
+            ConnectorConfig::Tls(tls) => Some(self.tls.prepare_stream(tls, TlsAlpnPolicy::Raw)?),
+            ConnectorConfig::Reality(_) => {
+                return Err(TransportError::UnsupportedConnectorConfig(
+                    "UDP association REALITY",
+                ));
+            }
+        };
+        let tcp = self
+            .connect_direct_tcp(original_target, candidates, happy_eyeballs)
+            .await?;
+        let peer = tcp.peer_addr().map_err(TransportError::Tcp)?;
+        let stream = self.mask_tcp_carrier(Box::new(tcp));
+        let stream = match prepared {
+            Some(prepared) => {
+                self.tls
+                    .connect_prepared_penetrating_stream(stream, prepared)
+                    .await?
+            }
+            None => stream,
+        };
+        Ok((stream, peer))
+    }
+
     pub(crate) async fn connect_resolved_with_alpn_policy(
         &self,
         config: &ConnectorConfig,
@@ -362,10 +405,14 @@ impl TransportDialer {
         let stream = self
             .connect_tcp_carrier_unmasked(original_target, candidates, happy_eyeballs)
             .await?;
-        Ok(match &self.tcp_fragment {
+        Ok(self.mask_tcp_carrier(stream))
+    }
+
+    fn mask_tcp_carrier(&self, stream: BoxedTransportStream) -> BoxedTransportStream {
+        match &self.tcp_fragment {
             Some(config) => Box::new(crate::fragment::FragmentStream::new(stream, config.clone())),
             None => stream,
-        })
+        }
     }
 
     async fn connect_tcp_carrier_unmasked(
@@ -380,22 +427,30 @@ impl TransportDialer {
                 .await;
         }
 
+        Ok(Box::new(
+            self.connect_direct_tcp(original_target, candidates, happy_eyeballs)
+                .await?,
+        ))
+    }
+
+    async fn connect_direct_tcp(
+        &self,
+        original_target: &Target,
+        candidates: &[SocketAddr],
+        happy_eyeballs: Option<&HappyEyeballsConfig>,
+    ) -> Result<tokio::net::TcpStream, TransportError> {
         let first = candidates
             .first()
             .copied()
             .ok_or_else(|| no_resolved_candidates_error(original_target))?;
         match happy_eyeballs.filter(|config| !config.try_delay.is_zero() && candidates.len() >= 2) {
-            Some(race_config) => Ok(Box::new(
-                connect_tcp_happy_eyeballs(
-                    candidates,
-                    self.socket_protector.as_deref(),
-                    race_config,
-                )
-                .await?,
-            )),
-            None => Ok(Box::new(
-                connect_tcp_stream(first, self.socket_protector.as_deref()).await?,
-            )),
+            Some(race_config) => Ok(connect_tcp_happy_eyeballs(
+                candidates,
+                self.socket_protector.as_deref(),
+                race_config,
+            )
+            .await?),
+            None => Ok(connect_tcp_stream(first, self.socket_protector.as_deref()).await?),
         }
     }
 }

@@ -58,7 +58,7 @@ impl TunFdConfig {
 #[cfg(unix)]
 mod platform {
     use std::io;
-    use std::os::fd::{AsRawFd, RawFd};
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -69,7 +69,7 @@ mod platform {
     use xray_tun::{TunEndpoint, TunError};
 
     use super::{TunFdConfig, MAX_IP_PACKET_SIZE};
-    use crate::{TunFdClosePolicy, TunFdPacketFormat};
+    use crate::TunFdPacketFormat;
 
     const DARWIN_UTUN_HEADER_LEN: usize = 4;
     const TUN_FD_WRITE_BATCH_MAX_PACKETS: usize = 128;
@@ -92,7 +92,10 @@ mod platform {
                 return Err(err);
             }
             let packet_format = config.packet_format;
-            let fd = Arc::new(AsyncFd::new(TunFd::new(config))?);
+            let inner = TunFd::new(config)?;
+            // SAFETY: TunFd owns a private duplicate. Its AsRawFd always returns
+            // that descriptor, which stays open until AsyncFd drops the owner.
+            let fd = Arc::new(unsafe { AsyncFd::register(inner) }?);
             let (shutdown, shutdown_rx) = watch::channel(false);
             let read_task = tokio::spawn(read_loop(
                 Arc::clone(&fd),
@@ -119,33 +122,36 @@ mod platform {
     }
 
     struct TunFd {
-        fd: RawFd,
-        close_policy: TunFdClosePolicy,
+        fd: OwnedFd,
+        config: TunFdConfig,
     }
 
     impl TunFd {
-        fn new(config: TunFdConfig) -> Self {
-            Self {
-                fd: config.fd,
-                close_policy: config.close_policy,
+        fn new(config: TunFdConfig) -> io::Result<Self> {
+            // A raw descriptor supplied by a host cannot guarantee AsyncFd's
+            // lifetime. Duplicate it atomically with CLOEXEC so the registration
+            // has its own owner even when the original is borrowed.
+            let fd = unsafe { libc::fcntl(config.fd, libc::F_DUPFD_CLOEXEC, 0) };
+            if fd < 0 {
+                let error = io::Error::last_os_error();
+                config.close_if_owned();
+                return Err(error);
             }
+            // SAFETY: fcntl returned a new open descriptor that we alone own.
+            let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+            Ok(Self { fd, config })
         }
     }
 
     impl AsRawFd for TunFd {
         fn as_raw_fd(&self) -> RawFd {
-            self.fd
+            self.fd.as_raw_fd()
         }
     }
 
     impl Drop for TunFd {
         fn drop(&mut self) {
-            if self.close_policy == TunFdClosePolicy::Owned && self.fd >= 0 {
-                unsafe {
-                    libc::close(self.fd);
-                }
-                self.fd = -1;
-            }
+            self.config.close_if_owned();
         }
     }
 
@@ -705,6 +711,11 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use std::collections::VecDeque;
+        use std::io::{Read, Write};
+        use std::os::fd::IntoRawFd;
+        use std::os::unix::net::UnixStream;
+
+        use crate::TunFdClosePolicy;
 
         use super::*;
         use xray_tun::TunConfig;
@@ -865,6 +876,76 @@ mod platform {
                 mtu: 1500,
                 queue_depth: 4,
             })
+        }
+
+        #[tokio::test]
+        async fn stopping_owned_tun_closes_original_and_registered_duplicate() {
+            let (host, mut peer) = UnixStream::pair().unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+            let runtime = TunFdRuntime::start(
+                TunFdConfig::new(
+                    host.into_raw_fd(),
+                    TunFdPacketFormat::RawIp,
+                    TunFdClosePolicy::Owned,
+                ),
+                Arc::new(test_tun_endpoint()),
+            )
+            .unwrap();
+
+            runtime.stop().await;
+
+            assert_eq!(
+                peer.read(&mut [0]).unwrap(),
+                0,
+                "both descriptors must close"
+            );
+        }
+
+        #[tokio::test]
+        async fn stopping_borrowed_tun_leaves_the_callers_descriptor_open() {
+            let (mut host, mut peer) = UnixStream::pair().unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+            let runtime = TunFdRuntime::start(
+                TunFdConfig::new(
+                    host.as_raw_fd(),
+                    TunFdPacketFormat::RawIp,
+                    TunFdClosePolicy::Borrowed,
+                ),
+                Arc::new(test_tun_endpoint()),
+            )
+            .unwrap();
+
+            runtime.stop().await;
+
+            host.write_all(b"x").unwrap();
+            let mut received = [0];
+            peer.read_exact(&mut received).unwrap();
+            assert_eq!(&received, b"x");
+            drop(host);
+            assert_eq!(peer.read(&mut received).unwrap(), 0, "duplicate must close");
+        }
+
+        #[test]
+        fn tun_registration_owns_a_cloexec_duplicate() {
+            let (host, mut peer) = UnixStream::pair().unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+            let inner = TunFd::new(TunFdConfig::new(
+                host.as_raw_fd(),
+                TunFdPacketFormat::RawIp,
+                TunFdClosePolicy::Borrowed,
+            ))
+            .unwrap();
+            assert_ne!(inner.as_raw_fd(), host.as_raw_fd());
+            assert_ne!(
+                unsafe { libc::fcntl(inner.as_raw_fd(), libc::F_GETFD) } & libc::FD_CLOEXEC,
+                0
+            );
+            drop(host);
+            let mut registered = std::fs::File::from(inner.fd.try_clone().unwrap());
+            registered.write_all(b"x").unwrap();
+            let mut received = [0];
+            peer.read_exact(&mut received).unwrap();
+            assert_eq!(&received, b"x");
         }
 
         #[test]

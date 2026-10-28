@@ -108,7 +108,7 @@ func run() error {
 	if err = json.Unmarshal(raw, &f); err != nil {
 		return err
 	}
-	if f.SchemaVersion != 1 || f.XrayCoreCommit != "5ca6f4b7d4dc20a881d4330e498892697627ec0c" || len(f.Cases) == 0 {
+	if f.SchemaVersion != 1 || f.XrayCoreCommit != "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74" || len(f.Cases) == 0 {
 		return fmt.Errorf("invalid fixture provenance or empty cases")
 	}
 	for _, c := range f.Cases {

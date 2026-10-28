@@ -72,7 +72,8 @@ impl HeaderMap {
     ///
     /// XHTTP's HTTP/2 composer needs to validate and lowercase these fields;
     /// HTTP/1.1 still uses the original casing and its own Go-compatible sort.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+    /// The HTTP CONNECT outbound reads the masquerade block through it.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
         self.entries
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_str()))

@@ -10,6 +10,94 @@ long-term supported release series.
 
 ## Unreleased
 
+- Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
+- Require final X25519MLKEM768 profiles for REALITY and restrict its random pool;
+  verify ML-DSA65 and Vision against the new reference.
+- Add `sockopt.dialerProxy` chaining and the bounded Finalmask UDP-hop form;
+  retain legacy spellings with migration diagnostics and update profile import.
+- Resolve WireGuard destination names through tunnel-owned `remoteDNS` with TTL
+  caching and TCP fallback, keeping peer bootstrap separate.
+- Add HTTPUpgrade WebSocket key/version headers and QUIC v2 Initial sniffing.
+  QUIC transport remains v1, with an explicit native-TLS/ChromeParrot limitation.
+
+- Update webpki-roots to 1.0.11, removing the emSign C1 and C3 trust anchors
+  whose issuing chains include compromised intermediate certificates.
+
+- Update the zstd dependency family to patched releases, fixing the
+  abandoned-stream data leak and decompression memory-safety advisories
+  reported by RustSec without changing TLS certificate-compression settings.
+
+- Honour `"udp": false` on the SOCKS inbound. Previously the flag was only
+  type-checked and `UDP ASSOCIATE` was relayed anyway. Like Xray-core, the
+  request now gets `REP = 0x07` (command not supported) with a `0.0.0.0:0`
+  bind address, after login under `password`; no relay socket is created,
+  nothing is dialed and the control connection is closed. `CONNECT` is
+  unaffected. An absent `udp` still enables `UDP ASSOCIATE`, unlike Xray-core,
+  which treats it as `false`; this is an open compatibility question. In the
+  Rust model, `InboundProtocol::Socks` now carries `SocksInboundSettings`
+  (`auth` and `udp`), whose default keeps UDP enabled.
+
+- Android: share snapshot/enum decoding and VLESS parameter validation without
+  changing their accepted values or errors. VPN session shutdown retains later
+  cleanup failures as suppressed exceptions on the original error; descriptor
+  ownership, shutdown order, and public SDK/FFI contracts are unchanged (#81).
+
+- Mobile: prepare SOCKS outbound server addresses before installing Android VPN
+  or Apple Network Extension settings, in both flat and legacy `servers` forms.
+  Pin all resolved A/AAAA candidates in `dns.hosts`, preserve credentials and TLS
+  metadata, and reject tunnel-owned carrier addresses. Apple also excludes every
+  SOCKS carrier candidate from tunnel routes; destination domains still resolve
+  at the SOCKS proxy.
+
+- Android: the reference `XrayVpnService` marks its VPN as not metered on
+  Android 10+, `XrayCore.ffiInfo()` reads the native version and capabilities
+  once per process, and `XrayCore.stats()` checks the native value count.
+
+- Add RFC 1929 username/password authentication to the SOCKS inbound
+  (`"auth": "password"` with `accounts`). Password-protected UDP associations
+  accept datagrams only from the declared client endpoint and refuse requests
+  that leave the port unset, such as `0.0.0.0:0`, and
+  `accounts` under `noauth` are now rejected instead of ignored (#78).
+- Parse the Xray `socks` outbound in its flat and legacy `servers` forms, with
+  optional RFC 1929 `user`/`pass` credentials over raw/tcp with none or TLS
+  security. Mixed forms, more than one server or user, a lone `user` or `pass`,
+  empty credentials, a zero port, enabled Mux, other networks and REALITY fail
+  closed. Without TLS the credentials travel in cleartext.
+- Carry UDP through the `socks` outbound with `UDP ASSOCIATE`. Unlike Xray,
+  which always declares `0.0.0.0:0`, the request declares the relay socket's
+  real port, so servers that admit only the declared client endpoint, such as
+  a password-protected xray-rust SOCKS inbound, accept it. The association
+  ends when the server closes the control connection, malformed or fragmented
+  relay datagrams are dropped instead of ending it, and an oversized datagram
+  is an error rather than an empty datagram. The datagrams use a protected
+  plain UDP socket; TLS covers only the control connection.
+  Unspecified relay addresses use the actual TCP peer after Happy Eyeballs,
+  and IPv4-mapped proxy literals select IPv4 for both sockets. Pinned Xray-core
+  interop covers UDP, TLS control, IPv4/IPv6/domain targets, and TUN UDP/DNS;
+  the password-inbound restriction on undeclared UDP ports remains in force.
+
+- Add the Xray `http` outbound: HTTP/1.1 `CONNECT` with optional Basic
+  credentials, in the flat and legacy `servers` forms, over raw/tcp with none
+  or TLS security. TLS offers only `http/1.1`, also under a uTLS fingerprint,
+  and only status 200 opens the tunnel, as in Xray. The request matches the
+  Go client's, masquerade headers included. The response head is limited to
+  16 KiB and tunnel bytes that arrive with it are kept, where Xray loses them.
+  Custom `headers`, HTTP/2, UDP, Mux, a lone `pass`, an empty `user` or one
+  containing `:`, other networks and REALITY fail closed; without TLS the
+  credentials travel in cleartext. Android and Apple prepare the proxy host
+  before VPN setup like a SOCKS server's (#79).
+
+- Fix false checksum failures in Gradle provenance verification after a partial
+  download is retried. Verify completed temporary files against both canonical
+  sidecars and the existing SHA-256 locks.
+
+- Update Tokio to 1.53.3, ctutils to 0.4.4, rustls-webpki to 0.103.16 and
+  webpki-roots to 1.0.10 to resolve the RustSec advisories tracked in #83;
+  replace the yanked der 0.8.0 with 0.8.1.
+- Register TUN and benchmark descriptors with Tokio's new API using private
+  close-on-exec duplicates. Async readiness owns its descriptor for its entire
+  lifetime, while the caller's original BORROWED/OWNED close policy is preserved.
+
 ## 0.8.1 - 2026-10-18
 
 Release candidate preparation; publication and exact-candidate release

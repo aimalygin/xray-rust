@@ -244,6 +244,20 @@ class XrayVlessUrlImporterTest {
     }
 
     @Test
+    fun emptyUnsupportedSecurityValuesRemainAllowedButRealityFieldsRemainRejected() {
+        val base = "vless://$TEST_USER_ID@example.com:443?type=xhttp&security=tls"
+        val profile = XrayVlessUrlImporter.profile("$base&pcs=&vcn=&ech=&echQuery=")
+        val stream = proxy(profile).getJSONObject("streamSettings")
+        assertEquals("tls", stream.getString("security"))
+        assertEquals("example.com", stream.getJSONObject("tlsSettings").getString("serverName"))
+
+        for (name in listOf("pbk", "sid", "spx", "pqv")) {
+            val error = assertImportError("$base&$name=", XrayVlessUrlImportErrorCode.UnsupportedQueryParameter)
+            assertEquals(name, error.parameter)
+        }
+    }
+
+    @Test
     fun rejectsInvalidOrRecursivelyEncodedXhttpExtra() {
         val recursivelyEncoded = encode(encode(encode("{}")))
         for (value in listOf("", "%5B%5D", "null", "7", "%7Bbroken", recursivelyEncoded)) {

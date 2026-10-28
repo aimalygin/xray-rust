@@ -8,7 +8,7 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 umask 077
 
 unset GOFLAGS GOEXPERIMENT
-export GOENV=off GOWORK=off GOTOOLCHAIN=go1.26.5 CGO_ENABLED=0
+export GOENV=off GOWORK=off GOTOOLCHAIN=go1.27.3 CGO_ENABLED=0
 python3 "$WORKSPACE_ROOT/scripts/verify-wireguard-reference.py"
 python3 - "$WORKSPACE_ROOT" "$CHECKOUT" "$TEST_ROOT" <<'PY'
 import importlib.util

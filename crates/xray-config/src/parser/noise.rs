@@ -3,6 +3,68 @@ use crate::{FragmentRange, UdpNoiseItem, UdpNoiseSettings};
 use base64::Engine as _;
 
 impl Parser<'_> {
+    pub(super) fn parse_udp_hop_mask(
+        &mut self,
+        stream: Option<&Value>,
+        network: StreamNetwork,
+        index: usize,
+    ) -> Option<QuicUdpHopSettings> {
+        let masks = stream?.pointer("/finalmask/udp")?.as_array()?;
+        let (i, mask) = masks.iter().enumerate().find(|(_, m)| {
+            m.get("type")
+                .and_then(Value::as_str)
+                .is_some_and(|t| t.eq_ignore_ascii_case("udphop"))
+        })?;
+        let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}].settings");
+        if network != StreamNetwork::Hysteria || i != 0 {
+            self.error(
+                &path,
+                "udphop requires Hysteria and must be the first UDP mask",
+            );
+        }
+        let settings = mask.get("settings").filter(|s| s.is_object());
+        let Some(settings) = settings else {
+            self.error(path, "udphop settings must be an object");
+            return None;
+        };
+        self.reject_unknown_fields(settings, &path, &surface::UDP_HOP_MASK);
+        let mut modes: Vec<_> = settings
+            .get("mode")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .split(',')
+            .map(str::to_ascii_lowercase)
+            .collect();
+        modes.sort();
+        if modes != ["intervallocal", "intervalremote"] {
+            self.error(format!("{path}.mode"),
+                "supported udphop mode is intervalLocal,intervalRemote; independent and perConnRemote modes are unsupported");
+        }
+        if settings
+            .get("remoteIPs")
+            .is_some_and(|v| !v.is_null() && !v.as_array().is_some_and(Vec::is_empty))
+        {
+            self.error(
+                format!("{path}.remoteIPs"),
+                "remote IP hopping is unsupported",
+            );
+        }
+        let hop = self.parse_udp_hop_fields(settings, &path, "remotePorts")?;
+        if hop.ports.is_empty() {
+            self.error(
+                format!("{path}.remotePorts"),
+                "udphop requires at least one remote port",
+            );
+        }
+        if (hop.interval.from == 0) != (hop.interval.to == 0) {
+            self.error(
+                format!("{path}.interval"),
+                "udphop interval must be zero or have both bounds at least 5 seconds",
+            );
+        }
+        Some(hop)
+    }
+
     pub(super) fn parse_udp_noise(
         &mut self,
         stream: Option<&Value>,
@@ -19,10 +81,11 @@ impl Parser<'_> {
         };
         let mut noise = None;
         let mut salamander = None;
-        if masks.len() > 2 {
+        let mut hop = None;
+        if masks.len() > 3 {
             self.error(
                 &path,
-                "at most one noise and one Salamander mask are supported",
+                "at most one udphop, one noise and one Salamander mask are supported",
             );
             return None;
         }
@@ -41,9 +104,12 @@ impl Parser<'_> {
                 Some("salamander") if salamander.is_none() => {
                     salamander = Some(i);
                 }
+                Some("udphop") if hop.is_none() => {
+                    hop = Some(i);
+                }
                 _ => self.error(
                     &p,
-                    "only one noise and one Salamander UDP mask are supported",
+                    "only one udphop, one noise and one Salamander UDP mask are supported",
                 ),
             }
         }

@@ -1,4 +1,5 @@
 mod stream_httpupgrade_tests {
+    use base64::Engine as _;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
     use xray_transport::stream::{connect_httpupgrade, HttpUpgradeConfig};
@@ -84,9 +85,17 @@ mod stream_httpupgrade_tests {
         assert!(request.contains("\r\nHost: example.com\r\n"), "{request}");
         assert!(request.contains("\r\nConnection: Upgrade\r\n"), "{request}");
         assert!(request.contains("\r\nUpgrade: websocket\r\n"), "{request}");
-        assert!(
-            !request.contains("Sec-WebSocket"),
-            "httpupgrade sends no RFC 6455 headers:\n{request}"
+        assert!(request.contains("\r\nSec-Websocket-Version: 13\r\n"));
+        let key = request
+            .lines()
+            .find_map(|line| line.strip_prefix("Sec-Websocket-Key: "))
+            .unwrap();
+        assert_eq!(
+            base64::engine::general_purpose::STANDARD
+                .decode(key)
+                .unwrap()
+                .len(),
+            16
         );
     }
 
@@ -111,7 +120,7 @@ mod stream_httpupgrade_tests {
     #[tokio::test]
     async fn the_masquerade_block_rides_along() {
         // The transport shares Xray's browser persona: an httpupgrade request
-        // is a browser's WebSocket request minus the RFC 6455 headers.
+        // includes the WebSocket-shaped handshake headers.
         let (listener, addr) = loopback().await;
         let recorded = serve_once(listener, ACCEPTED);
 
@@ -131,6 +140,39 @@ mod stream_httpupgrade_tests {
             request.contains("\r\nUser-Agent: Mozilla/5.0 "),
             "{request}"
         );
+    }
+
+    #[tokio::test]
+    async fn websocket_header_defaults_preserve_explicit_values_and_vary_per_dial() {
+        let mut default_keys = Vec::new();
+        for explicit in [None, None, Some("configured-key"), Some("")] {
+            let (listener, addr) = loopback().await;
+            let recorded = serve_once(listener, ACCEPTED);
+            let mut settings = config("/ws");
+            if let Some(key) = explicit {
+                settings.headers = vec![
+                    ("Sec-Websocket-Key".into(), key.into()),
+                    ("Sec-Websocket-Version".into(), "custom-version".into()),
+                ];
+            }
+            let stream = TcpStream::connect(addr).await.unwrap();
+            connect_httpupgrade(Box::new(stream), &settings)
+                .await
+                .unwrap();
+            let request = String::from_utf8(recorded.await.unwrap()).unwrap();
+            let key = request
+                .lines()
+                .find_map(|line| line.strip_prefix("Sec-Websocket-Key: "))
+                .unwrap();
+            assert_eq!(request.matches("Sec-Websocket-Key:").count(), 1);
+            if let Some(expected) = explicit {
+                assert_eq!(key, expected);
+                assert!(request.contains("Sec-Websocket-Version: custom-version\r\n"));
+            } else {
+                default_keys.push(key.to_owned());
+            }
+        }
+        assert_ne!(default_keys[0], default_keys[1]);
     }
 
     #[tokio::test]

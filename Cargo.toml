@@ -67,14 +67,14 @@ sha1 = "0.10"
 sha2 = "0.10"
 smoltcp = { version = "0.14.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp"] }
 thiserror = "2"
-tokio = { version = "1.52.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.53.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
 uuid = { version = "1", features = ["serde", "v4"] }
-webpki-roots = "1"
+webpki-roots = "1.0.11"
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
-zstd = { version = "0.14.2", default-features = false }
+zstd = { version = "0.14.3", default-features = false }
 
 [profile.release]
 codegen-units = 1

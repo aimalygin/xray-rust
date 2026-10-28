@@ -37,7 +37,7 @@ func run() error {
 	if err = json.Unmarshal(raw, &f); err != nil {
 		return err
 	}
-	if f.XrayCoreCommit != "5ca6f4b7d4dc20a881d4330e498892697627ec0c" {
+	if f.XrayCoreCommit != "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74" {
 		return fmt.Errorf("wrong reference commit")
 	}
 	for _, c := range f.Cases {

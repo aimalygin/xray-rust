@@ -31,10 +31,10 @@ const BLACKHOLE_CONFIG: &str = r#"{
 }"#;
 
 #[derive(Default)]
-struct CountingSocketProtector(AtomicUsize);
+pub(super) struct CountingSocketProtector(AtomicUsize);
 
 impl CountingSocketProtector {
-    fn calls(&self) -> usize {
+    pub(super) fn calls(&self) -> usize {
         self.0.load(Ordering::SeqCst)
     }
 }

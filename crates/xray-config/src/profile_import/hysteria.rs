@@ -106,17 +106,19 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
             "settings":{"version":2,"address":host,"port":port},
             "streamSettings":{"network":"hysteria","security":"tls",
                 "tlsSettings":{"serverName":sni.as_deref().map(String::as_str).unwrap_or(&host),"alpn":["h3"]},
-                "hysteriaSettings":{"version":2,"auth":auth.as_str()}}}],
+                "hysteriaSettings":{"version":2,"auth":auth.as_str()},
+                "finalmask":{"quicParams":{"disableChromeParrot":true},"udp":[]}}}],
         "routing":{"domainStrategy":"AsIs","rules":[]}
     }));
-    if let Some(password) = salamander {
-        root.0["outbounds"][0]["streamSettings"]["finalmask"]["udp"] = json!([
-            {"type":"salamander", "settings":{"password":password.as_str()}}
-        ]);
-    }
+    let masks = root.0["outbounds"][0]["streamSettings"]["finalmask"]["udp"]
+        .as_array_mut()
+        .unwrap();
     if let Some(ports) = hopping_ports {
-        root.0["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"]["udpHop"] =
-            json!({"ports":ports});
+        masks.push(json!({"type":"udphop","settings":{
+            "mode":"intervalLocal,intervalRemote","remotePorts":ports}}));
+    }
+    if let Some(password) = salamander {
+        masks.push(json!({"type":"salamander", "settings":{"password":password.as_str()}}));
     }
     root.0["dns"] = if dns.is_empty() {
         json!({"queryStrategy":"UseIPv4","fakeIp":{"enabled":true,"ipv4Pool":"198.19.0.0/16","poolSize":32768,"ttl":60}})

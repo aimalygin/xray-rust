@@ -1,0 +1,1 @@
+The Client Initial test vector is from [RFC 9369 Appendix A.2](https://www.rfc-editor.org/rfc/rfc9369.html#appendix-A.2), copyright 2023 IETF Trust and the identified authors. Extracted code components are covered by the Revised BSD License in section 4.e of the [IETF Trust Legal Provisions](https://trustee.ietf.org/license-info). The vector is provided without warranty.

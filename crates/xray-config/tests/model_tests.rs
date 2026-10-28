@@ -62,7 +62,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
 
     let inbound = InboundConfig {
         tag: Some("socks".to_owned()),
-        protocol: InboundProtocol::Socks,
+        protocol: InboundProtocol::Socks(Default::default()),
         listen: "127.0.0.1".to_owned(),
         port: 1080,
         allow_unauthenticated_lan: false,
@@ -83,7 +83,7 @@ fn normalized_model_can_represent_vless_reality_vision() {
     let expected = CoreConfig {
         inbounds: vec![InboundConfig {
             tag: Some("socks".to_owned()),
-            protocol: InboundProtocol::Socks,
+            protocol: InboundProtocol::Socks(Default::default()),
             listen: "127.0.0.1".to_owned(),
             port: 1080,
             allow_unauthenticated_lan: false,
