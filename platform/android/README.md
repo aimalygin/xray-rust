@@ -66,6 +66,8 @@ artifact directory.
 - `XrayVlessUrlImporter`: fail-closed VLESS share-link conversion into a
   self-contained mobile TUN profile.
 - `XrayVpnService`: reference VPN interface setup and lifecycle coordination.
+- `XrayNetworkChangeCoordinator`: opt-in underlying-network observation and
+  Hysteria2/WireGuard rebind requests with application-owned selection/binding.
 - `XrayTunBackend.FileDescriptor`: default direct borrowed raw-IP fd path.
 - `XrayTunBackend.PacketPump`: fallback with reusable direct buffers and
   batched blocking poll.
@@ -232,15 +234,84 @@ request fresh protected carrier sockets while retaining live inner flows and
 current endpoints. Each returns accepted/coalesced requests, not completed
 path validation or handshakes. Idle outbounds return zero without connecting.
 
-The host should observe usable **underlying** networks with `ConnectivityManager`
-(exclude the VPN transport), finish its network selection/update first, coalesce
-duplicate notifications, then call the methods on its serial VPN control worker.
-Do not rebind solely because `onLost` fired when no usable replacement exists.
-Unregister the network callback and fence queued work before closing the core;
-callbacks racing close receive a closed-core error. Socket protection remains
-mandatory. The core does not call `bindProcessToNetwork` or select a `Network`
-for the host. A request alone does not prove Wi-Fi/cellular or NAT64 recovery;
-endpoint re-resolution may require rebuilding the prepared config/core.
+Apps owning the TUN fd can opt into `XrayNetworkChangeCoordinator`. Add
+`android.permission.ACCESS_NETWORK_STATE` to the host manifest and supply the
+app's serial VPN control executor. The reference `XrayVpnService` does not enable
+this helper automatically. The
+[compiled fd-session example](xraymobile/src/test/java/org/xrayrust/mobile/examples/NetworkChangeFdSession.kt)
+shows startup failure cleanup and the required teardown order.
+
+```kotlin
+val coordinator = XrayNetworkChangeCoordinator(
+    connectivityManager, vpnControlExecutor,
+    selectAndApply = { candidates, previous ->
+        // App-owned policy: filter/rank candidates, apply carrier settings and
+        // actual socket-binding policy, then return the chosen Network or null.
+        carrierPolicy.selectAndApply(candidates, previous)
+    },
+    onError = { error -> diagnostics.controlFailure(error) },
+    onResult = { result -> diagnostics.rebindRequests(result) },
+)
+core.start()
+coordinator.start(core, carrierPolicy.actualNetworkOrNull())
+// On the same control worker, before core.stop()/close() and borrowed fd close:
+coordinator.close()
+```
+
+`carrierPolicy` and `diagnostics` above belong to the application. Selection runs
+on the control worker, must be quick/idempotent, and must not wait for work on
+that same executor. It receives copied capabilities/link properties for usable,
+unblocked, non-VPN Internet networks. The host decides further requirements
+such as validation, metering, transport preference or endpoint reachability.
+Return only a supplied candidate, after applying the policy, or `null` when no
+carrier is usable. Errors are reported without requesting rebind. Callback
+metadata is used directly, following Android's
+[NetworkCallback ordering contract](https://developer.android.com/reference/android/net/ConnectivityManager.NetworkCallback);
+the helper does not synchronously query network properties from `onAvailable`.
+API 29+ also waits for the initial blocked-status callback.
+
+Duplicate observations and bursts share one pending task and use the latest
+snapshot. Without an initial network, the first usable selection establishes a
+baseline without rebind; pass the actual already-applied network to `start` if
+it is known. Losing the selected network with no replacement records an offline
+state without rebind. A replacement or later online recovery requests both
+protocols independently; losing an unrelated network does not change the
+carrier. Metadata updates on the same selected network do not request rebind.
+
+`XrayNetworkRebindResult` contains the session generation and an independent
+`Accepted(requests)` or `Failed(error)` for each protocol. Zero is normal for
+idle/unconfigured outbounds, which remain lazy. Existing ABI/capability and
+closed-core guards are preserved. Acceptance is not evidence of a completed
+handshake or recovered TCP/UDP traffic. Callbacks should not throw or log
+credentials. `onError` handles policy/scheduling failures; executor rejection
+stops observation and can report from the Android callback thread. Registration
+and unregistration failures throw to the lifecycle caller.
+
+`close()` unregisters the observer, invalidates queued work and waits for
+in-flight policy/rebind calls before returning. Call it before closing the core
+or its borrowed fd. If unregister fails, queued events are still fenced; retry
+`close()` to release the observer. A subsequent `start` first retries pending
+unregistration. Each start has a new generation, so old callbacks cannot touch
+a new core. The helper does not own the core, fd or executor.
+
+Socket protection remains mandatory. The helper does not bind sockets, select
+the host's carrier, call `bindProcessToNetwork`, or call `setUnderlyingNetworks`.
+For ordinary system-default routing, retain `setUnderlyingNetworks(null)`.
+An explicit list must reflect the networks actually used by the app's
+`Network.bindSocket` policy, including overlapping carriers during asynchronous
+replacement. As documented by
+[VpnService](https://developer.android.com/reference/android/net/VpnService#setUnderlyingNetworks(android.net.Network%5B%5D)),
+this list only reports routing to Android; updating it does not move sockets.
+The application must safely publish its binding policy for native socket
+protection callbacks before returning from `selectAndApply`.
+
+Version 1 changes no C ABI, wire format, fd ownership, defaults or coroutine
+dependencies. It retains endpoints; DNS/NAT64 refresh and protocols without
+rebind need a separate host restart policy. Unit and host JNI tests establish
+event/lifecycle/request behavior, not physical Wi-Fi/cellular recovery. That
+requires a device campaign with active TCP/UDP, both transition directions,
+offline/recovery and rapid stop/restart, recording API level, configuration,
+actual binding/routing, request outcomes and independently measured traffic.
 
 To increase Hysteria concurrency, pass
 `hysteriaStreamLimits = XrayHysteriaStreamLimits(maxTcpStreams = 128, maxUdpSessions = 64)`

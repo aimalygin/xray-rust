@@ -24,5 +24,6 @@ native_dir="$(cd "$native_dir" && pwd -P)"
   -o "$test_root/libxray_mobile_jni.$extension"
 platform/android/gradlew -p platform/android :xraymobile:testDebugUnitTest \
   "-PxrayNativeImportLibraryPath=$test_root:$native_dir" \
-  --tests '*XrayProfileImporter*' --tests '*XrayOutboundProbeNative*' --tests '*XrayHysteriaNative*' --tests '*XrayTunAdmissionNative*' \
+  --tests '*XrayProfileImporter*' --tests '*XrayOutboundProbeNative*' --tests '*XrayHysteriaNative*' \
+  --tests '*XrayTunAdmissionNative*' --tests '*XrayNetworkChangeNative*' \
   --console=plain "$@"
