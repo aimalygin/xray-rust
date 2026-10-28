@@ -200,6 +200,12 @@ def measured_execute(args, log):
             previous, started = processes(), time.monotonic()
             while True:
                 finished = done.wait(1)
+                # ps CPU counters have centisecond resolution. Never divide
+                # a final tiny remainder by a few milliseconds. Complete a
+                # full observation interval even when the workload has ended.
+                remainder = 1 - (time.monotonic() - started)
+                if remainder > 0:
+                    time.sleep(remainder)
                 current, now = processes(), time.monotonic()
                 samples.append({'unix': time.time(), **ambient(previous, current, now - started)})
                 previous, started = current, now
