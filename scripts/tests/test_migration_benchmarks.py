@@ -21,6 +21,13 @@ class MigrationTests(unittest.TestCase):
             self.assertEqual({(r['path'], r['traffic'], r['connections']) for r in rows if r['profile'] == profile},
                              {(p, t, n) for p in ('socks', 'tun') for t in (*m.BULK, 'tcp-latency', 'udp') for n in (1, 8)})
 
+    def test_single_case_blocks_preserve_original_order_indexes(self):
+        rows = m.cases()
+        self.assertEqual(m.c.select_cases(rows, [rows[117]['id']]), [(117, rows[117])])
+        for invalid in (['missing'], [rows[0]['id'], rows[0]['id']]):
+            with self.assertRaises(ValueError):
+                m.c.select_cases(rows, invalid)
+
     def test_odd_repeat_order_imbalance_cancels_across_adjacent_cases(self):
         for index in range(0, 200, 2):
             orders = [m.order(i, repeat) for i in (index, index + 1) for repeat in range(1, 6)]

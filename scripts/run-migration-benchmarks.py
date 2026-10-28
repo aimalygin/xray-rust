@@ -253,6 +253,7 @@ def main():
     parser.add_argument('--inputs', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--profile', choices=PROFILES, action='append')
+    parser.add_argument('--case-id', action='append', help='complete five-pair case block; original order index is preserved')
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--control-dir', type=Path, help='cooperative UI pauses between pairs; resume.txt must echo paused.json token')
     a = parser.parse_args()
@@ -277,7 +278,7 @@ def main():
         raise RuntimeError('commit collector changes before measurement')
     output = a.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    selected = cases(a.profile or PROFILES, a.smoke)
+    selected = [case for _, case in c.select_cases(cases(a.profile or PROFILES, a.smoke), a.case_id)]
     indexes = {case['id']: i for i, case in enumerate(cases(smoke=a.smoke))}
     scripts = [Path(__file__), Path(c.__file__), Path(b.__file__), Path(c.followup.__file__), Path(c.device.__file__)]
     hashes = {str(p): b.sha(p) for p in [*paths.values(), a.inputs.resolve(), *scripts]}

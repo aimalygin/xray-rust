@@ -39,7 +39,7 @@ python3 scripts/run-migration-benchmarks.py \
   --inputs /absolute/campaign/inputs.json \
   --output /absolute/campaign/smoke --smoke
 
-# Five AB/BA pairs per case. An optional --profile selects a complete block.
+# Five AB/BA pairs per case. Optional --profile or --case-id selects complete case blocks.
 python3 scripts/run-migration-benchmarks.py \
   --inputs /absolute/campaign/inputs.json \
   --output /absolute/campaign/full
