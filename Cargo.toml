@@ -70,7 +70,7 @@ thiserror = "2"
 tokio = { version = "1.53.3", features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "logging", "ring", "tls12"] }
 uuid = { version = "1", features = ["serde", "v4"] }
-webpki-roots = "1"
+webpki-roots = "1.0.11"
 x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
 x509-parser = { version = "0.18", default-features = false }
 zeroize = "1"
