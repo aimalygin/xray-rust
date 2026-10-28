@@ -253,6 +253,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b5d4d889834ee8ecfc0f8426ad30faf7cdcb10f741a8e6d7224d95325479f6f"
+dependencies = [
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.5"
 dependencies = [
@@ -619,6 +628,7 @@ dependencies = [
  "block-buffer 0.12.1",
  "const-oid",
  "crypto-common 0.2.2",
+ "ctutils",
  "zeroize",
 ]
 
@@ -895,7 +905,7 @@ dependencies = [
  "aead",
  "base64 0.22.1",
  "bitfield-struct",
- "blake2",
+ "blake2 0.10.6",
  "bytes",
  "chacha20poly1305",
  "constant_time_eq",
@@ -3033,7 +3043,7 @@ dependencies = [
  "async-compression",
  "async-trait",
  "base64 0.23.1",
- "blake2",
+ "blake2 0.11.0",
  "bytes",
  "futures-util",
  "ghash",
