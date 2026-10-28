@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use serde_json::{json, Value};
 use std::{
+    net::{IpAddr, Ipv4Addr},
     path::PathBuf,
     process::{Child, Command, Stdio},
     time::Duration,
@@ -22,18 +23,22 @@ pub struct XrayServer {
 
 impl XrayServer {
     pub async fn start() -> Self {
-        Self::start_with_options(false, None).await
+        Self::start_on(Ipv4Addr::LOCALHOST.into(), false).await
     }
 
     pub async fn start_tls() -> Self {
-        Self::start_with_options(true, None).await
+        Self::start_on(Ipv4Addr::LOCALHOST.into(), true).await
+    }
+
+    pub async fn start_on(listen: IpAddr, tls: bool) -> Self {
+        Self::start_with_options(listen, tls, None).await
     }
 
     pub async fn forwarding(outbound: Value) -> Self {
-        Self::start_with_options(false, Some(outbound)).await
+        Self::start_with_options(Ipv4Addr::LOCALHOST.into(), false, Some(outbound)).await
     }
 
-    async fn start_with_options(tls: bool, outbound: Option<Value>) -> Self {
+    async fn start_with_options(listen: IpAddr, tls: bool, outbound: Option<Value>) -> Self {
         let binary = std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY")
             .expect("run scripts/check-socks-interop.sh");
         let directory = std::env::temp_dir().join(format!(
@@ -43,7 +48,7 @@ impl XrayServer {
         ));
         std::fs::create_dir(&directory).unwrap();
         // Hold both listeners until the config is written so the ports differ.
-        let listeners = [(); 2].map(|_| std::net::TcpListener::bind("127.0.0.1:0").unwrap());
+        let listeners = [(); 2].map(|_| std::net::TcpListener::bind((listen, 0)).unwrap());
         let [password, noauth] = listeners
             .each_ref()
             .map(|listener| listener.local_addr().unwrap().port());
@@ -51,9 +56,9 @@ impl XrayServer {
             "log": {"loglevel": "debug"},
             "dns": {"hosts": {REMOTE_DOMAIN: "127.0.0.1"}},
             "inbounds": [
-                {"listen": "127.0.0.1", "port": password, "protocol": "socks",
+                {"listen": listen.to_string(), "port": password, "protocol": "socks",
                  "settings": {"auth": "password", "udp": true, "accounts": [{"user": USER, "pass": PASS}]}},
-                {"listen": "127.0.0.1", "port": noauth, "protocol": "socks",
+                {"listen": listen.to_string(), "port": noauth, "protocol": "socks",
                  "settings": {"auth": "noauth", "udp": true}}
             ],
             "outbounds": [{"protocol": "freedom", "settings": {
@@ -141,16 +146,25 @@ pub enum Form {
 /// Outbound settings in either Xray form; the server name is resolved by
 /// `Bootstrap`, which rejects every other name.
 pub fn outbound_settings(form: Form, port: u16, account: Option<(&str, &str)>) -> Value {
+    outbound_settings_at(form, "bootstrap.example", port, account)
+}
+
+pub fn outbound_settings_at(
+    form: Form,
+    address: &str,
+    port: u16,
+    account: Option<(&str, &str)>,
+) -> Value {
     match (form, account) {
-        (Form::Flat, None) => json!({"address": "bootstrap.example", "port": port}),
+        (Form::Flat, None) => json!({"address": address, "port": port}),
         (Form::Flat, Some((user, pass))) => {
-            json!({"address": "bootstrap.example", "port": port, "user": user, "pass": pass})
+            json!({"address": address, "port": port, "user": user, "pass": pass})
         }
         (Form::Servers, None) => {
-            json!({"servers": [{"address": "bootstrap.example", "port": port}]})
+            json!({"servers": [{"address": address, "port": port}]})
         }
         (Form::Servers, Some((user, pass))) => json!({"servers": [{
-            "address": "bootstrap.example", "port": port,
+            "address": address, "port": port,
             "users": [{"user": user, "pass": pass}]
         }]}),
     }

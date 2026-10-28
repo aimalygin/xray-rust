@@ -361,7 +361,7 @@ jobs:
 
       - name: Check VMess AEAD pinned Xray interoperability
         run: bash scripts/check-vmess-interop.sh
-      - name: Check SOCKS5 TCP, UDP and TUN against pinned Xray-core
+      - name: Check SOCKS5 TCP/TLS, IPv6, chains, probes, UDP and TUN against pinned Xray-core
         run: bash scripts/check-socks-interop.sh
       - name: Check HTTP outbound against the pinned Xray HTTP server
         run: bash scripts/check-http-interop.sh
