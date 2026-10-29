@@ -89,6 +89,12 @@ FileDescriptor remains the default path. See the separately identified
 
 ## VLESS share-link import
 
+Development ABI 1.14 provides `XrayProfileFormat.Http` for `http://` and
+`https://` proxy links. Check `supportsProfileImport(XrayProfileFormat.Http)`
+before importing; it requires `HttpProfileImport` and `ProfileImport`. HTTPS
+retains certificate/name verification; explicit DNS uses TCP. See the
+[HTTP import contract](../../docs/http-profile-import.md).
+
 Development additionally provides `XrayProfileFormat.Socks` for `socks://` and
 `socks5://` through the shared parser. It requires ABI 1.13 and the
 `SocksProfileImport` capability; use `supportsProfileImport` before importing.

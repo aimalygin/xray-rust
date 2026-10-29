@@ -1,4 +1,5 @@
 //! Bounded, offline mobile profile import shared by the native SDKs.
+mod http;
 mod hysteria;
 mod shadowsocks;
 mod socks;
@@ -24,6 +25,7 @@ pub enum ProfileFormat {
     Hysteria2,
     Wireguard,
     Socks,
+    Http,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -136,6 +138,7 @@ pub fn import_profile(
         validate_name(name)?;
     }
     let mut profile = match format {
+        ProfileFormat::Http => http::import(text, dns_servers)?,
         ProfileFormat::Socks => socks::import(text, dns_servers)?,
         ProfileFormat::Shadowsocks2022 => shadowsocks::import(text, dns_servers)?,
         ProfileFormat::Vmess => vmess::import(text, dns_servers)?,

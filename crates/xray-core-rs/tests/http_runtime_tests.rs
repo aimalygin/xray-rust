@@ -24,7 +24,10 @@ use xray_proxy::inbound::encode_socks5_udp_datagram;
 use xray_proxy::outbound::{encode_connect_request, HttpAccount};
 use xray_routing::{Network, Target, TargetAddr};
 use xray_transport::stream::{apply_masquerade, HeaderMap};
-use xray_transport::TransportDialer;
+use xray_transport::{TlsConnector, TransportDialer};
+
+#[path = "http_runtime/import.rs"]
+mod import;
 
 #[path = "http_runtime/support.rs"]
 mod support;
@@ -34,12 +37,21 @@ const PAYLOAD_LEN: usize = 64 * 1024;
 const BASIC: &str = "Basic c3ludGhldGljLWh0dHAtdXNlcjpzeW50aGV0aWMtaHR0cC1wYXNz";
 
 fn core(profile: Value) -> (Core, Arc<Protector>, Arc<Bootstrap>) {
+    core_with_tls(profile, None)
+}
+
+fn core_with_tls(
+    profile: Value,
+    tls: Option<TlsConnector>,
+) -> (Core, Arc<Protector>, Arc<Bootstrap>) {
     let protector = Arc::new(Protector::default());
     let bootstrap = Arc::new(Bootstrap::default());
     let dialer = Arc::new(
-        TransportDialer::system()
-            .unwrap()
-            .with_socket_protector(protector.clone()),
+        tls.map_or_else(
+            || TransportDialer::system().unwrap(),
+            TransportDialer::with_tls_connector,
+        )
+        .with_socket_protector(protector.clone()),
     );
     let config = xray_config::parse_xray_json(&profile.to_string())
         .unwrap()

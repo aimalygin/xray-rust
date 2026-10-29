@@ -652,7 +652,8 @@ fn ffi_reports_exact_current_capabilities() {
         | xray_ffi::XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS
         | xray_ffi::XRAY_FFI_CAPABILITY_TUN_ADMISSION
         | xray_ffi::XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT
-        | xray_ffi::XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT;
+        | xray_ffi::XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT
+        | xray_ffi::XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);

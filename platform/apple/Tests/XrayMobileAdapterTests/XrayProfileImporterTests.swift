@@ -28,6 +28,23 @@ final class XrayProfileImporterTests: XCTestCase {
         }
     }
 
+    func testHttpImportRequiresItsOwnCapabilityAndMinorBeforeNative() throws {
+        XCTAssertEqual(XrayFFICapabilities.httpProfileImport.rawValue, 1 << 27)
+        let caps: XrayFFICapabilities = [.profileImport, .httpProfileImport]
+        XCTAssertTrue(XrayFFIInfo(version: .init(major: 1, minor: 14), capabilities: caps).supportsProfileImport(.http))
+        for info in [
+            XrayFFIInfo(version: .init(major: 1, minor: 13), capabilities: caps),
+            XrayFFIInfo(version: .init(major: 2, minor: 14), capabilities: caps),
+            XrayFFIInfo(version: .init(major: 1, minor: 14), capabilities: [.profileImport]),
+            XrayFFIInfo(version: .init(major: 1, minor: 14), capabilities: [.httpProfileImport]),
+        ] {
+            XCTAssertThrowsError(try XrayProfileImporter.importProfile(text: "secret", format: .http,
+                name: nil, dnsServers: [], info: info, nativeImport: { _ in
+                    XCTFail("unavailable HTTP import invoked native code"); return Data()
+                })) { XCTAssertEqual($0 as? XrayProfileImportError, .unavailable) }
+        }
+    }
+
     func testSocksImportRequiresItsOwnCapabilityAndMinorBeforeNative() throws {
         let caps: XrayFFICapabilities = [.profileImport, .socksProfileImport]
         XCTAssertTrue(XrayFFIInfo(version: .init(major: 1, minor: 13), capabilities: caps).supportsProfileImport(.socks))
@@ -41,6 +58,44 @@ final class XrayProfileImporterTests: XCTestCase {
                 name: nil, dnsServers: [], info: info, nativeImport: { _ in
                     XCTFail("unavailable SOCKS import invoked native code"); return Data()
                 })) { XCTAssertEqual($0 as? XrayProfileImportError, .unavailable) }
+        }
+    }
+
+    func testNativeHttpAndHttpsImportWithSafeTLSAndTCPDNS() throws {
+        for (file, tls) in [("http.txt", false), ("https.txt", true)] {
+            let profile = try XrayProfileImporter.profile(from: fixture(file), format: .http,
+                dnsServers: ["192.0.2.53", "2001:db8::53"])
+            XCTAssertEqual(profile.name, "Test ✓")
+            XCTAssertEqual(profile.serverAddress, "Proxy.Example.")
+            XCTAssertTrue(XrayCore.ffiInfo.supportsProfileImport(.http))
+            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any])
+            let proxy = try XCTUnwrap((root["outbounds"] as? [[String: Any]])?.first)
+            let settings = try XCTUnwrap(proxy["settings"] as? [String: Any])
+            XCTAssertEqual(settings["user"] as? String, "synthetic-user")
+            XCTAssertEqual(settings["pass"] as? String, "p@ss:+✓")
+            let stream = try XCTUnwrap(proxy["streamSettings"] as? [String: Any])
+            XCTAssertEqual(stream["security"] as? String, tls ? "tls" : "none")
+            if tls {
+                let security = try XCTUnwrap(stream["tlsSettings"] as? [String: Any])
+                XCTAssertEqual(security["serverName"] as? String, "Proxy.Example.")
+                XCTAssertEqual(security["alpn"] as? [String], ["http/1.1"])
+                XCTAssertNil(security["allowInsecure"])
+            }
+            XCTAssertEqual((root["dns"] as? [String: Any])?["servers"] as? [String],
+                ["tcp://192.0.2.53:53", "tcp://[2001:db8::53]:53"])
+            XCTAssertFalse(String(reflecting: profile).contains("synthetic"))
+            try XrayMobileDNSPreflight.validate(profile.configJSON)
+            _ = try XrayCore(configJSON: profile.configJSON)
+        }
+        for text in ["http://proxy.example", "https://[2001:db8::7]", "https://synthetic@proxy.example"] {
+            let profile = try XrayProfileImporter.profile(from: text, format: .http)
+            try XrayMobileDNSPreflight.validate(profile.configJSON)
+            _ = try XrayCore(configJSON: profile.configJSON)
+        }
+        for text in ["http://:synthetic-secret@proxy.example", "https://synthetic-secret:p@proxy.example?allowInsecure=1"] {
+            XCTAssertThrowsError(try XrayProfileImporter.profile(from: text, format: .http)) {
+                XCTAssertFalse(String(reflecting: $0).contains("synthetic-secret"))
+            }
         }
     }
 
