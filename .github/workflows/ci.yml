@@ -770,6 +770,17 @@ jobs:
             --dependency-verification strict \
             --no-daemon
 
+      - name: Lint Android adapter
+        env:
+          GRADLE_USER_HOME: ${{ github.workspace }}/target/mobile/android-gradle-home
+          XRAY_FFI_ANDROID_DIR: ${{ github.workspace }}/target/mobile/android
+        run: |
+          platform/android/gradlew \
+            -p platform/android \
+            :xraymobile:lintDebug \
+            --dependency-verification strict \
+            --no-daemon
+
   supply-chain:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
