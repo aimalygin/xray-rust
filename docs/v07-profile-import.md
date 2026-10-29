@@ -33,9 +33,11 @@ untouched. Input/output spans must be disjoint, valid and stable during a call.
 Use the usual initialized error slot and `xray_error_free` ownership contract.
 
 No core handle, runtime, socket, DNS lookup, file read or command execution is
-needed. Rust validates the generated JSON without diagnostics; the FFI also
-constructs an unstarted core to validate typed runtime policy and cryptographic
-identities, including unusable/duplicate WireGuard peer keys. The lower-level
+needed. Rust validates the generated JSON and rejects any diagnostic except the
+warning on a REALITY fingerprint that v26.10.21 servers refuse, since older
+servers accept that profile as imported; the FFI also constructs an unstarted
+core to validate typed runtime policy and cryptographic identities, including
+unusable/duplicate WireGuard peer keys. The lower-level
 `xray_config::profile_import` API alone performs config parsing, not the latter
 runtime validation. Import does not verify a remote endpoint or certificate.
 

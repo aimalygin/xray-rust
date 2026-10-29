@@ -120,32 +120,59 @@ pub const XRAY_REALITY_MODERN_FINGERPRINTS: &[&str] = &[
     "hellosafari_26_3",
 ];
 
+/// The TLS 1.2-era profiles, under every alias: their ClientHello carries no
+/// X25519 key share, so REALITY has nothing to derive its authentication
+/// from. Xray-core's client fails them at dial time; they are rejected here
+/// before dialing.
 pub const XRAY_REALITY_INCAPABLE_FINGERPRINTS: &[&str] = &[
-    "ios",
     "android",
-    "edge",
     "360",
-    "qq",
     "randomizednoalpn",
-    "hellofirefox_120",
-    "hellochrome_120",
-    "helloios_13",
-    "helloios_14",
-    "helloedge_106",
-    "hello360_11_0",
-    "helloqq_11_1",
-    "hellorandomized",
     "hellorandomizedalpn",
     "hellorandomizednoalpn",
     "hellofirefox_55",
     "hellofirefox_56",
+    "hellochrome_58",
+    "hellochrome_62",
+    "helloios_11_1",
+    "helloios_12_1",
+    "helloandroid_11_okhttp",
+    "hello360_auto",
+    "hello360_7_5",
+];
+
+/// Every name REALITY can authenticate with, which is every name Xray-core's
+/// client accepts outside [`XRAY_REALITY_INCAPABLE_FINGERPRINTS`]. Whether
+/// the server accepts the hello depends on its version; see
+/// [`XRAY_REALITY_HYBRID_FINGERPRINTS`].
+pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
+    "chrome",
+    "firefox",
+    "safari",
+    "ios",
+    "edge",
+    "qq",
+    "random",
+    "randomized",
+    "hellofirefox_120",
+    "hellofirefox_148",
+    "hellochrome_120",
+    "hellochrome_131",
+    "hellochrome_133",
+    "helloios_13",
+    "helloios_14",
+    "helloedge_106",
+    "hellosafari_26_3",
+    "hello360_11_0",
+    "helloqq_11_1",
+    "hellorandomized",
+    "hellofirefox_auto",
     "hellofirefox_63",
     "hellofirefox_65",
     "hellofirefox_99",
     "hellofirefox_102",
     "hellofirefox_105",
-    "hellochrome_58",
-    "hellochrome_62",
+    "hellochrome_auto",
     "hellochrome_70",
     "hellochrome_72",
     "hellochrome_83",
@@ -155,14 +182,10 @@ pub const XRAY_REALITY_INCAPABLE_FINGERPRINTS: &[&str] = &[
     "hellochrome_102",
     "hellochrome_106_shuffle",
     "helloios_auto",
-    "helloios_11_1",
-    "helloios_12_1",
-    "helloandroid_11_okhttp",
     "helloedge_85",
     "helloedge_auto",
     "hellosafari_16_0",
-    "hello360_auto",
-    "hello360_7_5",
+    "hellosafari_auto",
     "helloqq_auto",
     "hellochrome_100_psk",
     "hellochrome_112_psk_shuf",
@@ -172,7 +195,14 @@ pub const XRAY_REALITY_INCAPABLE_FINGERPRINTS: &[&str] = &[
     "hellochrome_120_pq",
 ];
 
-pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
+/// The REALITY-capable names whose ClientHello carries an X25519MLKEM768 key
+/// share before any ordinary X25519 one. REALITY servers from Xray-core
+/// v26.10.21 on refuse every other hello; older servers accept any
+/// REALITY-capable name, which is why the rest stay selectable. `random` and
+/// `randomized` belong here because REALITY draws them from
+/// [`XRAY_REALITY_MODERN_FINGERPRINTS`], and `hellorandomized` because its
+/// frozen snapshot leads with the hybrid share.
+pub const XRAY_REALITY_HYBRID_FINGERPRINTS: &[&str] = &[
     "chrome",
     "firefox",
     "safari",
@@ -182,6 +212,7 @@ pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
     "hellochrome_131",
     "hellochrome_133",
     "hellosafari_26_3",
+    "hellorandomized",
     "hellofirefox_auto",
     "hellochrome_auto",
     "hellosafari_auto",
@@ -195,7 +226,7 @@ pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
 /// mode-specific wrapper instead: [`normalize_tls_fingerprint`] for
 /// `tlsSettings`, which additionally honours the `unsafe` sentinel, or
 /// [`normalize_reality_supported_fingerprint`] for `realitySettings`, which
-/// additionally requires a final X25519MLKEM768 key share.
+/// additionally rejects names without an X25519 key share.
 pub fn normalize_utls_fingerprint(name: &str) -> Option<&'static str> {
     let name = if name.is_empty() {
         DEFAULT_UTLS_FINGERPRINT
@@ -218,7 +249,7 @@ pub const UNSAFE_TLS_FINGERPRINT: &str = "unsafe";
 /// Normalizes a `tlsSettings.fingerprint` value.
 ///
 /// Reads the same [`XRAY_UTLS_FINGERPRINTS`] table REALITY does — Xray shares
-/// one uTLS fingerprint namespace across both — but without the X25519MLKEM768
+/// one uTLS fingerprint namespace across both — but without the X25519
 /// key-share requirement, which is a REALITY protocol constraint rather than a
 /// property of the fingerprint. An empty name means `chrome`, matching Xray's
 /// `GetFingerprint("")`.
@@ -242,14 +273,23 @@ pub fn is_reality_fingerprint_supported(name: &str) -> bool {
     normalize_reality_supported_fingerprint(name).is_some()
 }
 
+/// Whether REALITY servers from Xray-core v26.10.21 on accept the name's
+/// ClientHello. A supported name outside this set still works against older
+/// servers, so callers warn instead of rejecting it.
+pub fn is_reality_fingerprint_hybrid(name: &str) -> bool {
+    normalize_utls_fingerprint(name)
+        .is_some_and(|fingerprint| XRAY_REALITY_HYBRID_FINGERPRINTS.contains(&fingerprint))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        is_reality_fingerprint_supported, normalize_reality_supported_fingerprint,
-        normalize_tls_fingerprint, normalize_utls_fingerprint, DEFAULT_UTLS_FINGERPRINT,
-        UNSAFE_TLS_FINGERPRINT, XRAY_MODERN_FINGERPRINTS, XRAY_REALITY_CAPABLE_FINGERPRINTS,
-        XRAY_REALITY_INCAPABLE_FINGERPRINTS, XRAY_REALITY_MODERN_FINGERPRINTS,
-        XRAY_UTLS_FINGERPRINTS,
+        is_reality_fingerprint_hybrid, is_reality_fingerprint_supported,
+        normalize_reality_supported_fingerprint, normalize_tls_fingerprint,
+        normalize_utls_fingerprint, DEFAULT_UTLS_FINGERPRINT, UNSAFE_TLS_FINGERPRINT,
+        XRAY_MODERN_FINGERPRINTS, XRAY_REALITY_CAPABLE_FINGERPRINTS,
+        XRAY_REALITY_HYBRID_FINGERPRINTS, XRAY_REALITY_INCAPABLE_FINGERPRINTS,
+        XRAY_REALITY_MODERN_FINGERPRINTS, XRAY_UTLS_FINGERPRINTS,
     };
 
     #[test]
@@ -336,6 +376,7 @@ mod tests {
                 is_reality_fingerprint_supported(fingerprint),
                 "{fingerprint}"
             );
+            assert!(is_reality_fingerprint_hybrid(fingerprint), "{fingerprint}");
         }
     }
 
@@ -381,6 +422,27 @@ mod tests {
                 is_reality_fingerprint_supported(fingerprint),
                 "{fingerprint}"
             );
+            assert!(is_reality_fingerprint_hybrid(fingerprint), "{fingerprint}");
+        }
+    }
+
+    /// Xray-core's client still dials these and servers older than v26.10.21
+    /// accept them, so REALITY keeps them; only the hybrid set excludes them.
+    #[test]
+    fn reality_support_keeps_x25519_only_fingerprints_outside_the_hybrid_set() {
+        for fingerprint in [
+            "ios",
+            "edge",
+            "qq",
+            "hellochrome_100",
+            "hellochrome_120_pq",
+            "hellofirefox_99",
+        ] {
+            assert_eq!(
+                normalize_reality_supported_fingerprint(fingerprint),
+                Some(fingerprint)
+            );
+            assert!(!is_reality_fingerprint_hybrid(fingerprint), "{fingerprint}");
         }
     }
 
@@ -390,6 +452,21 @@ mod tests {
             XRAY_REALITY_CAPABLE_FINGERPRINTS.len() + XRAY_REALITY_INCAPABLE_FINGERPRINTS.len(),
             XRAY_UTLS_FINGERPRINTS.len()
         );
+    }
+
+    #[test]
+    fn reality_hybrid_fingerprints_are_reality_capable() {
+        for fingerprint in XRAY_REALITY_HYBRID_FINGERPRINTS {
+            assert!(
+                XRAY_REALITY_CAPABLE_FINGERPRINTS.contains(fingerprint),
+                "{fingerprint}"
+            );
+        }
+        // The lookup shares the name table, so case and the empty default
+        // behave as they do everywhere else.
+        assert!(is_reality_fingerprint_hybrid("Chrome"));
+        assert!(is_reality_fingerprint_hybrid(""));
+        assert!(!is_reality_fingerprint_hybrid("madeup-browser"));
     }
 
     /// The draw feeds its result straight back into the name lookup, so a
@@ -405,22 +482,21 @@ mod tests {
         }
     }
 
+    /// REALITY draws only from the part of Xray's pool that v26.10.21 servers
+    /// accept. The rest of the pool stays selectable by name.
     #[test]
-    fn reality_random_pool_contains_only_supported_hybrid_profiles() {
-        assert_eq!(XRAY_REALITY_MODERN_FINGERPRINTS.len(), 4);
-        for fingerprint in XRAY_REALITY_MODERN_FINGERPRINTS {
-            assert!(XRAY_MODERN_FINGERPRINTS.contains(fingerprint));
-            assert!(is_reality_fingerprint_supported(fingerprint));
-        }
-        // Old TLS profiles remain usable with plain TLS, never with REALITY.
-        for fingerprint in [
-            "ios",
-            "hellochrome_100",
-            "hellochrome_120_pq",
-            "hellofirefox_99",
-        ] {
-            assert!(normalize_tls_fingerprint(fingerprint).is_some());
-            assert!(!is_reality_fingerprint_supported(fingerprint));
+    fn reality_random_pool_is_the_hybrid_part_of_xrays_pool() {
+        let hybrid_part = XRAY_MODERN_FINGERPRINTS
+            .iter()
+            .copied()
+            .filter(|fingerprint| is_reality_fingerprint_hybrid(fingerprint))
+            .collect::<Vec<_>>();
+        assert_eq!(hybrid_part, XRAY_REALITY_MODERN_FINGERPRINTS);
+        for fingerprint in XRAY_MODERN_FINGERPRINTS {
+            assert!(
+                is_reality_fingerprint_supported(fingerprint),
+                "{fingerprint}"
+            );
         }
     }
 

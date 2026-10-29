@@ -6209,11 +6209,47 @@ fn parses_xray_core_reality_fingerprints() {
         };
 
         assert_eq!(reality.fingerprint, *fingerprint);
+        let warned = parsed.diagnostics.iter().any(|diagnostic| {
+            diagnostic.path.as_deref()
+                == Some("$.outbounds[0].streamSettings.realitySettings.fingerprint")
+        });
+        assert_eq!(
+            warned,
+            !xray_utls::is_reality_fingerprint_hybrid(fingerprint),
+            "{fingerprint}: {:?}",
+            parsed.diagnostics
+        );
+    }
+}
+
+/// Xray-core v26.10.21's client accepts these and older servers still do, so
+/// they parse; the warning names the servers that refuse them.
+#[test]
+fn warns_that_new_reality_servers_reject_x25519_only_fingerprints() {
+    for fingerprint in ["ios", "edge", "qq", "hellochrome_100", "hellochrome_120_pq"] {
+        let raw = vless_raw_with_reality_settings(&format!(
+            r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "{fingerprint}""#,
+        ));
+        let parsed = parse_xray_json(&raw)
+            .unwrap_or_else(|_| panic!("fingerprint `{fingerprint}` should parse"));
+
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        let warning = &parsed.diagnostics[0];
+        assert_eq!(warning.severity, DiagnosticSeverity::Warning);
+        assert_eq!(
+            warning.path.as_deref(),
+            Some("$.outbounds[0].streamSettings.realitySettings.fingerprint")
+        );
+        assert!(
+            warning.message.contains("X25519MLKEM768") && warning.message.contains("v26.10.21"),
+            "{fingerprint}: {}",
+            warning.message
+        );
     }
 }
 
 #[test]
-fn rejects_known_reality_fingerprints_without_final_hybrid_key_share() {
+fn rejects_known_reality_fingerprints_without_x25519_key_share() {
     for fingerprint in xray_utls::XRAY_REALITY_INCAPABLE_FINGERPRINTS {
         let raw = vless_raw_with_reality_settings(&format!(
             r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "{fingerprint}""#,
@@ -6231,7 +6267,7 @@ fn rejects_known_reality_fingerprints_without_final_hybrid_key_share() {
         assert!(
             err.diagnostics[0]
                 .message
-                .contains("requires an X25519MLKEM768 key share"),
+                .contains("does not support REALITY"),
             "{fingerprint}: {}",
             err.diagnostics[0].message
         );

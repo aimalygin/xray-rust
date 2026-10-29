@@ -178,7 +178,11 @@ fn finish(
     let config_json =
         Zeroizing::new(serde_json::to_string(root).map_err(|_| ImportError::Configuration)?);
     let parsed = crate::parse_xray_json(&config_json).map_err(|_| ImportError::Configuration)?;
-    if !parsed.diagnostics.is_empty() {
+    if parsed
+        .diagnostics
+        .iter()
+        .any(|diagnostic| !is_reality_fingerprint_advisory(diagnostic))
+    {
         return Err(ImportError::Configuration);
     }
     Ok(ImportedProfile {
@@ -187,6 +191,16 @@ fn finish(
         server_address,
         config_json,
     })
+}
+/// The parser warns on a REALITY fingerprint that v26.10.21 servers refuse.
+/// That describes the server rather than the import: the profile is exactly
+/// what the link asked for, and older servers accept it.
+fn is_reality_fingerprint_advisory(diagnostic: &crate::Diagnostic) -> bool {
+    diagnostic.severity == crate::DiagnosticSeverity::Warning
+        && diagnostic
+            .path
+            .as_deref()
+            .is_some_and(|path| path.ends_with(".realitySettings.fingerprint"))
 }
 fn validate_name(name: &str) -> Result<(), ImportError> {
     if name.is_empty() || name.len() > 128 || name.chars().any(char::is_control) {

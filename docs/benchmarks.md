@@ -508,8 +508,10 @@ traffic client -> SOCKS 127.0.0.1:<ephemeral> -> xray-rust Core
   -> VLESS REALITY Vision -> local xray-core server fixture -> local target
 ```
 
-By default, the command runs every `XRAY_REALITY_CAPABLE_FINGERPRINTS`
-fingerprint and every traffic kind:
+By default, the command runs every `XRAY_REALITY_HYBRID_FINGERPRINTS`
+fingerprint, the profiles the pinned v26.10.21 server accepts, and every
+traffic kind. `--fingerprints` also takes the other REALITY-capable names for
+runs against an older server. The traffic kinds are:
 
 - `startup-probe`: HTTP `204` probe through the REALITY outbound.
 - `tcp-connect`: SOCKS CONNECT to a local TCP target, then close.

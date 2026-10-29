@@ -20,11 +20,14 @@ The active oracle pin is now `1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`
 historical. See the [migration checklist](xray-core-v26.10.21-migration.md)
 for completion and pending checks.
 
-REALITY now rejects old/draft key-share profiles before dialing and draws
-`random`/`randomized` from the four supported hybrid profiles. Plain TLS keeps
-its existing profile support. The new SS2022 oracle imports Xray's replacement
-implementation directly; its deterministic vectors canonicalize only its
-internal wall-clock timestamp after authenticating the generated ciphertext.
+REALITY draws `random`/`randomized` from the four hybrid profiles that the new
+server accepts. Explicit X25519-only and draft-Kyber profiles still parse and
+dial, as with Xray-core's client, but with a warning that v26.10.21 servers
+refuse them; only profiles with no X25519 key share are rejected before
+dialing. Plain TLS keeps its existing profile support. The new SS2022 oracle
+imports Xray's replacement implementation directly; its deterministic vectors
+canonicalize only its internal wall-clock timestamp after authenticating the
+generated ciphertext.
 Oversized SS2022 keys are no longer accepted upstream; Rust's legacy key
 normalization remains a compatibility difference, not proof that such a
 profile can be loaded unchanged in the new Xray.

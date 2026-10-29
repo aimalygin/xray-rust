@@ -11,8 +11,9 @@ and device reports retain their original source identities.
   regression test checks trust-anchor keys. PR #94; 42 transport tests passed.
 - [x] Move active oracle modules, CI and interop guards to the target revision;
   regenerate fixtures against that exact, clean source checkout.
-- [x] Restrict REALITY profiles and random selection to compatible hybrid
-  X25519MLKEM768 ClientHellos; verify Vision and ML-DSA with the new server.
+- [x] Restrict REALITY random selection to compatible hybrid X25519MLKEM768
+  ClientHellos and warn on explicit profiles without one, which older servers
+  still accept; verify Vision and ML-DSA with the new server.
 - [x] Support ordinary outbound chaining through `sockopt.dialerProxy` and
   the UDP-hop mask form; document compatibility diagnostics for old inputs.
 - [x] Resolve WireGuard destination domains through `remoteDNS` in the tunnel,

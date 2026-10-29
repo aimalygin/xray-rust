@@ -1307,10 +1307,12 @@ TLS connection. `tlsSettings.fingerprint` selects the shape from the same 61
 names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
-value. Plain TLS does not require the final X25519MLKEM768 key share that
-REALITY v26.10.21 requires. Older profiles remain usable here, except
-`hello360_7_5` and its aliases `360` and `hello360_auto`, which are refused
-for the cipher-suite reason given below.
+value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
+so eleven of the fourteen names REALITY rejects are usable here; the other
+three — `hello360_7_5` and its aliases `360` and `hello360_auto`, one profile
+under three names — are refused for a separate reason given below. The
+X25519MLKEM768 requirement of REALITY v26.10.21 servers does not apply here
+either.
 
 Those 61 are the union of the three maps Xray's `GetFingerprint` consults --
 `PresetFingerprints`, `ModernFingerprints`, `OtherFingerprints` -- less
@@ -1388,18 +1390,27 @@ failing.
 
 #### REALITY v26.10.21 profile requirements
 
-The new server requires a final X25519MLKEM768 key share (group `0x11ec`,
-1216 bytes), before any ordinary X25519 key share. Supported fixed profiles
-are Chrome 131/133, Firefox 148 and Safari 26.3, including their current
-`chrome`, `firefox`, `safari` and `_auto` aliases. Older profiles, draft Kyber
-profiles and the frozen randomized snapshots fail parsing with the offending
-JSON path and a suggestion to use a compatible profile. They remain available
-for ordinary TLS where their cipher suites are supported.
+The REALITY server shipped with Xray-core v26.10.21 requires an
+X25519MLKEM768 key share (group `0x11ec`, 1216 bytes) before any ordinary
+X25519 key share, and treats any other ClientHello as an unauthenticated
+visitor. Profiles that meet this are Chrome 131/133, Firefox 148 and
+Safari 26.3, including their current `chrome`, `firefox`, `safari` and `_auto`
+aliases, plus the frozen `hellorandomized` snapshot
+(`XRAY_REALITY_HYBRID_FINGERPRINTS`).
 
-For REALITY, `random` and `randomized` each choose independently from those
-four hybrid profiles, once per process. This is a deliberate restriction of
-the upstream random pool, which can still pick a profile the new server
-rejects. The ordinary TLS random pool is unchanged. `randomized` remains a
+Xray-core's client did not narrow `realitySettings.fingerprint` with that
+change, and neither do we. A profile without the X25519MLKEM768 share — `ios`,
+`edge`, `qq`, older Chrome and Firefox, and the draft Kyber profiles — still
+parses and still dials, because servers older than v26.10.21 accept it.
+Parsing adds a warning at the `fingerprint` JSON path that names the new
+requirement, so a profile that stops working after a server upgrade has an
+explanation before the first dial. The fourteen TLS-1.2-era names with no
+X25519 key share at all remain a parse error, as before.
+
+For REALITY, `random` and `randomized` each choose independently from the four
+fixed hybrid profiles above, once per process. This is a deliberate
+restriction of the upstream random pool, which can still pick a profile the
+new server rejects. The ordinary TLS random pool is unchanged. `randomized` remains a
 browser-profile draw rather than a port of uTLS's randomized-spec generator.
 
 #### What `random` and `randomized` resolve to

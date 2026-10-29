@@ -11,8 +11,11 @@ long-term supported release series.
 ## Unreleased
 
 - Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
-- Require final X25519MLKEM768 profiles for REALITY and restrict its random pool;
-  verify ML-DSA65 and Vision against the new reference.
+- Restrict the REALITY `random` and `randomized` pools to the four profiles
+  with the X25519MLKEM768 key share that v26.10.21 servers require. REALITY
+  fingerprints without that share, such as `ios`, `edge` and `qq`, still parse
+  and dial, since older servers accept them, but now produce a warning. Verify
+  ML-DSA65 and Vision against the new reference.
 - Add `sockopt.dialerProxy` chaining and the bounded Finalmask UDP-hop form;
   retain legacy spellings with migration diagnostics and update profile import.
 - Resolve WireGuard destination names through tunnel-owned `remoteDNS` with TTL

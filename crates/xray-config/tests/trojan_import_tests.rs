@@ -39,6 +39,38 @@ fn trojan_uri_projects_stream_settings_through_the_shared_validator() {
     }
 }
 
+/// The parser only warns on a REALITY fingerprint without the hybrid share,
+/// because servers older than v26.10.21 accept it; the import must not turn
+/// that warning into a failure. A fingerprint with no X25519 share at all is
+/// still a configuration error.
+#[test]
+fn trojan_uri_keeps_reality_fingerprints_older_servers_accept() {
+    let reality = "security=reality&sni=www.example.com&pbk=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE&sid=02030405";
+    for fingerprint in ["chrome", "ios", "edge", "qq", "hellochrome_100"] {
+        let profile = import_profile(
+            ProfileFormat::Trojan,
+            &format!(
+                "trojan://synthetic-trojan-test-secret@example.test?{reality}&fp={fingerprint}"
+            ),
+            None,
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("{fingerprint}: {error:?}"));
+        let config: Value = serde_json::from_str(&profile.config_json).unwrap();
+        assert_eq!(
+            config["outbounds"][0]["streamSettings"]["realitySettings"]["fingerprint"],
+            fingerprint
+        );
+    }
+    assert!(import_profile(
+        ProfileFormat::Trojan,
+        &format!("trojan://synthetic-trojan-test-secret@example.test?{reality}&fp=android"),
+        None,
+        &[],
+    )
+    .is_err());
+}
+
 #[test]
 fn trojan_uri_rejects_duplicates_unsupported_and_unsafe_fields() {
     for suffix in [
