@@ -1,11 +1,12 @@
 # v0.7 mobile profile import
 
 The development SDK imports Hysteria 2 share links and standard WireGuard
-configuration text through one Rust parser. C ABI **1.5** exposes offline import
-and protocol capability discovery. Workspace/release version remains 0.6.1;
-Xray-core remains pinned to v26.7.28 at
-`5ca6f4b7d4dc20a881d4330e498892697627ec0c`. This is development source support,
-not a published mobile release or a claim of complete upstream feature parity.
+configuration text through one Rust parser, originally added in C ABI **1.5**.
+The current development importer also accepts Trojan, SS2022, VMess and
+[SOCKS5 links](socks-profile-import.md); SOCKS import requires ABI **1.13**.
+The version-specific observations below describe the original v0.7 increment.
+Current source support does not imply that a matching SDK binary is published
+or claim complete upstream feature parity.
 
 ## API and ownership
 
@@ -15,7 +16,8 @@ not a published mobile release or a claim of complete upstream feature parity.
 {"format":"hysteria2","text":"hy2://example-password@server.example#Example","name":"Example","dnsServers":[]}
 ```
 
-`format` is `hysteria2` or `wireguard`. `name` and `dnsServers` are optional;
+`format` is `socks`, `trojan`, `shadowsocks2022`, `vmess`, `hysteria2` or
+`wireguard`. `name` and `dnsServers` are optional;
 unknown/duplicate fields are errors. The result is:
 
 ```json
@@ -39,7 +41,9 @@ runtime validation. Import does not verify a remote endpoint or certificate.
 Capabilities are independent bits: `HYSTERIA2_OUTBOUND` (16),
 `WIREGUARD_OUTBOUND` (17), `PROFILE_IMPORT` (18), under the
 `XRAY_FFI_CAPABILITY_` prefix. Import requires ABI major 1, minor >=5, the import
-bit and the selected protocol bit. Swift/Kotlin expose `supportsProfileImport`.
+bit and the selected protocol bit. SOCKS is the exception: minor >=13 and
+`SOCKS_PROFILE_IMPORT` (26) plus `PROFILE_IMPORT` are required. Swift/Kotlin
+expose `supportsProfileImport` with the format-specific minimum version.
 Compile/link the adapter, header and native binary together; checking a bit
 cannot make a missing strongly linked symbol loadable in an older artifact.
 

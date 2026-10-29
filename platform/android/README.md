@@ -89,6 +89,11 @@ FileDescriptor remains the default path. See the separately identified
 
 ## VLESS share-link import
 
+Development additionally provides `XrayProfileFormat.Socks` for `socks://` and
+`socks5://` through the shared parser. It requires ABI 1.13 and the
+`SocksProfileImport` capability; use `supportsProfileImport` before importing.
+See the [SOCKS link contract](../../docs/socks-profile-import.md).
+
 Development v0.7 additionally provides
 `XrayProfileImporter.profile(text, XrayProfileFormat.Hysteria2)` and `.Wireguard`
 for Hysteria2 links and WireGuard `.conf` text through shared Rust/C ABI 1.5.

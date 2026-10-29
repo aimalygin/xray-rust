@@ -41,6 +41,7 @@ enum class XrayFfiCapability(val mask: Long) {
     OutboundProbe(1L shl 22),
     HysteriaStreamLimits(1L shl 23),
     TunAdmission(1L shl 24),
+    SocksProfileImport(1L shl 26),
 }
 
 /** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */

@@ -28,6 +28,8 @@ use xray_transport::{TlsConnector, TransportDialer};
 #[path = "socks_runtime/support.rs"]
 mod support;
 use support::*;
+#[path = "socks_runtime/import.rs"]
+mod import;
 #[path = "socks_runtime/integration.rs"]
 mod integration;
 const PAYLOAD_LEN: usize = 64 * 1024;

@@ -1,0 +1,1 @@
+socks5://synthetic%3Auser:p%40ss%3A+%E2%9C%93@Socks.Example.:1080/#Test%20%E2%9C%93

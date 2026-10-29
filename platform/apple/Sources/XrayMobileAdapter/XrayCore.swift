@@ -150,6 +150,7 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let trojanOutbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TROJAN_OUTBOUND.rawValue))
     public static let shadowsocks2022Outbound = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_SHADOWSOCKS2022_OUTBOUND.rawValue))
     public static let profileImport = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_PROFILE_IMPORT.rawValue))
+    public static let socksProfileImport = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT.rawValue))
     public static let routingPolicyUpdate = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_ROUTING_POLICY_UPDATE.rawValue)
     )

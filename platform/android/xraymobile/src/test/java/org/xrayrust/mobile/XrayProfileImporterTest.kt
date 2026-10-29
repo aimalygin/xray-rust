@@ -11,6 +11,23 @@ class XrayProfileImporterTest {
         XrayFfiCapability.WireguardOutbound.mask
     private val current = XrayFfiInfo(XrayFfiVersion(1, 5), all)
 
+    @Test fun socksImportRequiresItsOwnCapabilityAndMinorBeforeNative() {
+        val caps = XrayFfiCapability.ProfileImport.mask or XrayFfiCapability.SocksProfileImport.mask
+        assertTrue(XrayFfiInfo(XrayFfiVersion(1, 13), caps).supportsProfileImport(XrayProfileFormat.Socks))
+        for (info in listOf(
+            XrayFfiInfo(XrayFfiVersion(1, 12), caps),
+            XrayFfiInfo(XrayFfiVersion(2, 13), caps),
+            XrayFfiInfo(XrayFfiVersion(1, 13), XrayFfiCapability.ProfileImport.mask),
+            XrayFfiInfo(XrayFfiVersion(1, 13), XrayFfiCapability.SocksProfileImport.mask),
+        )) {
+            assertThrows(IllegalStateException::class.java) {
+                XrayProfileImporter.importProfile("secret", XrayProfileFormat.Socks, null, emptyList(), info) {
+                    fail("unavailable SOCKS import invoked native code"); byteArrayOf()
+                }
+            }
+        }
+    }
+
     @Test fun checksVersionAndBothCapabilitiesBeforeCallingNative() {
         for (info in listOf(XrayFfiInfo(XrayFfiVersion(1, 4), all), XrayFfiInfo(XrayFfiVersion(2, 5), all),
             XrayFfiInfo(XrayFfiVersion(1, 5), XrayFfiCapability.ProfileImport.mask),
@@ -88,6 +105,31 @@ class XrayProfileImporterTest {
 /** Optional host JNI integration; run with the current native libraries, not Android stubs. */
 class XrayProfileImporterNativeTest {
     private fun enabled() { assumeTrue(java.lang.Boolean.getBoolean("xray.test.nativeImport")) }
+
+    @Test fun importsSocksThroughActualJniAndRust() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supportsProfileImport(XrayProfileFormat.Socks))
+        val profile = XrayProfileImporter.profile(fixture("socks.txt"), XrayProfileFormat.Socks)
+        assertEquals("Test ✓", profile.name)
+        assertEquals("Socks.Example.", profile.serverAddress)
+        val root = JSONObject(profile.configJson)
+        val settings = root.getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings")
+        assertEquals("synthetic:user", settings.getString("user"))
+        assertEquals("p@ss:+✓", settings.getString("pass"))
+        assertTrue(root.getJSONObject("dns").getJSONObject("fakeIp").getBoolean("enabled"))
+        assertFalse(profile.toString().contains("synthetic"))
+        val base64 = XrayProfileImporter.profile("socks://c3ludGhldGljOnBhc3M=@[2001:db8::7]:1080", XrayProfileFormat.Socks)
+        assertEquals("2001:db8::7", base64.serverAddress)
+        assertEquals("pass", JSONObject(base64.configJson).getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings").getString("pass"))
+        val noauth = XrayProfileImporter.profile("socks5://Og==@socks.example:1080", XrayProfileFormat.Socks)
+        assertFalse(JSONObject(noauth.configJson).getJSONArray("outbounds").getJSONObject(0).getJSONObject("settings").has("user"))
+        for (text in listOf("socks://synthetic-secret:@socks.example:1080", "socks5://synthetic-secret:p@socks.example:1080?security=tls")) {
+            val error = assertThrows(XrayCoreException::class.java) {
+                XrayProfileImporter.profile(text, XrayProfileFormat.Socks)
+            }
+            assertFalse(error.toString().contains("synthetic-secret"))
+        }
+    }
     private fun fixture(name: String): String {
         val root = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
             .first { File(it, "crates/xray-ffi/Cargo.toml").isFile }

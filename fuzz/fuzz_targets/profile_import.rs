@@ -11,6 +11,7 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(text) = std::str::from_utf8(data) {
         for profile in [
             import_request(text),
+            import_profile(ProfileFormat::Socks, text, None, &[]),
             import_profile(ProfileFormat::Hysteria2, text, None, &[]),
             import_profile(ProfileFormat::Wireguard, text, None, &[]),
             import_profile(ProfileFormat::Trojan, text, None, &[]),
