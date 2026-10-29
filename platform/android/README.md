@@ -242,8 +242,8 @@ DNS server.
 ### Startup probe before the VPN interface
 
 The startup probe is opt-in: without `startXrayTunnel(startupProbe = ...)` the
-reference service contacts no connectivity-check endpoint. With ABI 1.12+ it
-runs the probe after DNS bootstrap and before `Builder.establish()`, on a
+reference service contacts no connectivity-check endpoint. A probe requires
+ABI 1.12+ and runs after DNS bootstrap and before `Builder.establish()`, on a
 separate unstarted `XrayCore` with the prepared config, socket protection and
 `StaticOnly` DNS policy. That core has no TUN fd, listeners, packet I/O or
 `tunAdmissionOptions()` policy. A failed, timed-out or cancelled probe therefore

@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicReference
 /** Exercises the preflight coordinator used by [XrayVpnService] with a scripted core. */
 class XrayStartupProbePreflightTest {
     private val probe = XrayStartupProbeOptions(url = "http://127.0.0.1:9/health")
-    private val events = Collections.synchronizedList(mutableListOf<String>())
+    private val events: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private val lifecycle = XrayTunnelStateMachine<String>()
     private val preflight = XrayStartupProbePreflight<ScriptedCore>(
         lifecycle = lifecycle,

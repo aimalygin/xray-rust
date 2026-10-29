@@ -193,7 +193,7 @@ class XrayStartupProbePreflightNativeTest {
         val requestReceived = CountDownLatch(1)
         val requests = AtomicInteger()
         private val server = ServerSocket(0, 8, InetAddress.getLoopbackAddress())
-        private val sockets = Collections.synchronizedList(mutableListOf<Socket>())
+        private val sockets: MutableList<Socket> = Collections.synchronizedList(mutableListOf())
         private val status = AtomicInteger()
         private val released = CountDownLatch(1)
 
