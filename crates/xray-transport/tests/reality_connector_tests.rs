@@ -102,7 +102,14 @@ fn handshake_context() -> RealityHandshakeContext {
 
 #[test]
 fn reality_connector_accepts_xray_core_fingerprints_for_first_slice() {
-    for fingerprint in ["chrome", "firefox", "hellochrome_131", "hellochrome_133"] {
+    for fingerprint in [
+        "chrome",
+        "firefox",
+        "hellochrome_131",
+        "hellochrome_133",
+        "hellochrome_100",
+        "ios",
+    ] {
         let mut config = reality_config_with_short_id(vec![2, 3, 4, 5]);
         config.fingerprint = fingerprint.to_owned();
         let connector = RealityConnector::new(config);

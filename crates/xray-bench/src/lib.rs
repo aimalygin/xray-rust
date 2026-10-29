@@ -71,7 +71,7 @@ use xray_transport::{
     DnsResolver, NameServer, NameServerPolicy, TransportError,
 };
 use xray_tun::TunTcpOpenErrorEvent;
-use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_CAPABLE_FINGERPRINTS};
+use xray_utls::{normalize_reality_supported_fingerprint, XRAY_REALITY_HYBRID_FINGERPRINTS};
 
 pub mod chart;
 mod process_metrics;
@@ -1344,7 +1344,9 @@ impl Default for Phase2ProbeOptions {
 impl Default for RealityMatrixOptions {
     fn default() -> Self {
         Self {
-            fingerprints: XRAY_REALITY_CAPABLE_FINGERPRINTS
+            // The pinned server fixture is v26.10.21, which refuses the
+            // X25519-only profiles; `--fingerprints` still selects them.
+            fingerprints: XRAY_REALITY_HYBRID_FINGERPRINTS
                 .iter()
                 .map(|fingerprint| (*fingerprint).to_owned())
                 .collect(),
@@ -15063,6 +15065,19 @@ mod tests {
         assert!(line.contains(r#""connection_id":7"#));
         assert!(line.contains(r#""bytes":65536"#));
         assert!(line.contains(r#""active_connections":3"#));
+    }
+
+    #[test]
+    fn reality_matrix_defaults_to_profiles_new_servers_accept() {
+        let options = RealityMatrixOptions::default();
+
+        assert!(!options.fingerprints.is_empty());
+        for fingerprint in &options.fingerprints {
+            assert!(
+                xray_utls::is_reality_fingerprint_hybrid(fingerprint),
+                "{fingerprint}"
+            );
+        }
     }
 
     #[test]

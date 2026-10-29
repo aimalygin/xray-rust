@@ -1396,10 +1396,20 @@ impl Parser<'_> {
             self.error(
                 fingerprint_path,
                 format!(
-                    "reality fingerprint `{fingerprint}` requires an X25519MLKEM768 key share for REALITY v26.10.21; use chrome, firefox, safari, or random"
+                    "reality fingerprint `{fingerprint}` does not support REALITY because it has no X25519-compatible key share; use chrome, firefox, safari, or random"
                 ),
             );
             return None;
+        }
+        // Xray-core's client still accepts these, and so do servers older than
+        // v26.10.21, so this is a warning rather than an error.
+        if !xray_utls::is_reality_fingerprint_hybrid(fingerprint) {
+            self.warning(
+                fingerprint_path,
+                format!(
+                    "reality fingerprint `{fingerprint}` has no X25519MLKEM768 key share, which REALITY servers from Xray-core v26.10.21 require; it still works with older servers, while chrome, firefox, safari, or random work with both"
+                ),
+            );
         }
 
         Some(RealitySettings {
