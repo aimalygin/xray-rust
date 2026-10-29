@@ -4,6 +4,46 @@ import XrayAppleShared
 @testable import XrayMobileAdapter
 
 final class XrayProfileImporterTests: XCTestCase {
+    func testNativeSocksImportPreservesCredentialsAndPassesMobilePreflight() throws {
+        let profile = try XrayProfileImporter.profile(from: fixture("socks.txt"), format: .socks)
+        XCTAssertEqual(profile.name, "Test ✓")
+        XCTAssertEqual(profile.serverAddress, "Socks.Example.")
+        XCTAssertTrue(XrayCore.ffiInfo.supportsProfileImport(.socks))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(profile.configJSON.utf8)) as? [String: Any])
+        let settings = try XCTUnwrap((root["outbounds"] as? [[String: Any]])?.first?["settings"] as? [String: Any])
+        XCTAssertEqual(settings["user"] as? String, "synthetic:user")
+        XCTAssertEqual(settings["pass"] as? String, "p@ss:+✓")
+        XCTAssertFalse(String(reflecting: profile).contains("synthetic"))
+        try XrayMobileDNSPreflight.validate(profile.configJSON)
+        _ = try XrayCore(configJSON: profile.configJSON)
+        for text in ["socks://c3ludGhldGljOnBhc3M=@[2001:db8::7]:1080", "socks5://Og==@socks.example:1080"] {
+            let imported = try XrayProfileImporter.profile(from: text, format: .socks)
+            try XrayMobileDNSPreflight.validate(imported.configJSON)
+            _ = try XrayCore(configJSON: imported.configJSON)
+        }
+        for text in ["socks://synthetic-secret:@socks.example:1080", "socks5://synthetic-secret:p@socks.example:1080?security=tls"] {
+            XCTAssertThrowsError(try XrayProfileImporter.profile(from: text, format: .socks)) {
+                XCTAssertFalse(String(reflecting: $0).contains("synthetic-secret"))
+            }
+        }
+    }
+
+    func testSocksImportRequiresItsOwnCapabilityAndMinorBeforeNative() throws {
+        let caps: XrayFFICapabilities = [.profileImport, .socksProfileImport]
+        XCTAssertTrue(XrayFFIInfo(version: .init(major: 1, minor: 13), capabilities: caps).supportsProfileImport(.socks))
+        for info in [
+            XrayFFIInfo(version: .init(major: 1, minor: 12), capabilities: caps),
+            XrayFFIInfo(version: .init(major: 2, minor: 13), capabilities: caps),
+            XrayFFIInfo(version: .init(major: 1, minor: 13), capabilities: [.profileImport]),
+            XrayFFIInfo(version: .init(major: 1, minor: 13), capabilities: [.socksProfileImport]),
+        ] {
+            XCTAssertThrowsError(try XrayProfileImporter.importProfile(text: "secret", format: .socks,
+                name: nil, dnsServers: [], info: info, nativeImport: { _ in
+                    XCTFail("unavailable SOCKS import invoked native code"); return Data()
+                })) { XCTAssertEqual($0 as? XrayProfileImportError, .unavailable) }
+        }
+    }
+
     private func fixture(_ name: String) throws -> String {
         var root = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath()
         for _ in 0..<5 { root.deleteLastPathComponent() }

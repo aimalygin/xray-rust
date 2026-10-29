@@ -8,13 +8,15 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.12`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.13`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
 policy replacement requires the ABI 1.4 capability bit, before calling optional
 symbols. Profile import requires minor >=5, `PROFILE_IMPORT` and the selected
-`HYSTERIA2_OUTBOUND` or `WIREGUARD_OUTBOUND` capability.
+outbound capability for Hysteria2, WireGuard, Trojan, SS2022 or VMess.
+SOCKS link import instead requires minor >=13, `PROFILE_IMPORT` and
+`SOCKS_PROFILE_IMPORT` (bit 26); see the [format contract](socks-profile-import.md).
 WireGuard carrier rebind requires minor >=6 and `WIREGUARD_OUTBOUND`.
 Hysteria carrier rebind requires minor >=7 and `HYSTERIA2_OUTBOUND`.
 Hysteria stream limits require minor >=10 and `HYSTERIA_STREAM_LIMITS` (bit 23).

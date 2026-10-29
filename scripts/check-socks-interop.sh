@@ -20,6 +20,6 @@ PY
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
   go -C "$CHECKOUT" build -mod=readonly -o "$TEST_ROOT/xray" ./main
 cd "$WORKSPACE_ROOT"
-# Runs the TCP/TLS and IPv6 matrix plus the chain/probe integration submodule.
+# Runs TCP/TLS, IPv6, chains/probes and imported links against the real server.
 XRAY_CLIENT_PROTOCOL_BINARY="$TEST_ROOT/xray" cargo test --locked -p xray-core-rs --test socks_runtime_tests socks_runtime_ -- --ignored --nocapture
 XRAY_CLIENT_PROTOCOL_BINARY="$TEST_ROOT/xray" cargo test --locked -p xray-core-rs --test runtime_data_path_tests socks_outbound::socks_runtime_tun_udp_and_dns_against_pinned_xray -- --ignored --exact --nocapture

@@ -6,16 +6,21 @@ import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
 /** Supported source formats, independent of the resulting JSON outbound name. */
-enum class XrayProfileFormat(val wireValue: String, internal val capability: XrayFfiCapability) {
+enum class XrayProfileFormat(
+    val wireValue: String,
+    internal val capability: XrayFfiCapability,
+    internal val minimumAbiMinor: Int = 5,
+) {
     Vmess("vmess", XrayFfiCapability.VmessOutbound),
     Trojan("trojan", XrayFfiCapability.TrojanOutbound),
     Shadowsocks2022("shadowsocks2022", XrayFfiCapability.Shadowsocks2022Outbound),
     Hysteria2("hysteria2", XrayFfiCapability.Hysteria2Outbound),
     Wireguard("wireguard", XrayFfiCapability.WireguardOutbound),
+    Socks("socks", XrayFfiCapability.SocksProfileImport, 13),
 }
 
 fun XrayFfiInfo.supportsProfileImport(format: XrayProfileFormat): Boolean =
-    version.major == 1 && version.minor >= 5 &&
+    version.major == 1 && version.minor >= format.minimumAbiMinor &&
         supports(XrayFfiCapability.ProfileImport) && supports(format.capability)
 
 /** Imports text already read by the host. No file access, network or VPN startup. */

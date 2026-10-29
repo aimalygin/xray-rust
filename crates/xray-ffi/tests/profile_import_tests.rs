@@ -68,6 +68,12 @@ fn import(input: &[u8]) -> Value {
 #[test]
 fn ffi_imports_all_formats_with_exact_sizing_and_loadable_configs() {
     for (format, text) in [
+        (
+            "socks",
+            include_str!("../../../tests/fixtures/profile-import/socks.txt"),
+        ),
+        ("socks", "socks://Og==@[2001:db8::7]:1080"),
+        ("socks", "socks5://c3ludGhldGljOnBhc3M=@socks.example:1080"),
         ("hysteria2", HY),
         ("wireguard", WG),
         ("trojan", "trojan://synthetic-secret@trojan.example:443"),
@@ -126,6 +132,13 @@ fn rejected(input: &[u8], expected: XrayStatus) {
 
 #[test]
 fn ffi_rejects_invalid_utf8_embedded_nul_and_oversized_requests() {
+    for text in [
+        "socks://secret:p%00@socks.example:1080",
+        "socks5://secret:@socks.example:1080",
+        "socks://secret:p@socks.example:1080?security=tls",
+    ] {
+        rejected(&request("socks", text), XrayStatus::ConfigError);
+    }
     rejected(&[0xff], XrayStatus::InvalidUtf8);
     rejected(b"{}\0secret", XrayStatus::ConfigError);
     rejected(

@@ -8,9 +8,11 @@ public enum XrayProfileFormat: String, Codable, Sendable {
     case shadowsocks2022
     case hysteria2
     case wireguard
+    case socks
 
     var capability: XrayFFICapabilities {
         switch self {
+        case .socks: return .socksProfileImport
         case .vmess: return .vmessOutbound
         case .trojan: return .trojanOutbound
         case .shadowsocks2022: return .shadowsocks2022Outbound
@@ -18,6 +20,8 @@ public enum XrayProfileFormat: String, Codable, Sendable {
         case .wireguard: return .wireguardOutbound
         }
     }
+
+    var minimumABIMinor: UInt32 { self == .socks ? 13 : 5 }
 }
 
 public enum XrayProfileImportError: Error, LocalizedError, Equatable {
@@ -61,7 +65,7 @@ public struct XrayImportedProfile: Decodable, Sendable, CustomStringConvertible,
 
 public extension XrayFFIInfo {
     func supportsProfileImport(_ format: XrayProfileFormat) -> Bool {
-        version.major == 1 && version.minor >= 5 && supports(.profileImport) && supports(format.capability)
+        version.major == 1 && version.minor >= format.minimumABIMinor && supports(.profileImport) && supports(format.capability)
     }
 }
 

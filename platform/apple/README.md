@@ -67,6 +67,12 @@ profile you control without committing it to the repository.
 
 ## Swift Package products
 
+`XrayProfileImporter.profile(from:format:)` accepts `.socks` for `socks://` and
+`socks5://` in development ABI 1.13. Check
+`XrayCore.ffiInfo.supportsProfileImport(.socks)` before use and follow the
+[shared SOCKS import contract](../../docs/socks-profile-import.md). The host
+owns input, profile storage and the existing DNS bootstrap/startup path.
+
 - `XrayMobileAdapter`: `XrayCore`, atomic routing-policy replacement and
   snapshots, packet batching/pump, stats/events, startup probe, blocking
   on-demand outbound probe (ABI 1.9), and optional Darwin-utun fd discovery.

@@ -163,9 +163,10 @@ silently accepting or ignoring them. `level` also applies without credentials;
 
 At the reviewed main snapshot, the outbound implements TCP CONNECT and UDP
 ASSOCIATE. It rejects enabled Mux, non-raw transports, and REALITY. UDP proxy
-chaining remains rejected. Xray-core has a broader transport surface. SOCKS
-support does not imply `socks://` or `socks5://` import support in our mobile
-profile importers.
+chaining remains rejected. Xray-core has a broader transport surface.
+Development mobile profile import additionally accepts `socks://` and
+`socks5://` through the shared Rust parser and Swift/Kotlin APIs under ABI 1.13;
+see the [accepted link subset and capability guard](socks-profile-import.md).
 
 [check-socks-interop.sh](../scripts/check-socks-interop.sh) runs a real pinned
 Xray-core SOCKS server against the Rust client. Its
@@ -218,8 +219,9 @@ TCP, chain and probe cases.
 
 These loopback tests do not establish physical-device routing or NAT traversal.
 For UDP, TLS protects only the SOCKS control connection; relay datagrams remain
-plain. UDP proxy chaining and Mux remain rejected. No C ABI or host ownership
-contract changes are needed.
+plain. UDP proxy chaining and Mux remain rejected. The interoperability tests
+do not change host ownership contracts. The separate share-link importer adds
+the ABI 1.13 capability and retains those runtime limits.
 
 ## Mobile SDK and the resolved SOCKS bootstrap gap
 
@@ -305,7 +307,8 @@ device routing and HTTP/2 `CONNECT` are not established.
   TCP cases are separate from UDP TLS-control coverage; see the evidence above.
 - [x] Resolve and implement the HTTP scope above; HTTP/2 `CONNECT` and custom
   `headers` remain unimplemented extensions.
-- [ ] Track SOCKS share-link import separately from outbound protocol support.
+- [x] Add bounded SOCKS share-link import separately from outbound protocol
+  support, with native SDK capability checks; see [the contract](socks-profile-import.md).
 - [ ] Decide whether an absent SOCKS inbound `udp` should follow Xray-core's
   `false` default; see [SOCKS inbound `udp`](#socks-inbound-udp-false-and-the-absent-default).
 - [ ] Keep #81 cleanup separate from new SDK API/lifecycle behavior and verify
