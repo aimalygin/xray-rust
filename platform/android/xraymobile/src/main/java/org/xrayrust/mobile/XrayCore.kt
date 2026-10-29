@@ -41,6 +41,7 @@ enum class XrayFfiCapability(val mask: Long) {
     OutboundProbe(1L shl 22),
     HysteriaStreamLimits(1L shl 23),
     TunAdmission(1L shl 24),
+    StartupProbePreflight(1L shl 25),
     SocksProfileImport(1L shl 26),
     HttpProfileImport(1L shl 27),
 }
@@ -650,6 +651,24 @@ class XrayCore private constructor(handle: Long) : Closeable {
         private external fun nativeNew(): Long
     }
 
+    /**
+     * Runs the configured startup probe without binding listeners or starting TUN packet I/O, so
+     * a VPN host can check the outbound before it installs routes and DNS.
+     *
+     * Call it off the main thread on a created, not yet started core; it blocks until the probe
+     * succeeds, fails or times out, and returns at once when no probe is configured. [stop] and
+     * [close] cancel a pending preflight before draining it; a cancelled preflight throws
+     * [XrayCoreException]. The probe is not consumed and [start] still runs it, so create the
+     * later data-path core without one to avoid probing twice. Requires ABI 1.12.
+     */
+    fun preflightStartupProbe() {
+        requireFeature(12, XrayFfiCapability.StartupProbePreflight)
+        withDataPathHandle { nativePreflightStartupProbe(it) }
+    }
+
+    /** Signals a pending [preflightStartupProbe] to stop without waiting for it to return. */
+    internal fun cancelStartupProbePreflight() = cancelOutboundProbesForLifecycle()
+
     fun start() = withLifecycleHandle { nativeStart(it) }
 
     fun stop() = withLifecycleHandle { nativeStop(it) }
@@ -939,7 +958,12 @@ class XrayCore private constructor(handle: Long) : Closeable {
     }
 
     private fun cancelOutboundProbesForLifecycle() = lifecycleLock.read {
-        if (nativeHandle != 0L && ffiInfo().supports(XrayFfiCapability.OutboundProbe)) {
+        if (nativeHandle == 0L) return@read
+        // Since ABI 1.12 the same native latch also cancels startup-probe preflights.
+        val info = ffiInfo()
+        if (info.supports(XrayFfiCapability.OutboundProbe) ||
+            info.supports(XrayFfiCapability.StartupProbePreflight)
+        ) {
             nativeCancelOutboundProbes(nativeHandle)
         }
     }
@@ -962,6 +986,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
 
     private external fun nativeLoadConfig(handle: Long, configJson: String)
     private external fun nativeConfigWarnings(handle: Long): String?
+    private external fun nativePreflightStartupProbe(handle: Long)
     private external fun nativeStart(handle: Long)
     private external fun nativeStop(handle: Long)
     private external fun nativeCancelOutboundProbes(handle: Long)

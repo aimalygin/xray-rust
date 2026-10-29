@@ -61,8 +61,9 @@ artifact directory.
 - `XrayCore`: lifecycle, config warnings, atomic routing-policy replacement and
   snapshots, packet push/batched poll, stats, selection/health snapshots,
   connection inventory/accounting/close, seven typed TUN diagnostic queues,
-  startup probe, blocking on-demand outbound probe (ABI 1.9), runtime profiles,
-  DNS bootstrap policy, and socket protection.
+  startup probe with a pre-start preflight (ABI 1.12), blocking on-demand
+  outbound probe (ABI 1.9), runtime profiles, DNS bootstrap policy, and socket
+  protection.
 - `XrayVlessUrlImporter`: fail-closed VLESS share-link conversion into a
   self-contained mobile TUN profile.
 - `XrayVpnService`: reference VPN interface setup and lifecycle coordination.
@@ -179,9 +180,9 @@ rejected on every URL port; classic non-URL servers retain their legacy port-53
 check.
 
 `startXrayTunnel` is asynchronous: it returns after scheduling startup on a
-bounded daemon worker pool. DNS preflight, tunnel establishment, core startup,
-and the protected `onXrayTunnelStarted` / `onXrayTunnelStartFailed` callbacks do
-not run on the main thread. A host that updates UI from either callback must
+bounded daemon worker pool. DNS preflight, the startup probe, tunnel
+establishment, core startup, and the protected `onXrayTunnelStarted` /
+`onXrayTunnelStartFailed` callbacks do not run on the main thread. A host that updates UI from either callback must
 dispatch that work to its main-thread executor. Failure to schedule a worker is
 reported synchronously by `startXrayTunnel` instead of invoking the failure
 callback on the caller's thread. The coordinator releases the completed attempt
@@ -237,6 +238,22 @@ TUN-applicable domain-capable rule, including balancer prefix candidates and
 Freedom/WireGuard split routes remain valid. Configuring a `dns.servers`
 upstream permits domain routes through these protocols. The preflight never inserts or substitutes a public
 DNS server.
+
+### Startup probe before the VPN interface
+
+The startup probe is opt-in: without `startXrayTunnel(startupProbe = ...)` the
+reference service contacts no connectivity-check endpoint. With ABI 1.12+ it
+runs the probe after DNS bootstrap and before `Builder.establish()`, on a
+separate unstarted `XrayCore` with the prepared config, socket protection and
+`StaticOnly` DNS policy. That core has no TUN fd, listeners, packet I/O or
+`tunAdmissionOptions()` policy. A failed, timed-out or cancelled probe therefore
+leaves Android routes and DNS untouched; a failure or timeout reaches
+`onXrayTunnelStartFailed`. After success the service closes the preflight
+core, establishes the VPN interface and starts the data-path core without
+repeating the probe. `stopXrayTunnel()` during the probe cancels the native
+request without waiting for the start worker. Custom integrations can call
+`XrayCore.preflightStartupProbe()` themselves; the probe inside `XrayCore.start()`
+is unchanged.
 
 ### Network changes and Hysteria limits
 

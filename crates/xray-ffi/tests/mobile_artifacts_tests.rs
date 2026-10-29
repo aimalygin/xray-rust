@@ -482,6 +482,9 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("OutboundProbe(1L shl 22)"));
     assert!(core.contains("fun probeOutboundUrl("));
     assert!(core.contains("requireCapability(XrayFfiCapability.OutboundProbe)"));
+    assert!(core.contains("StartupProbePreflight(1L shl 25)"));
+    assert!(core.contains("fun preflightStartupProbe()"));
+    assert!(core.contains("requireFeature(12, XrayFfiCapability.StartupProbePreflight)"));
     assert!(core.contains("data class XrayOutboundProbeResult"));
     assert!(core.contains("fileLoggingDirectory: File? = null"));
     assert!(core.contains("nativeSetFileLogging"));
@@ -519,6 +522,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("xray_core_close_connection"));
     assert!(jni.contains("xray_core_probe_outbound_url"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeProbeOutboundUrl"));
+    assert!(jni.contains("xray_core_preflight_startup_probe"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativePreflightStartupProbe"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetSocketProtector"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd"));
@@ -779,6 +784,58 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
     assert!(
         existing_mapping < insert_mapping,
         "existing exact dns.hosts mappings must win over generated mappings"
+    );
+}
+
+#[test]
+fn android_reference_vpn_runs_startup_probe_before_establishing_the_tunnel() {
+    let service =
+        fs::read_to_string(workspace_root().join(
+            "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVpnService.kt",
+        ))
+        .expect("read Kotlin VPN service");
+
+    let start = service
+        .find("private fun runXrayTunnelStart(")
+        .expect("reference VPN should define its start worker");
+    let start_body = &service[start..];
+    let prepare = start_body
+        .find("prepareAndroidVpnConfig(configJson)")
+        .expect("reference VPN should prepare bootstrap mappings");
+    let preflight = start_body
+        .find("startupProbePreflight.run(attempt, startupProbe)")
+        .expect("reference VPN should preflight the startup probe");
+    let establish = start_body
+        .find("tunnelBuilder.establish()")
+        .expect("reference VPN should establish the tunnel");
+    assert!(
+        prepare < preflight && preflight < establish,
+        "the startup probe must finish before establish() installs routes and DNS (#69)"
+    );
+
+    let after_establish = &start_body[establish..];
+    let data_path = after_establish
+        .find("xrayCore = XrayCore.create(")
+        .expect("reference VPN should create its data-path core after establish()");
+    let data_path_arguments = after_establish[data_path..]
+        .find("\n            )\n")
+        .map(|end| &after_establish[data_path..data_path + end])
+        .expect("data-path core creation should close its argument list");
+    assert!(
+        !data_path_arguments.contains("startupProbe"),
+        "the data-path core must not repeat the preflighted startup probe"
+    );
+
+    let cancel_start = service
+        .find("XrayTunnelStopAction.CancelStart -> {")
+        .expect("reference VPN should cancel a pending start");
+    let stop_session = service[cancel_start..]
+        .find("is XrayTunnelStopAction.StopSession ->")
+        .expect("reference VPN should stop a running session");
+    let cancel_start_branch = &service[cancel_start..cancel_start + stop_session];
+    assert!(
+        cancel_start_branch.contains("startupProbePreflight.cancel()"),
+        "a stop during start must cancel the native preflight"
     );
 }
 

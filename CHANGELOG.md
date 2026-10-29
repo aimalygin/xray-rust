@@ -49,6 +49,15 @@ long-term supported release series.
   SOCKS carrier candidate from tunnel routes; destination domains still resolve
   at the SOCKS proxy.
 
+- Android: run the reference `XrayVpnService` startup probe after DNS
+  bootstrap and before `Builder.establish()`, on a separate unstarted core
+  without a TUN fd. A failed, timed-out or cancelled probe leaves routes and
+  DNS untouched, and a successful one is not repeated by the data-path core.
+  Kotlin adds `XrayCore.preflightStartupProbe()` and the
+  `StartupProbePreflight` capability over the existing ABI 1.12 entry point;
+  `stopXrayTunnel()` and `XrayCore.stop()`/`close()` cancel a pending
+  preflight. This ports the Apple fix for #69 from #70.
+
 - Android: the reference `XrayVpnService` marks its VPN as not metered on
   Android 10+, `XrayCore.ffiInfo()` reads the native version and capabilities
   once per process, and `XrayCore.stats()` checks the native value count.
