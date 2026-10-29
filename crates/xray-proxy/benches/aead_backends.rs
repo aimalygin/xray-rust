@@ -3,12 +3,12 @@
 //! Each iteration seals and opens one 8 KiB record with a unique nonce. Contexts
 //! and the buffer are reused; both providers must recover the original bytes.
 //! Unoptimized `cargo test --all-targets` builds only run one smoke iteration.
-use aes_gcm::{aead::AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
+use aes_gcm::{aead::AeadInOut, Aes128Gcm, Aes256Gcm, KeyInit};
 use aws_lc_rs::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
 use chacha20poly1305::ChaCha20Poly1305;
 use std::{hint::black_box, time::Instant};
 
-fn rustcrypto<C: AeadInPlace + KeyInit>(iterations: u64, key: &[u8]) -> f64 {
+fn rustcrypto<C: AeadInOut + KeyInit>(iterations: u64, key: &[u8]) -> f64 {
     let cipher = C::new_from_slice(key).unwrap();
     let mut data = vec![0x5a; 8192];
     data.reserve(16);
@@ -16,7 +16,7 @@ fn rustcrypto<C: AeadInPlace + KeyInit>(iterations: u64, key: &[u8]) -> f64 {
     for i in 0..iterations {
         let mut nonce = [0; 12];
         nonce[..8].copy_from_slice(&i.to_le_bytes());
-        let nonce = aes_gcm::aead::Nonce::<C>::from_slice(&nonce);
+        let nonce: &aes_gcm::aead::Nonce<C> = nonce.as_slice().try_into().unwrap();
         cipher.encrypt_in_place(nonce, b"", &mut data).unwrap();
         cipher.decrypt_in_place(nonce, b"", &mut data).unwrap();
         black_box(&mut data);

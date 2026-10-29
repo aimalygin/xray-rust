@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 
 use xray_transport::stream::{TransportLayer, XhttpHttpVersion, XhttpScheme};
 
-use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use aes::Aes128;
 use aes_gcm::aead::{Aead, Payload as AeadPayload};
 use aes_gcm::{Aes128Gcm, Nonce};
@@ -11697,7 +11697,7 @@ fn quic_initial_packet_with_sni(host: &str) -> Vec<u8> {
     let cipher = Aes128Gcm::new_from_slice(&key).expect("key length is valid");
     let ciphertext = cipher
         .encrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::from(nonce),
             AeadPayload {
                 msg: &plaintext,
                 aad: &header,
@@ -11711,9 +11711,9 @@ fn quic_initial_packet_with_sni(host: &str) -> Vec<u8> {
     let sample_offset = packet_number_offset + 4;
     let mask = {
         let cipher = Aes128::new_from_slice(&hp).expect("hp key length is valid");
-        let mut block = aes::cipher::Block::<Aes128>::clone_from_slice(
-            &packet[sample_offset..sample_offset + 16],
-        );
+        let mut block =
+            aes::cipher::Block::<Aes128>::try_from(&packet[sample_offset..sample_offset + 16])
+                .expect("sample is one AES block");
         cipher.encrypt_block(&mut block);
         block
     };

@@ -3,7 +3,7 @@ use super::{
     *,
 };
 use chacha20poly1305::{
-    aead::{AeadInPlace, KeyInit},
+    aead::{AeadInOut, KeyInit},
     XChaCha20Poly1305,
 };
 use rand::RngCore;
@@ -154,7 +154,7 @@ impl UdpSession {
             body = Zeroizing::new(wire[24..].to_vec());
             XChaCha20Poly1305::new_from_slice(self.method.psk())
                 .unwrap()
-                .decrypt_in_place(wire[..24].into(), &[], &mut *body)
+                .decrypt_in_place(wire[..24].try_into().unwrap(), &[], &mut *body)
                 .map_err(|_| invalid("Shadowsocks 2022 authentication failed"))?;
             if body.len() < 16 {
                 return Err(invalid("truncated Shadowsocks 2022 packet"));
