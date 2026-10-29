@@ -1178,6 +1178,20 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetStartupProbe(
   check_status(env, status, error);
 } XRAY_JNI_CATCH_VOID(env)
 
+// Blocks until the configured startup probe settles. The Kotlin caller holds
+// the data-path read lock. Lifecycle calls cancel it, then drain readers.
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativePreflightStartupProbe(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_preflight_startup_probe(native->core, &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
 extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeSetTunFd(
     JNIEnv *env,
