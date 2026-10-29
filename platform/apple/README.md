@@ -67,6 +67,11 @@ profile you control without committing it to the repository.
 
 ## Swift Package products
 
+Development ABI 1.14 also accepts `.http` for `http://` and `https://` proxy
+links. Use `XrayCore.ffiInfo.supportsProfileImport(.http)` before importing.
+HTTPS retains certificate/name verification; explicit DNS servers use TCP.
+See the [HTTP import contract](../../docs/http-profile-import.md).
+
 `XrayProfileImporter.profile(from:format:)` accepts `.socks` for `socks://` and
 `socks5://` in development ABI 1.13. Check
 `XrayCore.ffiInfo.supportsProfileImport(.socks)` before use and follow the

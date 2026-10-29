@@ -11,6 +11,23 @@ class XrayProfileImporterTest {
         XrayFfiCapability.WireguardOutbound.mask
     private val current = XrayFfiInfo(XrayFfiVersion(1, 5), all)
 
+    @Test fun httpImportRequiresItsOwnCapabilityAndMinorBeforeNative() {
+        val caps = XrayFfiCapability.ProfileImport.mask or XrayFfiCapability.HttpProfileImport.mask
+        assertTrue(XrayFfiInfo(XrayFfiVersion(1, 14), caps).supportsProfileImport(XrayProfileFormat.Http))
+        for (info in listOf(
+            XrayFfiInfo(XrayFfiVersion(1, 13), caps),
+            XrayFfiInfo(XrayFfiVersion(2, 14), caps),
+            XrayFfiInfo(XrayFfiVersion(1, 14), XrayFfiCapability.ProfileImport.mask),
+            XrayFfiInfo(XrayFfiVersion(1, 14), XrayFfiCapability.HttpProfileImport.mask),
+        )) {
+            assertThrows(IllegalStateException::class.java) {
+                XrayProfileImporter.importProfile("secret", XrayProfileFormat.Http, null, emptyList(), info) {
+                    fail("unavailable HTTP import invoked native code"); byteArrayOf()
+                }
+            }
+        }
+    }
+
     @Test fun socksImportRequiresItsOwnCapabilityAndMinorBeforeNative() {
         val caps = XrayFfiCapability.ProfileImport.mask or XrayFfiCapability.SocksProfileImport.mask
         assertTrue(XrayFfiInfo(XrayFfiVersion(1, 13), caps).supportsProfileImport(XrayProfileFormat.Socks))
@@ -105,6 +122,51 @@ class XrayProfileImporterTest {
 /** Optional host JNI integration; run with the current native libraries, not Android stubs. */
 class XrayProfileImporterNativeTest {
     private fun enabled() { assumeTrue(java.lang.Boolean.getBoolean("xray.test.nativeImport")) }
+
+    @Test fun importsHttpAndHttpsThroughActualJniWithSafeTLSAndTCPDNS() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supportsProfileImport(XrayProfileFormat.Http))
+        for ((file, tls) in listOf("http.txt" to false, "https.txt" to true)) {
+            val profile = XrayProfileImporter.profile(fixture(file), XrayProfileFormat.Http,
+                dnsServers = listOf("192.0.2.53", "2001:db8::53"))
+            assertEquals("Test ✓", profile.name)
+            assertEquals("Proxy.Example.", profile.serverAddress)
+            val root = JSONObject(profile.configJson)
+            val proxy = root.getJSONArray("outbounds").getJSONObject(0)
+            assertEquals("synthetic-user", proxy.getJSONObject("settings").getString("user"))
+            assertEquals("p@ss:+✓", proxy.getJSONObject("settings").getString("pass"))
+            val stream = proxy.getJSONObject("streamSettings")
+            assertEquals(if (tls) "tls" else "none", stream.getString("security"))
+            if (tls) {
+                val security = stream.getJSONObject("tlsSettings")
+                assertEquals("Proxy.Example.", security.getString("serverName"))
+                assertEquals("http/1.1", security.getJSONArray("alpn").getString(0))
+                assertFalse(security.has("allowInsecure"))
+            }
+            val dns = root.getJSONObject("dns").getJSONArray("servers")
+            assertEquals("tcp://192.0.2.53:53", dns.getString(0))
+            assertEquals("tcp://[2001:db8::53]:53", dns.getString(1))
+            BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 2, lookup = { domain ->
+                assertEquals("proxy.example", domain)
+                listOf("192.0.2.9")
+            }).use { resolver ->
+                val prepared = prepareAndroidVpnConfigWithinDeadline(profile.configJson, resolver,
+                    AndroidDnsBootstrapDeadline(java.util.concurrent.TimeUnit.SECONDS.toNanos(5)))
+                assertEquals(root.getJSONArray("outbounds").toString(), JSONObject(prepared.json).getJSONArray("outbounds").toString())
+            }
+            assertFalse(profile.toString().contains("synthetic"))
+        }
+        for (text in listOf("http://proxy.example", "https://[2001:db8::7]", "https://synthetic@proxy.example")) {
+            val root = JSONObject(XrayProfileImporter.profile(text, XrayProfileFormat.Http).configJson)
+            assertTrue(root.getJSONObject("dns").getJSONObject("fakeIp").getBoolean("enabled"))
+        }
+        for (text in listOf("http://:synthetic-secret@proxy.example", "https://synthetic-secret:p@proxy.example?allowInsecure=1")) {
+            val error = assertThrows(XrayCoreException::class.java) {
+                XrayProfileImporter.profile(text, XrayProfileFormat.Http)
+            }
+            assertFalse(error.toString().contains("synthetic-secret"))
+        }
+    }
 
     @Test fun importsSocksThroughActualJniAndRust() {
         enabled()

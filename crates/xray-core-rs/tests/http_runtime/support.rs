@@ -27,10 +27,15 @@ pub struct TlsIdentity {
     pub pin: String,
     pub cert_pem: String,
     pub key_pem: String,
+    pub trusted_connector: xray_transport::TlsConnector,
 }
 
 pub fn tls_identity() -> TlsIdentity {
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    tls_identity_for(vec!["localhost".into()])
+}
+
+pub fn tls_identity_for(names: Vec<String>) -> TlsIdentity {
+    let cert = rcgen::generate_simple_self_signed(names).unwrap();
     let der = cert.cert.der().clone();
     let key = cert.signing_key.serialize_der();
     let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(
@@ -46,7 +51,23 @@ pub fn tls_identity() -> TlsIdentity {
     .unwrap();
     // A server that would pick HTTP/2 if the client offered it.
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(der.clone()).unwrap();
+    let mut client = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    // This test-only connector pins the complete config, including ALPN.
+    // Trust/name checks remain active; the system-connector runtime tests
+    // separately verify that the HTTP policy forces an HTTP/1.1-only offer.
+    client.alpn_protocols = vec![b"http/1.1".to_vec()];
     TlsIdentity {
+        trusted_connector: xray_transport::TlsConnector::with_pinned_client_config(Arc::new(
+            client,
+        )),
         acceptor: tokio_rustls::TlsAcceptor::from(Arc::new(config)),
         pin: Sha256::digest(&der)
             .iter()
@@ -207,23 +228,35 @@ pub struct XrayServer {
     pub noauth: u16,
     /// The SHA-256 pin of the TLS certificate, when the inbounds use TLS.
     pub pin: Option<String>,
+    pub trusted_connector: Option<xray_transport::TlsConnector>,
 }
 
 impl XrayServer {
     pub async fn start() -> Self {
-        Self::start_with_options(false, None).await
+        Self::start_with_options(None, None).await
     }
 
     pub async fn start_tls() -> Self {
-        Self::start_with_options(true, None).await
+        Self::start_with_options(Some(tls_identity()), None).await
     }
 
     /// Replaces the outbounds, for a server whose inbounds feed an Xray client.
     pub async fn forwarding(outbound: Value) -> Self {
-        Self::start_with_options(false, Some(outbound)).await
+        Self::start_with_options(None, Some(outbound)).await
     }
 
-    async fn start_with_options(tls: bool, outbound: Option<Value>) -> Self {
+    pub async fn start_tls_for_import() -> Self {
+        Self::start_with_options(
+            Some(tls_identity_for(vec![
+                "bootstrap.example".into(),
+                "127.0.0.1".into(),
+            ])),
+            None,
+        )
+        .await
+    }
+
+    async fn start_with_options(tls: Option<TlsIdentity>, outbound: Option<Value>) -> Self {
         let binary = std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY")
             .expect("run scripts/check-http-interop.sh");
         let directory = std::env::temp_dir().join(format!(
@@ -255,8 +288,10 @@ impl XrayServer {
                 "protocol": "socks", "settings": {"auth": "noauth"}});
             config["outbounds"] = json!([outbound]);
         }
-        let pin = tls.then(|| {
-            let identity = tls_identity();
+        let trusted_connector = tls
+            .as_ref()
+            .map(|identity| identity.trusted_connector.clone());
+        let pin = tls.map(|identity| {
             std::fs::write(directory.join("cert.pem"), identity.cert_pem).unwrap();
             std::fs::write(directory.join("key.pem"), identity.key_pem).unwrap();
             for inbound in config["inbounds"].as_array_mut().unwrap() {
@@ -287,6 +322,7 @@ impl XrayServer {
             password,
             noauth,
             pin,
+            trusted_connector,
         };
         server.wait_ready().await;
         server

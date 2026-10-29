@@ -17,6 +17,7 @@ enum class XrayProfileFormat(
     Hysteria2("hysteria2", XrayFfiCapability.Hysteria2Outbound),
     Wireguard("wireguard", XrayFfiCapability.WireguardOutbound),
     Socks("socks", XrayFfiCapability.SocksProfileImport, 13),
+    Http("http", XrayFfiCapability.HttpProfileImport, 14),
 }
 
 fun XrayFfiInfo.supportsProfileImport(format: XrayProfileFormat): Boolean =

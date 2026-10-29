@@ -253,6 +253,13 @@ those host tests.
 
 ## HTTP outbound: implemented scope
 
+Development ABI 1.14 additionally imports `http://` and `https://` proxy links
+through the shared Rust parser and Swift/Kotlin APIs. See the
+[URI subset, TCP DNS and capability guard](http-profile-import.md). This retains
+the HTTP/1.1 CONNECT runtime limits below. Imported profiles are exercised by
+`check-http-interop.sh` against the currently pinned Xray-core v26.10.21; HTTPS
+trust/name failures are covered by the local TLS fixture.
+
 The [#79 proposal](https://github.com/aimalygin/xray-rust/issues/79#issuecomment-6400188060)
 is implemented against the HTTP/1.1 path of the pinned
 [Xray HTTP client](https://github.com/XTLS/Xray-core/blob/5ca6f4b7d4dc20a881d4330e498892697627ec0c/proxy/http/client.go).

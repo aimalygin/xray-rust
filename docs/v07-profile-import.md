@@ -3,7 +3,8 @@
 The development SDK imports Hysteria 2 share links and standard WireGuard
 configuration text through one Rust parser, originally added in C ABI **1.5**.
 The current development importer also accepts Trojan, SS2022, VMess and
-[SOCKS5 links](socks-profile-import.md); SOCKS import requires ABI **1.13**.
+[SOCKS5 links](socks-profile-import.md) (ABI **1.13**) and
+[HTTP/HTTPS proxy links](http-profile-import.md) (ABI **1.14**).
 The version-specific observations below describe the original v0.7 increment.
 Current source support does not imply that a matching SDK binary is published
 or claim complete upstream feature parity.
@@ -16,7 +17,7 @@ or claim complete upstream feature parity.
 {"format":"hysteria2","text":"hy2://example-password@server.example#Example","name":"Example","dnsServers":[]}
 ```
 
-`format` is `socks`, `trojan`, `shadowsocks2022`, `vmess`, `hysteria2` or
+`format` is `http`, `socks`, `trojan`, `shadowsocks2022`, `vmess`, `hysteria2` or
 `wireguard`. `name` and `dnsServers` are optional;
 unknown/duplicate fields are errors. The result is:
 
@@ -41,8 +42,9 @@ runtime validation. Import does not verify a remote endpoint or certificate.
 Capabilities are independent bits: `HYSTERIA2_OUTBOUND` (16),
 `WIREGUARD_OUTBOUND` (17), `PROFILE_IMPORT` (18), under the
 `XRAY_FFI_CAPABILITY_` prefix. Import requires ABI major 1, minor >=5, the import
-bit and the selected protocol bit. SOCKS is the exception: minor >=13 and
-`SOCKS_PROFILE_IMPORT` (26) plus `PROFILE_IMPORT` are required. Swift/Kotlin
+bit and the selected protocol bit for the original formats. SOCKS requires minor
+>=13 and `SOCKS_PROFILE_IMPORT` (26); HTTP/HTTPS requires minor >=14 and
+`HTTP_PROFILE_IMPORT` (27). Both also require `PROFILE_IMPORT`. Swift/Kotlin
 expose `supportsProfileImport` with the format-specific minimum version.
 Compile/link the adapter, header and native binary together; checking a bit
 cannot make a missing strongly linked symbol loadable in an older artifact.

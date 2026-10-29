@@ -69,6 +69,15 @@ fn import(input: &[u8]) -> Value {
 fn ffi_imports_all_formats_with_exact_sizing_and_loadable_configs() {
     for (format, text) in [
         (
+            "http",
+            include_str!("../../../tests/fixtures/profile-import/http.txt"),
+        ),
+        (
+            "http",
+            include_str!("../../../tests/fixtures/profile-import/https.txt"),
+        ),
+        ("http", "https://[2001:db8::7]"),
+        (
             "socks",
             include_str!("../../../tests/fixtures/profile-import/socks.txt"),
         ),
@@ -138,6 +147,13 @@ fn ffi_rejects_invalid_utf8_embedded_nul_and_oversized_requests() {
         "socks://secret:p@socks.example:1080?security=tls",
     ] {
         rejected(&request("socks", text), XrayStatus::ConfigError);
+    }
+    for text in [
+        "https://secret%00:p@proxy.example",
+        "http://:secret@proxy.example",
+        "https://secret:p@proxy.example?allowInsecure=1",
+    ] {
+        rejected(&request("http", text), XrayStatus::ConfigError);
     }
     rejected(&[0xff], XrayStatus::InvalidUtf8);
     rejected(b"{}\0secret", XrayStatus::ConfigError);

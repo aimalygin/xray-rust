@@ -5,6 +5,32 @@ import XrayMobileAdapter
 
 @available(macOS 13.0, *)
 final class XrayHttpDnsBootstrapTests: XCTestCase {
+    func testImportedLinksRetainTLSAndDNSDuringCarrierBootstrap() throws {
+        for scheme in ["http", "https"] {
+            for dns in [[], ["192.0.2.53", "2001:db8::53"]] {
+                let profile = try XrayProfileImporter.profile(
+                    from: "\(scheme)://synthetic:p%40ss@Proxy.Example.:8443", format: .http, dnsServers: dns)
+                var queries: [String] = []
+                let prepared = try prepare(profile.configJSON) { domain in
+                    queries.append(domain)
+                    return ["192.0.2.8"]
+                }
+                XCTAssertEqual(queries, ["proxy.example"])
+                let original = try object(profile.configJSON)
+                let root = try object(prepared.json)
+                XCTAssertEqual(root["outbounds"] as? NSArray, original["outbounds"] as? NSArray)
+                for key in ["servers", "fakeIp", "queryStrategy"] {
+                    let before = (original["dns"] as? NSDictionary)?[key] as? NSObject
+                    let after = (root["dns"] as? NSDictionary)?[key] as? NSObject
+                    XCTAssertEqual(after, before)
+                }
+                XCTAssertNoThrow(try XrayPacketTunnelProvider.validateConfigBeforeApplyingNetworkSettings(
+                    prepared.json, geodataSelection: .init(directory: nil, policy: .fallbackToDefaults)
+                ))
+            }
+        }
+    }
+
     func testPinsBothFormsWithoutResolvingDestinationsOrChangingCredentialsAndTLS() throws {
         for legacy in [false, true] {
             let json = config(address: " Proxy.Example. ", legacy: legacy)

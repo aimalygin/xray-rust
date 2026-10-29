@@ -9,9 +9,11 @@ public enum XrayProfileFormat: String, Codable, Sendable {
     case hysteria2
     case wireguard
     case socks
+    case http
 
     var capability: XrayFFICapabilities {
         switch self {
+        case .http: return .httpProfileImport
         case .socks: return .socksProfileImport
         case .vmess: return .vmessOutbound
         case .trojan: return .trojanOutbound
@@ -21,7 +23,13 @@ public enum XrayProfileFormat: String, Codable, Sendable {
         }
     }
 
-    var minimumABIMinor: UInt32 { self == .socks ? 13 : 5 }
+    var minimumABIMinor: UInt32 {
+        switch self {
+        case .http: return 14
+        case .socks: return 13
+        default: return 5
+        }
+    }
 }
 
 public enum XrayProfileImportError: Error, LocalizedError, Equatable {
