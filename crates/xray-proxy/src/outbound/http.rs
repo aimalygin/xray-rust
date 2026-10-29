@@ -12,7 +12,9 @@
 //! the caller: Xray reads the head through a `bufio.Reader` it then drops, so
 //! a proxy or target that speaks first loses its first bytes there.
 //!
-//! This module does not dial or time out; callers bound the whole handshake.
+//! This module does not dial or time out, so a proxy that accepts the
+//! connection and then stays silent stalls it forever: callers must bound the
+//! whole handshake.
 
 use std::fmt;
 use std::io;

@@ -4961,16 +4961,21 @@ async fn bridge_udp_vless_flow(
     // allows it. This is the backstop for any packet that reaches VLESS opening
     // without the flow-level ICMP rejection running first.
     let options = VlessUdpOpenOptions::default();
+    let open_timeout =
+        effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake;
     let opened = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = open_vless_udp_stream_with_resolver_dialer_and_options(
-            &outbound,
-            &target,
-            context.bootstrap_dns_resolver(),
-            &context.transport_dialer,
-            options,
-        ) => result,
+        result = tokio::time::timeout(
+            open_timeout,
+            open_vless_udp_stream_with_resolver_dialer_and_options(
+                &outbound,
+                &target,
+                context.bootstrap_dns_resolver(),
+                &context.transport_dialer,
+                options,
+            ),
+        ) => result.unwrap_or_else(|_| Err(crate::outbound::datagram::open_timed_out())),
     };
     let (stream, framing) = match opened {
         Ok(opened) => opened,

@@ -13,7 +13,9 @@
 //! not from the relay are dropped one by one instead of ending the session,
 //! and an oversized payload is an error instead of an empty datagram.
 //!
-//! This module does not dial or time out; callers bound the whole handshake.
+//! This module does not dial or time out, so a server that accepts the
+//! connection and then stays silent stalls it forever: callers must bound the
+//! whole handshake, UDP ASSOCIATE included.
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};

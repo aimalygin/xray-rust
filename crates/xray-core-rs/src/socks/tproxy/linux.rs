@@ -267,7 +267,7 @@ async fn serve_udp(
                 let (sender,receiver)=mpsc::channel(UDP_FLOW_QUEUE);
                 if sender.try_send(Bytes::copy_from_slice(&buffer[..len])).is_err(){continue;}
                 let ctx=SocksUdpFlowContext {reply:UdpReply::Transparent(reply),client_addr:client,
-                    inbound_tag:context.inbound_tag.clone(),outbound_router:context.router.clone(),
+                    inbound_tag:context.inbound_tag.clone(),config:context.config.clone(),outbound_router:context.router.clone(),
                     dns_resolvers:context.dns.clone(),transport_dialer:context.dialer.clone(),sniffing:context.sniffing.clone(),
                     runtime_logger:context.logger.clone(),connection_registry:context.registry.clone()};
                 let close=shutdown.clone();let completed_key=key.clone();

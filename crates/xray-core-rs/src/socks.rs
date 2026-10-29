@@ -108,6 +108,7 @@ struct SocksUdpFlowContext {
     reply: UdpReply,
     client_addr: SocketAddr,
     inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
     dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
@@ -383,6 +384,7 @@ async fn handle_socks_connection(
                 inbound,
                 client_lock,
                 inbound_tag,
+                config,
                 outbound_router,
                 dns_resolvers,
                 transport_dialer,
@@ -754,6 +756,7 @@ async fn handle_socks_udp_associate(
     mut control: TcpStream,
     client_lock: Option<SocksUdpClientLock>,
     inbound_tag: Option<String>,
+    config: Arc<CoreConfig>,
     outbound_router: Arc<OutboundRouter>,
     dns_resolvers: RuntimeDnsResolvers,
     transport_dialer: Arc<TransportDialer>,
@@ -868,6 +871,7 @@ async fn handle_socks_udp_associate(
                     reply: UdpReply::Socks(Arc::clone(&socket)),
                     client_addr,
                     inbound_tag: inbound_tag.clone(),
+                    config: Arc::clone(&config),
                     outbound_router: Arc::clone(&outbound_router),
                     dns_resolvers: dns_resolvers.clone(),
                     transport_dialer: Arc::clone(&transport_dialer),
@@ -1575,17 +1579,22 @@ async fn bridge_socks_udp_vless_flow(
     connection: ConnectionLease,
     mut connection_close: watch::Receiver<bool>,
 ) {
+    let open_timeout =
+        effective_policy_for_level(&context.config, Some(outbound.user().level)).handshake;
     let opened = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = open_vless_udp_stream_with_resolver_and_dialer(
-            &outbound,
-            &target,
-            context.dns_resolvers.bootstrap.as_ref(),
-            context.transport_dialer.as_ref(),
+        result = tokio::time::timeout(
+            open_timeout,
+            open_vless_udp_stream_with_resolver_and_dialer(
+                &outbound,
+                &target,
+                context.dns_resolvers.bootstrap.as_ref(),
+                context.transport_dialer.as_ref(),
+            ),
         ) => result,
     };
-    let Ok((stream, framing)) = opened else {
+    let Ok(Ok((stream, framing))) = opened else {
         return;
     };
     connection.mark_active();

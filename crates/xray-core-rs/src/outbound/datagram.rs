@@ -56,6 +56,39 @@ pub(crate) async fn open(
         _ => Err(CoreError::UnsupportedOutboundNetwork),
     }
 }
+/// [`open`] under the handshake policy of the outbound's level, the deadline
+/// the TCP opens get. Xray-core sets it on its SOCKS client handshake, UDP
+/// ASSOCIATE included (`proxy/socks/client.go`). DNS exchanges call [`open`]
+/// under their own attempt deadlines instead.
+pub(crate) async fn open_within_handshake(
+    config: &CoreConfig,
+    outbound: &UdpOutbound,
+    target: &Target,
+    destination: &dyn DnsResolver,
+    bootstrap: &dyn DnsResolver,
+    dialer: &TransportDialer,
+    global_id: [u8; 8],
+) -> Result<Session, CoreError> {
+    let level = match outbound {
+        UdpOutbound::Trojan(outbound) => outbound.level(),
+        UdpOutbound::Socks(outbound) => outbound.level(),
+        UdpOutbound::Vmess(outbound) => outbound.level(),
+        UdpOutbound::Shadowsocks2022(outbound) => outbound.level(),
+        UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_) => 0,
+        UdpOutbound::Freedom | UdpOutbound::Vless(_) => {
+            return Err(CoreError::UnsupportedOutboundNetwork)
+        }
+    };
+    tokio::time::timeout(
+        effective_policy_for_level(config, Some(level)).handshake,
+        open(outbound, target, destination, bootstrap, dialer, global_id),
+    )
+    .await
+    .map_err(|_| open_timed_out())?
+}
+pub(crate) fn open_timed_out() -> CoreError {
+    io::Error::new(io::ErrorKind::TimedOut, "outbound udp open timed out").into()
+}
 impl Session {
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
