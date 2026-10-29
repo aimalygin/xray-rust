@@ -64,6 +64,9 @@ class XrayNetworkChangeCoordinator(
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
                 .build()
             try {
+                // ACCESS_NETWORK_STATE belongs to the host manifest (class KDoc), which library lint cannot
+                // see. Without it this throws SecurityException, which the catch below rethrows to start().
+                @Suppress("MissingPermission")
                 connectivityManager.registerNetworkCallback(request, callback)
             } catch (error: RuntimeException) {
                 // Also covers a platform implementation that registers before throwing.
