@@ -1,6 +1,6 @@
 //! VMess KDF composition and record counters; AEAD uses the shared provider.
 use super::*;
-use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use aws_lc_rs::aead::{AES_128_GCM, CHACHA20_POLY1305};
 use sha2::{Digest, Sha256};
 

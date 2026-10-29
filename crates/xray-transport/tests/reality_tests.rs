@@ -1,5 +1,5 @@
 mod reality_tests {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use ml_dsa::{EncodedVerifyingKey, Keypair, MlDsa65, Seed, Signer, SigningKey};
     use rcgen::generate_simple_self_signed;
     use serde::Deserialize;
@@ -76,7 +76,7 @@ mod reality_tests {
         auth_key: &[u8; 32],
         ed25519_public_key: &[u8; 32],
     ) -> [u8; 64] {
-        let mut mac = <HmacSha512 as Mac>::new_from_slice(auth_key).unwrap();
+        let mut mac = <HmacSha512 as KeyInit>::new_from_slice(auth_key).unwrap();
         mac.update(ed25519_public_key);
         mac.finalize().into_bytes().into()
     }
@@ -739,7 +739,7 @@ mod reality_tests {
         let hmac_signature = reality_certificate_signature(&auth_key, &public_key);
         let signing_key = SigningKey::<MlDsa65>::from_seed(&Seed::default());
         let verifying_key = signing_key.verifying_key();
-        let mut mac = <HmacSha512 as Mac>::new_from_slice(&auth_key).unwrap();
+        let mut mac = <HmacSha512 as KeyInit>::new_from_slice(&auth_key).unwrap();
         mac.update(&public_key);
         mac.update(client_hello);
         mac.update(server_hello);
@@ -776,7 +776,7 @@ mod reality_tests {
         let hmac_signature = reality_certificate_signature(&auth_key, &public_key);
         let signing_key = SigningKey::<MlDsa65>::from_seed(&Seed::default());
         let verifying_key = signing_key.verifying_key();
-        let mut mac = <HmacSha512 as Mac>::new_from_slice(&auth_key).unwrap();
+        let mut mac = <HmacSha512 as KeyInit>::new_from_slice(&auth_key).unwrap();
         mac.update(&public_key);
         mac.update(client_hello);
         mac.update(server_hello);

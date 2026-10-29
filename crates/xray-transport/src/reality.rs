@@ -1,7 +1,7 @@
 use std::fmt;
 
 use aes_gcm::{
-    aead::{AeadInPlace, KeyInit},
+    aead::{AeadInOut, KeyInit},
     Aes256Gcm, Nonce,
 };
 use hkdf::Hkdf;
@@ -632,12 +632,12 @@ pub fn build_reality_session_id(
     )?);
 
     let cipher = Aes256Gcm::new_from_slice(&auth_key[..]).map_err(|_| RealityError::Aead)?;
-    let nonce = Nonce::from_slice(&input.hello_random[20..]);
+    let nonce = <&Nonce<_>>::try_from(&input.hello_random[20..]).map_err(|_| RealityError::Aead)?;
     let tag = cipher
-        .encrypt_in_place_detached(
+        .encrypt_inout_detached(
             nonce,
             raw_client_hello_before_seal,
-            session_id_prefix.as_mut(),
+            session_id_prefix.as_mut_slice().into(),
         )
         .map_err(|_| RealityError::Aead)?;
 
@@ -656,7 +656,7 @@ pub fn build_reality_session_id(
 pub fn verify_reality_certificate_binding(
     input: RealityCertificateInput<'_>,
 ) -> RealityCertificateVerification {
-    let mut mac = <HmacSha512 as Mac>::new_from_slice(input.auth_key)
+    let mut mac = <HmacSha512 as KeyInit>::new_from_slice(input.auth_key)
         .expect("HMAC-SHA512 accepts any key length");
     mac.update(input.ed25519_public_key);
 
@@ -713,8 +713,8 @@ pub fn verify_reality_certificate_der_with_mldsa65(
                 len: public_key.len(),
             })?;
 
-    let mut mac =
-        <HmacSha512 as Mac>::new_from_slice(auth_key).expect("HMAC-SHA512 accepts any key length");
+    let mut mac = <HmacSha512 as KeyInit>::new_from_slice(auth_key)
+        .expect("HMAC-SHA512 accepts any key length");
     mac.update(public_key);
 
     if mac

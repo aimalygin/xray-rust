@@ -37,10 +37,10 @@ mod transport_tests {
         ];
         assert!(!webpki_roots::TLS_SERVER_ROOTS.is_empty());
         for root in webpki_roots::TLS_SERVER_ROOTS {
-            let fingerprint = format!(
-                "{:x}",
-                Sha256::digest(root.subject_public_key_info.as_ref())
-            );
+            let fingerprint: String = Sha256::digest(root.subject_public_key_info.as_ref())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
             assert!(
                 !distrusted_keys.contains(&fingerprint.as_str()),
                 "distrusted emSign key returned to the TLS root store: {fingerprint}"

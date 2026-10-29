@@ -81,11 +81,11 @@ impl Key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aes_gcm::{aead::AeadInPlace, Aes128Gcm, Aes256Gcm, KeyInit};
+    use aes_gcm::{aead::AeadInOut, Aes128Gcm, Aes256Gcm, KeyInit};
     use aws_lc_rs::aead::{AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305};
     use chacha20poly1305::ChaCha20Poly1305;
 
-    fn compare<C: AeadInPlace + KeyInit>(algorithm: &'static Algorithm, key: &[u8]) {
+    fn compare<C: AeadInOut + KeyInit>(algorithm: &'static Algorithm, key: &[u8]) {
         let candidate = Key::new(algorithm, key);
         let reference = C::new_from_slice(key).unwrap();
         for size in [0, 2, 16, 1200, 8192, 65535] {
@@ -96,11 +96,7 @@ mod tests {
                 let plain: Vec<_> = (0..size).map(|i| (i % 251) as u8).collect();
                 let mut expected = plain.clone();
                 reference
-                    .encrypt_in_place(
-                        aes_gcm::aead::Nonce::<C>::from_slice(&nonce),
-                        aad,
-                        &mut expected,
-                    )
+                    .encrypt_in_place(nonce.as_slice().try_into().unwrap(), aad, &mut expected)
                     .unwrap();
                 let mut sealed = plain.clone();
                 candidate.seal(&nonce, aad, &mut sealed).unwrap();

@@ -1,5 +1,5 @@
 use super::*;
-use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit};
 use aws_lc_rs::aead::{AES_128_GCM, AES_256_GCM, CHACHA20_POLY1305};
 
 pub(super) fn derive(context: &str, key: &[u8], salt: &[u8]) -> Zeroizing<[u8; 32]> {
