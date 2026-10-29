@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
+  default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
+  Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
+  server that accepted the connection and then stayed silent kept the UDP flow
+  opening indefinitely; on SOCKS and TPROXY each such flow also held one of the
+  64 shared pending-open permits, so a stalled upstream could block new UDP
+  flows. The open now fails at the deadline and the next datagram retries.
+  Hysteria and WireGuard, previously capped only by a fixed 10 s client
+  deadline, follow the policy too; DNS upstream exchanges keep their attempt
+  deadlines. Xray-core sets the same deadline on its SOCKS client handshake.
+
 - Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
 - Require final X25519MLKEM768 profiles for REALITY and restrict its random pool;
   verify ML-DSA65 and Vision against the new reference.

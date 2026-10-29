@@ -86,6 +86,9 @@ mod tun_download_backpressure;
 #[path = "runtime_data_path_tests/tun_upload_backpressure.rs"]
 mod tun_upload_backpressure;
 
+#[path = "runtime_data_path_tests/udp_open_deadline.rs"]
+mod udp_open_deadline;
+
 fn ip_matcher_set(cidr: IpCidr) -> IpMatcherSet {
     let mut matchers = IpMatcherSet::builder();
     matchers.insert_cidr(cidr.cidr(), false);

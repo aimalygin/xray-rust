@@ -18,7 +18,8 @@ pub(super) async fn bridge(
 ) {
     let traffic = connection.traffic();
     let flow = async {
-        let session = crate::outbound::datagram::open(
+        let session = crate::outbound::datagram::open_within_handshake(
+            &context.config,
             &outbound,
             &target,
             context.dns_resolvers.destination.as_ref(),
