@@ -10,6 +10,38 @@ long-term supported release series.
 
 ## Unreleased
 
+- Bound the bytes each TUN TCP flow can queue toward its outbound: 512 KiB on
+  desktop, 256 KiB with the mobile profiles and 128 KiB with `low-memory`. The
+  queue was bounded only by message count, which allowed up to 8 MiB per flow
+  (4 MiB on mobile), and its copy buffer grew past its cap. With a slow
+  outbound, eight XHTTP packet-up uploads through TUN reached a 92 MiB
+  footprint on desktop and 63 MiB on mobile; they now stay near 35 and 33 MiB
+  at the same speed, and duplex transfers fall from 111 to 42 MiB. Data beyond
+  the limit waits in the TCP window, so applications see ordinary
+  backpressure. Such paced uploads cost about 7–9% more client CPU; faster
+  outbounds measured no change.
+- Mask WebSocket client frames without a system call per frame: mask keys come
+  from the thread-local ChaCha CSPRNG instead of `getentropy` for every 4 KiB
+  frame, and masking runs eight bytes at a time. Keys stay fresh and
+  unpredictable per frame, and the wire shape is unchanged. Client CPU for
+  WebSocket uploads fell by 53–59% and for duplex transfers by 24%.
+- Copy XHTTP H2 response frames that wait for a slow reader out of h2's shared
+  read buffer, which each queued frame otherwise pinned at roughly twice its
+  size. Eight stalled XHTTP H2 downloads through TUN fell from a 65 MiB to a
+  44 MiB footprint, at about 4% more CPU for the copies. Flow control is
+  unchanged: credit still returns only as the reader consumes data. Readers
+  also take several frames per read, which lowered CPU on fast SOCKS
+  transfers.
+- Start XHTTP H3 connections with a 2 MiB QUIC send window that grows with the
+  congestion window up to 10 MB, as Hysteria already did, instead of quinn's
+  fixed 10 MB. Each XHTTP H3 request has its own connection, so a slow uplink
+  could otherwise buffer 10 MB per upload.
+- Benchmarks: build comparison binaries with `scripts/build-isolated-release.py`
+  (the collector now requires its provenance record), report the exact peak
+  physical footprint, and drive TUN TCP echo by readiness instead of 1 ms
+  sleeps. The v26.10.21 migration report gains an erratum: its "before" client
+  was a mixed build, and the flagged regressions did not reproduce.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
