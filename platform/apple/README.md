@@ -440,7 +440,9 @@ generation. Review
 [third-party notices](../../THIRD_PARTY_NOTICES.md) before redistribution.
 
 Profiles without `geosite:` or non-private `geoip:` references do not need
-these files. `geoip:private` is built in.
+these files. Xray-core reads `geoip:private` from `geoip.dat` everywhere; here
+routing rules use a built-in private-network set, while DNS `expectedIPs`,
+`expectIPs` and `unexpectedIPs` read it from `geoip.dat`, as in Xray.
 
 ## Build and test
 
