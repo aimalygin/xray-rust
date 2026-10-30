@@ -691,20 +691,20 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
             Arc::new(quinn::TokioRuntime),
         )
     } else {
+        // Every connection owns its socket and talks to one peer, so XHTTP H3
+        // takes the connected send path too: an unconnected macOS socket looks
+        // up the route for every datagram, which made `sendmsg` the largest
+        // cost of an XHTTP H3 upload.
         #[cfg(target_os = "macos")]
         {
-            if datagram_buffers.is_some() {
-                let socket =
-                    crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?;
-                Endpoint::new_with_abstract_socket(
-                    endpoint_config,
-                    None,
-                    socket,
-                    Arc::new(quinn::TokioRuntime),
-                )
-            } else {
-                Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
-            }
+            let socket =
+                crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?;
+            Endpoint::new_with_abstract_socket(
+                endpoint_config,
+                None,
+                socket,
+                Arc::new(quinn::TokioRuntime),
+            )
         }
         #[cfg(not(target_os = "macos"))]
         Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
