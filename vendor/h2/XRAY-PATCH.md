@@ -20,7 +20,9 @@ at a time: 1.4 MB of a 4 MiB window. At an added 113 ms the sender then runs
 short of credit while each update crosses the link, and XHTTP H2 downloads
 measured 28% slower than Go's client (`docs/issue28-client-comparison.md`).
 
-The XHTTP H2 client sets 4 KiB. Connection-level updates, the server, and every
-caller that leaves the option unset keep upstream behavior. Unit tests in
+The XHTTP H2 client sets a sixteenth of its opening stream window, at least
+4 KiB: an update for every read cost a fast download 16% of its throughput.
+Connection-level updates, the server, and every caller that leaves the option
+unset keep upstream behavior. Unit tests in
 `proto/streams/flow_control.rs` cover the threshold, the doubling rule and the
 unchanged default.

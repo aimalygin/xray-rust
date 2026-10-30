@@ -101,17 +101,17 @@ async fn response_pair(
     (pending.open().await.unwrap(), send)
 }
 
-/// Credit for a small read goes back at once, as x/net/http2 returns it, and
-/// not only after a third of the window has been read.
+/// Credit for a sixteenth of the window goes back while the window is still
+/// open, not only after a third of it has been read.
 #[tokio::test(start_paused = true)]
-async fn a_small_read_returns_its_credit_while_the_window_is_open() {
+async fn a_sixteenth_of_the_window_read_returns_its_credit_while_the_window_is_open() {
     let (client, mut server) = pair().await;
     let (mut body, mut send) = response_pair(&client, &mut server).await;
     timeout(DEADLINE, send_bytes(&mut send, STREAM_WINDOW / 4))
         .await
         .unwrap();
 
-    let mut bytes = vec![0; 64 * 1024];
+    let mut bytes = vec![0; STREAM_WINDOW / 16];
     body.read_exact(&mut bytes).await.unwrap();
 
     timeout(
@@ -119,7 +119,28 @@ async fn a_small_read_returns_its_credit_while_the_window_is_open() {
         send_bytes(&mut send, STREAM_WINDOW * 3 / 4 + bytes.len()),
     )
     .await
-    .expect("64 KiB read returns 64 KiB of credit");
+    .expect("reading a sixteenth of the window returns its credit");
+    assert_blocked(&mut send).await;
+    drop(body);
+    server.close().await;
+}
+
+/// A smaller read keeps its credit while the sender has window left, so a
+/// fast reader does not send a WINDOW_UPDATE for every read.
+#[tokio::test(start_paused = true)]
+async fn a_smaller_read_keeps_its_credit_while_the_window_is_open() {
+    let (client, mut server) = pair().await;
+    let (mut body, mut send) = response_pair(&client, &mut server).await;
+    timeout(DEADLINE, send_bytes(&mut send, STREAM_WINDOW / 4))
+        .await
+        .unwrap();
+
+    let mut bytes = vec![0; STREAM_WINDOW / 32];
+    body.read_exact(&mut bytes).await.unwrap();
+
+    timeout(DEADLINE, send_bytes(&mut send, STREAM_WINDOW * 3 / 4))
+        .await
+        .unwrap();
     assert_blocked(&mut send).await;
     drop(body);
     server.close().await;

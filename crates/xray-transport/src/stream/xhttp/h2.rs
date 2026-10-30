@@ -45,11 +45,15 @@ const STREAM_WINDOW_SIZE: u32 = DEFAULT_H2_STREAM_RECEIVE_WINDOW;
 /// this is not an RSS bound (TLS, framing and application buffers add to it).
 const CONNECTION_WINDOW_SIZE: u32 = H2_CONNECTION_RECEIVE_WINDOW;
 
-/// x/net/http2's `inflowMinRefresh`: stream credit goes back once 4 KiB has
-/// been read, as Go's client returns it. h2 alone waits for half the remaining
-/// window, about 1.4 MB of a 4 MiB one, and at 113 ms that left our downloads
-/// 28% behind Go's (`docs/issue28-client-comparison.md`).
-const STREAM_WINDOW_UPDATE_THRESHOLD: u32 = 4 * 1024;
+/// Stream credit goes back once a sixteenth of the opening window has been
+/// read, so the sender keeps at least 15/16 of it. h2 alone waits for half the
+/// remaining window, about 1.4 MB of a 4 MiB one, and at 113 ms that left our
+/// downloads 28% behind Go's (`docs/issue28-client-comparison.md`). Go's
+/// client returns credit every 4 KiB, x/net/http2's `inflowMinRefresh` and the
+/// floor here, but a WINDOW_UPDATE for every read cost a fast download 16% of
+/// its throughput.
+const STREAM_WINDOW_UPDATE_FRACTION: u32 = 16;
+const MIN_STREAM_WINDOW_UPDATE: u32 = 4 * 1024;
 
 /// The stream window a constrained host opens with: a quarter of Go's, so
 /// that eight stalled downloads pin 8 MiB rather than 32. A reader that keeps
@@ -91,6 +95,11 @@ impl H2ReceiveWindow {
                 initial: window, ..
             } => window,
         }
+    }
+
+    /// The read credit a stream gathers before it goes back to the peer.
+    fn update_threshold(self) -> u32 {
+        (self.initial() / STREAM_WINDOW_UPDATE_FRACTION).max(MIN_STREAM_WINDOW_UPDATE)
     }
 }
 
@@ -321,7 +330,7 @@ pub async fn connect_h2_with_window(
     builder
         .initial_window_size(window.initial())
         .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
-        .stream_window_update_threshold(STREAM_WINDOW_UPDATE_THRESHOLD)
+        .stream_window_update_threshold(window.update_threshold())
         .initial_max_send_streams(INITIAL_MAX_SEND_STREAMS);
     let (send_request, mut connection) = builder
         .handshake::<_, Bytes>(io)
