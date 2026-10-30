@@ -101,3 +101,18 @@ does not advance and the ACK is not reported as congestion-controlled delivery.
 The complete 298-test protocol suite passed in the focused source copy.
 The paired WAN control did not demonstrate a throughput improvement; this
 correction must not be advertised as a measured speed gain.
+
+## Growing the stream receive window
+
+`Connection::set_stream_receive_window` grows the window every receive stream
+offers, for open and new streams alike; a smaller value is ignored, because
+`Recv::max_stream_data` assumes the window never shrinks. Credit already sent
+is kept, and a read sends the larger MAX_STREAM_DATA once it frees an eighth
+of the window. A new stream starts from the grown window locally while the peer
+still holds the handshake value until that first update, which only makes the
+receiver more permissive than it advertised.
+
+XHTTP H3 calls it to auto-tune its download window as quic-go does; upstream
+only allows `set_receive_window` for the connection. The unit test
+`a_grown_stream_window_is_offered_on_the_next_read` covers the update and the
+ignored shrink, and the complete 299-test library suite passes.

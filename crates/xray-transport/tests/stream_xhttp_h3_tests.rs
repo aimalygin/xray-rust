@@ -749,6 +749,84 @@ async fn slow_path_upload_buffers_only_the_initial_quic_send_window() {
     relay.abort();
 }
 
+/// A download that keeps its reader busy grows the stream window past its
+/// initial 2 MiB, as quic-go auto-tunes it; fixed maxima keep it at 2 MiB.
+#[tokio::test]
+async fn a_fast_download_grows_the_stream_receive_window() {
+    let tuned = credit_after_a_fast_download(H3QuicConfig::default()).await;
+    let fixed = credit_after_a_fast_download(H3QuicConfig {
+        max_stream_receive_window: Some(2 * 1024 * 1024),
+        max_connection_receive_window: Some(3 * 1024 * 1024),
+        ..H3QuicConfig::default()
+    })
+    .await;
+
+    assert!(
+        fixed <= 2 * 1024 * 1024 + 256 * 1024,
+        "fixed window granted {fixed}"
+    );
+    assert!(tuned > 3 * 1024 * 1024, "tuned window granted {tuned}");
+}
+
+/// Reads 16 MiB as fast as it arrives over a 40 ms round trip, then stops,
+/// and returns how far past the bytes read the server could still write: the
+/// stream credit the client last granted.
+async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
+    const READ: usize = 16 * 1024 * 1024;
+
+    let (client_tls, server_addr, server) = server_with_options(None).await;
+    let (relay_addr, relay) = udp_delay_relay(server_addr, Duration::from_millis(20)).await;
+    let client = connect_h3(H3ConnectConfig {
+        remote_addr: relay_addr,
+        server_name: "localhost".to_owned(),
+        tls_config: client_tls,
+        socket_protector: None,
+        quic,
+    })
+    .await
+    .expect("connect HTTP/3 client through the delay relay");
+    let (written_tx, written_rx) = tokio::sync::oneshot::channel();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_, mut stream) = server.accept().await;
+            drain_request(&mut stream).await.expect("request FIN");
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("headers");
+            let chunk = Bytes::from(vec![0x5a; 64 * 1024]);
+            let mut written = 0;
+            // A write that waits several round trips is out of credit.
+            while let Ok(sent) =
+                timeout(Duration::from_millis(500), stream.send_data(chunk.clone())).await
+            {
+                sent.expect("DATA");
+                written += chunk.len();
+            }
+            let _ = written_tx.send(written);
+            std::future::pending::<()>().await;
+        }
+    });
+
+    let mut body = client
+        .send_fixed(request(Method::GET, "/credit"), Bytes::new())
+        .await
+        .expect("response");
+    let mut downloaded = vec![0; READ];
+    timeout(Duration::from_secs(20), body.read_exact(&mut downloaded))
+        .await
+        .expect("download in time")
+        .expect("download");
+    let written = timeout(Duration::from_secs(20), written_rx)
+        .await
+        .expect("server runs out of credit")
+        .expect("written bytes");
+    handler.abort();
+    relay.abort();
+    written - READ
+}
+
 /// Forwards UDP between one client and `server`, delaying each datagram.
 async fn udp_delay_relay(server: SocketAddr, delay: Duration) -> (SocketAddr, JoinHandle<()>) {
     let front = Arc::new(
@@ -2103,7 +2181,8 @@ fn default_quic_diagnostics_expose_static_window_approximation() {
     assert_eq!(config.max_connection_receive_window, None);
     assert_eq!(diagnostics.stream_receive_window, 2 * 1024 * 1024);
     assert_eq!(diagnostics.connection_receive_window, 3 * 1024 * 1024);
-    assert!(!diagnostics.adaptive_receive_windows);
+    // Downloads grow toward Xray's 6 MiB / 15 MiB on a standard host.
+    assert!(diagnostics.adaptive_receive_windows);
 }
 
 #[test]
@@ -2130,9 +2209,11 @@ fn unsupported_quic_parity_modes_fail_closed() {
 
     config.version = H3QuicVersion::V1;
     config.max_stream_receive_window = Some(6 * 1024 * 1024);
+    assert!(config.diagnostics().is_ok());
+    config.max_stream_receive_window = Some(1024 * 1024);
     assert!(matches!(
         config.diagnostics(),
-        Err(H3Error::UnsupportedAdaptiveReceiveWindows { .. })
+        Err(H3Error::ReceiveWindowMaximumBelowInitial { .. })
     ));
 
     config.max_stream_receive_window = None;

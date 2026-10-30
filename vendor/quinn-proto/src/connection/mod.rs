@@ -1463,6 +1463,14 @@ impl Connection {
         }
     }
 
+    /// Grows [`TransportConfig::stream_receive_window()`] for open and new
+    /// streams; a smaller value is ignored. The peer learns the larger window
+    /// from the next MAX_STREAM_DATA, which a read sends once it frees an
+    /// eighth of the window.
+    pub fn set_stream_receive_window(&mut self, window: VarInt) {
+        self.streams.set_stream_receive_window(window.into());
+    }
+
     fn on_ack_received(
         &mut self,
         now: Instant,

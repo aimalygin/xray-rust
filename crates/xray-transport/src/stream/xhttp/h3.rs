@@ -28,7 +28,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep_until, Instant};
 
 use crate::{
-    canonicalize_socket_addr, HappyEyeballsConfig, SocketHandle, SocketProtector, TransportError,
+    canonicalize_socket_addr, memory_class, HappyEyeballsConfig, MemoryClass, SocketHandle,
+    SocketProtector, TransportError,
 };
 
 const QUIC_V1: u32 = 0x0000_0001;
@@ -38,6 +39,13 @@ const MAX_RESPONSE_BATCH_BYTES: usize = 16 * 1024;
 const MAX_RESPONSE_BATCH_CHUNKS: usize = 16;
 const XRAY_INITIAL_STREAM_RECEIVE_WINDOW: u64 = 2 * 1024 * 1024;
 const XRAY_INITIAL_CONNECTION_RECEIVE_WINDOW: u64 = 3 * 1024 * 1024;
+/// apernet/quic-go's receive window ceilings, which Xray's XHTTP H3 dialer
+/// keeps when `quicParams` sets none (`internal/protocol/params.go`).
+const XRAY_MAX_STREAM_RECEIVE_WINDOW: u64 = 6 * 1024 * 1024;
+const XRAY_MAX_CONNECTION_RECEIVE_WINDOW: u64 = 15 * 1024 * 1024;
+/// quic-go keeps a connection window of at least 1.5 stream windows
+/// (`ConnectionFlowControlMultiplier`).
+const CONNECTION_FLOW_CONTROL_MULTIPLIER: f64 = 1.5;
 const XRAY_BBR_INITIAL_WINDOW: u64 = 32 * 1280;
 
 type H3SendRequest = client::SendRequest<h3_quinn::OpenStreams, Bytes>;
@@ -79,12 +87,11 @@ pub struct H3UdpHopConfig {
 
 /// QUIC transport settings supported by the phase-one engine.
 ///
-/// Xray/quic-go normally auto-tunes its receive windows from the configured
-/// initial values (2 MiB per stream and 3 MiB per connection) up to larger
-/// maxima. Quinn does not expose equivalent receive-window auto-tuning. A
-/// `None` maximum therefore means the deliberate phase-one approximation of a
-/// static window at the corresponding initial value; it does not claim
-/// adaptive-window parity. Supplying a distinct maximum fails closed.
+/// Xray/quic-go auto-tunes its receive windows from the configured initial
+/// values (2 MiB per stream and 3 MiB per connection) up to larger maxima, and
+/// [`QuicReceiveWindows`] does the same for XHTTP downloads. A `None` maximum
+/// is Xray's default, 6 MiB and 15 MiB, on a [`MemoryClass::Standard`] host;
+/// a constrained host keeps such windows at their initial size.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct H3QuicConfig {
     pub version: H3QuicVersion,
@@ -128,9 +135,8 @@ impl Default for H3QuicConfig {
 
 /// Stable facts callers can log when selecting the phase-one H3 path.
 ///
-/// `adaptive_receive_windows == false` is an explicit compatibility
-/// diagnostic: the reported window sizes are fixed Quinn limits, not
-/// quic-go's auto-tuned maxima.
+/// The reported window sizes are the initial ones; `adaptive_receive_windows`
+/// says whether XHTTP downloads may grow them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct H3Diagnostics {
     pub quic_version: u32,
@@ -144,9 +150,8 @@ pub struct H3Diagnostics {
 impl H3QuicConfig {
     /// Validates phase-one parity limits without opening a socket.
     ///
-    /// The default reports static 2 MiB/3 MiB receive windows and
-    /// `adaptive_receive_windows == false`. Explicit adaptive maxima are
-    /// rejected instead of being silently reduced to those static limits.
+    /// The default reports initial 2 MiB/3 MiB receive windows. A maximum
+    /// below its initial window is rejected.
     pub fn diagnostics(&self) -> Result<H3Diagnostics, H3Error> {
         if let Some(noise) = &self.udp_noise {
             noise.validate().map_err(H3Error::UdpSocket)?;
@@ -158,12 +163,12 @@ impl H3QuicConfig {
         }
         if self
             .max_stream_receive_window
-            .is_some_and(|maximum| maximum != self.initial_stream_receive_window)
+            .is_some_and(|maximum| maximum < self.initial_stream_receive_window)
             || self
                 .max_connection_receive_window
-                .is_some_and(|maximum| maximum != self.initial_connection_receive_window)
+                .is_some_and(|maximum| maximum < self.initial_connection_receive_window)
         {
-            return Err(H3Error::UnsupportedAdaptiveReceiveWindows {
+            return Err(H3Error::ReceiveWindowMaximumBelowInitial {
                 initial_stream: self.initial_stream_receive_window,
                 max_stream: self.max_stream_receive_window,
                 initial_connection: self.initial_connection_receive_window,
@@ -204,9 +209,34 @@ impl H3QuicConfig {
             congestion,
             stream_receive_window: self.initial_stream_receive_window,
             connection_receive_window: self.initial_connection_receive_window,
-            adaptive_receive_windows: false,
+            adaptive_receive_windows: self.receive_windows(memory_class()).is_some(),
             udp_hop: false,
         })
+    }
+
+    /// The download window tuning for a host of `class`, or `None` when no
+    /// window may grow past its initial size.
+    fn receive_windows(&self, class: MemoryClass) -> Option<QuicReceiveWindows> {
+        let maximum = |configured: Option<u64>, xray: u64, initial: u64| {
+            configured.unwrap_or(match class {
+                MemoryClass::Standard => xray.max(initial),
+                MemoryClass::Constrained => initial,
+            })
+        };
+        QuicReceiveWindows::new(
+            self.initial_stream_receive_window,
+            self.initial_connection_receive_window,
+            maximum(
+                self.max_stream_receive_window,
+                XRAY_MAX_STREAM_RECEIVE_WINDOW,
+                self.initial_stream_receive_window,
+            ),
+            maximum(
+                self.max_connection_receive_window,
+                XRAY_MAX_CONNECTION_RECEIVE_WINDOW,
+                self.initial_connection_receive_window,
+            ),
+        )
     }
 }
 
@@ -243,9 +273,9 @@ pub enum H3Error {
     #[error("QUIC version {requested:?} is not implemented; phase one is fail-closed on v1")]
     UnsupportedQuicVersion { requested: H3QuicVersion },
     #[error(
-        "adaptive QUIC receive windows are unsupported (stream {initial_stream}/{max_stream:?}, connection {initial_connection}/{max_connection:?})"
+        "a QUIC receive window maximum is below its initial size (stream {initial_stream}/{max_stream:?}, connection {initial_connection}/{max_connection:?})"
     )]
-    UnsupportedAdaptiveReceiveWindows {
+    ReceiveWindowMaximumBelowInitial {
         initial_stream: u64,
         max_stream: Option<u64>,
         initial_connection: u64,
@@ -328,12 +358,19 @@ struct H3ConnectionDriver {
     endpoint: Endpoint,
     connection: quinn::Connection,
     send_window: QuicSendWindow,
+    receive_windows: Option<QuicReceiveWindows>,
     task: JoinHandle<h3::error::ConnectionError>,
 }
 
 impl H3ConnectionDriver {
     fn grow_send_window(&self) {
         self.send_window.grow(&self.connection);
+    }
+
+    fn record_download(&self, bytes: usize) {
+        if let Some(windows) = &self.receive_windows {
+            windows.on_read(bytes, &self.connection);
+        }
     }
 }
 
@@ -373,6 +410,80 @@ impl QuicSendWindow {
             self.0.store(target, Ordering::Relaxed);
         }
     }
+}
+
+/// quic-go's receive window auto-tuning for one XHTTP connection's download.
+///
+/// quic-go doubles a stream's window when its reader consumed more than half
+/// of it within four round trips scaled by that fraction, and keeps the
+/// connection window at 1.5 stream windows at least (`maybeAdjustWindowSize`,
+/// `internal/flowcontrol/base_flow_controller.go`). The epoch here spans the
+/// connection; an XHTTP connection carries one download.
+pub(crate) struct QuicReceiveWindows {
+    max_stream: u64,
+    max_connection: u64,
+    tuning: Mutex<ReceiveTuning>,
+}
+
+struct ReceiveTuning {
+    stream: u64,
+    connection: u64,
+    read: u64,
+    epoch_offset: u64,
+    epoch_start: std::time::Instant,
+}
+
+impl QuicReceiveWindows {
+    fn new(
+        initial_stream: u64,
+        initial_connection: u64,
+        max_stream: u64,
+        max_connection: u64,
+    ) -> Option<Self> {
+        (max_stream > initial_stream || max_connection > initial_connection).then(|| Self {
+            max_stream,
+            max_connection,
+            tuning: Mutex::new(ReceiveTuning {
+                stream: initial_stream,
+                connection: initial_connection,
+                read: 0,
+                epoch_offset: 0,
+                epoch_start: std::time::Instant::now(),
+            }),
+        })
+    }
+
+    /// Counts `bytes` read from the download and grows the windows when the
+    /// reader consumed half the stream window too quickly.
+    fn on_read(&self, bytes: usize, connection: &quinn::Connection) {
+        let mut tuning = lock_unpoisoned(&self.tuning);
+        tuning.read += bytes as u64;
+        let in_epoch = tuning.read - tuning.epoch_offset;
+        let rtt = connection.rtt();
+        if in_epoch <= tuning.stream / 2 || rtt.is_zero() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let fraction = in_epoch as f64 / tuning.stream as f64;
+        if now.duration_since(tuning.epoch_start) < rtt.mul_f64(4.0 * fraction)
+            && tuning.stream < self.max_stream
+        {
+            tuning.stream = (tuning.stream * 2).min(self.max_stream);
+            connection.set_stream_receive_window(varint(tuning.stream));
+            let wanted = ((tuning.stream as f64 * CONNECTION_FLOW_CONTROL_MULTIPLIER) as u64)
+                .min(self.max_connection);
+            if wanted > tuning.connection {
+                tuning.connection = wanted;
+                connection.set_receive_window(varint(wanted));
+            }
+        }
+        tuning.epoch_start = now;
+        tuning.epoch_offset = tuning.read;
+    }
+}
+
+fn varint(value: u64) -> VarInt {
+    VarInt::from_u64(value).unwrap_or(VarInt::MAX)
 }
 
 impl Drop for H3ConnectionDriver {
@@ -496,6 +607,7 @@ impl H3Client {
 
 /// Connects one protected UDP destination and starts its HTTP/3 driver.
 pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
+    let receive_windows = config.quic.receive_windows(memory_class());
     let (endpoint, connection, diagnostics) = connect_quic_transport(config, b"h3").await?;
     let (mut h3_connection, send_request) =
         client::new(h3_quinn::Connection::new(connection.clone()))
@@ -506,6 +618,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
         endpoint,
         connection,
         send_window: QuicSendWindow::new(),
+        receive_windows,
         task,
     });
 
@@ -949,6 +1062,7 @@ async fn drive_response(
         &mut cancellation,
         &mut headers,
         &body,
+        &shared.driver,
     )
     .await;
 
@@ -969,6 +1083,7 @@ async fn drive_response_inner(
     cancellation: &mut watch::Receiver<bool>,
     headers: &mut Option<oneshot::Sender<Result<HeaderMap, H3Error>>>,
     body: &mpsc::Sender<BodyEvent>,
+    driver: &H3ConnectionDriver,
 ) -> Result<(), H3Error> {
     let response = tokio::select! {
         biased;
@@ -1010,6 +1125,7 @@ async fn drive_response_inner(
                 break;
             };
             pending = data.copy_to_bytes(data.remaining());
+            driver.record_download(pending.len());
         }
         let first = pending.split_to(pending.len().min(MAX_RESPONSE_BATCH_BYTES));
         let mut combined: Option<BytesMut> = None;
@@ -1038,6 +1154,7 @@ async fn drive_response_inner(
                 }
                 Poll::Ready(Ok(Some(mut data))) => {
                     pending = data.copy_to_bytes(data.remaining());
+                    driver.record_download(pending.len());
                     let take = pending.len().min(MAX_RESPONSE_BATCH_BYTES - length);
                     if take != 0 {
                         let buffer = combined.get_or_insert_with(|| {

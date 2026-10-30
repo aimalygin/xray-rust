@@ -863,6 +863,12 @@ impl StreamsState {
         self.send_window = send_window;
     }
 
+    /// Grows the window each receive stream offers. Credit already sent is
+    /// kept, and the window never shrinks: a smaller value is ignored.
+    pub(crate) fn set_stream_receive_window(&mut self, window: u64) {
+        self.stream_receive_window = self.stream_receive_window.max(window);
+    }
+
     /// Set the receive_window and returns whether the receive_window has been
     /// expanded or shrunk: true if expanded, false if shrunk.
     pub(crate) fn set_receive_window(&mut self, receive_window: VarInt) -> bool {
@@ -1048,6 +1054,43 @@ mod tests {
         assert!(should_transmit.0);
         assert!(pending.max_stream_id[Dir::Uni as usize]);
         assert_eq!(client.local_max_data - initial_max, MESSAGE_SIZE as u64);
+    }
+
+    #[test]
+    fn a_grown_stream_window_is_offered_on_the_next_read() {
+        let mut client = make(Side::Client);
+        let id = StreamId::new(Side::Server, Dir::Uni, 0);
+        let mut pending = Retransmits::default();
+
+        for offset in [0, 2048] {
+            if offset == 2048 {
+                client.set_stream_receive_window(4 * 1024 * 1024);
+                client.set_stream_receive_window(64 * 1024);
+                assert_eq!(client.stream_receive_window, 4 * 1024 * 1024);
+            }
+            let _ = client
+                .received(
+                    frame::Stream {
+                        id,
+                        offset,
+                        fin: false,
+                        data: Bytes::from_static(&[0; 2048]),
+                    },
+                    2048,
+                )
+                .unwrap();
+            let mut recv = RecvStream {
+                id,
+                state: &mut client,
+                pending: &mut pending,
+            };
+            let mut chunks = recv.read(true).unwrap();
+            assert_eq!(chunks.next(2048).unwrap().unwrap().bytes.len(), 2048);
+            let _ = chunks.finalize();
+            // An eighth of the 1 MiB window was not read yet; the grown window
+            // makes the update worth sending.
+            assert_eq!(pending.max_stream_data.contains(&id), offset == 2048);
+        }
     }
 
     #[test]

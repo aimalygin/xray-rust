@@ -8,4 +8,7 @@ The connection driver yields after its datagram counter reaches 64 instead of 20
 A final GSO group may exceed that threshold by up to nine datagrams.
 The quantum remains finite; socket backpressure and the congestion controller
 still bound sends. This reduces connection-lock and task scheduling handoffs.
+`Connection::set_stream_receive_window` forwards to quinn-proto's setter of the
+same name, which grows the window every receive stream offers.
+
 All other source is unchanged. Apply XRAY-PATCH.diff with zero fuzz.
