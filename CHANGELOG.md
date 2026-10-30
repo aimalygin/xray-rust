@@ -15,6 +15,10 @@ long-term supported release series.
   or is lost, the control worker reads its current state and offers it as a
   candidate, so another network reporting first neither requests rebind nor
   moves a policy that keeps the previous carrier (#89).
+- Android: `XrayNetworkChangeCoordinator` works on API 24-25. Before Android O
+  `onAvailable` is not followed by capability or link-property callbacks, so
+  networks never became candidates and migrations were silently missed; the
+  coordinator now reads a network's current state once in `onAvailable` there.
 
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.

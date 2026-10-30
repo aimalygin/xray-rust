@@ -295,8 +295,11 @@ Return only a supplied candidate, after applying the policy, or `null` when no
 carrier is usable. Errors are reported without requesting rebind. Callback
 metadata is used directly, following Android's
 [NetworkCallback ordering contract](https://developer.android.com/reference/android/net/ConnectivityManager.NetworkCallback);
-the helper does not synchronously query network properties from `onAvailable`.
-API 29+ also waits for the initial blocked-status callback. Android reports
+the helper does not synchronously query network properties from `onAvailable`
+on API 26+. Before API 26 Android follows `onAvailable` with no capability or
+link-property callback until a value changes, so there the helper reads the
+network's current state once in `onAvailable`; later change callbacks replace
+it. API 29+ also waits for the initial blocked-status callback. Android reports
 existing networks one at a time, so until the network passed to `start` reports
 its own callbacks or is lost, the control worker reads its current capabilities
 and link properties and offers it as a candidate; a network that is already

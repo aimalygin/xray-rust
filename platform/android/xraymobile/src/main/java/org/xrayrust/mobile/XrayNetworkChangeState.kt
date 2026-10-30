@@ -48,7 +48,11 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
     private val onResult: (XrayNetworkRebindResult) -> Unit,
     private val onError: (Exception) -> Unit,
     private val waitForBlockedCallback: Boolean = false,
-    // Queried on the control worker, never from a callback; null when the network is gone.
+    // Before Android O nothing follows onAvailable until a value changes, so availability reads
+    // the network's current state once instead of waiting for metadata that may never arrive.
+    private val seedOnAvailable: Boolean = false,
+    // Null when the network is gone. Queried on the control worker, and from onAvailable only
+    // when seedOnAvailable is set.
     private val currentObservation: (N) -> XrayNetworkObservation<N, C, P>? = { null },
 ) : Closeable {
     // Also fences in-flight work: close returns only after a running policy/rebind call ends.
@@ -124,8 +128,15 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
     }
 
     private fun events(session: Session) = object : XrayNetworkEvents<N, C, P> {
-        override fun available(network: N) = change(session) {
-            session.networks.getOrPut(network) { Entry() }
+        override fun available(network: N) {
+            val seed = if (seedOnAvailable) currentObservation(network) else null
+            change(session) {
+                val entry = session.networks.getOrPut(network) { Entry() }
+                if (seed != null) record(session, network, entry) {
+                    it.capabilities = it.capabilities ?: seed.capabilities
+                    it.properties = it.properties ?: seed.properties
+                }
+            }
         }
 
         override fun capabilities(network: N, capabilities: C) = update(session, network) {
@@ -149,7 +160,10 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
 
     private fun update(session: Session, network: N, update: (Entry) -> Unit) = change(session) {
         // Late capability/property callbacks cannot resurrect a network after onLost.
-        val entry = session.networks[network] ?: return@change
+        session.networks[network]?.let { record(session, network, it, update) }
+    }
+
+    private fun record(session: Session, network: N, entry: Entry, update: (Entry) -> Unit) {
         val before = entry.observation(network)
         update(entry)
         if (session.unreportedInitial == network && entry.settled) session.unreportedInitial = null
