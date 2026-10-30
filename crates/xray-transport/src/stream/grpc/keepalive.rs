@@ -301,7 +301,9 @@ impl Drop for OpenCall {
 
 /// Everything one connection's ping loop needs.
 pub(super) struct Pings {
-    pub(super) ping_pong: h2::PingPong,
+    /// Shared with the BDP loop ([`super::bdp`]): h2 allows one user PING in
+    /// flight, so whichever loop pings first holds the handle until its ACK.
+    pub(super) ping_pong: Arc<tokio::sync::Mutex<h2::PingPong>>,
     pub(super) keepalive: GrpcKeepalive,
     pub(super) last_read: Arc<LastRead>,
     pub(super) calls: Arc<OpenCalls>,
@@ -334,7 +336,7 @@ impl Pings {
     /// `poll_pong` — both `#[doc(hidden)]` in h2 — by hand for a peer that is
     /// alive and specifically refuses to answer pings, which is not a peer
     /// anything in the population is.
-    pub(super) async fn run(mut self) {
+    pub(super) async fn run(self) {
         // grpc-go opens with `prevNano = time.Now()`. The stamp is the same
         // instant on a connection nothing has been read on yet, and on one
         // where the server's SETTINGS have already landed it reaches the same
@@ -353,8 +355,12 @@ impl Pings {
                 self.calls.wait_for_one().await;
             }
 
-            let pong =
-                tokio::time::timeout(self.keepalive.timeout, self.ping_pong.ping(Ping::opaque()));
+            // The timeout covers waiting out a BDP PING too: its ACK is at
+            // most a round trip away, and a peer that answers neither is the
+            // dead connection this loop exists to find.
+            let pong = tokio::time::timeout(self.keepalive.timeout, async {
+                self.ping_pong.lock().await.ping(Ping::opaque()).await
+            });
             if !matches!(pong.await, Ok(Ok(_))) {
                 return;
             }

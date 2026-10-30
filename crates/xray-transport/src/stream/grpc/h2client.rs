@@ -14,15 +14,19 @@
 //! and it needs the request built before it decides anything about a
 //! connection.
 
+use std::future::{poll_fn, Future};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::Bytes;
 use h2::client::{self, SendRequest};
 use http::uri::Scheme;
 use http::{Method, Request, Uri, Version};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
+use super::bdp::{connection_window_for, BdpEstimator, BdpPings, BdpSampler, BDP_LIMIT};
 use super::config::{resolve_keepalive, GrpcConfig};
 use super::framing::HunkMode;
 use super::keepalive::{OpenCalls, Pings, WatchedIo};
@@ -67,9 +71,10 @@ const DEFAULT_WINDOW_SIZE: u32 = 65535;
 /// 27-30`), so it is the largest connection window a grpc-go client under
 /// Xray ever reaches rather than a number of our own. It costs no memory: what
 /// a peer can make us buffer is bounded by the sum of the *stream* windows —
-/// [`DEFAULT_WINDOW_SIZE`] each unless `initialWindowsSize` raises them — and
-/// this only stops the connection window being the binding constraint. At the
-/// default it takes 256 stalled flows at once to bind it again.
+/// [`DEFAULT_WINDOW_SIZE`] each until `initialWindowsSize` or [`super::bdp`]
+/// raises them — and this only stops the connection window being the binding
+/// constraint. At the opening window it takes 256 stalled flows at once to
+/// bind it again, and never fewer than sixteen as the windows grow.
 ///
 /// **It is a constant, and does not move with `initialWindowsSize`.** Deriving
 /// one from the other would put an unbounded config number on a path that can
@@ -104,11 +109,11 @@ const DEFAULT_WINDOW_SIZE: u32 = 65535;
 /// would set the flag (`grpc@v1.81.0/dialoptions.go:213-218`). So grpc-go's
 /// BDP estimator is live (`http2_client.go:386-391`) and grows both the
 /// connection window and the stream window mid-connection, up to that same
-/// 16 MiB (`updateFlowControl`, `http2_client.go:1162-1180`). Never
-/// growing the connection window is therefore *also* a divergence from the
-/// client we are imitating, just a later and quieter one. The choice taken is
-/// an earlier, smaller, constant divergence — one extra frame in the preamble —
-/// over a starvation bug and a per-outbound throughput ceiling.
+/// 16 MiB (`updateFlowControl`, `http2_client.go:1162-1180`). [`super::bdp`]
+/// reproduces that growth and keeps this window at sixteen stream windows as
+/// they grow. Opening at 16 MiB instead of 65535 remains an earlier, smaller,
+/// constant divergence — one extra frame in the preamble — taken over a
+/// starvation bug while the estimate warms up.
 const CONNECTION_WINDOW_SIZE: u32 = 16 * 1024 * 1024;
 
 /// The spawned task that drives one HTTP/2 connection.
@@ -154,6 +159,9 @@ pub(crate) struct H2Connection {
     /// Shared with the keepalive, which pings only a connection that has one —
     /// see [`super::keepalive`].
     calls: Arc<OpenCalls>,
+    /// Where every call on the connection counts the DATA it reads, unless
+    /// `initialWindowsSize` pinned the windows — see [`super::bdp`].
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 impl H2Connection {
@@ -219,9 +227,10 @@ impl H2ConnectionIdleWatch {
 /// A second effect is worth not conflating with those three:
 /// `WithInitialWindowSize` also sets `StaticWindowSize`
 /// (`grpc@v1.81.0/dialoptions.go:213-218`), which switches off grpc-go's BDP
-/// estimator (`http2_client.go:386-391`) and the WINDOW_UPDATEs it would send
-/// as the connection warms up. Reproducing BDP pings is outside the parity bar
-/// and is not attempted either way.
+/// estimator (`http2_client.go:386-391`) and the window growth it would send
+/// as the connection warms up. So any `initialWindowsSize` above zero, even one
+/// too small to change the window, pins the windows here too; at zero
+/// [`super::bdp`] grows them.
 ///
 /// `initial_connection_window_size` is set, and it is the one place this
 /// transport knowingly steps outside grpc-go's opening burst. It is not a
@@ -264,40 +273,73 @@ pub(crate) async fn h2_handshake(
         .map_err(|error| grpc_error("http/2 handshake failed", &error))?;
 
     let calls = Arc::new(OpenCalls::default());
-    let pings = keepalive.zip(last_read).and_then(|(keepalive, last_read)| {
-        connection.ping_pong().map(|ping_pong| Pings {
+    // One handle for both loops: h2 allows a single user PING in flight.
+    let ping_pong = connection
+        .ping_pong()
+        .map(|ping_pong| Arc::new(Mutex::new(ping_pong)));
+    let pings = keepalive.zip(last_read).zip(ping_pong.clone()).map(
+        |((keepalive, last_read), ping_pong)| Pings {
             ping_pong,
             keepalive,
             last_read,
             calls: Arc::clone(&calls),
-        })
-    });
+        },
+    );
+    let bdp_pings = ping_pong
+        .filter(|_| config.initial_windows_size == 0)
+        .map(|ping_pong| BdpPings {
+            sampler: Arc::default(),
+            ping_pong,
+            estimator: BdpEstimator::new(DEFAULT_WINDOW_SIZE, BDP_LIMIT),
+        });
+    let bdp = bdp_pings.as_ref().map(|pings| Arc::clone(&pings.sampler));
 
     let driver = Arc::new(H2ConnectionDriver {
-        task: tokio::spawn(drive(connection, pings)),
+        task: tokio::spawn(drive(connection, pings, bdp_pings)),
     });
     Ok(H2Connection {
         send_request,
         driver,
         calls,
+        bdp,
     })
 }
 
-/// Polls the connection, and pings it if keepalive was configured.
+/// Polls the connection, pings it if keepalive was configured, and grows its
+/// windows as the BDP estimate grows.
 ///
-/// The two run in one task because neither works without the other: a `Ping`
-/// is written and its `Pong` read by the connection being polled, so a
-/// keepalive on a task of its own would wait for an acknowledgement nothing
-/// was moving. Losing the race also has to end the connection — grpc-go treats
-/// an unacknowledged ping as a connection error, "keepalive ping failed to
+/// They run in one task because none works without the connection being
+/// polled: a `Ping` is written and its `Pong` read by the connection, and a
+/// grown window can be applied only through the `Connection` itself. Losing
+/// the keepalive race also has to end the connection — grpc-go treats an
+/// unacknowledged ping as a connection error, "keepalive ping failed to
 /// receive ACK within timeout" (`http2_client.go:1754-1757`) — and dropping
 /// the `Connection` out of the `select!` is exactly that.
 async fn drive(
-    connection: client::Connection<WatchedIo, Bytes>,
+    mut connection: client::Connection<WatchedIo, Bytes>,
     pings: Option<Pings>,
+    bdp: Option<BdpPings>,
 ) -> Result<(), h2::Error> {
-    let Some(pings) = pings else {
-        return connection.await;
+    let sampler = bdp.as_ref().map(|bdp| Arc::clone(&bdp.sampler));
+    let connection = poll_fn(move |cx| {
+        if let Some(sampler) = &sampler {
+            if let Some(window) = sampler.take_window(cx.waker()) {
+                grow_windows(&mut connection, window, sampler);
+            }
+        }
+        Pin::new(&mut connection).poll(cx)
+    });
+    let keepalive = async move {
+        match pings {
+            Some(pings) => pings.run().await,
+            None => std::future::pending().await,
+        }
+    };
+    let bdp = async move {
+        match bdp {
+            Some(bdp) => bdp.run().await,
+            None => std::future::pending().await,
+        }
     };
 
     tokio::select! {
@@ -305,7 +347,24 @@ async fn drive(
         // The pool asks `is_finished`, not what the task returned, so a
         // keepalive that gave up retires the connection just as an error
         // would — see `H2ConnectionDriver`.
-        () = pings.run() => Ok(()),
+        () = keepalive => Ok(()),
+        () = bdp => Ok(()),
+    }
+}
+
+/// Applies a grown window as grpc-go's `updateFlowControl` does: the
+/// connection window first, then `SETTINGS_INITIAL_WINDOW_SIZE` for every
+/// stream (`grpc@v1.84.0/internal/transport/http2_client.go:1186-1205`).
+fn grow_windows(
+    connection: &mut client::Connection<WatchedIo, Bytes>,
+    window: u32,
+    sampler: &BdpSampler,
+) {
+    connection.set_target_window_size(connection_window_for(window, CONNECTION_WINDOW_SIZE));
+    // h2 refuses a SETTINGS while our previous one is unacknowledged. Reading
+    // its ACK polls the connection again, which retries.
+    if connection.set_initial_window_size(window).is_err() {
+        sampler.defer_window(window);
     }
 }
 
@@ -481,6 +540,7 @@ pub(crate) async fn open_grpc_call(
         call.mode,
         Arc::clone(&connection.driver),
         connection.calls.open(),
+        connection.bdp.clone(),
     ))
 }
 

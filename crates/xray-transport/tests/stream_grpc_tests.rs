@@ -689,8 +689,9 @@ mod stream_grpc_h2_tests {
     use h2::server::{self, SendResponse};
     use h2::{RecvStream, SendStream};
     use http::{HeaderMap, HeaderValue, Method, Response, StatusCode};
-    use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
-    use tokio::sync::oneshot;
+    use tokio::io::{duplex, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
+    use tokio::sync::{mpsc, oneshot};
+    use tokio::time::Instant;
     use xray_transport::stream::grpc_test_only::{
         encode_hunk, open_grpc_h2_stream, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
     };
@@ -742,7 +743,14 @@ mod stream_grpc_h2_tests {
     }
 
     async fn open_dialling(io: DuplexStream, user_agent: &str, multi_mode: bool) -> GrpcStream {
-        let config = GrpcConfig {
+        let config = dial_config(user_agent, multi_mode);
+        open_grpc_h2_stream(Box::new(io) as BoxedTransportStream, &config)
+            .await
+            .expect("the POST opens")
+    }
+
+    fn dial_config(user_agent: &str, multi_mode: bool) -> GrpcConfig {
+        GrpcConfig {
             service_name: SERVICE_NAME.to_owned(),
             multi_mode,
             authority: AUTHORITY.parse().expect("a literal authority"),
@@ -751,10 +759,7 @@ mod stream_grpc_h2_tests {
             health_check_timeout_secs: 0,
             permit_without_stream: false,
             initial_windows_size: 0,
-        };
-        open_grpc_h2_stream(Box::new(io) as BoxedTransportStream, &config)
-            .await
-            .expect("the POST opens")
+        }
     }
 
     fn trailers(status: &str) -> HeaderMap {
@@ -1401,6 +1406,95 @@ mod stream_grpc_h2_tests {
         })
         .await;
         uplink.await.expect("the uplink task finishes");
+    }
+
+    /// Two pipes joined by a relay that holds every byte for `one_way` in each
+    /// direction: a long link without a network.
+    fn delayed_link(one_way: Duration) -> (DuplexStream, DuplexStream) {
+        let (client, client_side) = duplex(1 << 20);
+        let (server_side, server) = duplex(1 << 20);
+        let (client_read, client_write) = tokio::io::split(client_side);
+        let (server_read, server_write) = tokio::io::split(server_side);
+        tokio::spawn(delay(client_read, server_write, one_way));
+        tokio::spawn(delay(server_read, client_write, one_way));
+        (client, server)
+    }
+
+    async fn delay(
+        mut from: impl AsyncRead + Unpin,
+        mut to: impl AsyncWrite + Unpin + Send + 'static,
+        one_way: Duration,
+    ) {
+        let (queue, mut queued) = mpsc::unbounded_channel::<(Instant, Vec<u8>)>();
+        let writer = tokio::spawn(async move {
+            while let Some((due, bytes)) = queued.recv().await {
+                tokio::time::sleep_until(due).await;
+                if to.write_all(&bytes).await.is_err() {
+                    return;
+                }
+            }
+        });
+        let mut buffer = vec![0u8; 64 * 1024];
+        while let Ok(read @ 1..) = from.read(&mut buffer).await {
+            let _ = queue.send((Instant::now() + one_way, buffer[..read].to_vec()));
+        }
+        drop(queue);
+        let _ = writer.await;
+    }
+
+    /// Reads a 4 MiB downlink over a 40 ms round trip and returns how long it
+    /// took on the paused clock, from the open call to the last byte.
+    async fn download_over_a_long_link(initial_windows_size: u32) -> Duration {
+        const SIZE: usize = 4 * 1024 * 1024;
+
+        let (client_io, server_io) = delayed_link(Duration::from_millis(20));
+        let payload: Vec<u8> = (0..SIZE).map(|index| (index % 251) as u8).collect();
+        let messages: Vec<&[u8]> = payload.chunks(64 * 1024).collect();
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&messages), trailers("0")),
+        ));
+
+        let mut config = dial_config(USER_AGENT, false);
+        config.initial_windows_size = initial_windows_size;
+        let mut stream = within_deadline(open_grpc_h2_stream(
+            Box::new(client_io) as BoxedTransportStream,
+            &config,
+        ))
+        .await
+        .expect("the POST opens");
+
+        let started = Instant::now();
+        let mut received = vec![0u8; SIZE];
+        within_deadline(stream.read_exact(&mut received))
+            .await
+            .expect("downlink read");
+        assert_eq!(received, payload);
+        started.elapsed()
+    }
+
+    /// The stream window grows with the link, as grpc-go's BDP estimator grows
+    /// it, rather than holding the flow to 64 KiB per round trip.
+    ///
+    /// At the static 65,535-byte window 4 MiB needs 64 round trips, 2.56 s. A
+    /// window that doubles every round trip needs fewer than ten.
+    #[tokio::test(start_paused = true)]
+    async fn a_long_link_grows_the_stream_window() {
+        let elapsed = download_over_a_long_link(0).await;
+
+        assert!(elapsed < Duration::from_secs(1), "4 MiB took {elapsed:?}");
+    }
+
+    /// Any `initialWindowsSize` pins the windows, because it sets grpc-go's
+    /// `StaticWindowSize`, even when it is too small to change the window.
+    #[tokio::test(start_paused = true)]
+    async fn an_explicit_initial_window_size_keeps_the_window_static() {
+        let elapsed = download_over_a_long_link(65_535).await;
+
+        assert!(
+            elapsed >= Duration::from_millis(2_560),
+            "4 MiB took {elapsed:?}"
+        );
     }
 
     /// A write bigger than one `Hunk` may carry is a short write, not a panic

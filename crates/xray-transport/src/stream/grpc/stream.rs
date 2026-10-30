@@ -23,6 +23,7 @@ use h2::{RecvStream, SendStream};
 use http::{header::CONTENT_TYPE, HeaderMap, StatusCode};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
+use super::bdp::BdpSampler;
 use super::framing::{encode_hunk, HunkDecoder, HunkMode, MAX_HUNK_PAYLOAD_LEN};
 use super::h2client::H2ConnectionDriver;
 use super::keepalive::OpenCall;
@@ -186,6 +187,9 @@ pub struct GrpcStream {
     /// way a call can end, a peer's reset and a relay dropping the tunnel
     /// mid-transfer included, ends at this struct's own drop.
     _open_call: OpenCall,
+    /// Where the DATA this call reads is counted towards the connection's
+    /// window estimate, unless `initialWindowsSize` pinned the windows.
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 impl GrpcStream {
@@ -198,6 +202,7 @@ impl GrpcStream {
         mode: HunkMode,
         driver: Arc<H2ConnectionDriver>,
         open_call: OpenCall,
+        bdp: Option<Arc<BdpSampler>>,
     ) -> Self {
         Self {
             downlink: Downlink::Awaiting(response),
@@ -217,6 +222,7 @@ impl GrpcStream {
             send_closed: false,
             driver,
             _open_call: open_call,
+            bdp,
         }
     }
 
@@ -800,6 +806,9 @@ impl AsyncRead for GrpcStream {
                     recv.flow_control()
                         .release_capacity(chunk.len())
                         .map_err(|error| h2_io_error("could not release the window", &error))?;
+                    if let Some(bdp) = &this.bdp {
+                        bdp.record_data(chunk.len());
+                    }
                     this.decoder.push(&chunk);
                     this.downlink_carried_data = true;
                 }
