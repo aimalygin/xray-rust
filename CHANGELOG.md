@@ -18,8 +18,8 @@ long-term supported release series.
   footprint on desktop and 63 MiB on mobile; they now stay near 35 and 33 MiB
   at the same speed, and duplex transfers fall from 111 to 42 MiB. Data beyond
   the limit waits in the TCP window, so applications see ordinary
-  backpressure. Such paced uploads cost about 7–9% more client CPU; faster
-  outbounds measured no change.
+  backpressure. Such paced uploads cost 7–9% more client CPU on desktop and
+  about 4.5% with the mobile profile; faster outbounds measured no change.
 - Mask WebSocket client frames without a system call per frame: mask keys come
   from the thread-local ChaCha CSPRNG instead of `getentropy` for every 4 KiB
   frame, and masking runs eight bytes at a time. Keys stay fresh and
