@@ -10,6 +10,40 @@ long-term supported release series.
 
 ## Unreleased
 
+- Grow gRPC stream receive windows with the link, as grpc-go's BDP estimator
+  does under Xray's default `grpcSettings`. Every stream kept HTTP/2's
+  65,535-byte window, which capped a flow's download at one window per round
+  trip. Windows now start there and double while a sample fills two thirds of
+  them, up to 16 MiB, or 1 MiB with the mobile and low-memory profiles; any
+  configured `initialWindowsSize` still pins them, as in grpc-go, and the
+  opening burst is unchanged. At an added 113 ms, gRPC downloads rose from
+  4.4 to 127.6 Mbit/s under a 150 Mbit/s limit (Go 127.8) and from 4.4 to
+  204.7 without one (Go 184.6).
+- Return XHTTP H2 stream credit every 4 KiB, as Go's client does, instead of
+  after about a third of the window, through a vendored h2 option. Without a
+  rate limit at an added 113 ms, XHTTP H2 downloads rose from 181.5 to
+  253.6 Mbit/s, level with Go's 253.5.
+- Let a new XHTTP H2 connection carry 100 streams before the server's
+  SETTINGS arrive, as Go's client assumes, instead of one. A packet-up flow's
+  first upload found the connection full while its download held the only
+  stream and dialed a second connection: a TLS round trip before the first
+  byte, and twice the connections per flow. At an added 113 ms such a flow now
+  reaches its first byte in 239 ms instead of 362 (Go 241) on two connections
+  per warmup and download instead of four, as Go does.
+- With the mobile and low-memory profiles, open XHTTP H2 streams at 1 MiB and
+  grow them to Go's 4 MiB only for a reader that keeps up, so a stalled
+  download pins a quarter of the memory. A configured window stays fixed.
+- Auto-tune XHTTP H3 receive windows as Xray's quic-go does, from 2 MiB per
+  stream and 3 MiB per connection up to 6 MiB and 15 MiB or the configured
+  maxima, which were rejected before. The mobile profiles keep the initial
+  windows fixed.
+- Send XHTTP H3 datagrams on a connected UDP socket on macOS, as Hysteria
+  already did: an unconnected socket looks up the route for every datagram.
+  In one profiled run of eight SOCKS uploads, throughput rose from 281 to
+  372 MiB/s and client CPU per MiB fell from 6.3 to 3.4 ms.
+- Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
+  and the migration collector can pin a Go-verified reference by SHA-256.
+
 - Bound the bytes each TUN TCP flow can queue toward its outbound: 512 KiB on
   desktop, 256 KiB with the mobile profiles and 128 KiB with `low-memory`. The
   queue was bounded only by message count, which allowed up to 8 MiB per flow

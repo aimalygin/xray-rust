@@ -117,6 +117,49 @@ these results do not justify doing that without the separate memory and
 isolation checks. No production window, dependency or TUN code was changed
 during this measurement campaign.
 
+## Re-measurement, 2026-10-30
+
+The same runner, delay line and Go client (Xray-core v26.10.21,
+`b8c58f14…`), now with `--transport grpc` as well. Each Rust build ran
+against Go in one session at an added 113 ms: four rounds for XHTTP
+(64 MiB after a 16 MiB warmup) and three for gRPC (16 MiB after 4 MiB). Rust
+`main` is `9b06d374`; the branch is `b01fcd06` for gRPC and the first XHTTP
+run, and `d1fcd45d` for the final XHTTP run. Payload throughput medians in
+Mbit/s; Go is the same session's median:
+
+| Path, condition | Rust main | Go | Rust branch | Go |
+| --- | ---: | ---: | ---: | ---: |
+| XHTTP H2, 150 Mbit/s | 140.1 | 140.1 | 144.7 | 140.0 |
+| XHTTP H2, no rate limit | 181.5 | 253.5 | 268.5 | 253.1 |
+| gRPC, 150 Mbit/s | 4.4 | 124.6 | 127.6 | 127.8 |
+| gRPC, no rate limit | 4.4 | 174.3 | 204.7 | 184.6 |
+
+Returning XHTTP H2 credit every 4 KiB closed the fast-path gap (the first
+branch run already measured 253.6 against Go's 253.5). gRPC's static
+65,535-byte window had held every download to 4.4 Mbit/s, one window per
+round trip; the BDP estimator removes that ceiling.
+
+Time to first byte from the SOCKS connect, medians in ms. The warmup opens a
+transport connection; with `maxConnections: "2-3"` the measured download also
+opens one in both engines:
+
+| Path | Rust main | Go | Rust branch | Go |
+| --- | ---: | ---: | ---: | ---: |
+| XHTTP H2, warmup | 399 | 245 | 279 | 245 |
+| XHTTP H2, measured download | 362 | 242 | 239 | 241 |
+| gRPC, warmup | 288 | 362 | 288 | 363 |
+| gRPC, measured download | 121 | 121 | 121 | 120 |
+
+On `main`, XHTTP packet-up spent one extra round trip in SOCKS setup: the
+client assumed one stream before the server's SETTINGS, so a flow's first
+upload dialed a second connection while its download held the only stream.
+`main` opened four transport connections per warmup and measured download,
+Go two. The final branch opens two, like Go, and its measured download reaches
+the first byte as early as Go's. Its warmup remains about 35 ms behind Go's,
+and its 150 Mbit/s figure is higher partly because it acknowledges SOCKS after
+the TLS handshake, which therefore falls outside its request-to-last-byte
+window while Go's falls inside it.
+
 ## Reproduce
 
 Build the Rust CLI and the pinned Go binary, then run:
@@ -129,6 +172,11 @@ python3 scripts/bench-issue28-clients.py \
   --rounds 6 --payload-mib 64 --warmup-mib 16 \
   --rtt-ms 113 --rates-mbps 150 0
 ```
+
+The 2026-10-30 re-measurement used the same command with `--rounds 4`, and
+for gRPC `--transport grpc --rounds 3 --payload-mib 16 --warmup-mib 4`. Each
+condition's summary in `results.json` also reports median throughput and the
+time to first byte for the warmup and the measured download.
 
 The output directory must be new. It retains the runner snapshot, binary
 hashes, client/server logs, generated fixture configurations, full per-run
