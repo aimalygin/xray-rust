@@ -14,7 +14,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 
 use xray_transport::stream::xhttp_h2_test_only::{
-    connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, H2Client, H2Error,
+    connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, connect_h2_with_window,
+    H2Client, H2Error, H2ReceiveWindow,
 };
 use xray_transport::{BoxedTransportStream, TransportStream};
 

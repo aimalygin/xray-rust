@@ -24,6 +24,7 @@ pub use fragment::TcpFragmentConfig;
 mod dns;
 mod happy_eyeballs;
 pub mod hysteria;
+mod memory_class;
 
 /// Validate a TLS DNS/IP verification name without performing network I/O.
 pub fn validate_tls_server_name(server_name: &str) -> Result<(), TransportError> {
@@ -49,6 +50,7 @@ pub use dns::{
     NameServerTransport, SystemDnsResolver,
 };
 pub use happy_eyeballs::{connect_tcp_happy_eyeballs, HappyEyeballsConfig};
+pub use memory_class::{memory_class, set_memory_class, MemoryClass};
 pub(crate) use penetrating_tls::{CapturedStream, PenetratingTlsStream, ServerReadLog};
 pub use reality_connector::{RealityTlsSession, RealityTlsSessionProvider};
 pub use reality_runtime::{

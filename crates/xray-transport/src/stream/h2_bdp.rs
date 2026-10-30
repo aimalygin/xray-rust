@@ -1,7 +1,7 @@
-//! Growing a connection's stream windows from what the link delivers, as
-//! grpc-go does.
+//! Growing HTTP/2 stream windows from what the link delivers, as grpc-go's BDP
+//! estimator does.
 //!
-//! Under Xray's default `grpcSettings` grpc-go's BDP estimator is live: only
+//! Under Xray's default `grpcSettings` grpc-go's estimator is live: only
 //! `WithInitialWindowSize`, which Xray attaches for an `initialWindowsSize`
 //! above zero, sets `StaticWindowSize` and turns it off
 //! (`Xray-core/transport/internet/grpc/dial.go:169-171`,
@@ -14,21 +14,25 @@
 //! `SETTINGS_INITIAL_WINDOW_SIZE` for every stream (`updateFlowControl`,
 //! `http2_client.go:1186-1205`).
 //!
-//! Without it every stream keeps HTTP/2's 65,535-byte window, which is a
+//! Without it every gRPC stream keeps HTTP/2's 65,535-byte window, which is a
 //! flow's entire downlink per round trip: about 10 Mbit/s at 50 ms and 5 at
 //! 100 ms, however fast the link.
 //!
-//! Nothing is sent before data arrives, so the opening burst is unchanged.
+//! XHTTP uses the same estimator on a [`MemoryClass::Constrained`] host, where
+//! it opens with a smaller window than Go's 4 MiB and grows to it only for a
+//! reader that keeps up (see `super::xhttp::h2`).
+//!
+//! Nothing is sent before data arrives, so an opening burst is unchanged.
 //! Two differences from grpc-go remain:
 //!
 //! - grpc-go returns connection credit as frames arrive; h2 returns it only as
-//!   streams are read. The connection window therefore grows with the stream
-//!   window to sixteen of them (see [`connection_window_for`]), so that a flow
-//!   that stops reading with a full window blocks the others only when fifteen
-//!   more have done the same.
-//! - On mobile targets the estimate stops at [`BDP_LIMIT`] = 1 MiB. Sixteen
-//!   such windows fit in the 16 MiB connection window the transport opens
-//!   with, so the memory a stalled reader can pin stays where it was.
+//!   streams are read. The gRPC connection window therefore grows with the
+//!   stream window to sixteen of them (see [`connection_window_for`]), so that
+//!   a flow that stops reading with a full window blocks the others only when
+//!   fifteen more have done the same.
+//! - On a constrained host gRPC stops at 1 MiB (see [`grpc_bdp_limit`]).
+//!   Sixteen such windows fit in the 16 MiB connection window the transport
+//!   opens with, so the memory stalled readers can pin stays where it was.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -39,27 +43,15 @@ use h2::{Ping, PingPong};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::{Duration, Instant};
 
+use crate::MemoryClass;
+
 /// grpc-go's `bdpLimit`, the largest window its estimator grows to.
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "ios",
-    target_os = "tvos",
-    target_os = "watchos"
-)))]
-pub(super) const BDP_LIMIT: u32 = 16 * 1024 * 1024;
+const GRPC_BDP_LIMIT: u32 = 16 * 1024 * 1024;
 
-/// 1 MiB is 84 Mbit/s per flow at 100 ms, against 5 at the static window, and
-/// keeps the memory sixteen stalled flows can pin inside the connection window
-/// mobile clients already had.
-#[cfg(any(
-    target_os = "android",
-    target_os = "ios",
-    target_os = "tvos",
-    target_os = "watchos"
-))]
-pub(super) const BDP_LIMIT: u32 = 1024 * 1024;
+/// 1 MiB is 84 Mbit/s per flow at 100 ms, against 5 at the static window.
+const CONSTRAINED_GRPC_BDP_LIMIT: u32 = 1024 * 1024;
 
-/// How many full stream windows the connection window holds.
+/// How many full stream windows the gRPC connection window holds.
 const STREAMS_PER_CONNECTION_WINDOW: u32 = 16;
 
 /// grpc-go's `alpha`, `beta` and `gamma` (`bdp_estimator.go`).
@@ -71,8 +63,17 @@ const GAMMA: f64 = 2.0;
 /// bandwidth finite without changing any real estimate.
 const MIN_RTT_SECS: f64 = 1e-6;
 
-/// The connection window that goes with a stream window of `stream_window`.
-pub(super) fn connection_window_for(stream_window: u32, opening_window: u32) -> u32 {
+/// The largest window gRPC's estimator grows to on a host of `class`.
+pub(crate) fn grpc_bdp_limit(class: MemoryClass) -> u32 {
+    match class {
+        MemoryClass::Standard => GRPC_BDP_LIMIT,
+        MemoryClass::Constrained => CONSTRAINED_GRPC_BDP_LIMIT,
+    }
+}
+
+/// The gRPC connection window that goes with a stream window of
+/// `stream_window`.
+pub(crate) fn connection_window_for(stream_window: u32, opening_window: u32) -> u32 {
     stream_window
         .saturating_mul(STREAMS_PER_CONNECTION_WINDOW)
         .max(opening_window)
@@ -81,7 +82,7 @@ pub(super) fn connection_window_for(stream_window: u32, opening_window: u32) -> 
 /// grpc-go's `bdpEstimator`, without the bookkeeping of when a sample starts,
 /// which [`BdpSampler`] keeps instead.
 #[derive(Debug)]
-pub(super) struct BdpEstimator {
+pub(crate) struct BdpEstimator {
     bdp: u32,
     limit: u32,
     max_bandwidth: f64,
@@ -90,7 +91,7 @@ pub(super) struct BdpEstimator {
 }
 
 impl BdpEstimator {
-    pub(super) fn new(initial_window: u32, limit: u32) -> Self {
+    pub(crate) fn new(initial_window: u32, limit: u32) -> Self {
         Self {
             bdp: initial_window,
             limit,
@@ -100,13 +101,13 @@ impl BdpEstimator {
         }
     }
 
-    pub(super) fn at_limit(&self) -> bool {
+    pub(crate) fn at_limit(&self) -> bool {
         self.bdp >= self.limit
     }
 
     /// Takes one sample, `bytes` received between a PING and its ACK `rtt`
     /// apart, and returns the new window if it grows.
-    pub(super) fn calculate(&mut self, bytes: u64, rtt: Duration) -> Option<u32> {
+    pub(crate) fn calculate(&mut self, bytes: u64, rtt: Duration) -> Option<u32> {
         self.samples += 1;
         let rtt_sample = rtt.as_secs_f64().max(MIN_RTT_SECS);
         if self.samples < 10 {
@@ -141,7 +142,7 @@ pub(crate) struct BdpSampler {
     /// Whether a PING is out, during which data extends its sample instead of
     /// starting another.
     sampling: AtomicBool,
-    /// Set once the estimate reaches its limit, after which nothing counts.
+    /// Set once sampling stops, after which nothing counts.
     finished: AtomicBool,
     data: Notify,
     /// A grown window the driver has not applied yet, or zero.
@@ -167,7 +168,7 @@ impl BdpSampler {
 
     /// Called by the driver on every poll: remembers its waker and hands over
     /// a window waiting to be applied.
-    pub(super) fn take_window(&self, waker: &Waker) -> Option<u32> {
+    pub(crate) fn take_window(&self, waker: &Waker) -> Option<u32> {
         self.driver.register(waker);
         match self.pending_window.swap(0, Ordering::Relaxed) {
             0 => None,
@@ -177,7 +178,7 @@ impl BdpSampler {
 
     /// Puts back a window the driver could not apply yet. The driver's next
     /// poll retries, so this deliberately does not wake it.
-    pub(super) fn defer_window(&self, window: u32) {
+    pub(crate) fn defer_window(&self, window: u32) {
         self.pending_window.fetch_max(window, Ordering::Relaxed);
     }
 
@@ -188,20 +189,24 @@ impl BdpSampler {
 }
 
 /// One connection's BDP ping loop.
-pub(super) struct BdpPings {
-    pub(super) sampler: Arc<BdpSampler>,
+pub(crate) struct BdpPings {
+    pub(crate) sampler: Arc<BdpSampler>,
     /// Shared with the keepalive: h2 allows one user PING in flight.
-    pub(super) ping_pong: Arc<Mutex<PingPong>>,
-    pub(super) estimator: BdpEstimator,
+    pub(crate) ping_pong: Arc<Mutex<PingPong>>,
+    pub(crate) estimator: BdpEstimator,
+    /// Stops after this many samples in a row leave the window unchanged.
+    /// grpc-go keeps sampling until its limit, so gRPC passes `None`.
+    pub(crate) idle_limit: Option<u32>,
 }
 
 impl BdpPings {
-    /// Samples until the estimate reaches its limit, then idles.
+    /// Samples until the estimate reaches its limit or settles, then idles.
     ///
     /// It never finishes, because finishing would end the connection it is
     /// driven beside.
-    pub(super) async fn run(mut self) {
-        while !self.estimator.at_limit() {
+    pub(crate) async fn run(mut self) {
+        let mut unchanged = 0;
+        while !self.estimator.at_limit() && self.idle_limit.is_none_or(|limit| unchanged < limit) {
             self.sampler.data.notified().await;
             // A keepalive PING holds the handle for at most its timeout; the
             // data that arrived meanwhile is simply not sampled.
@@ -218,8 +223,12 @@ impl BdpPings {
             if !acknowledged {
                 break;
             }
-            if let Some(window) = self.estimator.calculate(bytes, sent.elapsed()) {
-                self.sampler.offer_window(window);
+            match self.estimator.calculate(bytes, sent.elapsed()) {
+                Some(window) => {
+                    unchanged = 0;
+                    self.sampler.offer_window(window);
+                }
+                None => unchanged += 1,
             }
         }
         self.sampler.finished.store(true, Ordering::Relaxed);
@@ -271,6 +280,12 @@ mod tests {
         assert_eq!(window, 1 << 20);
         assert!(estimator.at_limit());
         assert_eq!(estimator.calculate(u64::from(window) * 4, RTT), None);
+    }
+
+    #[test]
+    fn grpc_grows_to_grpc_gos_limit_except_on_a_constrained_host() {
+        assert_eq!(grpc_bdp_limit(MemoryClass::Standard), 16 << 20);
+        assert_eq!(grpc_bdp_limit(MemoryClass::Constrained), 1 << 20);
     }
 
     #[test]

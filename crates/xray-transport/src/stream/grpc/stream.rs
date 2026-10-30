@@ -23,10 +23,10 @@ use h2::{RecvStream, SendStream};
 use http::{header::CONTENT_TYPE, HeaderMap, StatusCode};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use super::bdp::BdpSampler;
 use super::framing::{encode_hunk, HunkDecoder, HunkMode, MAX_HUNK_PAYLOAD_LEN};
 use super::h2client::H2ConnectionDriver;
 use super::keepalive::OpenCall;
+use crate::stream::h2_bdp::BdpSampler;
 use crate::{TransportError, TransportStream};
 
 /// Where [`GrpcStream::poll_drain_uplink`] stopped.

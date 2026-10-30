@@ -8,7 +8,7 @@
 //! scoped to that stream and returns reserved capacity to the connection.
 
 use std::collections::VecDeque;
-use std::future::poll_fn;
+use std::future::{poll_fn, Future};
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,10 +25,11 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 
-use crate::BoxedTransportStream;
+use crate::stream::h2_bdp::{BdpEstimator, BdpPings, BdpSampler};
+use crate::{BoxedTransportStream, MemoryClass};
 
 use super::config::{
-    h2_stream_receive_window, XhttpConfigError, DEFAULT_H2_STREAM_RECEIVE_WINDOW,
+    h2_stream_receive_window, XhttpConfig, XhttpConfigError, DEFAULT_H2_STREAM_RECEIVE_WINDOW,
     H2_CONNECTION_RECEIVE_WINDOW,
 };
 
@@ -49,6 +50,49 @@ const CONNECTION_WINDOW_SIZE: u32 = H2_CONNECTION_RECEIVE_WINDOW;
 /// window, about 1.4 MB of a 4 MiB one, and at 113 ms that left our downloads
 /// 28% behind Go's (`docs/issue28-client-comparison.md`).
 const STREAM_WINDOW_UPDATE_THRESHOLD: u32 = 4 * 1024;
+
+/// The stream window a constrained host opens with: a quarter of Go's, so
+/// that eight stalled downloads pin 8 MiB rather than 32. A reader that keeps
+/// up grows it back to [`STREAM_WINDOW_SIZE`] within two round trips.
+const CONSTRAINED_STREAM_WINDOW_SIZE: u32 = 1024 * 1024;
+
+/// Go's client never pings to grow a window, and a CDN sees every PING, so
+/// sampling also stops once three samples in a row leave the window alone.
+const BDP_IDLE_SAMPLES: u32 = 3;
+
+/// The stream receive window an XHTTP H2 connection opens with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum H2ReceiveWindow {
+    /// Fixed credit per stream: Go's 4 MiB, or the configured value.
+    Fixed(u32),
+    /// Opens at `initial` and grows for a reader that keeps up, up to `max`.
+    Adaptive { initial: u32, max: u32 },
+}
+
+impl H2ReceiveWindow {
+    /// A configured window stays as configured. Otherwise a constrained host
+    /// opens at [`CONSTRAINED_STREAM_WINDOW_SIZE`] and grows to the default.
+    pub(crate) fn for_config(config: &XhttpConfig, class: MemoryClass) -> Self {
+        match class {
+            MemoryClass::Constrained if !config.h2_stream_receive_window_configured => {
+                Self::Adaptive {
+                    initial: CONSTRAINED_STREAM_WINDOW_SIZE.min(config.h2_stream_receive_window),
+                    max: config.h2_stream_receive_window,
+                }
+            }
+            _ => Self::Fixed(config.h2_stream_receive_window),
+        }
+    }
+
+    fn initial(self) -> u32 {
+        match self {
+            Self::Fixed(window)
+            | Self::Adaptive {
+                initial: window, ..
+            } => window,
+        }
+    }
+}
 
 /// Bounds the copy made by one [`AsyncWrite::poll_write`] call.
 const MAX_UPLOAD_DATA_BYTES: usize = 16 * 1024;
@@ -104,6 +148,8 @@ impl H2Error {
 pub struct H2Client {
     send_request: SendRequest<Bytes>,
     driver: Arc<H2ConnectionDriver>,
+    /// Where responses count the DATA they read, for an adaptive window.
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 #[derive(Debug)]
@@ -215,6 +261,7 @@ impl H2Client {
                 shared,
                 response_is_bodyless,
                 cancel_on_drop: true,
+                bdp: self.bdp.clone(),
             },
         ))
     }
@@ -242,11 +289,22 @@ pub async fn connect_h2_with_keepalive(
 /// Opens H2 with fixed per-stream receive credit and optional keepalive.
 /// Invalid windows fail before any handshake; connection credit stays 16 MiB.
 pub async fn connect_h2_with_receive_window(
-    mut io: BoxedTransportStream,
+    io: BoxedTransportStream,
     read_idle: Option<Duration>,
     stream_receive_window: u32,
 ) -> Result<H2Client, H2Error> {
     let stream_receive_window = h2_stream_receive_window(Some(stream_receive_window))?;
+    connect_h2_with_window(io, read_idle, H2ReceiveWindow::Fixed(stream_receive_window)).await
+}
+
+/// Opens H2 with `window` and optional keepalive; connection credit stays
+/// 16 MiB. An adaptive window grows as grpc-go's BDP estimator grows one
+/// (see [`crate::stream::h2_bdp`]).
+pub async fn connect_h2_with_window(
+    mut io: BoxedTransportStream,
+    read_idle: Option<Duration>,
+    window: H2ReceiveWindow,
+) -> Result<H2Client, H2Error> {
     // XHTTP cannot use Vision direct mode, so retaining TLS record boundaries
     // after the stream has moved into h2 is pure overhead.
     io.release_record_alignment();
@@ -255,7 +313,7 @@ pub async fn connect_h2_with_receive_window(
     let (io, last_read) = WatchedIo::new(io, read_idle.is_some());
     let mut builder = client::Builder::new();
     builder
-        .initial_window_size(stream_receive_window)
+        .initial_window_size(window.initial())
         .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
         .stream_window_update_threshold(STREAM_WINDOW_UPDATE_THRESHOLD)
         .initial_max_send_streams(1);
@@ -265,35 +323,74 @@ pub async fn connect_h2_with_receive_window(
         .map_err(|source| protocol_error("handshake failed", source))?;
 
     // `PingPong` is a single-take handle owned by `Connection`, so it must be
-    // extracted before the connection moves into its driver task.
-    let keepalive = read_idle.zip(last_read).and_then(|(read_idle, last_read)| {
-        connection.ping_pong().map(|ping_pong| H2Keepalive {
+    // extracted before the connection moves into its driver task. The
+    // keepalive and the BDP loop share it: h2 allows one user PING in flight.
+    let ping_pong = connection
+        .ping_pong()
+        .map(|ping_pong| Arc::new(tokio::sync::Mutex::new(ping_pong)));
+    let keepalive = read_idle.zip(last_read).zip(ping_pong.clone()).map(
+        |((read_idle, last_read), ping_pong)| H2Keepalive {
             ping_pong,
             read_idle,
             last_read,
-        })
-    });
+        },
+    );
+    let bdp = match window {
+        H2ReceiveWindow::Fixed(_) => None,
+        H2ReceiveWindow::Adaptive { initial, max } => ping_pong.map(|ping_pong| BdpPings {
+            sampler: Arc::default(),
+            ping_pong,
+            estimator: BdpEstimator::new(initial, max),
+            idle_limit: Some(BDP_IDLE_SAMPLES),
+        }),
+    };
+    let sampler = bdp.as_ref().map(|bdp| Arc::clone(&bdp.sampler));
 
     let driver = Arc::new(H2ConnectionDriver {
-        task: tokio::spawn(drive_connection(connection, keepalive)),
+        task: tokio::spawn(drive_connection(connection, keepalive, bdp)),
     });
     Ok(H2Client {
         send_request,
         driver,
+        bdp: sampler,
     })
 }
 
 async fn drive_connection(
-    connection: client::Connection<WatchedIo, Bytes>,
+    mut connection: client::Connection<WatchedIo, Bytes>,
     keepalive: Option<H2Keepalive>,
+    bdp: Option<BdpPings>,
 ) -> Result<(), h2::Error> {
-    let Some(keepalive) = keepalive else {
-        return connection.await;
+    let sampler = bdp.as_ref().map(|bdp| Arc::clone(&bdp.sampler));
+    let connection = poll_fn(move |cx| {
+        if let Some(sampler) = &sampler {
+            if let Some(window) = sampler.take_window(cx.waker()) {
+                // h2 refuses a SETTINGS while our previous one is
+                // unacknowledged. Reading its ACK polls this again.
+                if connection.set_initial_window_size(window).is_err() {
+                    sampler.defer_window(window);
+                }
+            }
+        }
+        Pin::new(&mut connection).poll(cx)
+    });
+    let keepalive = async move {
+        match keepalive {
+            Some(keepalive) => keepalive.run().await,
+            None => std::future::pending().await,
+        }
+    };
+    let bdp = async move {
+        match bdp {
+            Some(bdp) => bdp.run().await,
+            None => std::future::pending().await,
+        }
     };
 
     tokio::select! {
         outcome = connection => outcome,
-        () = keepalive.run() => Ok(()),
+        () = keepalive => Ok(()),
+        () = bdp => Ok(()),
     }
 }
 
@@ -390,13 +487,13 @@ impl AsyncWrite for WatchedIo {
 }
 
 struct H2Keepalive {
-    ping_pong: PingPong,
+    ping_pong: Arc<tokio::sync::Mutex<PingPong>>,
     read_idle: Duration,
     last_read: Arc<LastRead>,
 }
 
 impl H2Keepalive {
-    async fn run(mut self) {
+    async fn run(self) {
         let mut previous_read = self.last_read.at();
         loop {
             tokio::time::sleep_until(previous_read + self.read_idle).await;
@@ -407,7 +504,9 @@ impl H2Keepalive {
                 continue;
             }
 
-            let pong = tokio::time::timeout(PING_TIMEOUT, self.ping_pong.ping(Ping::opaque()));
+            let pong = tokio::time::timeout(PING_TIMEOUT, async {
+                self.ping_pong.lock().await.ping(Ping::opaque()).await
+            });
             if !matches!(pong.await, Ok(Ok(_))) {
                 return;
             }
@@ -688,6 +787,7 @@ pub struct H2PendingResponse {
     shared: Arc<SharedSend>,
     response_is_bodyless: bool,
     cancel_on_drop: bool,
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 impl H2PendingResponse {
@@ -726,6 +826,7 @@ impl H2PendingResponse {
                 parts.headers,
                 None,
                 self.shared.clone(),
+                None,
             ));
         }
 
@@ -733,6 +834,7 @@ impl H2PendingResponse {
             parts.headers,
             Some(recv),
             self.shared.clone(),
+            self.bdp.take(),
         ))
     }
 }
@@ -762,6 +864,7 @@ pub struct H2ResponseBody {
     eof: bool,
     failure: Option<String>,
     shared: Arc<SharedSend>,
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 /// DATA received for one response and not yet read, filled by
@@ -843,7 +946,12 @@ async fn drain_response(mut recv: RecvStream, received: Arc<Mutex<ReceivedBody>>
 }
 
 impl H2ResponseBody {
-    fn new(headers: HeaderMap, recv: Option<RecvStream>, shared: Arc<SharedSend>) -> Self {
+    fn new(
+        headers: HeaderMap,
+        recv: Option<RecvStream>,
+        shared: Arc<SharedSend>,
+        bdp: Option<Arc<BdpSampler>>,
+    ) -> Self {
         let Some(mut recv) = recv else {
             return Self {
                 headers,
@@ -855,6 +963,7 @@ impl H2ResponseBody {
                 eof: true,
                 failure: None,
                 shared,
+                bdp,
             };
         };
         let flow = recv.flow_control().clone();
@@ -870,6 +979,7 @@ impl H2ResponseBody {
             eof: false,
             failure: None,
             shared,
+            bdp,
         }
     }
 
@@ -975,6 +1085,9 @@ impl AsyncRead for H2ResponseBody {
                     this.fail(format!("HTTP/2 response flow control failed: {source}"))
                 ));
             }
+            if let Some(bdp) = &this.bdp {
+                bdp.record_data(copied);
+            }
         }
         Poll::Ready(Ok(()))
     }
@@ -993,4 +1106,47 @@ fn h2_io_error(context: &'static str, source: h2::Error) -> io::Error {
 
 fn state_io_error() -> io::Error {
     io::Error::other(H2Error::StatePoisoned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stream::XhttpConfigInput;
+
+    fn config(window: Option<u32>) -> XhttpConfig {
+        XhttpConfig::normalize(XhttpConfigInput {
+            h2_stream_receive_window: window,
+            ..XhttpConfigInput::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_standard_host_keeps_gos_fixed_window() {
+        assert_eq!(
+            H2ReceiveWindow::for_config(&config(None), MemoryClass::Standard),
+            H2ReceiveWindow::Fixed(4 << 20)
+        );
+    }
+
+    #[test]
+    fn a_constrained_host_opens_smaller_and_grows_to_the_default() {
+        assert_eq!(
+            H2ReceiveWindow::for_config(&config(None), MemoryClass::Constrained),
+            H2ReceiveWindow::Adaptive {
+                initial: 1 << 20,
+                max: 4 << 20
+            }
+        );
+    }
+
+    #[test]
+    fn a_configured_window_stays_fixed_on_every_host() {
+        for class in [MemoryClass::Standard, MemoryClass::Constrained] {
+            assert_eq!(
+                H2ReceiveWindow::for_config(&config(Some(8 << 20)), class),
+                H2ReceiveWindow::Fixed(8 << 20)
+            );
+        }
+    }
 }

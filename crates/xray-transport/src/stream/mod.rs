@@ -30,6 +30,7 @@
 //! argued once, on `grpc::test_only`.
 
 mod grpc;
+mod h2_bdp;
 mod http_headers;
 mod httpupgrade;
 mod masquerade;

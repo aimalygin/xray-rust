@@ -334,3 +334,121 @@ async fn single_download_pipelines_across_a_113ms_path() {
         task.abort();
     }
 }
+
+const ADAPTIVE: H2ReceiveWindow = H2ReceiveWindow::Adaptive {
+    initial: 1024 * 1024,
+    max: 4 * 1024 * 1024,
+};
+
+async fn pair_over(
+    client_io: DuplexStream,
+    server_io: DuplexStream,
+    window: H2ReceiveWindow,
+) -> (H2Client, TestServer) {
+    let client = connect_h2_with_window(Box::new(client_io), None, window);
+    let server = server::Builder::new().handshake::<_, Bytes>(server_io);
+    let (client, server) = tokio::join!(client, server);
+    let (request_tx, requests) = mpsc::unbounded_channel();
+    let (commands, command_rx) = mpsc::unbounded_channel();
+    let driver = tokio::spawn(drive_server(server.unwrap(), request_tx, command_rx));
+    let server = TestServer {
+        requests,
+        commands: Some(commands),
+        driver: Some(driver),
+    };
+    (client.unwrap(), server)
+}
+
+/// A stalled reader on a constrained host pins the opening window, not Go's.
+#[tokio::test(start_paused = true)]
+async fn an_adaptive_window_holds_a_stalled_reader_to_its_opening_window() {
+    let (client_io, server_io) = tokio::io::duplex(1024 * 1024);
+    let (client, mut server) = pair_over(client_io, server_io, ADAPTIVE).await;
+    let (body, mut send) = response_pair(&client, &mut server).await;
+
+    timeout(DEADLINE, send_bytes(&mut send, 1024 * 1024))
+        .await
+        .unwrap();
+    assert_blocked(&mut send).await;
+    drop(body);
+    server.close().await;
+}
+
+/// Two pipes joined by a relay that holds every byte for `one_way` in each
+/// direction.
+fn delayed_link(one_way: Duration) -> (DuplexStream, DuplexStream) {
+    let (client, client_side) = tokio::io::duplex(1 << 20);
+    let (server_side, server) = tokio::io::duplex(1 << 20);
+    let (client_read, client_write) = tokio::io::split(client_side);
+    let (server_read, server_write) = tokio::io::split(server_side);
+    tokio::spawn(delay(client_read, server_write, one_way));
+    tokio::spawn(delay(server_read, client_write, one_way));
+    (client, server)
+}
+
+async fn delay(
+    mut from: impl tokio::io::AsyncRead + Unpin,
+    mut to: impl tokio::io::AsyncWrite + Unpin + Send + 'static,
+    one_way: Duration,
+) {
+    let (queue, mut queued) = mpsc::unbounded_channel::<(Instant, Vec<u8>)>();
+    let writer = tokio::spawn(async move {
+        while let Some((due, bytes)) = queued.recv().await {
+            sleep_until(due).await;
+            if to.write_all(&bytes).await.is_err() {
+                return;
+            }
+        }
+    });
+    let mut buffer = vec![0u8; 64 * 1024];
+    while let Ok(read @ 1..) = from.read(&mut buffer).await {
+        let _ = queue.send((Instant::now() + one_way, buffer[..read].to_vec()));
+    }
+    drop(queue);
+    let _ = writer.await;
+}
+
+/// Reads an 8 MiB response over a 40 ms round trip and returns how long it
+/// took on the paused clock.
+async fn download_over_a_long_link(window: H2ReceiveWindow) -> Duration {
+    const SIZE: usize = 8 * 1024 * 1024;
+
+    let (client_io, server_io) = delayed_link(Duration::from_millis(20));
+    let (client, mut server) = pair_over(client_io, server_io, window).await;
+    let (mut body, mut send) = response_pair(&client, &mut server).await;
+    let sender = tokio::spawn(async move {
+        send_bytes(&mut send, SIZE).await;
+        send.send_data(Bytes::new(), true).unwrap();
+    });
+
+    let started = Instant::now();
+    let mut received = Vec::with_capacity(SIZE);
+    timeout(DEADLINE, body.read_to_end(&mut received))
+        .await
+        .unwrap()
+        .unwrap();
+    let elapsed = started.elapsed();
+    assert_eq!(received.len(), SIZE);
+    sender.await.unwrap();
+    server.close().await;
+    elapsed
+}
+
+/// A reader that keeps up grows the adaptive window to Go's 4 MiB.
+///
+/// Held at the opening 1 MiB, the 8 MiB after the first window needs seven
+/// more round trips, 280 ms; growing to 4 MiB brings that under five.
+#[tokio::test(start_paused = true)]
+async fn an_adaptive_window_grows_for_a_reader_that_keeps_up() {
+    let fixed = download_over_a_long_link(H2ReceiveWindow::Fixed(1024 * 1024)).await;
+    let adaptive = download_over_a_long_link(ADAPTIVE).await;
+
+    assert!(
+        fixed >= Duration::from_millis(280),
+        "fixed 1 MiB took {fixed:?}"
+    );
+    assert!(
+        adaptive < Duration::from_millis(200),
+        "adaptive took {adaptive:?}"
+    );
+}

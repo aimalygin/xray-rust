@@ -26,13 +26,15 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
 
-use super::bdp::{connection_window_for, BdpEstimator, BdpPings, BdpSampler, BDP_LIMIT};
 use super::config::{resolve_keepalive, GrpcConfig};
 use super::framing::HunkMode;
 use super::keepalive::{OpenCalls, Pings, WatchedIo};
 use super::path::grpc_request_path;
 use super::stream::GrpcStream;
-use crate::{BoxedTransportStream, TransportError};
+use crate::stream::h2_bdp::{
+    connection_window_for, grpc_bdp_limit, BdpEstimator, BdpPings, BdpSampler,
+};
+use crate::{memory_class, BoxedTransportStream, TransportError};
 
 /// grpc-go's `defaultWindowSize`
 /// (`grpc@v1.81.0/internal/transport/defaults.go:28`), which is also HTTP/2's
@@ -71,7 +73,7 @@ const DEFAULT_WINDOW_SIZE: u32 = 65535;
 /// 27-30`), so it is the largest connection window a grpc-go client under
 /// Xray ever reaches rather than a number of our own. It costs no memory: what
 /// a peer can make us buffer is bounded by the sum of the *stream* windows —
-/// [`DEFAULT_WINDOW_SIZE`] each until `initialWindowsSize` or [`super::bdp`]
+/// [`DEFAULT_WINDOW_SIZE`] each until `initialWindowsSize` or [`crate::stream::h2_bdp`]
 /// raises them — and this only stops the connection window being the binding
 /// constraint. At the opening window it takes 256 stalled flows at once to
 /// bind it again, and never fewer than sixteen as the windows grow.
@@ -109,7 +111,7 @@ const DEFAULT_WINDOW_SIZE: u32 = 65535;
 /// would set the flag (`grpc@v1.81.0/dialoptions.go:213-218`). So grpc-go's
 /// BDP estimator is live (`http2_client.go:386-391`) and grows both the
 /// connection window and the stream window mid-connection, up to that same
-/// 16 MiB (`updateFlowControl`, `http2_client.go:1162-1180`). [`super::bdp`]
+/// 16 MiB (`updateFlowControl`, `http2_client.go:1162-1180`). [`crate::stream::h2_bdp`]
 /// reproduces that growth and keeps this window at sixteen stream windows as
 /// they grow. Opening at 16 MiB instead of 65535 remains an earlier, smaller,
 /// constant divergence — one extra frame in the preamble — taken over a
@@ -160,7 +162,7 @@ pub(crate) struct H2Connection {
     /// see [`super::keepalive`].
     calls: Arc<OpenCalls>,
     /// Where every call on the connection counts the DATA it reads, unless
-    /// `initialWindowsSize` pinned the windows — see [`super::bdp`].
+    /// `initialWindowsSize` pinned the windows — see [`crate::stream::h2_bdp`].
     bdp: Option<Arc<BdpSampler>>,
 }
 
@@ -230,7 +232,7 @@ impl H2ConnectionIdleWatch {
 /// estimator (`http2_client.go:386-391`) and the window growth it would send
 /// as the connection warms up. So any `initialWindowsSize` above zero, even one
 /// too small to change the window, pins the windows here too; at zero
-/// [`super::bdp`] grows them.
+/// [`crate::stream::h2_bdp`] grows them.
 ///
 /// `initial_connection_window_size` is set, and it is the one place this
 /// transport knowingly steps outside grpc-go's opening burst. It is not a
@@ -290,7 +292,8 @@ pub(crate) async fn h2_handshake(
         .map(|ping_pong| BdpPings {
             sampler: Arc::default(),
             ping_pong,
-            estimator: BdpEstimator::new(DEFAULT_WINDOW_SIZE, BDP_LIMIT),
+            estimator: BdpEstimator::new(DEFAULT_WINDOW_SIZE, grpc_bdp_limit(memory_class())),
+            idle_limit: None,
         });
     let bdp = bdp_pings.as_ref().map(|pings| Arc::clone(&pings.sampler));
 

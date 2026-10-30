@@ -38,7 +38,8 @@ pub mod test_only {
 #[doc(hidden)]
 pub mod h2_test_only {
     pub use super::h2::{
-        connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, H2Client, H2Error,
+        connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window,
+        connect_h2_with_window, H2Client, H2Error, H2ReceiveWindow,
     };
 }
 

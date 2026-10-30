@@ -301,7 +301,7 @@ impl Drop for OpenCall {
 
 /// Everything one connection's ping loop needs.
 pub(super) struct Pings {
-    /// Shared with the BDP loop ([`super::bdp`]): h2 allows one user PING in
+    /// Shared with the BDP loop ([`crate::stream::h2_bdp`]): h2 allows one user PING in
     /// flight, so whichever loop pings first holds the handle until its ACK.
     pub(super) ping_pong: Arc<tokio::sync::Mutex<h2::PingPong>>,
     pub(super) keepalive: GrpcKeepalive,
