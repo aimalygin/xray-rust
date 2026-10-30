@@ -9,7 +9,7 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket as StdUdpSocket};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::task::{ready, Context, Poll};
 use std::time::Duration;
 
@@ -357,14 +357,14 @@ impl fmt::Debug for H3Client {
 struct H3ConnectionDriver {
     endpoint: Endpoint,
     connection: quinn::Connection,
-    send_window: QuicSendWindow,
+    send_window: XhttpSendWindow,
     receive_windows: Option<QuicReceiveWindows>,
     task: JoinHandle<h3::error::ConnectionError>,
 }
 
 impl H3ConnectionDriver {
-    fn grow_send_window(&self) {
-        self.send_window.grow(&self.connection);
+    fn update_send_window(&self) {
+        self.send_window.update(&self.connection);
     }
 
     fn record_download(&self, bytes: usize) {
@@ -409,6 +409,132 @@ impl QuicSendWindow {
             connection.set_send_window(target);
             self.0.store(target, Ordering::Relaxed);
         }
+    }
+}
+
+/// Bytes the send windows of uploading XHTTP H3 connections share.
+const XHTTP_SEND_BUDGET: u64 = 8 * 1024 * 1024;
+/// A constrained host shares half as much and never grows past it.
+const CONSTRAINED_XHTTP_SEND_BUDGET: u64 = 4 * 1024 * 1024;
+/// No uploading connection's window falls below this; a new connection
+/// starts here until its first sample.
+const XHTTP_MIN_SEND_WINDOW: u64 = 128 * 1024;
+/// A connection counts as uploading for one to two periods after a sample.
+const UPLOAD_ACTIVITY_PERIOD_SECS: u64 = 1;
+
+static XHTTP_UPLOADS: UploadActivity = UploadActivity::new();
+
+/// One XHTTP H3 connection's send window, sized from its share of upload
+/// memory.
+///
+/// Every XHTTP H3 request owns a QUIC connection, and each used to keep a
+/// window of at least 2 MiB. Thirty-two uploads to a local server that
+/// drained slower than they wrote filled every one: 71 MiB of a 95 MiB heap
+/// waited in QUIC send buffers, while their congestion windows (243 KB
+/// median) could send a fraction of it. While `n` connections upload, each
+/// now keeps an `n`th of the budget, between 128 KiB and 2 MiB, and grows
+/// toward twice its congestion window up to an `n`th of 10 MB. A lone upload
+/// keeps the former 2 MiB to 10 MB range: a single fast loopback upload has
+/// less than 128 KiB in flight, but a window that small cost it 13–32% more
+/// CPU per byte in writer wakeups.
+struct XhttpSendWindow {
+    window: AtomicU64,
+    /// The activity period in which this connection last counted.
+    period: AtomicU64,
+    class: MemoryClass,
+}
+
+impl XhttpSendWindow {
+    fn new(connection: &quinn::Connection, class: MemoryClass) -> Self {
+        connection.set_send_window(XHTTP_MIN_SEND_WINDOW);
+        Self {
+            window: AtomicU64::new(XHTTP_MIN_SEND_WINDOW),
+            period: AtomicU64::new(0),
+            class,
+        }
+    }
+
+    /// Uploaded bytes between samples: half the window, so a new connection
+    /// takes its share after its first 64 KiB.
+    fn sample_bytes(&self) -> usize {
+        let half = usize::try_from(self.window.load(Ordering::Relaxed) / 2).unwrap_or(usize::MAX);
+        half.clamp(64 * 1024, QUIC_SEND_WINDOW_SAMPLE_BYTES)
+    }
+
+    /// Called after another sample of uploaded bytes, never from an idle
+    /// timer: a quiet connection stops counting against the others' shares.
+    fn update(&self, connection: &quinn::Connection) {
+        let uploading = XHTTP_UPLOADS.mark(&self.period, std::time::Instant::now());
+        let target = xhttp_send_window(connection.stats().path.cwnd, uploading, self.class);
+        if target != self.window.load(Ordering::Relaxed) {
+            connection.set_send_window(target);
+            self.window.store(target, Ordering::Relaxed);
+        }
+    }
+}
+
+/// The send window of a connection whose congestion window is `cwnd` while
+/// `uploading` connections upload.
+fn xhttp_send_window(cwnd: u64, uploading: u64, class: MemoryClass) -> u64 {
+    let uploading = uploading.max(1);
+    let (budget, ceiling) = match class {
+        MemoryClass::Standard => (XHTTP_SEND_BUDGET, QUIC_MAX_SEND_WINDOW),
+        MemoryClass::Constrained => (CONSTRAINED_XHTTP_SEND_BUDGET, CONSTRAINED_XHTTP_SEND_BUDGET),
+    };
+    let floor = (budget / uploading).clamp(XHTTP_MIN_SEND_WINDOW, QUIC_INITIAL_SEND_WINDOW);
+    let cap = (ceiling / uploading).max(floor);
+    cwnd.saturating_mul(2).clamp(floor, cap)
+}
+
+/// Counts the connections that sampled an upload during the current or the
+/// previous activity period.
+struct UploadActivity {
+    epoch: OnceLock<std::time::Instant>,
+    periods: Mutex<ActivityPeriods>,
+}
+
+struct ActivityPeriods {
+    /// Starts at 1, so a connection's period 0 means it never counted.
+    current: u64,
+    in_current: u64,
+    in_previous: u64,
+}
+
+impl UploadActivity {
+    const fn new() -> Self {
+        Self {
+            epoch: OnceLock::new(),
+            periods: Mutex::new(ActivityPeriods {
+                current: 0,
+                in_current: 0,
+                in_previous: 0,
+            }),
+        }
+    }
+
+    /// Counts the connection whose last period is `last` as uploading at
+    /// `now`, and returns how many connections, itself included, uploaded
+    /// during this period or the previous one.
+    fn mark(&self, last: &AtomicU64, now: std::time::Instant) -> u64 {
+        let epoch = *self.epoch.get_or_init(|| now);
+        let period =
+            now.saturating_duration_since(epoch).as_secs() / UPLOAD_ACTIVITY_PERIOD_SECS + 1;
+        let mut periods = lock_unpoisoned(&self.periods);
+        if period > periods.current {
+            periods.in_previous = if period == periods.current + 1 {
+                periods.in_current
+            } else {
+                0
+            };
+            periods.in_current = 0;
+            periods.current = period;
+        }
+        // A caller that read the clock before another one moved to the next
+        // period counts in the new one.
+        if last.swap(periods.current, Ordering::Relaxed) != periods.current {
+            periods.in_current += 1;
+        }
+        periods.in_current.max(periods.in_previous)
     }
 }
 
@@ -614,8 +740,10 @@ impl H3Client {
 
 /// Connects one protected UDP destination and starts its HTTP/3 driver.
 pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
-    let receive_windows = config.quic.receive_windows(memory_class());
+    let class = memory_class();
+    let receive_windows = config.quic.receive_windows(class);
     let (endpoint, connection, diagnostics) = connect_quic_transport(config, b"h3").await?;
+    let send_window = XhttpSendWindow::new(&connection, class);
     let (mut h3_connection, send_request) =
         client::new(h3_quinn::Connection::new(connection.clone()))
             .await
@@ -624,7 +752,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     let driver = Arc::new(H3ConnectionDriver {
         endpoint,
         connection,
-        send_window: QuicSendWindow::new(),
+        send_window,
         receive_windows,
         task,
     });
@@ -1030,9 +1158,9 @@ async fn drive_upload(
         status.delivered.fetch_add(read as u64, Ordering::Release);
         status.waker.wake();
         since_window_sample += read;
-        if since_window_sample >= QUIC_SEND_WINDOW_SAMPLE_BYTES {
+        if since_window_sample >= shared.driver.send_window.sample_bytes() {
             since_window_sample = 0;
-            shared.driver.grow_send_window();
+            shared.driver.update_send_window();
         }
     };
 
@@ -1586,6 +1714,64 @@ fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     match mutex.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+#[cfg(test)]
+mod send_window_tests {
+    use super::*;
+
+    const MIB: u64 = 1024 * 1024;
+
+    #[test]
+    fn one_upload_keeps_the_former_window_range() {
+        let window = |cwnd| xhttp_send_window(cwnd, 1, MemoryClass::Standard);
+        assert_eq!(window(64 * 1024), 2 * MIB);
+        assert_eq!(window(3_000_000), 6_000_000);
+        assert_eq!(window(8_000_000), QUIC_MAX_SEND_WINDOW);
+        assert_eq!(
+            xhttp_send_window(64 * 1024, 0, MemoryClass::Standard),
+            2 * MIB
+        );
+    }
+
+    #[test]
+    fn concurrent_uploads_split_the_budget_and_the_ceiling() {
+        let window = |cwnd, uploading| xhttp_send_window(cwnd, uploading, MemoryClass::Standard);
+        assert_eq!(window(0, 4), 2 * MIB);
+        assert_eq!(window(0, 8), MIB);
+        assert_eq!(window(u64::MAX, 8), 1_250_000);
+        assert_eq!(window(0, 32), 256 * 1024);
+        assert_eq!(window(200_000, 32), 312_500);
+        assert_eq!(window(u64::MAX, 32), 312_500);
+        assert_eq!(window(u64::MAX, 1000), XHTTP_MIN_SEND_WINDOW);
+    }
+
+    #[test]
+    fn a_constrained_host_shares_half_and_never_grows_past_it() {
+        let window = |cwnd, uploading| xhttp_send_window(cwnd, uploading, MemoryClass::Constrained);
+        assert_eq!(window(0, 1), 2 * MIB);
+        assert_eq!(window(u64::MAX, 1), 4 * MIB);
+        assert_eq!(window(u64::MAX, 2), 2 * MIB);
+        assert_eq!(window(u64::MAX, 8), 512 * 1024);
+    }
+
+    #[test]
+    fn upload_activity_counts_each_connection_once_and_forgets_quiet_ones() {
+        let activity = UploadActivity::new();
+        let (first, second, third) = (AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0));
+        let start = std::time::Instant::now();
+        let at = |millis| start + Duration::from_millis(millis);
+
+        assert_eq!(activity.mark(&first, at(0)), 1);
+        assert_eq!(activity.mark(&first, at(10)), 1);
+        assert_eq!(activity.mark(&second, at(20)), 2);
+        // The second connection still counts for the period after its sample.
+        assert_eq!(activity.mark(&first, at(1_100)), 2);
+        assert_eq!(activity.mark(&first, at(2_200)), 1);
+        // A clock read before another caller moved on counts in the new period.
+        assert_eq!(activity.mark(&second, at(1_900)), 2);
+        assert_eq!(activity.mark(&third, at(6_000)), 1);
     }
 }
 

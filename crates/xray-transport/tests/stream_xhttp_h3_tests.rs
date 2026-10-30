@@ -695,17 +695,17 @@ async fn streaming_upload_and_download_progress_full_duplex() {
 }
 
 #[tokio::test]
-async fn slow_path_upload_buffers_only_the_initial_quic_send_window() {
+async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
     // The server grants 16 MiB of stream credit, but a 100 ms round trip keeps
     // the congestion window small, so accepted bytes wait in the client's own
     // QUIC send buffer. quinn's default window let one request buffer 10 MB;
-    // the client now starts at 2 MiB and grows only with its congestion window.
+    // a lone upload keeps 2 MiB and grows only with its congestion window.
     let (client_tls, server_addr, server) = server_with_options(Some(16 * 1024 * 1024)).await;
     let (relay_addr, relay) = udp_delay_relay(server_addr, Duration::from_millis(50)).await;
     let client = connect_h3(H3ConnectConfig {
         remote_addr: relay_addr,
         server_name: "localhost".to_owned(),
-        tls_config: client_tls,
+        tls_config: Arc::clone(&client_tls),
         socket_protector: None,
         quic: H3QuicConfig::default(),
     })
@@ -747,6 +747,84 @@ async fn slow_path_upload_buffers_only_the_initial_quic_send_window() {
     );
     handler.abort();
     relay.abort();
+
+    // Sixteen uploads, each with its own connection and a 400 ms round trip,
+    // share the budget. The first to sample take up to 2 MiB before the rest
+    // count, and each narrows to its 512 KiB share at its next sample: about
+    // 11 MiB in all, where every connection used to keep 2 MiB.
+    const UPLOADS: usize = 16;
+    let holder = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let mut exchanges = Vec::new();
+            for _ in 0..UPLOADS {
+                exchanges.push(server.accept().await);
+            }
+            tokio::time::sleep(DEADLINE).await;
+            drop(exchanges);
+        }
+    });
+    let opened = futures_util::future::join_all((0..UPLOADS).map(|_| {
+        let client_tls = Arc::clone(&client_tls);
+        async move {
+            let (relay_addr, relay) =
+                udp_delay_relay(server_addr, Duration::from_millis(200)).await;
+            let client = connect_h3(H3ConnectConfig {
+                remote_addr: relay_addr,
+                server_name: "localhost".to_owned(),
+                tls_config: client_tls,
+                socket_protector: None,
+                quic: H3QuicConfig::default(),
+            })
+            .await
+            .expect("connect HTTP/3 client through its delay relay");
+            let exchange = client
+                .start_streaming(request(Method::POST, "/shared"))
+                .await
+                .expect("open streaming request");
+            (exchange, relay)
+        }
+    }))
+    .await;
+
+    let deadline = Instant::now() + Duration::from_millis(300);
+    let mut writers = tokio::task::JoinSet::new();
+    let mut relays = Vec::new();
+    for ((mut upload, pending), relay) in opened {
+        relays.push(relay);
+        let chunk = chunk.clone();
+        writers.spawn(async move {
+            let mut accepted = 0usize;
+            while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+                match timeout(remaining, upload.write(&chunk)).await {
+                    Ok(Ok(written)) => accepted += written,
+                    Ok(Err(error)) => panic!("upload failed on the slow path: {error}"),
+                    Err(_) => break,
+                }
+            }
+            (accepted, upload, pending)
+        });
+    }
+    let mut total = 0usize;
+    let mut finished = Vec::new();
+    while let Some(writer) = writers.join_next().await {
+        let (accepted, upload, pending) = writer.expect("upload writer");
+        total += accepted;
+        finished.push((upload, pending));
+    }
+    assert!(
+        total > 4 * 1024 * 1024,
+        "{UPLOADS} slow-path uploads buffered only {total} bytes"
+    );
+    assert!(
+        total < 16 * 1024 * 1024,
+        "{UPLOADS} slow-path uploads buffered {total} bytes"
+    );
+    drop(finished);
+    holder.abort();
+    for relay in relays {
+        relay.abort();
+    }
 }
 
 /// A download that keeps its reader busy grows the stream window past its
