@@ -7,16 +7,18 @@
 //! end cancels that exchange, while a shared reset handle keeps the reset
 //! scoped to that stream and returns reserved capacity to the connection.
 
+use std::collections::VecDeque;
 use std::future::poll_fn;
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::task::{ready, Context, Poll};
+use std::task::{ready, Context, Poll, Waker};
 
 use bytes::Bytes;
+use futures_util::FutureExt;
 use h2::client::{self, ResponseFuture, SendRequest};
-use h2::{Ping, PingPong, Reason, RecvStream, SendStream};
+use h2::{FlowControl, Ping, PingPong, Reason, RecvStream, SendStream};
 use http::{HeaderMap, Method, Request, StatusCode};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -713,28 +715,18 @@ impl H2PendingResponse {
             // ordinary END_STREAM-on-HEADERS response it also records clean
             // EOF before a caller can drop the body without polling it.
             drop(recv);
-            return Ok(H2ResponseBody {
-                headers: parts.headers,
-                recv: None,
-                pending: Bytes::new(),
-                reading_trailers: false,
-                trailers: None,
-                eof: true,
-                failure: None,
-                shared: self.shared.clone(),
-            });
+            return Ok(H2ResponseBody::new(
+                parts.headers,
+                None,
+                self.shared.clone(),
+            ));
         }
 
-        Ok(H2ResponseBody {
-            headers: parts.headers,
-            recv: Some(recv),
-            pending: Bytes::new(),
-            reading_trailers: false,
-            trailers: None,
-            eof: false,
-            failure: None,
-            shared: self.shared.clone(),
-        })
+        Ok(H2ResponseBody::new(
+            parts.headers,
+            Some(recv),
+            self.shared.clone(),
+        ))
     }
 }
 
@@ -754,16 +746,126 @@ impl Drop for H2PendingResponse {
 #[derive(Debug)]
 pub struct H2ResponseBody {
     headers: HeaderMap,
-    recv: Option<RecvStream>,
+    /// Absent for a response that ended with its HEADERS.
+    received: Option<Arc<Mutex<ReceivedBody>>>,
+    flow: Option<FlowControl>,
+    drain: Option<JoinHandle<()>>,
     pending: Bytes,
-    reading_trailers: bool,
     trailers: Option<HeaderMap>,
     eof: bool,
     failure: Option<String>,
     shared: Arc<SharedSend>,
 }
 
+/// DATA received for one response and not yet read, filled by
+/// [`drain_response`].
+#[derive(Debug, Default)]
+struct ReceivedBody {
+    chunks: VecDeque<Bytes>,
+    end: Option<ReceivedEnd>,
+    reader: Option<Waker>,
+}
+
+#[derive(Debug)]
+enum ReceivedEnd {
+    Trailers(Option<HeaderMap>),
+    Failed(String),
+}
+
+fn lock_received(received: &Mutex<ReceivedBody>) -> MutexGuard<'_, ReceivedBody> {
+    received
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Moves response DATA out of h2 as it arrives.
+///
+/// h2 keeps every received frame as a slice of its shared read buffer, so
+/// frames queued behind a slow or paused reader pin roughly twice their size:
+/// eight stalled streams held about 60 MiB for 32 MiB of window. A frame that
+/// has to wait is therefore copied to an exact-size buffer; a frame the reader
+/// takes at once is passed through. Flow control is unchanged: credit returns
+/// to the peer only as the reader consumes bytes.
+async fn drain_response(mut recv: RecvStream, received: Arc<Mutex<ReceivedBody>>) {
+    let end = loop {
+        let Some(first) = recv.data().await else {
+            break match recv.trailers().await {
+                Ok(trailers) => ReceivedEnd::Trailers(trailers),
+                Err(source) => {
+                    ReceivedEnd::Failed(format!("HTTP/2 response trailers failed: {source}"))
+                }
+            };
+        };
+        let mut next = Some(first);
+        let mut failure = None;
+        let mut guard = lock_received(&received);
+        while let Some(data) = next.take() {
+            match data {
+                Ok(chunk) if chunk.is_empty() => {}
+                Ok(chunk) => {
+                    let chunk = if guard.chunks.is_empty() {
+                        chunk
+                    } else {
+                        Bytes::copy_from_slice(&chunk)
+                    };
+                    guard.chunks.push_back(chunk);
+                }
+                Err(source) => {
+                    failure = Some(format!("HTTP/2 response DATA failed: {source}"));
+                    break;
+                }
+            }
+            // Take frames that are already buffered without yielding, so the
+            // reader is woken once per burst. A Pending result here leaves a
+            // no-op waker that the next real poll replaces before it waits.
+            next = recv.data().now_or_never().flatten();
+        }
+        if let Some(reader) = guard.reader.take() {
+            reader.wake();
+        }
+        drop(guard);
+        if let Some(failure) = failure {
+            break ReceivedEnd::Failed(failure);
+        }
+    };
+    let mut guard = lock_received(&received);
+    guard.end = Some(end);
+    if let Some(reader) = guard.reader.take() {
+        reader.wake();
+    }
+}
+
 impl H2ResponseBody {
+    fn new(headers: HeaderMap, recv: Option<RecvStream>, shared: Arc<SharedSend>) -> Self {
+        let Some(mut recv) = recv else {
+            return Self {
+                headers,
+                received: None,
+                flow: None,
+                drain: None,
+                pending: Bytes::new(),
+                trailers: None,
+                eof: true,
+                failure: None,
+                shared,
+            };
+        };
+        let flow = recv.flow_control().clone();
+        let received = Arc::new(Mutex::new(ReceivedBody::default()));
+        let drain = tokio::spawn(drain_response(recv, Arc::clone(&received)));
+        Self {
+            headers,
+            received: Some(received),
+            flow: Some(flow),
+            drain: Some(drain),
+            pending: Bytes::new(),
+            trailers: None,
+            eof: false,
+            failure: None,
+            shared,
+        }
+    }
+
     /// Response headers excluding the HTTP/2 pseudo-headers.
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
@@ -786,6 +888,11 @@ impl Drop for H2ResponseBody {
         if !self.eof {
             self.shared.cancel();
         }
+        // Dropping the receive stream with the flow-control handle returns
+        // any unread credit to the connection.
+        if let Some(drain) = self.drain.take() {
+            drain.abort();
+        }
     }
 }
 
@@ -806,72 +913,63 @@ impl AsyncRead for H2ResponseBody {
             )));
         }
 
+        let mut copied = 0;
         loop {
             if !this.pending.is_empty() {
                 let take = this.pending.len().min(output.remaining());
-                let release = match this.recv.as_mut() {
-                    Some(recv) => recv.flow_control().release_capacity(take),
-                    None => {
-                        return Poll::Ready(Err(
-                            this.fail("HTTP/2 response body lost its receive stream".to_owned())
-                        ));
-                    }
-                };
-                if let Err(source) = release {
-                    return Poll::Ready(Err(
-                        this.fail(format!("HTTP/2 response flow control failed: {source}"))
-                    ));
-                }
-
                 output.put_slice(&this.pending[..take]);
                 this.pending = this.pending.slice(take..);
-                return Poll::Ready(Ok(()));
-            }
-
-            if this.reading_trailers {
-                let trailers = {
-                    let Some(recv) = this.recv.as_mut() else {
-                        return Poll::Ready(Err(
-                            this.fail("HTTP/2 response body lost its trailer stream".to_owned())
-                        ));
-                    };
-                    ready!(recv.poll_trailers(cx))
-                };
-                match trailers {
-                    Ok(trailers) => {
-                        this.trailers = trailers;
-                        this.recv = None;
-                        this.eof = true;
-                        return Poll::Ready(Ok(()));
-                    }
-                    Err(source) => {
-                        return Poll::Ready(Err(
-                            this.fail(format!("HTTP/2 response trailers failed: {source}"))
-                        ));
-                    }
+                copied += take;
+                if output.remaining() == 0 {
+                    break;
                 }
+                continue;
             }
-
-            let data = {
-                let Some(recv) = this.recv.as_mut() else {
+            let Some(received) = this.received.as_ref() else {
+                this.eof = true;
+                break;
+            };
+            let mut guard = lock_received(received);
+            if let Some(chunk) = guard.chunks.pop_front() {
+                drop(guard);
+                this.pending = chunk;
+                continue;
+            }
+            if copied > 0 {
+                break;
+            }
+            match guard.end.take() {
+                Some(ReceivedEnd::Trailers(trailers)) => {
+                    drop(guard);
+                    this.trailers = trailers;
+                    this.received = None;
+                    this.flow = None;
                     this.eof = true;
                     return Poll::Ready(Ok(()));
-                };
-                ready!(recv.poll_data(cx))
-            };
-            match data {
-                Some(Ok(chunk)) if chunk.is_empty() => continue,
-                Some(Ok(chunk)) => this.pending = chunk,
-                Some(Err(source)) => {
-                    return Poll::Ready(Err(
-                        this.fail(format!("HTTP/2 response DATA failed: {source}"))
-                    ));
+                }
+                Some(ReceivedEnd::Failed(message)) => {
+                    drop(guard);
+                    return Poll::Ready(Err(this.fail(message)));
                 }
                 None => {
-                    this.reading_trailers = true;
+                    guard.reader = Some(cx.waker().clone());
+                    return Poll::Pending;
                 }
             }
         }
+
+        if copied > 0 {
+            let release = match this.flow.as_mut() {
+                Some(flow) => flow.release_capacity(copied),
+                None => Ok(()),
+            };
+            if let Err(source) = release {
+                return Poll::Ready(Err(
+                    this.fail(format!("HTTP/2 response flow control failed: {source}"))
+                ));
+            }
+        }
+        Poll::Ready(Ok(()))
     }
 }
 
