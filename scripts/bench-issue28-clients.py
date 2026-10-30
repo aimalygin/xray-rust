@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare actual Rust/Go SOCKS clients on a local delayed XHTTP/H2 path.
+"""Compare actual Rust/Go SOCKS clients on a local delayed XHTTP/H2 or gRPC path.
 
 This is an application-byte delay line, not TCP packet netem or an iOS/CDN
 measurement. Only loopback sockets are opened. No user configuration is read.
@@ -242,18 +242,22 @@ async def run(args):
     server_port = free_port()
     xhttp = {"path": "/issue28/", "mode": "packet-up", "scMinPostsIntervalMs": 1,
              "xmux": {"maxConnections": "2-3", "hMaxRequestTimes": 1000000, "hMaxReusableSecs": 3600}}
+    if args.transport == "grpc":
+        carrier = {"network": "grpc", "grpcSettings": {"serviceName": "issue28"}}
+    else:
+        carrier = {"network": "xhttp", "xhttpSettings": xhttp}
     server_config = {
         "log": {"loglevel": "warning"},
         "inbounds": [{"listen": "127.0.0.1", "port": server_port, "protocol": "vless",
                       "settings": {"clients": [{"id": user}], "decryption": "none"},
-                      "streamSettings": {"network": "xhttp", "security": "tls", "xhttpSettings": xhttp,
-                                         "tlsSettings": {"alpn": ["h2"], "certificates": [
-                                             {"certificateFile": str(cert), "keyFile": str(key)}]}}}],
+                      "streamSettings": dict(carrier, security="tls", tlsSettings={"alpn": ["h2"], "certificates": [
+                          {"certificateFile": str(cert), "keyFile": str(key)}]})}],
         "outbounds": [{"protocol": "freedom", "settings": {"finalRules": [{"action": "allow"}]}}]}
     save(root / "server.json", server_config)
     results = dict(platform=platform.platform(), added_rtt_ms=args.rtt_ms, rounds=args.rounds,
-                   payload_mib=args.payload_mib, warmup_mib=args.warmup_mib,
-                   mode="packet-up", xmux_max_connections="2-3", ingress="SOCKS5; no TUN",
+                   payload_mib=args.payload_mib, warmup_mib=args.warmup_mib, transport=args.transport,
+                   mode="packet-up" if args.transport == "xhttp" else None,
+                   xmux_max_connections="2-3" if args.transport == "xhttp" else None, ingress="SOCKS5; no TUN",
                    delay_model="bounded application-byte relay; not TCP packet netem",
                    rust_binary_sha256=sha256(args.rust_bin), go_binary_sha256=sha256(args.go_bin),
                    go_version=subprocess.check_output([str(args.go_bin), "version"], text=True),
@@ -294,9 +298,9 @@ async def run(args):
                                  "settings": {"auth": "noauth", "udp": False}}], "outbounds": [
                                 {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [
                                     {"address": "127.0.0.1", "port": port, "users": [{"id": user, "encryption": "none"}]}]},
-                                 "streamSettings": {"network": "xhttp", "security": "tls", "xhttpSettings": xhttp,
-                                                    "tlsSettings": {"serverName": "issue28.test", "alpn": ["h2"],
-                                                                    "pinnedPeerCertSha256": pin, "fingerprint": "chrome"}}}]}
+                                 "streamSettings": dict(carrier, security="tls", tlsSettings={
+                                     "serverName": "issue28.test", "alpn": ["h2"],
+                                     "pinnedPeerCertSha256": pin, "fingerprint": "chrome"})}]}
                             config_path = root / (name + ".json")
                             save(config_path, config)
                             binary = args.rust_bin if engine == "rust" else args.go_bin
@@ -323,8 +327,16 @@ async def run(args):
                     await line.stop()
             condition["summary"] = {}
             for engine in ["rust", "go"]:
-                values = [trial["mbps"] for trial in condition["trials"] if trial["engine"] == engine]
-                condition["summary"][engine] = dict(median_mbps=statistics.median(values), min_mbps=min(values), max_mbps=max(values))
+                trials = [trial for trial in condition["trials"] if trial["engine"] == engine]
+                values = [trial["mbps"] for trial in trials]
+                # Time to first byte from the SOCKS connect: the warmup opens the
+                # transport connection, the measured trial reuses a pooled one.
+                fresh = [trial["warmup"]["socks_setup_seconds"] + trial["warmup"]["first_byte_seconds"] for trial in trials]
+                pooled = [trial["socks_setup_seconds"] + trial["first_byte_seconds"] for trial in trials]
+                condition["summary"][engine] = dict(
+                    median_mbps=statistics.median(values), min_mbps=min(values), max_mbps=max(values),
+                    median_fresh_first_byte_ms=statistics.median(fresh) * 1000,
+                    median_pooled_first_byte_ms=statistics.median(pooled) * 1000)
             save(root / "results.json", results)
         results["completed"] = True
     finally:
@@ -344,6 +356,7 @@ def main():
     parser.add_argument("--rates-mbps", type=float, nargs="+", default=[150, 0])
     parser.add_argument("--payload-mib", type=int, default=64)
     parser.add_argument("--warmup-mib", type=int, default=16)
+    parser.add_argument("--transport", choices=["xhttp", "grpc"], default="xhttp")
     args = parser.parse_args()
     args.rust_bin = args.rust_bin.resolve(strict=True)
     args.go_bin = args.go_bin.resolve(strict=True)

@@ -269,6 +269,8 @@ def main():
     parser.add_argument('--case-id', action='append', help='complete five-pair case block; original order index is preserved')
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--control-dir', type=Path, help='cooperative UI pauses between pairs; resume.txt must echo paused.json token')
+    parser.add_argument('--reference-sha256', help='pin a reference binary already verified with '
+                        '`go version -m`, instead of running Go again')
     a = parser.parse_args()
     if a.profile and len(a.profile) != len(set(a.profile)):
         raise ValueError('duplicate profile')
@@ -284,7 +286,7 @@ def main():
             raise ValueError('binary changed: ' + name)
     if inputs['reference']['commit'] != REFERENCE:
         raise ValueError('wrong reference source')
-    c.device.verify_reference(paths['reference'])
+    c.device.verify_reference(paths['reference'], a.reference_sha256)
     if c.followup.inventory(paths.values()) or c.ambient()['compiler_load_detected']:
         raise RuntimeError('benchmark/compiler already running')
     source = b.command(['git', 'rev-parse', 'HEAD'], ROOT)
