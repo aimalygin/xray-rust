@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+- HTTP profile import refuses a legacy Base64 whole-authority link such as
+  `http://<Base64 of user:pass@host:port>` with `Unsupported`. With the default
+  port it was imported as a one-label host, so the profile reached no server
+  and DNS bootstrap sent the encoded credentials to the carrier resolver.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
