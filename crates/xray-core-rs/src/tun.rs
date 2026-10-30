@@ -99,8 +99,8 @@ const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 256 * 1024;
 const TCP_BRIDGE_FLOW_MAX_BYTES: usize = 512 * 1024;
 const MOBILE_TCP_BRIDGE_FLOW_MAX_BYTES: usize = 256 * 1024;
 const LOW_MEMORY_TCP_BRIDGE_FLOW_MAX_BYTES: usize = 128 * 1024;
-// Batch copy capacity kept between batches; a larger buffer is freed.
-const TCP_BRIDGE_RETAINED_BATCH_CAPACITY: usize = 64 * 1024;
+// Upload chunks are coalesced into writes of at most this many bytes.
+const TCP_BRIDGE_COALESCE_BYTES: usize = 64 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK: usize = 64;
 const MAX_UDP_TASK_COMPLETIONS_PER_TICK: usize = MAX_TUN_INBOUND_DRAIN_PER_TICK + 1;
@@ -4242,34 +4242,45 @@ where
         return Ok(());
     }
 
-    let mut first = first;
-    let mut batch_messages = 1usize;
-    let mut batch_bytes = first.len();
-    batch.reserve(first.len().min(policy.max_batch_bytes));
-    batch.extend_from_slice(&first.data);
-    if let Some(reservation) = first.reservation.take() {
-        reservations.push(reservation);
-    }
-
-    let mut next = second;
-    while let Some(mut item) = next {
-        let data_len = item.data.len();
-        batch.extend_from_slice(&item.data);
+    let mut batch_messages = 0usize;
+    let mut batch_bytes = 0usize;
+    let write_start = StdInstant::now();
+    let mut write_result = Ok(());
+    let mut queued = second;
+    let mut next = Some(first);
+    while let Some(mut item) = next.take() {
         if let Some(reservation) = item.reservation.take() {
             reservations.push(reservation);
         }
-
         batch_messages = batch_messages.saturating_add(1);
-        batch_bytes = batch_bytes.saturating_add(data_len);
+        batch_bytes = batch_bytes.saturating_add(item.data.len());
+        // Coalesce chunks into writes of up to TCP_BRIDGE_COALESCE_BYTES. The
+        // copy buffer never grows past that, so it is reused rather than
+        // reallocated as fresh pages for every batch.
+        if batch.len() + item.data.len() > TCP_BRIDGE_COALESCE_BYTES && !batch.is_empty() {
+            write_result = remote_writer.write_all(batch).await;
+            batch.clear();
+            if write_result.is_err() {
+                break;
+            }
+        }
+        if item.data.len() > TCP_BRIDGE_COALESCE_BYTES {
+            write_result = remote_writer.write_all(&item.data).await;
+            if write_result.is_err() {
+                break;
+            }
+        } else {
+            batch.extend_from_slice(&item.data);
+        }
         if batch_messages >= policy.max_batch_messages || batch_bytes >= policy.max_batch_bytes {
             break;
         }
-
-        next = from_stack.try_recv().ok();
+        next = queued.take().or_else(|| from_stack.try_recv().ok());
     }
-
-    let write_start = StdInstant::now();
-    let write_result = remote_writer.write_all(batch).await;
+    if write_result.is_ok() && !batch.is_empty() {
+        write_result = remote_writer.write_all(batch).await;
+    }
+    batch.clear();
     let write_duration_ms = elapsed_ms_since(&write_start);
     tun.record_tcp_remote_write_wait(write_duration_ms);
     record_tcp_remote_write_slow_event(
@@ -4293,13 +4304,6 @@ where
     // The written bytes no longer occupy the flow's upload budget. Holding the
     // reservations until the next batch would stall a stack that waits for
     // this flow's room before reading the data which starts that batch.
-    reservations.clear();
-    // Keep the copy buffer while the flow has more queued data: reallocating
-    // a large buffer for every batch costs fresh-page faults. Once the queue
-    // is empty the flow may stay idle, so a large buffer is freed.
-    if batch.capacity() > TCP_BRIDGE_RETAINED_BATCH_CAPACITY && from_stack.is_empty() {
-        *batch = BytesMut::new();
-    }
     reservations.clear();
     Ok(())
 }
@@ -7285,12 +7289,14 @@ mod tests {
         assert_eq!(pending.load(Ordering::SeqCst), 0);
         assert_eq!(state.pending_bytes(), 0);
         assert!(reservations.is_empty());
-        // 128 KiB exceeds the retained copy capacity, so it is not kept.
-        assert_eq!(batch.capacity(), 0);
+        // Coalesced writes never grow the reused copy buffer past their size.
+        assert!(batch.is_empty());
+        assert!(batch.capacity() <= 2 * TCP_BRIDGE_COALESCE_BYTES);
+        assert_eq!(writer.writes, 2);
     }
 
     #[tokio::test]
-    async fn stack_to_remote_keeps_a_large_copy_buffer_only_while_data_is_queued() {
+    async fn stack_to_remote_writes_large_bursts_as_bounded_coalesced_writes() {
         let policy = LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY;
         let chunk = Bytes::from_static(&[0x5a; 32 * 1024]);
         let (tx, mut rx) = mpsc::channel(16);
@@ -7306,7 +7312,8 @@ mod tests {
         let mut reservations = Vec::new();
         let target = test_tcp443_target();
 
-        // The 256 KiB batch limit leaves queued data: keep the buffer.
+        // The 256 KiB batch limit ends the first batch after eight chunks,
+        // written as four 64 KiB writes and one flush.
         write_stack_batch_to_remote(
             &mut writer,
             &target,
@@ -7321,10 +7328,13 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(!rx.is_empty());
-        assert!(batch.capacity() >= policy.max_batch_bytes);
+        assert_eq!(writer.written.len(), 8 * 32 * 1024);
+        assert_eq!(writer.writes, 4);
+        assert_eq!(writer.flushes, 1);
+        let capacity = batch.capacity();
+        assert!(capacity <= 2 * TCP_BRIDGE_COALESCE_BYTES);
 
-        // The queue drains: the flow may go idle, so free the buffer.
+        // The next batch reuses the same buffer.
         write_stack_batch_to_remote(
             &mut writer,
             &target,
@@ -7340,7 +7350,7 @@ mod tests {
         .await
         .unwrap();
         assert!(rx.is_empty());
-        assert_eq!(batch.capacity(), 0);
+        assert_eq!(batch.capacity(), capacity);
         assert_eq!(writer.written.len(), 13 * 32 * 1024);
     }
 
