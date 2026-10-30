@@ -18,9 +18,14 @@
 //! flow's entire downlink per round trip: about 10 Mbit/s at 50 ms and 5 at
 //! 100 ms, however fast the link.
 //!
+//! gRPC counts DATA as it arrives, where grpc-go does — see [`DataArrivals`]
+//! for the server policy that depends on it.
+//!
 //! XHTTP uses the same estimator on a [`MemoryClass::Constrained`] host, where
 //! it opens with a smaller window than Go's 4 MiB and grows to it only for a
-//! reader that keeps up (see `super::xhttp::h2`).
+//! reader that keeps up (see `super::xhttp::h2`). That is why XHTTP counts what
+//! its reader takes instead; Go's HTTP/2 server, unlike grpc-go's, has no ping
+//! policy to trip.
 //!
 //! Nothing is sent before data arrives, so an opening burst is unchanged.
 //! Two differences from grpc-go remain:
@@ -133,14 +138,14 @@ impl BdpEstimator {
     }
 }
 
-/// What a connection's streams and its driver share: the bytes the streams
-/// read, and a grown window on its way to the driver.
+/// What a connection's DATA and its driver share: the bytes of the running
+/// sample, and a grown window on its way to the driver.
 #[derive(Debug, Default)]
 pub(crate) struct BdpSampler {
-    /// Bytes read since the last sample ended.
+    /// Bytes counted since the running sample started.
     bytes: AtomicU64,
-    /// Whether a PING is out, during which data extends its sample instead of
-    /// starting another.
+    /// Whether a sample is running, from the DATA that started it until its
+    /// PING is answered. Data meanwhile extends it instead of starting another.
     sampling: AtomicBool,
     /// Set once sampling stops, after which nothing counts.
     finished: AtomicBool,
@@ -151,19 +156,30 @@ pub(crate) struct BdpSampler {
 }
 
 impl BdpSampler {
-    /// Counts `len` bytes of DATA, and starts a sample unless one is running.
+    /// Counts `len` bytes of DATA, starting a sample unless one is running.
     ///
-    /// grpc-go counts frames as they arrive; this counts them as a stream
-    /// reads them. For a reader that keeps up the two are the same, and a
-    /// reader that has stopped has no use for a larger window.
+    /// The DATA that starts a sample claims it on the spot, as grpc-go's
+    /// `bdpEstimator.add` sets `isSent`: the ping loop may not run before more
+    /// DATA arrives, and if starting were left to it, that DATA would start a
+    /// second sample, to be pinged for after the first one's ACK with nothing
+    /// written since.
     pub(crate) fn record_data(&self, len: usize) {
         if self.finished.load(Ordering::Relaxed) {
             return;
         }
-        self.bytes.fetch_add(len as u64, Ordering::Relaxed);
-        if !self.sampling.load(Ordering::Relaxed) {
+        if self.sampling.swap(true, Ordering::AcqRel) {
+            self.bytes.fetch_add(len as u64, Ordering::Relaxed);
+        } else {
+            self.bytes.store(len as u64, Ordering::Relaxed);
             self.data.notify_one();
         }
+    }
+
+    /// Ends the running sample and returns its bytes.
+    fn end_sample(&self) -> u64 {
+        let bytes = self.bytes.swap(0, Ordering::Relaxed);
+        self.sampling.store(false, Ordering::Release);
+        bytes
     }
 
     /// Called by the driver on every poll: remembers its waker and hands over
@@ -185,6 +201,76 @@ impl BdpSampler {
     fn offer_window(&self, window: u32) {
         self.pending_window.fetch_max(window, Ordering::Relaxed);
         self.driver.wake();
+    }
+
+    fn is_finished(&self) -> bool {
+        self.finished.load(Ordering::Relaxed)
+    }
+}
+
+/// An HTTP/2 frame header: a 24-bit length, a type, flags and a stream id
+/// (RFC 9113 4.1).
+const FRAME_HEADER_LEN: usize = 9;
+const DATA_FRAME: u8 = 0x0;
+
+/// Counts DATA frames into a [`BdpSampler`] as they come off the socket, which
+/// is where grpc-go's `handleData` counts them.
+///
+/// The timing is what grpc-go's server relies on. More than two PINGs with no
+/// DATA or HEADERS written in between is `GOAWAY` `too_many_pings`, which ends
+/// every call on the connection (`handlePing`,
+/// `grpc@v1.84.0/internal/transport/http2_server.go:882-933`). A frame that
+/// arrives after a PING's ACK was written after the server answered that PING,
+/// so a sample started by its arrival always follows fresh DATA. A sample
+/// started when a call *reads* does not: draining data h2 buffered earlier
+/// pings again and again after the server has stopped writing, which is how a
+/// full-duplex flow lost its connection while its upload was still running.
+pub(crate) struct DataArrivals {
+    sampler: Arc<BdpSampler>,
+    header: [u8; FRAME_HEADER_LEN],
+    header_len: usize,
+    payload_left: usize,
+}
+
+impl DataArrivals {
+    pub(crate) fn new(sampler: Arc<BdpSampler>) -> Self {
+        Self {
+            sampler,
+            header: [0; FRAME_HEADER_LEN],
+            header_len: 0,
+            payload_left: 0,
+        }
+    }
+
+    /// Scans the next bytes the server sent. Its side of the connection is
+    /// frames from the first byte: a server's preface is a SETTINGS frame with
+    /// nothing before it (RFC 9113 3.4).
+    pub(crate) fn observe(&mut self, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            if self.payload_left > 0 {
+                let skipped = self.payload_left.min(bytes.len());
+                self.payload_left -= skipped;
+                bytes = &bytes[skipped..];
+                continue;
+            }
+            let taken = (FRAME_HEADER_LEN - self.header_len).min(bytes.len());
+            self.header[self.header_len..][..taken].copy_from_slice(&bytes[..taken]);
+            self.header_len += taken;
+            bytes = &bytes[taken..];
+            if self.header_len == FRAME_HEADER_LEN {
+                self.header_len = 0;
+                let [high, middle, low, kind, ..] = self.header;
+                self.payload_left = u32::from_be_bytes([0, high, middle, low]) as usize;
+                if kind == DATA_FRAME {
+                    self.sampler.record_data(self.payload_left);
+                }
+            }
+        }
+    }
+
+    /// Whether the estimate has stopped, after which there is nothing to count.
+    pub(crate) fn is_finished(&self) -> bool {
+        self.sampler.is_finished()
     }
 }
 
@@ -211,15 +297,13 @@ impl BdpPings {
             // A keepalive PING holds the handle for at most its timeout; the
             // data that arrived meanwhile is simply not sampled.
             let Ok(mut ping_pong) = self.ping_pong.try_lock() else {
-                self.sampler.bytes.store(0, Ordering::Relaxed);
+                self.sampler.end_sample();
                 continue;
             };
-            self.sampler.sampling.store(true, Ordering::Relaxed);
             let sent = Instant::now();
             let acknowledged = ping_pong.ping(Ping::opaque()).await.is_ok();
             drop(ping_pong);
-            self.sampler.sampling.store(false, Ordering::Relaxed);
-            let bytes = self.sampler.bytes.swap(0, Ordering::Relaxed);
+            let bytes = self.sampler.end_sample();
             if !acknowledged {
                 break;
             }
@@ -306,6 +390,72 @@ mod tests {
 
         assert_eq!(sampler.bytes.load(Ordering::Relaxed), 1500);
         assert!(sampler.data.notified().now_or_never().is_none());
+    }
+
+    fn frame(kind: u8, payload_len: usize) -> Vec<u8> {
+        let len = u32::try_from(payload_len)
+            .expect("a frame length")
+            .to_be_bytes();
+        let mut frame = vec![len[1], len[2], len[3], kind, 0, 0, 0, 0, 1];
+        frame.resize(FRAME_HEADER_LEN + payload_len, 0xa5);
+        frame
+    }
+
+    #[test]
+    fn only_data_frames_are_counted_however_the_reads_split_them() {
+        const SETTINGS: u8 = 0x4;
+        const WINDOW_UPDATE: u8 = 0x8;
+        let wire = [
+            frame(SETTINGS, 18),
+            frame(DATA_FRAME, 16_384),
+            frame(WINDOW_UPDATE, 4),
+            frame(DATA_FRAME, 0),
+            frame(DATA_FRAME, 5),
+        ]
+        .concat();
+
+        for read_len in [1, 7, 9, 10, 4096, wire.len()] {
+            let sampler = Arc::new(BdpSampler::default());
+            sampler.sampling.store(true, Ordering::Relaxed);
+            let mut arrivals = DataArrivals::new(Arc::clone(&sampler));
+            for read in wire.chunks(read_len) {
+                arrivals.observe(read);
+            }
+            assert_eq!(
+                sampler.bytes.load(Ordering::Relaxed),
+                16_389,
+                "reads of {read_len}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_data_that_starts_a_sample_claims_it_for_the_data_behind_it() {
+        let sampler = Arc::new(BdpSampler::default());
+        let mut arrivals = DataArrivals::new(Arc::clone(&sampler));
+
+        arrivals.observe(&frame(DATA_FRAME, 100));
+        assert!(sampler.data.notified().now_or_never().is_some());
+        arrivals.observe(&frame(DATA_FRAME, 50));
+
+        assert!(
+            sampler.data.notified().now_or_never().is_none(),
+            "a second sample was started inside the first"
+        );
+        assert_eq!(sampler.end_sample(), 150);
+    }
+
+    /// A stream reading on another task can add to a sample just as it ends;
+    /// those bytes belong to neither sample.
+    #[test]
+    fn a_new_sample_drops_bytes_left_over_from_the_last() {
+        let sampler = BdpSampler::default();
+        sampler.bytes.store(30, Ordering::Relaxed);
+
+        sampler.record_data(70);
+
+        assert!(sampler.data.notified().now_or_never().is_some());
+        assert_eq!(sampler.end_sample(), 70);
     }
 
     #[test]

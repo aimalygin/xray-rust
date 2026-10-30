@@ -161,9 +161,6 @@ pub(crate) struct H2Connection {
     /// Shared with the keepalive, which pings only a connection that has one —
     /// see [`super::keepalive`].
     calls: Arc<OpenCalls>,
-    /// Where every call on the connection counts the DATA it reads, unless
-    /// `initialWindowsSize` pinned the windows — see [`crate::stream::h2_bdp`].
-    bdp: Option<Arc<BdpSampler>>,
 }
 
 impl H2Connection {
@@ -268,7 +265,8 @@ pub(crate) async fn h2_handshake(
     }
 
     let keepalive = resolve_keepalive(config);
-    let (io, last_read) = WatchedIo::new(io, keepalive);
+    let bdp = (config.initial_windows_size == 0).then(|| Arc::new(BdpSampler::default()));
+    let (io, last_read) = WatchedIo::new(io, keepalive, bdp.clone());
     let (send_request, mut connection) = builder
         .handshake::<_, Bytes>(io)
         .await
@@ -287,15 +285,12 @@ pub(crate) async fn h2_handshake(
             calls: Arc::clone(&calls),
         },
     );
-    let bdp_pings = ping_pong
-        .filter(|_| config.initial_windows_size == 0)
-        .map(|ping_pong| BdpPings {
-            sampler: Arc::default(),
-            ping_pong,
-            estimator: BdpEstimator::new(DEFAULT_WINDOW_SIZE, grpc_bdp_limit(memory_class())),
-            idle_limit: None,
-        });
-    let bdp = bdp_pings.as_ref().map(|pings| Arc::clone(&pings.sampler));
+    let bdp_pings = bdp.zip(ping_pong).map(|(sampler, ping_pong)| BdpPings {
+        sampler,
+        ping_pong,
+        estimator: BdpEstimator::new(DEFAULT_WINDOW_SIZE, grpc_bdp_limit(memory_class())),
+        idle_limit: None,
+    });
 
     let driver = Arc::new(H2ConnectionDriver {
         task: tokio::spawn(drive(connection, pings, bdp_pings)),
@@ -304,7 +299,6 @@ pub(crate) async fn h2_handshake(
         send_request,
         driver,
         calls,
-        bdp,
     })
 }
 
@@ -543,7 +537,6 @@ pub(crate) async fn open_grpc_call(
         call.mode,
         Arc::clone(&connection.driver),
         connection.calls.open(),
-        connection.bdp.clone(),
     ))
 }
 
