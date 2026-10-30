@@ -233,6 +233,19 @@ def clean(run):
 
 
 
+def require_isolated_builds(inputs):
+    """Rust binaries must come from scripts/build-isolated-release.py.
+
+    Building two revisions in one target directory can silently reuse the other
+    revision's workspace crates: the 2026-10-27 "before" client was such a mix.
+    """
+    for name in (*VERSIONS, 'harness'):
+        record = inputs[name]
+        if record.get('isolated_target') is not True or not record.get('workspace_packages_compiled'):
+            raise ValueError(f'{name} lacks isolated build provenance; build it with '
+                             'scripts/build-isolated-release.py instead of a shared target directory')
+
+
 def progress_pause(control, block, completed, cooldown=3):
     """UI updates happen only with no measured client or fixture alive."""
     control.mkdir(parents=True, exist_ok=True)
@@ -264,6 +277,7 @@ def main():
             del os.environ[key]
     os.umask(0o077)
     inputs = json.loads(a.inputs.read_text())
+    require_isolated_builds(inputs)
     paths = {name: Path(inputs[name]['path']).resolve(strict=True) for name in (*VERSIONS, 'harness', 'reference', 'origin')}
     for name, path in paths.items():
         if b.sha(path) != inputs[name]['sha256']:

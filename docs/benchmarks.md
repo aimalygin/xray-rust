@@ -29,13 +29,44 @@ its connections sequentially (one concurrently active). SOCKS uses a verified
 warmup; bulk SOCKS also sends a verified preface before the transfer window.
 The current matrix and byte counts are in the collector's `cases()` function.
 
-Build both clients with the same Rust toolchain and `cargo build --locked
---release -p xray-cli`; build the driver from `53756fe` with `-p xray-bench`.
-Freeze copies of the binaries before building another revision in a shared
-target directory. `inputs.json` binds each client/driver to its source commit,
-tree, Cargo.lock hash, compiler, release command and executable SHA-256. It
-also binds the clean reference and the local REALITY cover-origin helper.
-Complete builds and tests before collecting measurements.
+Build every Rust binary with `scripts/build-isolated-release.py`. Never build
+two revisions in one target directory: Cargo's artifact hash for a workspace
+crate ignores the checkout's absolute path and freshness follows file mtimes,
+so a second checkout can silently reuse the first build's workspace crates.
+The 2026-10-27 "before" client was built that way and contains the
+migration's `xray-config` and `xray-utls`
+([erratum](benchmarks/results/2026-10-27-v26.10.21-migration/README.md#erratum-2026-10-29-the-before-client-is-a-mixed-build)).
+The script exports the exact commit to a fresh temporary directory, builds it
+with an empty target directory and a sanitized environment, and fails unless
+every workspace and vendored path package was compiled from that export. Its
+JSON record has the `inputs.json` keys (source commit, tree, Cargo.lock hash,
+compiler, release command, executable path and SHA-256) plus the compiled
+package list; the collector refuses client and driver entries without it.
+`inputs.json` also binds the clean reference and the local REALITY
+cover-origin helper. Complete builds and tests before collecting measurements.
+
+```sh
+python3 scripts/build-isolated-release.py --rev 3ca380e --name before --campaign /absolute/campaign
+python3 scripts/build-isolated-release.py --rev 53756fe --name after --campaign /absolute/campaign
+python3 scripts/build-isolated-release.py --rev 53756fe --name harness --campaign /absolute/campaign \
+  --package xray-cli --package xray-bench --binary xray-bench
+```
+
+To measure identical-binary variation, collect a separate A/A control with
+an `inputs.json` whose `after` entry is a copy of `before`. A paired change
+counts only when it falls outside that control's range; five pairs cannot
+distinguish 10–15% p99 movements, whose A/A range reached ±20% in the
+2026-10-29 re-measurement.
+
+`protocol-run` results now also contain `peak_footprint_kib`: the client's
+exact lifetime peak physical footprint (macOS `proc_pid_rusage`), read before
+the client stops. It counts dirty and compressed memory like iOS jetsam limits
+and cannot miss a spike between 100 ms RSS samples. The publisher adds it as
+`footprint_mib` when every trial has it; archives collected earlier keep their
+summaries. The TUN TCP echo driver waits for frame readiness or its smoltcp
+timer instead of 1 ms sleeps. Earlier TUN TCP echo latencies of about 2.7 ms
+were mostly driver wakeup delay, not client latency: one client measured a
+2,719 µs median with the old driver and 75 µs with the new one.
 
 ```sh
 # Python >=3.11; Go 1.27.3 must be on PATH for reference identity verification.

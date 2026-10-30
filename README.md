@@ -23,10 +23,11 @@ The [2026-10-27/28 migration comparison](docs/benchmarks/results/2026-10-27-v26.
 compares Rust `3ca380e` before and `53756fe` after the v26.10.21 migration on
 one Apple M6, using the same new Xray server and driver: **200 scenarios,
 five runs per version, 2,000 accepted trials**. Paired throughput changes are
-within ±5% in 152/156 bulk cases; Hysteria2 TUN RSS and some latency tails
-need follow-up. All repeats, rejected attempts, uncertainty and scope limits
-are retained in the report. This is a Rust before/after comparison, not a new
-three-engine ranking.
+within ±5% in 152/156 bulk cases. Its "before" client turned out to be a mixed
+build. The report's erratum gives a clean re-measurement of the flagged
+Hysteria2 TUN memory and latency-tail cases, which found no regression. All
+repeats, rejected attempts, uncertainty and scope limits are retained in the
+report. This is a Rust before/after comparison, not a new three-engine ranking.
 
 ![Rust migration: eight-flow SOCKS download, medians and min/max across five runs](docs/benchmarks/results/2026-10-27-v26.10.21-migration/socks-download-8.svg)
 

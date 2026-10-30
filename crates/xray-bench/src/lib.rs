@@ -3641,20 +3641,21 @@ pub async fn run_tun_reality_blackhole_workload(
     let target = SocketAddr::from((local_non_loopback_ipv4()?, 443));
     let payload = vec![0x5a; options.payload_size];
     let mut outcome = WorkloadOutcome::empty();
+    let mut pump = TunTcpPump::new(tun_fd)?;
 
     for connection_index in 0..options.connections {
         let source_port = 49_152 + (connection_index % 10_000) as u16;
         let mut client = TunTcpBenchmarkClient::new(source_port);
         let setup_started = Instant::now();
         client.connect(target)?;
-        pump_tun_tcp_until(tun_fd, &mut client, TunTcpBenchmarkClient::may_send).await?;
+        pump_tun_tcp_until(&mut pump, &mut client, TunTcpBenchmarkClient::may_send).await?;
         outcome
             .latencies_us
             .push(setup_started.elapsed().as_micros());
 
         client.send_payload(&payload)?;
         outcome.bytes_sent += payload.len() as u64;
-        pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
+        pump_tun_tcp_for(&mut pump, &mut client, Duration::from_millis(5)).await?;
     }
 
     sleep(options.duration).await;
@@ -4349,10 +4350,11 @@ async fn run_tun_tcp_freedom_connection(
     options: &BenchOptions,
     disposition: TunTcpFlowDisposition,
 ) -> Result<WorkloadOutcome, BenchError> {
+    let mut pump = TunTcpPump::new(tun_fd)?;
     let mut client = TunTcpBenchmarkClient::new(source_port);
     let setup_started = Instant::now();
     client.connect(echo_addr)?;
-    pump_tun_tcp_until(tun_fd, &mut client, TunTcpBenchmarkClient::may_send).await?;
+    pump_tun_tcp_until(&mut pump, &mut client, TunTcpBenchmarkClient::may_send).await?;
     let setup_us = setup_started.elapsed().as_micros();
 
     let payload = vec![0x5a; options.payload_size];
@@ -4363,7 +4365,7 @@ async fn run_tun_tcp_freedom_connection(
         client.send_payload(&payload)?;
         let mut received = Vec::with_capacity(payload.len());
         let started = Instant::now();
-        pump_tun_tcp_until(tun_fd, &mut client, |client| {
+        pump_tun_tcp_until(&mut pump, &mut client, |client| {
             received.extend_from_slice(&client.recv_available());
             received.len() >= payload.len()
         })
@@ -4380,12 +4382,12 @@ async fn run_tun_tcp_freedom_connection(
 
     if disposition == TunTcpFlowDisposition::Abort {
         client.abort();
-        pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
+        pump_tun_tcp_for(&mut pump, &mut client, Duration::from_millis(5)).await?;
     } else {
         // Flush the client's final ACK before dropping its local state. The
         // server-side TUN flow then stays genuinely idle during the hold phase
         // instead of spending the measurement window retransmitting echo data.
-        pump_tun_tcp_for(tun_fd, &mut client, Duration::from_millis(5)).await?;
+        pump_tun_tcp_for(&mut pump, &mut client, Duration::from_millis(5)).await?;
     }
 
     Ok(outcome)
@@ -5359,44 +5361,103 @@ fn ipv4_tcp_destination_port(packet: &[u8]) -> Option<u16> {
     ipv4_tcp_endpoints(packet).map(|endpoints| endpoints.destination_port)
 }
 
+/// A TUN fd registration for the emulated TCP client. Waiting on readiness
+/// and smoltcp's next timer, instead of fixed sleeps, keeps the driver's own
+/// wakeup delay out of measured round trips.
+#[cfg(unix)]
+struct TunTcpPump {
+    fd: RawFd,
+    ready: AsyncFd<OwnedFd>,
+    buffer: Vec<u8>,
+}
+
+#[cfg(unix)]
+impl TunTcpPump {
+    fn new(fd: RawFd) -> Result<Self, BenchError> {
+        let ready = register_tun_fd(fd).map_err(|source| BenchError::Io {
+            action: "registering benchmark TUN fd".to_owned(),
+            source,
+        })?;
+        Ok(Self {
+            fd,
+            ready,
+            buffer: vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN],
+        })
+    }
+}
+
 #[cfg(unix)]
 async fn pump_tun_tcp_until(
-    tun_fd: RawFd,
+    pump: &mut TunTcpPump,
     client: &mut TunTcpBenchmarkClient,
     mut is_done: impl FnMut(&mut TunTcpBenchmarkClient) -> bool,
 ) -> Result<(), BenchError> {
     let deadline = Instant::now() + Duration::from_secs(5);
-    let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
     loop {
-        pump_tun_tcp_once(tun_fd, client, &mut buffer)?;
+        pump_tun_tcp_once(pump.fd, client, &mut pump.buffer)?;
 
         if is_done(client) {
             return Ok(());
         }
-        if Instant::now() >= deadline {
+        let now = Instant::now();
+        if now >= deadline {
             return Err(BenchError::InvalidArguments(
                 "timed out waiting for TUN TCP client state".to_owned(),
             ));
         }
-        sleep(Duration::from_millis(1)).await;
+        wait_tun_tcp_input(pump, client, deadline - now).await?;
     }
 }
 
 #[cfg(unix)]
 async fn pump_tun_tcp_for(
-    tun_fd: RawFd,
+    pump: &mut TunTcpPump,
     client: &mut TunTcpBenchmarkClient,
     duration: Duration,
 ) -> Result<(), BenchError> {
     let deadline = Instant::now() + duration;
-    let mut buffer = vec![0; 65_535 + DARWIN_UTUN_HEADER_LEN];
     loop {
-        pump_tun_tcp_once(tun_fd, client, &mut buffer)?;
-        if Instant::now() >= deadline {
+        pump_tun_tcp_once(pump.fd, client, &mut pump.buffer)?;
+        let now = Instant::now();
+        if now >= deadline {
             return Ok(());
         }
-        sleep(Duration::from_millis(1)).await;
+        wait_tun_tcp_input(pump, client, deadline - now).await?;
     }
+}
+
+/// Waits for one inbound frame or the client's next smoltcp timer, whichever
+/// comes first, bounded by `remaining`.
+#[cfg(unix)]
+async fn wait_tun_tcp_input(
+    pump: &mut TunTcpPump,
+    client: &mut TunTcpBenchmarkClient,
+    remaining: Duration,
+) -> Result<(), BenchError> {
+    let now = SmolInstant::now();
+    let timer = client
+        .poll_at()
+        .map(|deadline| {
+            Duration::from_micros(
+                deadline
+                    .total_micros()
+                    .saturating_sub(now.total_micros())
+                    .max(0) as u64,
+            )
+        })
+        .unwrap_or(Duration::from_millis(50))
+        .min(remaining);
+    tokio::select! {
+        frame = read_tun_frame_ready(&pump.ready, &mut pump.buffer) => {
+            let len = frame?;
+            let packet = decode_darwin_utun_frame(&pump.buffer[..len])?;
+            if client.accepts_packet(packet) {
+                client.device.push_inbound(Bytes::copy_from_slice(packet));
+            }
+        }
+        () = sleep(timer) => {}
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

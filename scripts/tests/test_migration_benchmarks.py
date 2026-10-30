@@ -101,6 +101,15 @@ class PublicationTests(unittest.TestCase):
         cls.p = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.p)
 
+    def test_collection_requires_isolated_rust_builds(self):
+        good = {'isolated_target': True, 'workspace_packages_compiled': ['crates/xray-cli']}
+        inputs = {name: dict(good) for name in ('before', 'after', 'harness')}
+        m.require_isolated_builds(inputs)
+        for name in ('before', 'after', 'harness'):
+            for broken in ({}, {'isolated_target': True}, {'workspace_packages_compiled': ['crates/xray-cli']}):
+                with self.subTest(name=name, broken=broken), self.assertRaisesRegex(ValueError, 'isolated build'):
+                    m.require_isolated_builds(dict(inputs, **{name: broken}))
+
     def test_missing_matrix_and_smoke_cannot_be_published(self):
         with self.assertRaisesRegex(ValueError, 'incomplete 200-case'):
             self.p.summarize({}, [])

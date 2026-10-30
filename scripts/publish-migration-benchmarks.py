@@ -74,6 +74,10 @@ def validate_trial(case, run, result, inputs):
         'transfer_seconds': result['transfer_seconds'], 'startup_seconds': result['client_startup_seconds'],
         'startup_cpu_millis': result['client_startup_cpu_millis'],
         'total_cpu_millis': result['client_cpu_total_millis']}
+    # Harnesses since 2026-10-29 also report the exact lifetime peak physical
+    # footprint (macOS). Older archives lack it, so their summaries are unchanged.
+    if result.get('peak_footprint_kib'):
+        values['footprint_mib'] = result['peak_footprint_kib'] / 1024
     for key, value in (result['latency_us'] or {}).items():
         values['latency_' + key + '_us'] = value
     for key, value in (result['ready_latency_us'] or {}).items():
