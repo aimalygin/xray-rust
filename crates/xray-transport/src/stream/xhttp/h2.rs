@@ -44,6 +44,12 @@ const STREAM_WINDOW_SIZE: u32 = DEFAULT_H2_STREAM_RECEIVE_WINDOW;
 /// this is not an RSS bound (TLS, framing and application buffers add to it).
 const CONNECTION_WINDOW_SIZE: u32 = H2_CONNECTION_RECEIVE_WINDOW;
 
+/// x/net/http2's `inflowMinRefresh`: stream credit goes back once 4 KiB has
+/// been read, as Go's client returns it. h2 alone waits for half the remaining
+/// window, about 1.4 MB of a 4 MiB one, and at 113 ms that left our downloads
+/// 28% behind Go's (`docs/issue28-client-comparison.md`).
+const STREAM_WINDOW_UPDATE_THRESHOLD: u32 = 4 * 1024;
+
 /// Bounds the copy made by one [`AsyncWrite::poll_write`] call.
 const MAX_UPLOAD_DATA_BYTES: usize = 16 * 1024;
 
@@ -251,6 +257,7 @@ pub async fn connect_h2_with_receive_window(
     builder
         .initial_window_size(stream_receive_window)
         .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
+        .stream_window_update_threshold(STREAM_WINDOW_UPDATE_THRESHOLD)
         .initial_max_send_streams(1);
     let (send_request, mut connection) = builder
         .handshake::<_, Bytes>(io)

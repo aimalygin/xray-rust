@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -86,6 +86,18 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
 cargo test --locked --manifest-path "$temporary/smoltcp-0.14.0/Cargo.toml" \
   --no-default-features --features std,medium-ip,proto-ipv4,proto-ipv6,socket-tcp,socket-tcp-reno,socket-udp \
   --lib
+
+download_and_verify \
+  h2 0.4.20 \
+  7d29020232d6aa3fb1daca64c1127cf662cf97f254ae16c18c05b8ab635fc118
+patch --batch --fuzz=0 -p1 \
+  -d "$temporary/h2-0.4.20" \
+  <"$ROOT/vendor/h2/XRAY-PATCH.diff"
+diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
+  "$temporary/h2-0.4.20" "$ROOT/vendor/h2"
+# The published crate omits the HPACK fixture files its fixture tests read.
+cargo test --locked --manifest-path "$temporary/h2-0.4.20/Cargo.toml" \
+  --lib -- --skip hpack::test::fixture
 
 bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
 echo "verified vendored sources against checksum-pinned archives"
