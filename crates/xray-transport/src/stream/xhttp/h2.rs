@@ -94,6 +94,12 @@ impl H2ReceiveWindow {
     }
 }
 
+/// x/net/http2's `initialMaxConcurrentStreams`: the streams Go's client assumes
+/// it may open before the server's SETTINGS arrive. Assuming one made the
+/// first upload of a packet-up flow dial a second connection, a whole TLS
+/// round trip, while the download held the only stream of a fresh one.
+const INITIAL_MAX_SEND_STREAMS: usize = 100;
+
 /// Bounds the copy made by one [`AsyncWrite::poll_write`] call.
 const MAX_UPLOAD_DATA_BYTES: usize = 16 * 1024;
 
@@ -316,7 +322,7 @@ pub async fn connect_h2_with_window(
         .initial_window_size(window.initial())
         .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
         .stream_window_update_threshold(STREAM_WINDOW_UPDATE_THRESHOLD)
-        .initial_max_send_streams(1);
+        .initial_max_send_streams(INITIAL_MAX_SEND_STREAMS);
     let (send_request, mut connection) = builder
         .handshake::<_, Bytes>(io)
         .await

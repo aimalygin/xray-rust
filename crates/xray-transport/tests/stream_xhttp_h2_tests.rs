@@ -1124,6 +1124,20 @@ async fn cloned_client_opens_concurrent_streams_without_serializing_headers() {
     server_task.await.expect("server task");
 }
 
+/// Before the server's SETTINGS a connection admits as many streams as Go's
+/// client assumes, so a packet-up flow's first upload shares it with the
+/// download instead of dialing a second connection.
+#[tokio::test]
+async fn a_fresh_connection_assumes_gos_initial_stream_limit() {
+    let (client_io, _silent_server) = tokio::io::duplex(1024 * 1024);
+    let client = timeout(DEADLINE, connect_h2(Box::new(client_io)))
+        .await
+        .expect("the handshake does not wait for SETTINGS")
+        .expect("client HTTP/2 handshake");
+
+    assert_eq!(client.current_max_send_streams(), 100);
+}
+
 #[tokio::test]
 async fn remote_reset_after_headers_is_reported_by_response_reader() {
     let (client, mut server) = pair().await;
