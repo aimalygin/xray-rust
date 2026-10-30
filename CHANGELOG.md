@@ -33,6 +33,9 @@ long-term supported release series.
 - With the mobile and low-memory profiles, open XHTTP H2 streams at 1 MiB and
   grow them to Go's 4 MiB only for a reader that keeps up, so a stalled
   download pins a quarter of the memory. A configured window stays fixed.
+  With the mobile profile, eight XHTTP H2 downloads whose readers stall
+  through TUN fell from a 61.5 MiB to a 19.2 MiB peak footprint at the same
+  speed, for about 3% more CPU.
 - Auto-tune XHTTP H3 receive windows as Xray's quic-go does, from 2 MiB per
   stream and 3 MiB per connection up to 6 MiB and 15 MiB or the configured
   maxima, which were rejected before. The mobile profiles keep the initial
