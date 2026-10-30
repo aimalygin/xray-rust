@@ -878,7 +878,11 @@ routed geodata is always two-engine and the other slots use all three engines.
 With the flag, the mixed latency chart retains the three-engine legend for its
 direct TCP/UDP groups and dynamically notes, using the supplied comparator
 versions, why the REALITY group has no sing-box bar. The REALITY throughput
-chart uses only two engine labels and the same note. The renderer writes
+chart uses only two engine labels and the same note.
+`--omit-sing-box-1000-flows` likewise leaves sing-box out of the 1,000-flow
+group of the memory chart, which then needs no such summary and says why; the
+2026-10-30 group passes it because none of sing-box v1.14.4's 1,000-flow runs
+completed on its host. The renderer writes
 light/dark SVG pairs (`memory-rss`, `latency`, `throughput`,
 `reality-throughput`, `cpu-per-gib`, `geo-setup-latency`, `geo-memory`) to
 `docs/benchmarks/media/` (override with
