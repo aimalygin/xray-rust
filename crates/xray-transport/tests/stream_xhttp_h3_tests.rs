@@ -695,6 +695,104 @@ async fn streaming_upload_and_download_progress_full_duplex() {
 }
 
 #[tokio::test]
+async fn slow_path_upload_buffers_only_the_initial_quic_send_window() {
+    // The server grants 16 MiB of stream credit, but a 100 ms round trip keeps
+    // the congestion window small, so accepted bytes wait in the client's own
+    // QUIC send buffer. quinn's default window let one request buffer 10 MB;
+    // the client now starts at 2 MiB and grows only with its congestion window.
+    let (client_tls, server_addr, server) = server_with_options(Some(16 * 1024 * 1024)).await;
+    let (relay_addr, relay) = udp_delay_relay(server_addr, Duration::from_millis(50)).await;
+    let client = connect_h3(H3ConnectConfig {
+        remote_addr: relay_addr,
+        server_name: "localhost".to_owned(),
+        tls_config: client_tls,
+        socket_protector: None,
+        quic: H3QuicConfig::default(),
+    })
+    .await
+    .expect("connect HTTP/3 client through the delay relay");
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_request, stream) = server.accept().await;
+            // Hold the stream open without reading it.
+            tokio::time::sleep(DEADLINE).await;
+            drop(stream);
+        }
+    });
+    let (mut upload, _pending) = client
+        .start_streaming(request(Method::POST, "/blocked"))
+        .await
+        .expect("open streaming request");
+
+    // Write for less than one round trip: no ACK can free buffer space yet,
+    // so the accepted bytes are what the client buffers before backpressure.
+    let chunk = vec![0x5a; 64 * 1024];
+    let mut accepted = 0usize;
+    let deadline = Instant::now() + Duration::from_millis(60);
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        match timeout(remaining, upload.write(&chunk)).await {
+            Ok(Ok(written)) => accepted += written,
+            Ok(Err(error)) => panic!("upload failed on the slow path: {error}"),
+            Err(_) => break,
+        }
+    }
+    assert!(
+        accepted >= 3 * 1024 * 1024 / 2,
+        "the initial window must still be usable: {accepted} bytes"
+    );
+    assert!(
+        accepted < 3 * 1024 * 1024,
+        "a slow-path upload buffered {accepted} bytes"
+    );
+    handler.abort();
+    relay.abort();
+}
+
+/// Forwards UDP between one client and `server`, delaying each datagram.
+async fn udp_delay_relay(server: SocketAddr, delay: Duration) -> (SocketAddr, JoinHandle<()>) {
+    let front = Arc::new(
+        tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind relay"),
+    );
+    let back = Arc::new(
+        tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind relay upstream"),
+    );
+    back.connect(server).await.expect("connect relay upstream");
+    let relay_addr = front.local_addr().expect("relay address");
+    let task = tokio::spawn(async move {
+        let mut client = None;
+        let mut up = vec![0; 65_535];
+        let mut down = vec![0; 65_535];
+        loop {
+            tokio::select! {
+                received = front.recv_from(&mut up) => {
+                    let Ok((len, from)) = received else { return };
+                    client = Some(from);
+                    let (back, datagram) = (Arc::clone(&back), up[..len].to_vec());
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        let _ = back.send(&datagram).await;
+                    });
+                }
+                received = back.recv(&mut down) => {
+                    let (Ok(len), Some(to)) = (received, client) else { continue };
+                    let (front, datagram) = (Arc::clone(&front), down[..len].to_vec());
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        let _ = front.send_to(&datagram, to).await;
+                    });
+                }
+            }
+        }
+    });
+    (relay_addr, task)
+}
+
+#[tokio::test]
 async fn flush_delivers_request_data_without_half_closing_upload() {
     const SERVER_STREAM_WINDOW: u32 = 1024;
     const PAYLOAD_BYTES: usize = 8 * 1024;

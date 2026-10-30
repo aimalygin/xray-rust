@@ -327,7 +327,52 @@ impl fmt::Debug for H3Client {
 struct H3ConnectionDriver {
     endpoint: Endpoint,
     connection: quinn::Connection,
+    send_window: QuicSendWindow,
     task: JoinHandle<h3::error::ConnectionError>,
+}
+
+impl H3ConnectionDriver {
+    fn grow_send_window(&self) {
+        self.send_window.grow(&self.connection);
+    }
+}
+
+/// Bytes a QUIC connection may hold written but not yet acknowledged. quinn's
+/// default is 10 MB per connection; with one connection per XHTTP H3 request,
+/// a slow uplink made that 10 MB of memory per upload.
+pub(crate) const QUIC_INITIAL_SEND_WINDOW: u64 = 2 * 1024 * 1024;
+/// High bandwidth-delay paths may still grow to quinn's former 10 MB.
+pub(crate) const QUIC_MAX_SEND_WINDOW: u64 = 10_000_000;
+/// Uploaded bytes between send-window growth samples.
+pub(crate) const QUIC_SEND_WINDOW_SAMPLE_BYTES: usize = 1024 * 1024;
+
+/// One connection's send window, grown toward twice its congestion window.
+#[derive(Debug)]
+pub(crate) struct QuicSendWindow(AtomicU64);
+
+impl QuicSendWindow {
+    pub(crate) fn new() -> Self {
+        Self(AtomicU64::new(QUIC_INITIAL_SEND_WINDOW))
+    }
+
+    /// Called after another sample of uploaded bytes, never from an idle
+    /// timer, so a quiet connection keeps its small window.
+    pub(crate) fn grow(&self, connection: &quinn::Connection) {
+        let current = self.0.load(Ordering::Relaxed);
+        if current == QUIC_MAX_SEND_WINDOW {
+            return;
+        }
+        let target = connection
+            .stats()
+            .path
+            .cwnd
+            .saturating_mul(2)
+            .clamp(QUIC_INITIAL_SEND_WINDOW, QUIC_MAX_SEND_WINDOW);
+        if target > current {
+            connection.set_send_window(target);
+            self.0.store(target, Ordering::Relaxed);
+        }
+    }
 }
 
 impl Drop for H3ConnectionDriver {
@@ -405,7 +450,7 @@ impl H3Client {
         let shared = Arc::new(ExchangeShared {
             cancel,
             _connection_guard: send_request,
-            _driver: Arc::clone(&self.driver),
+            driver: Arc::clone(&self.driver),
         });
         let upload_status = Arc::new(UploadWorkerStatus::new());
         let (upload, upload_reader) = tokio::io::duplex(MAX_UPLOAD_DATA_BYTES);
@@ -460,6 +505,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     let driver = Arc::new(H3ConnectionDriver {
         endpoint,
         connection,
+        send_window: QuicSendWindow::new(),
         task,
     });
 
@@ -714,7 +760,8 @@ fn build_quinn_config(
         .keep_alive_interval(config.quic.keep_alive_interval)
         .stream_receive_window(stream_window)
         .receive_window(connection_window)
-        .max_concurrent_bidi_streams(max_incoming);
+        .max_concurrent_bidi_streams(max_incoming)
+        .send_window(QUIC_INITIAL_SEND_WINDOW);
     if let Some((receive, send, frame_size)) = datagram_buffers {
         transport.datagram_receive_buffer_size(Some(receive));
         transport.datagram_send_buffer_size(send);
@@ -782,7 +829,7 @@ fn protect_quic_socket(
 struct ExchangeShared {
     cancel: watch::Sender<bool>,
     _connection_guard: H3SendRequest,
-    _driver: Arc<H3ConnectionDriver>,
+    driver: Arc<H3ConnectionDriver>,
 }
 
 impl ExchangeShared {
@@ -813,6 +860,7 @@ async fn drive_upload(
 ) {
     let mut cancellation = shared.cancellation();
     let mut buffer = [0_u8; MAX_UPLOAD_DATA_BYTES];
+    let mut since_window_sample = 0_usize;
     let result = loop {
         let read = tokio::select! {
             biased;
@@ -861,6 +909,11 @@ async fn drive_upload(
         }
         status.delivered.fetch_add(read as u64, Ordering::Release);
         status.waker.wake();
+        since_window_sample += read;
+        if since_window_sample >= QUIC_SEND_WINDOW_SAMPLE_BYTES {
+            since_window_sample = 0;
+            shared.driver.grow_send_window();
+        }
     };
 
     if result.is_err() {

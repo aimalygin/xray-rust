@@ -39,7 +39,8 @@ mod xhttp;
 
 pub(crate) use xhttp::{
     configure_quic_datagram_socket, connect_h2, connect_quic_transport,
-    connect_quic_transport_with_datagrams, H3ConnectConfig, H3Error,
+    connect_quic_transport_with_datagrams, H3ConnectConfig, H3Error, QuicSendWindow,
+    QUIC_INITIAL_SEND_WINDOW, QUIC_SEND_WINDOW_SAMPLE_BYTES,
 };
 
 /// Test scaffolding, not API: `tests/stream_grpc_tests.rs` imports from here
