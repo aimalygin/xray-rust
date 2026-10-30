@@ -94,6 +94,7 @@ class XrayNetworkChangeCoordinator(
         onResult = onResult,
         onError = onError,
         waitForBlockedCallback = Build.VERSION.SDK_INT >= 29,
+        currentObservation = { network -> connectivityManager.currentObservation(network) },
     )
 
     /**
@@ -121,4 +122,14 @@ private fun copyLinkProperties(source: LinkProperties): LinkProperties {
     } finally {
         parcel.recycle()
     }
+}
+
+/** Queried on the control worker, not in a callback; the host manifest grants ACCESS_NETWORK_STATE. */
+@Suppress("MissingPermission")
+private fun ConnectivityManager.currentObservation(
+    network: Network,
+): XrayNetworkObservation<Network, NetworkCapabilities, LinkProperties>? {
+    val capabilities = getNetworkCapabilities(network) ?: return null
+    val properties = getLinkProperties(network) ?: return null
+    return XrayNetworkObservation(network, capabilities, properties)
 }

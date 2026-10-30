@@ -296,7 +296,12 @@ carrier is usable. Errors are reported without requesting rebind. Callback
 metadata is used directly, following Android's
 [NetworkCallback ordering contract](https://developer.android.com/reference/android/net/ConnectivityManager.NetworkCallback);
 the helper does not synchronously query network properties from `onAvailable`.
-API 29+ also waits for the initial blocked-status callback.
+API 29+ also waits for the initial blocked-status callback. Android reports
+existing networks one at a time, so until the network passed to `start` reports
+its own callbacks or is lost, the control worker reads its current capabilities
+and link properties and offers it as a candidate; a network that is already
+gone is handled as lost. Another network reporting first therefore does not
+look like a migration away from the actual carrier.
 
 Duplicate observations and bursts share one pending task and use the latest
 snapshot. Without an initial network, the first usable selection establishes a

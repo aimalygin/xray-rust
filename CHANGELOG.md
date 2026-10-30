@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- Android: `XrayNetworkChangeCoordinator` no longer mistakes a partial initial
+  callback burst for a migration. Until the network passed to `start` reports
+  or is lost, the control worker reads its current state and offers it as a
+  candidate, so another network reporting first neither requests rebind nor
+  moves a policy that keeps the previous carrier (#89).
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
