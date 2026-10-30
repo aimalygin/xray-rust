@@ -16,13 +16,16 @@ long-term supported release series.
   trip. Windows now start there and double while a sample fills two thirds of
   them, up to 16 MiB, or 1 MiB with the mobile and low-memory profiles; any
   configured `initialWindowsSize` still pins them, as in grpc-go, and the
-  opening burst is unchanged. At an added 113 ms, gRPC downloads rose from
-  4.4 to 127.6 Mbit/s under a 150 Mbit/s limit (Go 127.8) and from 4.4 to
-  204.7 without one (Go 184.6).
-- Return XHTTP H2 stream credit every 4 KiB, as Go's client does, instead of
-  after about a third of the window, through a vendored h2 option. Without a
-  rate limit at an added 113 ms, XHTTP H2 downloads rose from 181.5 to
-  253.6 Mbit/s, level with Go's 253.5.
+  opening burst is unchanged. Samples start as DATA arrives, as grpc-go's
+  do, so grpc-go's server never counts a BDP ping toward its
+  `too_many_pings` limit. At an added 113 ms, gRPC downloads rose from 4.4 to
+  124.9 Mbit/s under a 150 Mbit/s limit (Go 124.6) and from 4.4 to 187.6
+  without one (Go 183.8).
+- Return XHTTP H2 stream credit once a sixteenth of the window has been
+  read, instead of after about a third of it, through a vendored h2 option.
+  Without a rate limit at an added 113 ms, XHTTP H2 downloads rose from 181.5
+  to 261.9 Mbit/s (Go 253.0). Go's client returns credit every 4 KiB; a
+  WINDOW_UPDATE for every read cost a fast local download 16% of its speed.
 - Let a new XHTTP H2 connection carry 100 streams before the server's
   SETTINGS arrive, as Go's client assumes, instead of one. A packet-up flow's
   first upload found the connection full while its download held the only
