@@ -1584,7 +1584,7 @@ async fn bridge_socks_udp_vless_flow(
     let opened = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = tokio::time::timeout(
+        result = crate::outbound::datagram::within_handshake(
             open_timeout,
             open_vless_udp_stream_with_resolver_and_dialer(
                 &outbound,
@@ -1594,7 +1594,7 @@ async fn bridge_socks_udp_vless_flow(
             ),
         ) => result,
     };
-    let Ok(Ok((stream, framing))) = opened else {
+    let Ok((stream, framing)) = opened else {
         return;
     };
     connection.mark_active();

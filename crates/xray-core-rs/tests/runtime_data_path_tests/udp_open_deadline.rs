@@ -38,11 +38,19 @@ impl Waiting {
 }
 
 async fn start_core(inbound: Value, waiting: Waiting) -> (Core, TcpListener) {
+    start_core_with_handshake(inbound, waiting, HANDSHAKE.as_secs()).await
+}
+
+async fn start_core_with_handshake(
+    inbound: Value,
+    waiting: Waiting,
+    handshake_secs: u64,
+) -> (Core, TcpListener) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let profile = json!({
         "inbounds": [inbound],
         "outbounds": [waiting.outbound(listener.local_addr().unwrap().port())],
-        "policy": {"levels": {"0": {"handshake": HANDSHAKE.as_secs()}}}
+        "policy": {"levels": {"0": {"handshake": handshake_secs}}}
     });
     let config = parse_xray_json(&profile.to_string()).unwrap().config;
     let mut core = Core::new(config).unwrap();
@@ -174,4 +182,54 @@ async fn tun_udp_via_trojan_tls_gives_up_on_a_silent_upstream() {
 #[tokio::test]
 async fn tun_udp_via_vless_tls_gives_up_on_a_silent_upstream() {
     tun_udp_open_gives_up_on_a_silent_upstream(Waiting::Vless).await;
+}
+
+/// `handshake: 0` means no bound, as for Xray-core's WireGuard client: a zero
+/// deadline failed every open on its first poll, before dialing the upstream.
+async fn tun_udp_open_without_handshake_bound_waits(waiting: Waiting) {
+    let (mut core, listener) =
+        start_core_with_handshake(json!({"tag": "tun-in", "protocol": "tun"}), waiting, 0).await;
+    let IpAddr::V4(target_ip) = UDP_TARGET.ip() else {
+        unreachable!("the target is IPv4");
+    };
+    let packet = Bytes::from(ipv4_udp_packet(
+        Ipv4Addr::new(10, 10, 0, 2),
+        49_301,
+        target_ip,
+        UDP_TARGET.port(),
+        b"first",
+    ));
+
+    core.tun().push_inbound(packet).await.unwrap();
+    let (mut upstream, _) = timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .unwrap_or_else(|_| panic!("{waiting:?} outbound dials the upstream"))
+        .unwrap();
+    let mut sink = [0; 4_096];
+    let abandoned = timeout(HANDSHAKE * 2, async {
+        while upstream.read(&mut sink).await.is_ok_and(|read| read > 0) {}
+    })
+    .await;
+    assert!(
+        abandoned.is_err(),
+        "{waiting:?} outbound gave up an unbounded open"
+    );
+    assert_eq!(core.tun().stats().await.udp_open_errors, 0, "{waiting:?}");
+
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn tun_udp_via_socks_waits_without_a_handshake_bound() {
+    tun_udp_open_without_handshake_bound_waits(Waiting::Socks).await;
+}
+
+#[tokio::test]
+async fn tun_udp_via_trojan_tls_waits_without_a_handshake_bound() {
+    tun_udp_open_without_handshake_bound_waits(Waiting::Trojan).await;
+}
+
+#[tokio::test]
+async fn tun_udp_via_vless_tls_waits_without_a_handshake_bound() {
+    tun_udp_open_without_handshake_bound_waits(Waiting::Vless).await;
 }

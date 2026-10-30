@@ -79,12 +79,25 @@ pub(crate) async fn open_within_handshake(
             return Err(CoreError::UnsupportedOutboundNetwork)
         }
     };
-    tokio::time::timeout(
+    within_handshake(
         effective_policy_for_level(config, Some(level)).handshake,
         open(outbound, target, destination, bootstrap, dialer, global_id),
     )
     .await
-    .map_err(|_| open_timed_out())?
+}
+/// Runs a UDP open under `handshake`. Zero means no bound, as for Xray-core's
+/// WireGuard client (`proxy/wireguard/client.go`); a zero deadline would fail
+/// every open on its first poll.
+pub(crate) async fn within_handshake<T>(
+    handshake: std::time::Duration,
+    open: impl std::future::Future<Output = Result<T, CoreError>>,
+) -> Result<T, CoreError> {
+    if handshake.is_zero() {
+        return open.await;
+    }
+    tokio::time::timeout(handshake, open)
+        .await
+        .map_err(|_| open_timed_out())?
 }
 pub(crate) fn open_timed_out() -> CoreError {
     io::Error::new(io::ErrorKind::TimedOut, "outbound udp open timed out").into()
