@@ -457,10 +457,17 @@ impl QuicReceiveWindows {
     /// reader consumed half the stream window too quickly.
     fn on_read(&self, bytes: usize, connection: &quinn::Connection) {
         let mut tuning = lock_unpoisoned(&self.tuning);
+        if tuning.stream >= self.max_stream && tuning.connection >= self.max_connection {
+            return;
+        }
         tuning.read += bytes as u64;
         let in_epoch = tuning.read - tuning.epoch_offset;
+        // Checked first: reading the RTT takes the connection's lock.
+        if in_epoch <= tuning.stream / 2 {
+            return;
+        }
         let rtt = connection.rtt();
-        if in_epoch <= tuning.stream / 2 || rtt.is_zero() {
+        if rtt.is_zero() {
             return;
         }
         let now = std::time::Instant::now();
