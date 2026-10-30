@@ -112,11 +112,17 @@ class PublicationTests(unittest.TestCase):
 
     def test_missing_matrix_and_smoke_cannot_be_published(self):
         with self.assertRaisesRegex(ValueError, 'incomplete 200-case'):
-            self.p.summarize({}, [])
+            self.p.summarize({}, [], self.p.LEGACY_PINS)
         import json
         entry = {'smoke/manifest.json': json.dumps(dict(status='pass', smoke=True, repeats=1))}
         with self.assertRaisesRegex(ValueError, 'non-publication'):
-            self.p.summarize(entry, ['smoke'])
+            self.p.summarize(entry, ['smoke'], self.p.LEGACY_PINS)
+
+    def test_a_comparison_pins_each_rust_build_and_nothing_else(self):
+        pins = dict(self.p.LEGACY_PINS)
+        for broken in ({k: v for k, v in pins.items() if k != 'harness'}, dict(pins, reference='x')):
+            with self.subTest(broken=broken), self.assertRaisesRegex(ValueError, 'pin exactly'):
+                self.p.summarize({}, [], broken)
 
     def test_runtime_validation_rejects_wrong_binary_axes_bytes_and_overrides(self):
         case = m.cases()[0]
