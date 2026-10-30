@@ -35,51 +35,52 @@ remains with its erratum.
 
 ![Performance branch against main: median paired changes in throughput, CPU per GiB and peak footprint across all 156 bulk scenarios](docs/benchmarks/results/2026-10-30-perf-branch/bulk-changes.svg)
 
-### Historical three-engine comparison (2026-08-31)
+### Three-engine comparison (2026-10-30)
 
-The historical synthetic localhost evidence below compares the `v0.4.1-rc.4`
-benchmark candidate `5895b09`
-with Xray-core `v26.7.28`
-(`5ca6f4b7d4dc20a881d4330e498892697627ec0c`) and stable sing-box `v1.13.20`
-(`56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778`). Values are medians across five
-release runs from the 2026-08-31 result group on an Apple M3 Pro MacBook Pro
-with 18 GB RAM and macOS 26.5.2. The [full dated evidence](docs/benchmarks/results/2026-08-31-v26.7.28/README.md)
-contains 139 validated series, exact binary hashes, tables, omissions, and raw
-archive provenance.
+The synthetic localhost evidence below compares xray-rust `123b9d8` with
+Xray-core `v26.10.21` (`1b1647cd9ddf0abc34b981d4611fc03bcac1ca74`) and stable
+sing-box `v1.14.4` (`c005f35300ce76427dc285481ec5695f5b179cd2`). Values are
+medians across five release runs on an Apple M6 with 32 GB RAM and macOS 27.0.
+The [dated result group](docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md)
+holds all 58 scenarios (138 engine series), exact binary hashes, the stream,
+XHTTP pressure and bounded-memory tables, and every omission with its reason.
 
 For 0.7 regression checks and Hysteria2/WireGuard comparisons, see the
 [0.7 performance record](docs/v07-performance.md), including the accepted
 measurement tolerance, deferred RSS work and remaining comparison gaps.
 
-Lowest resident memory at every measured idle-flow scale — 4.2 MiB idle and
-20.9 MiB with 1,000 held SOCKS flows, against 80.8 MiB for Xray-core and
-48.8 MiB for sing-box:
+Lowest resident memory at every measured idle-flow scale — 4.6 MiB idle and
+22.7 MiB with 1,000 held SOCKS flows, against 78.6 MiB for Xray-core. sing-box
+v1.14.4 uses 30.8 MiB idle and 37.6 MiB with 100 flows; none of its
+1,000-flow runs completed on this host:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/memory-rss-dark.svg">
-  <img alt="Peak resident set size, lower is better. Idle: xray-rust 4.2 MiB, Xray-core 29.5, sing-box 21.8. 100 idle flows: xray-rust 6.2, Xray-core 36.2, sing-box 27.2. 1000 idle flows: xray-rust 20.9, Xray-core 80.8, sing-box 48.8." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/memory-rss-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/media/memory-rss-dark.svg">
+  <img alt="Peak resident set size, lower is better. Idle: xray-rust 4.6 MiB, Xray-core 27.4, sing-box 30.8. 100 idle flows: xray-rust 7.0, Xray-core 34.6, sing-box 37.6. 1000 idle flows: xray-rust 22.7, Xray-core 78.6, sing-box omitted." src="docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/media/memory-rss-light.svg">
 </picture>
 
-Through a full VLESS + REALITY + Vision tunnel, xray-rust reaches 15.2 Gbps
-against Xray-core's 14.3 at 760 versus 800 CPU ms/GiB. Stable sing-box is
-omitted here because its REALITY client version is below the pinned server's
-default minimum:
+Through a full VLESS + REALITY + Vision tunnel, xray-rust reaches 22.1 Gbps
+against Xray-core's 19.1 at 480 versus 500 CPU ms/GiB. Stable sing-box is
+omitted: its REALITY client removes the X25519MLKEM768 key share that
+v26.9.8 and later servers require:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/reality-throughput-dark.svg">
-  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 15.2 Gbps and Xray-core 14.3; stable sing-box omitted at the recorded client-version boundary." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/reality-throughput-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/media/reality-throughput-dark.svg">
+  <img alt="Bulk TCP throughput through a VLESS + REALITY + Vision tunnel, higher is better: xray-rust 22.1 Gbps and Xray-core 19.1; stable sing-box omitted at the recorded client compatibility boundary." src="docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/media/reality-throughput-light.svg">
 </picture>
 
-About 3.9× less memory than Xray-core with the pinned V2Fly geodata loaded:
+About 3.4× less memory than Xray-core with the pinned V2Fly geodata loaded:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-08-31-v26.7.28/media/geo-memory-dark.svg">
-  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 9.2 MiB and Xray-core 35.7 MiB." src="docs/benchmarks/results/2026-08-31-v26.7.28/media/geo-memory-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/media/geo-memory-dark.svg">
+  <img alt="Peak memory with real geodata loaded, lower is better: xray-rust 9.9 MiB and Xray-core 33.4 MiB." src="docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/media/geo-memory-light.svg">
 </picture>
 
-Latency, bulk, all 36 stream cases, XHTTP pressure and bounded-memory tables,
-plus the full caveats are in the [dated result group](docs/benchmarks/results/2026-08-31-v26.7.28/README.md).
-The earlier Xray-core v26.5.9 and xray-rust DNS charts remain available as
+Plain TCP bulk through SOCKS is led by sing-box (100.0 Gbps against 90.4 for
+xray-rust and 73.3 for Xray-core). Latency, CPU and setup charts and the full
+caveats are in the [dated result group](docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md).
+The [2026-08-31 RC4 group](docs/benchmarks/results/2026-08-31-v26.7.28/README.md),
+the earlier Xray-core v26.5.9 and the xray-rust DNS charts remain available as
 [historical evidence](docs/benchmarks/results.md).
 
 ## Current scope

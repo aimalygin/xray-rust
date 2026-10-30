@@ -60,7 +60,11 @@ long-term supported release series.
   external load rejected, and resumes after the last attempt. The publisher
   takes `--pin` and `--label` for comparisons other than the migration; the
   [2026-10-30 report](docs/benchmarks/results/2026-10-30-perf-branch/README.md)
-  compares this branch with `main`.
+  compares this branch with `main`, and the
+  [2026-10-30 three-engine group](docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md)
+  compares it with Xray-core v26.10.21 and sing-box v1.14.4. `xray-bench
+  chart --omit-sing-box-1000-flows` leaves out a sing-box 1,000-flow series
+  that did not complete, as `--omit-sing-box-reality` does for REALITY.
 
 - Bound the bytes each TUN TCP flow can queue toward its outbound: 512 KiB on
   desktop, 256 KiB with the mobile profiles and 128 KiB with `low-memory`. The

@@ -159,6 +159,35 @@ its verification script reconstructs the published summaries. Overall CPU and
 throughput parity is not yet met. These host SOCKS measurements do not replace
 candidate-bound device, WAN or TUN acceptance.
 
+## Three-engine group, 2026-10-30
+
+The [2026-10-30 group](benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md)
+repeats the RC4 matrix on an Apple M6 with xray-rust `123b9d8d`, Xray-core
+`v26.10.21` and stable sing-box `v1.14.4`, built with the same tags: 58
+scenarios, 138 engine series of five runs. Its `commands.sh` records the
+exact inputs and arguments; reviewed `summary.json` files are under
+`chart-inputs/`, and raw run directories stay outside Git. It has no
+machine-validated manifest: `scripts/check-benchmark-publication.py` pins the
+RC4 comparators. Its charts pass `--omit-sing-box-reality` and
+`--omit-sing-box-1000-flows`.
+
+Stable sing-box v1.14.4 still cannot use REALITY against a v26.10.21 server.
+Xray-core v26.9.8 dropped the automatic `minClientVer` floor, but its REALITY
+server requires an `X25519MLKEM768` key share, which sing-box's REALITY client
+removes from its ClientHello (`common/tls/reality_client.go`).
+
+The 1,000-flow group runs one engine at a time after a 90-second pause. In one
+`compare` invocation the engines' 1,000-flow runs follow each other while
+earlier sockets wait in TIME_WAIT; on 2026-10-30 Xray-core's third run, after
+xray-rust's five, failed with a reset SOCKS handshake and 4,800 sockets in
+TIME_WAIT. macOS has 16,384 ephemeral ports. sing-box v1.14.4 failed the
+first run of all three 1,000-flow attempts, alone or not: the harness target
+reset its direct connections, most likely at the 128-connection listen queue.
+
+Do not commit to the repository while a `compare` runs: each run records the
+workspace revision and state, and a summary refuses runs whose provenance
+differs ("cannot summarize mixed benchmark provenance").
+
 ## Historical RC4 publication
 
 The immutable RC4 evidence is the
