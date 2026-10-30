@@ -20,12 +20,15 @@ long-term supported release series.
   do, so grpc-go's server never counts a BDP ping toward its
   `too_many_pings` limit. At an added 113 ms, gRPC downloads rose from 4.4 to
   124.9 Mbit/s under a 150 Mbit/s limit (Go 124.6) and from 4.4 to 187.6
-  without one (Go 183.8).
+  without one (Go 183.8). On loopback one download runs 2.2 times as fast and
+  its larger window raises its peak footprint from 3.1 to 6.9 MiB.
 - Return XHTTP H2 stream credit once a sixteenth of the window has been
   read, instead of after about a third of it, through a vendored h2 option.
   Without a rate limit at an added 113 ms, XHTTP H2 downloads rose from 181.5
   to 261.9 Mbit/s (Go 253.0). Go's client returns credit every 4 KiB; a
   WINDOW_UPDATE for every read cost a fast local download 16% of its speed.
+  On loopback a single download now runs about 2% below the previous policy,
+  and a duplex transfer peaks at 7.6 MiB instead of 6.0.
 - Let a new XHTTP H2 connection carry 100 streams before the server's
   SETTINGS arrive, as Go's client assumes, instead of one. A packet-up flow's
   first upload found the connection full while its download held the only
@@ -46,9 +49,18 @@ long-term supported release series.
 - Send XHTTP H3 datagrams on a connected UDP socket on macOS, as Hysteria
   already did: an unconnected socket looks up the route for every datagram.
   In one profiled run of eight SOCKS uploads, throughput rose from 281 to
-  372 MiB/s and client CPU per MiB fell from 6.3 to 3.4 ms.
+  372 MiB/s and client CPU per MiB fell from 6.3 to 3.4 ms. Eight uploads
+  through TUN, which the client now feeds faster than a local server drains,
+  hold more in their QUIC buffers: a 31.9 MiB peak footprint instead of 9.6,
+  for 37% more throughput.
 - Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
   and the migration collector can pin a Go-verified reference by SHA-256.
+  `scripts/run-migration-campaign.py` runs a whole before/after campaign: it
+  waits for a quiet machine before every attempt, retries blocks that only
+  external load rejected, and resumes after the last attempt. The publisher
+  takes `--pin` and `--label` for comparisons other than the migration; the
+  [2026-10-30 report](docs/benchmarks/results/2026-10-30-perf-branch/README.md)
+  compares this branch with `main`.
 
 - Bound the bytes each TUN TCP flow can queue toward its outbound: 512 KiB on
   desktop, 256 KiB with the mobile profiles and 128 KiB with `low-memory`. The

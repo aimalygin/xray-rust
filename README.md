@@ -19,17 +19,21 @@ Thank you for your support!
 
 ## Benchmarks
 
-The [2026-10-27/28 migration comparison](docs/benchmarks/results/2026-10-27-v26.10.21-migration/README.md)
-compares Rust `3ca380e` before and `53756fe` after the v26.10.21 migration on
-one Apple M6, using the same new Xray server and driver: **200 scenarios,
-five runs per version, 2,000 accepted trials**. Paired throughput changes are
-within ±5% in 152/156 bulk cases. Its "before" client turned out to be a mixed
-build. The report's erratum gives a clean re-measurement of the flagged
-Hysteria2 TUN memory and latency-tail cases, which found no regression. All
-repeats, rejected attempts, uncertainty and scope limits are retained in the
-report. This is a Rust before/after comparison, not a new three-engine ranking.
+The [2026-10-30 performance-branch report](docs/benchmarks/results/2026-10-30-perf-branch/README.md)
+compares `main` at `9b06d374` with the branch at `123b9d8d` on one Apple M6,
+against the same Xray v26.10.21 server and driver: **200 scenarios, five runs
+per version, 2,000 accepted trials**. WebSocket uploads use 53–59% less CPU
+per byte, one-flow gRPC downloads run 2.2× faster, XHTTP H3 uploads run 34–71%
+faster at 23–46% less CPU, and XHTTP H1 uploads through TUN peak at up to 62%
+less memory. Faster gRPC and XHTTP H3 flows also hold more data, up to 9.6 →
+31.9 MiB for eight XHTTP H3 uploads through TUN, and XHTTP H1 uploads through
+TUN cost 9.5% more CPU. The report explains each cost and keeps every repeat
+and rejected attempt; 131/156 bulk cases change throughput by at most 5%. This
+is a Rust before/after comparison; the earlier
+[v26.10.21 migration comparison](docs/benchmarks/results/2026-10-27-v26.10.21-migration/README.md)
+remains with its erratum.
 
-![Rust migration: eight-flow SOCKS download, medians and min/max across five runs](docs/benchmarks/results/2026-10-27-v26.10.21-migration/socks-download-8.svg)
+![Performance branch against main: median paired changes in throughput, CPU per GiB and peak footprint across all 156 bulk scenarios](docs/benchmarks/results/2026-10-30-perf-branch/bulk-changes.svg)
 
 ### Historical three-engine comparison (2026-08-31)
 

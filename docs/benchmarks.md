@@ -8,17 +8,20 @@ checkout and reject source changes; caller-supplied binaries must report Xray
 `26.10.21` and are identified by their executable SHA-256. Published
 `v26.7.28` and `v26.5.9` groups retain their original inputs and results.
 
-## Paired migration measurements
+## Paired before/after measurements
 
-The [2026-10-27/28 report](benchmarks/results/2026-10-27-v26.10.21-migration/README.md)
-contains the completed 200-case, 2,000-trial comparison, all repeated samples,
-rejected attempts and charts.
+Two completed 200-case, 2,000-trial comparisons use this collector, with all
+repeated samples, rejected attempts and charts:
 
-`scripts/run-migration-benchmarks.py` compares frozen Rust release builds from
-before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration. Both use the
-same post-migration driver and the same local Xray-core v26.10.21 server, so
-this controls for server and driver changes. It does not measure old versus
-new Go Xray, SDK packaging, mobile-device energy or WAN behavior.
+- the [2026-10-30 performance-branch report](benchmarks/results/2026-10-30-perf-branch/README.md):
+  `main` at `9b06d374` against the branch at `123b9d8d`;
+- the [2026-10-27/28 migration report](benchmarks/results/2026-10-27-v26.10.21-migration/README.md):
+  before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration.
+
+`scripts/run-migration-benchmarks.py` compares two frozen Rust release builds.
+Both use one driver and the same local Xray-core v26.10.21 server, so this
+controls for server and driver changes. It does not measure old versus new Go
+Xray, SDK packaging, mobile-device energy or WAN behavior.
 
 The fixed matrix has 200 cases: seven Trojan/SS2022/VMess cipher profiles;
 VLESS/TLS, REALITY/Vision, WS, HTTPUpgrade, gRPC and XHTTP H1/H2/H3;
@@ -79,8 +82,15 @@ python3 scripts/run-migration-benchmarks.py \
   --inputs /absolute/campaign/inputs.json \
   --output /absolute/campaign/full
 
+# Or the whole campaign, smoke included, with waits for a quiet machine and retries.
+# It lists the blocks to pass to collect as --accepted in accepted-blocks.json.
+python3 scripts/run-migration-campaign.py --campaign /absolute/campaign.noindex
+
+# --pin names the commit each Rust build must come from; --label titles the charts.
 python3 scripts/publish-migration-benchmarks.py collect \
   --campaign /absolute/campaign --accepted full \
+  --pin before=<commit> --pin after=<commit> --pin harness=<commit> \
+  --label "perf branch" \
   --report docs/benchmarks/results/NEW-DATED-GROUP
 python3 scripts/publish-migration-benchmarks.py verify \
   --report docs/benchmarks/results/NEW-DATED-GROUP
@@ -106,6 +116,18 @@ One-second observations retain lighter desktop load; they cannot prove a
 fully idle machine or detect every brief process. Smoke timing is never
 publishable, including smoke attempts that passed under background load.
 
+macOS background services can hold that load for long stretches: during the
+2026-10-30 campaigns `mediaanalysisd` used about 1.2 cores continuously, an
+App Store install held `installd` at up to 4.5 cores, and Spotlight indexed the
+campaign's own trial files. `scripts/run-migration-campaign.py` runs a whole
+campaign around that: one smoke run, then one block per case in the
+collector's order. Before every attempt it waits until the collector's own
+load rule has passed for 30 seconds; it retries a block that only external
+load rejected, up to ten times per case, stops on any other failure, and
+resumes after the last attempt when run again. The waits are outside measured
+pairs. End the campaign directory's name in `.noindex` to keep Spotlight out
+of it.
+
 Publication requires all successful full blocks (no silently discarded successes)
 and all 2,000 successful trials with exact payload counts,
 stock worker settings, fixed inputs and five pairs per case. It preserves
@@ -115,7 +137,8 @@ are accompanied by per-repeat ratios and exact empirical percentile bootstrap
 intervals over the five pairs. Those intervals are descriptive, have limited
 resolution and are not adjusted for 200-case multiple comparisons. A zero CPU
 counter denominator yields an unavailable ratio, not an invented speedup.
-Charts show sampled process RSS, not physical footprint or system-wide memory.
+Charts show the exact peak footprint when every trial reports it, and
+sampled process RSS for the earlier archives; neither is system-wide memory.
 
 ## v0.8 candidate protocol comparisons
 
