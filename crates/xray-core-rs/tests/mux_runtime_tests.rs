@@ -12,7 +12,7 @@ use xray_routing::{Network, Target, TargetAddr};
 #[tokio::test]
 #[ignore = "requires pinned Xray; run scripts/check-mux-interop.sh"]
 async fn mux_runtime_selected_protocols_share_tcp_udp_and_close_children() {
-    for protocol in ["trojan", "shadowsocks", "vmess"] {
+    for protocol in ["trojan", "shadowsocks", "shadowsocks-aead", "vmess"] {
         for carrier in ["raw", "ws", "httpupgrade", "grpc", "xhttp"] {
             for separate_udp in [false, true] {
                 if carrier == "xhttp" && !separate_udp {
@@ -28,6 +28,9 @@ async fn mux_runtime_selected_protocols_share_tcp_udp_and_close_children() {
                             false,
                         )
                         .await
+                    }
+                    "shadowsocks-aead" => {
+                        ReferenceServer::start_shadowsocks(carrier, "aes-256-gcm", false).await
                     }
                     _ => ReferenceServer::start_vmess(carrier, "aes-128-gcm", "").await,
                 };

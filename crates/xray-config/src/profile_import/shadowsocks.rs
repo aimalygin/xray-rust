@@ -1,4 +1,6 @@
-//! SIP002 userinfo and percent-encoded SS2022 credentials; plugins fail closed.
+//! SIP002 links for both Shadowsocks families: base64url userinfo (required
+//! by SIP002 for AEAD methods) or percent-encoded plain userinfo (SS2022, and
+//! accepted for AEAD as v2rayN does). Plugins fail closed.
 use super::*;
 use base64::{
     engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD},
@@ -23,7 +25,7 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         .map(hysteria::decode)
         .transpose()?
         .filter(|v| !v.is_empty())
-        .map_or_else(|| "Shadowsocks 2022".into(), |v| v.to_string());
+        .map(|v| v.to_string());
     let (authority, query) = body.split_once('?').map_or((body, ""), |v| v);
     if !query.is_empty() {
         return Err(ImportError::Unsupported);
@@ -53,8 +55,16 @@ pub(super) fn import(text: &str, dns: &[String]) -> Result<ImportedProfile, Impo
         )
     };
     let (method, password) = credentials.split_once(':').ok_or(ImportError::Syntax)?;
-    xray_proxy::shadowsocks2022::Method::new(method, password)
+    let family = xray_proxy::shadowsocks::Method::new(method, password)
         .map_err(|_| ImportError::Configuration)?;
+    let name = name.unwrap_or_else(|| {
+        if family.is_2022() {
+            "Shadowsocks 2022"
+        } else {
+            "Shadowsocks"
+        }
+        .into()
+    });
     let mut root = SecretJson(
         json!({"inbounds":[inbound()],"outbounds":[{"tag":"proxy","protocol":"shadowsocks","settings":{"address":host,"port":port,"method":method,"password":password}}],"routing":{"domainStrategy":"AsIs","rules":[]}}),
     );

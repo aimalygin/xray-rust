@@ -9,7 +9,7 @@ impl Parser<'_> {
     ) -> Option<Shadowsocks2022OutboundSettings> {
         let path = format!("$.outbounds[{index}].settings");
         let Some(settings) = outbound.get("settings").filter(|v| v.is_object()) else {
-            self.error(path, "Shadowsocks2022 settings must be an object");
+            self.error(path, "Shadowsocks settings must be an object");
             return None;
         };
         self.reject_unknown_fields(settings, &path, &surface::SHADOWSOCKS);
@@ -21,20 +21,20 @@ impl Parser<'_> {
             {
                 self.error(
                     path,
-                    "Shadowsocks2022 flattened settings and servers cannot be combined",
+                    "Shadowsocks flattened settings and servers cannot be combined",
                 );
                 return None;
             }
             let Some(servers) = servers.as_array().filter(|a| a.len() == 1) else {
                 self.error(
                     format!("{path}.servers"),
-                    "Shadowsocks2022 requires exactly one server",
+                    "Shadowsocks requires exactly one server",
                 );
                 return None;
             };
             let path = format!("{path}.servers[0]");
             if !servers[0].is_object() {
-                self.error(path, "Shadowsocks2022 server must be an object");
+                self.error(path, "Shadowsocks server must be an object");
                 return None;
             }
             self.reject_unknown_fields(&servers[0], &path, &surface::SHADOWSOCKS_SERVER);
@@ -45,7 +45,7 @@ impl Parser<'_> {
         let Some(address) = self.string_at(server, "address") else {
             self.error(
                 format!("{path}.address"),
-                "Shadowsocks2022 requires a server address",
+                "Shadowsocks requires a server address",
             );
             return None;
         };
@@ -56,7 +56,7 @@ impl Parser<'_> {
         {
             self.error(
                 format!("{path}.address"),
-                "invalid Shadowsocks2022 server address",
+                "invalid Shadowsocks server address",
             );
             return None;
         }
@@ -65,26 +65,32 @@ impl Parser<'_> {
             .map_or_else(|_| TargetAddr::Domain(address.into()), TargetAddr::Ip);
         let port = self.u16_at(server, "port", format!("{path}.port"))?;
         if port == 0 {
-            self.error(
-                format!("{path}.port"),
-                "Shadowsocks2022 port must be nonzero",
-            );
+            self.error(format!("{path}.port"), "Shadowsocks port must be nonzero");
         }
         let Some(password) = self.string_at(server, "password") else {
             self.error(
                 format!("{path}.password"),
-                "Shadowsocks2022 requires a password",
+                "Shadowsocks requires a password",
             );
             return None;
         };
         let Some(method) = self.string_at(server, "method") else {
-            self.error(
-                format!("{path}.method"),
-                "Shadowsocks 2022 requires a method",
-            );
+            self.error(format!("{path}.method"), "Shadowsocks requires a method");
             return None;
         };
-        if let Err(error) = xray_proxy::shadowsocks2022::Method::new(method, password) {
+        // Xray-core lowercases the method for both families. Name the method
+        // before judging the password so the diagnostic points at the cause.
+        let lower = method.to_lowercase();
+        if xray_proxy::shadowsocks::aead2017::Cipher::parse(&lower).is_none()
+            && xray_proxy::shadowsocks2022::Cipher::parse(&lower).is_err()
+        {
+            self.error(
+                format!("{path}.method"),
+                "unsupported Shadowsocks method; use 2022-blake3-aes-128-gcm, 2022-blake3-aes-256-gcm, 2022-blake3-chacha20-poly1305, aes-128-gcm, aes-256-gcm, chacha20-poly1305 or xchacha20-poly1305 (or their Xray aliases)",
+            );
+            return None;
+        }
+        if let Err(error) = xray_proxy::shadowsocks::Method::new(method, password) {
             self.error(format!("{path}.password"), error.to_string());
             return None;
         }
@@ -95,10 +101,7 @@ impl Parser<'_> {
             .optional_u32_at(server, "level", format!("{path}.level"))
             .unwrap_or_default();
         if level > 255 {
-            self.error(
-                format!("{path}.level"),
-                "Shadowsocks2022 level must be 0..255",
-            );
+            self.error(format!("{path}.level"), "Shadowsocks level must be 0..255");
         }
         Some(Shadowsocks2022OutboundSettings {
             server: address,

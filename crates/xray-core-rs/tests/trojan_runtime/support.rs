@@ -112,7 +112,13 @@ impl ReferenceServer {
         } else if let Some((method, identity)) = shadowsocks {
             use base64::{engine::general_purpose::STANDARD, Engine};
             let size = if method.contains("128") { 16 } else { 32 };
-            let first = STANDARD.encode(vec![1; size]);
+            // Classic AEAD methods take a free-text password (EVP_BytesToKey).
+            let first = if method.starts_with("2022-") {
+                STANDARD.encode(vec![1; size])
+            } else {
+                assert!(!identity, "classic Shadowsocks has no identity keys");
+                "synthetic-local-ss-aead-password:with:colons".to_owned()
+            };
             let user = STANDARD.encode(vec![2; size]);
             let password = if identity {
                 format!("{first}:{user}")

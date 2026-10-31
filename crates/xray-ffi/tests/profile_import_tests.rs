@@ -90,6 +90,11 @@ fn ffi_imports_all_formats_with_exact_sizing_and_loadable_configs() {
             "shadowsocks2022",
             "ss://2022-blake3-aes-128-gcm:AQEBAQEBAQEBAQEBAQEBAQ==@ss.example:8388",
         ),
+        // Classic AEAD shares the format and capability bit.
+        (
+            "shadowsocks2022",
+            "ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpzeW50aGV0aWMtc2VjcmV0@ss.example:8388",
+        ),
         (
             "vmess",
             "vmess://00112233-4455-6677-8899-aabbccddeeff@vmess.example:443",
