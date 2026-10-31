@@ -35,6 +35,10 @@ remains with its erratum. A later change on the branch shares one send budget
 between XHTTP H3 uploads: 32 parallel uploads now peak at 87.7 instead of
 162.1 MiB RSS and 32 duplex transfers at 78.2 instead of 140.6, at the same
 throughput ([send-budget report](docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)).
+On Linux, where quinn reserved 2.9 MiB of receive buffer for every XHTTP H3
+connection, 32 parallel downloads now peak at 114.6 instead of 154.3 MiB at
+the same throughput
+([receive-buffer report](docs/benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md)).
 
 ![Performance branch against main: median paired changes in throughput, CPU per GiB and peak footprint across all 156 bulk scenarios](docs/benchmarks/results/2026-10-30-perf-branch/bulk-changes.svg)
 

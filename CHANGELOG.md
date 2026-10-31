@@ -66,6 +66,17 @@ long-term supported release series.
   same throughput and CPU per byte; a single upload peaks 0.2 MiB higher.
   An 8 MiB budget took 32 uploads to 53 MiB but cost eight uploads 2–4% more
   CPU per byte; see the [2026-10-30 report](docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md).
+- Give each XHTTP H3 and DoQ endpoint a receive buffer for four datagrams,
+  two with the mobile and low-memory profiles, through a vendored quinn
+  option. On Linux and Android quinn reserved room for 32 datagrams of 64 GRO
+  segments, 2.9 MiB, in every endpoint, and every XHTTP H3 request owns one:
+  32 downloads from Xray-core v26.10.21 kept 43 MiB of these buffers
+  resident, and glibc's `calloc` zeroes a reused one in full. In a Linux
+  container 32 downloads, duplex transfers and uploads now peak at 114.6,
+  131.9 and 42.3 MiB RSS instead of 154.3, 183.9 and 73.4, at the same
+  throughput and CPU per byte. GRO stays on: without it downloads lost a
+  quarter of their throughput. macOS and Hysteria are unchanged; see the
+  [2026-10-30 receive-buffer report](docs/benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md).
 - Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
   and the migration collector can pin a Go-verified reference by SHA-256.
   `scripts/run-migration-campaign.py` runs a whole before/after campaign: it
