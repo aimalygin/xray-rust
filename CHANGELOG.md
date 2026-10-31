@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- HTTP profile import refuses a legacy Base64 whole-authority link such as
+  `http://<Base64 of user:pass@host:port>` with `Unsupported`. With the default
+  port it was imported as a one-label host, so the profile reached no server
+  and DNS bootstrap sent the encoded credentials to the carrier resolver.
+
+- Profile import rejects display names containing bidi embeddings, overrides
+  or isolates (U+202A..U+202E, U+2066..U+2069), from the link fragment or the
+  `name` option. They reorder surrounding text, so a name could display as a
+  different profile in system VPN UI (CVE-2021-42574). LRM, RLM and ALM stay
+  allowed for right-to-left names.
+
 - Treat an outbound `"proxySettings": null` as absent, as Xray-core does.
   Next to `sockopt.dialerProxy` it was rejected as a combination, and alone it
   was rejected as a non-object, so panel output with explicit null fields
