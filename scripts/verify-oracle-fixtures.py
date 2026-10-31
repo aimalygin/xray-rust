@@ -335,6 +335,17 @@ def claims_session_id_vectors(document: Any) -> bool:
     )
 
 
+def claims_certificate_binding_vectors(document: Any) -> bool:
+    return (
+        isinstance(document, list)
+        and len(document) > 0
+        and all(
+            isinstance(vector, dict) and "certificate_signature_hex" in vector
+            for vector in document
+        )
+    )
+
+
 def claims_masquerade_headers(document: Any) -> bool:
     return (
         isinstance(document, dict) and "variant" in document and "headers" in document
@@ -465,6 +476,15 @@ ORACLES: tuple[Oracle, ...] = (
         name="session-id-vectors",
         command=root_oracle("./tools/reality-oracle/session_id_vectors.go"),
         claims=claims_session_id_vectors,
+        flags=no_flags,
+    ),
+    Oracle(
+        name="certificate-binding-vectors",
+        command=root_oracle(
+            "./tools/reality-oracle/certificate_binding_vectors.go",
+            tag="reality_oracle_certificate_binding",
+        ),
+        claims=claims_certificate_binding_vectors,
         flags=no_flags,
     ),
     Oracle(
