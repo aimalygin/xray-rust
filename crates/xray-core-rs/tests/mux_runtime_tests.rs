@@ -81,13 +81,15 @@ async fn mux_runtime_ipv6_and_domain_datagrams_preserve_destination_identity() {
         io::AsyncWriteExt,
         net::{TcpListener, TcpStream},
     };
-    for protocol in ["trojan", "shadowsocks", "vmess"] {
+    for protocol in ["vless", "trojan", "shadowsocks", "vmess"] {
         for mux in [false, true] {
-            if independent_reference() && mux {
+            // The independent reference helper has no VLESS server.
+            if independent_reference() && (mux || protocol == "vless") {
                 continue;
             }
             eprintln!("IPv6/domain {protocol}, Mux={mux}");
             let server = match protocol {
+                "vless" => ReferenceServer::start_vless("raw", "", false).await,
                 "trojan" => ReferenceServer::start("raw").await,
                 "shadowsocks" => {
                     ReferenceServer::start_shadowsocks("raw", "2022-blake3-aes-256-gcm", false)
