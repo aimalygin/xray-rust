@@ -16,16 +16,33 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ops::{BitAnd, BitOr, Not};
 
-pub const PRIVATE_NETWORKS: [Cidr; 9] = [
+/// Xray-core's built-in private/reserved address set (`privateIPMatcher` in
+/// `common/geodata/consts.go`), in the same order.
+///
+/// Routing uses it for `geoip:private` so no `geoip.dat` is needed; Xray reads
+/// that code from `geoip.dat`, whose common builds cover the same multicast,
+/// broadcast, unspecified, benchmarking and TEST-NET ranges. Xray itself uses
+/// this set for the plaintext-server exemption (`infra/conf/xray.go`) and
+/// freedom's default block-private rule.
+pub const PRIVATE_NETWORKS: [Cidr; 18] = [
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)), 10),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)), 16),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)), 12),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 0)), 24),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)), 24),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 88, 99, 0)), 24),
     Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)), 16),
-    Cidr::new_const(IpAddr::V6(Ipv6Addr::LOCALHOST), 128),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)), 15),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(198, 51, 100, 0)), 24),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)), 24),
+    Cidr::new_const(IpAddr::V4(Ipv4Addr::new(224, 0, 0, 0)), 3),
+    Cidr::new_const(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 127),
     Cidr::new_const(IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)), 7),
     Cidr::new_const(IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)), 10),
+    Cidr::new_const(IpAddr::V6(Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0)), 8),
 ];
 
 pub const fn canonicalize_ip(address: IpAddr) -> IpAddr {
@@ -513,26 +530,47 @@ mod tests {
         builder.insert_private_networks();
         let set = builder.build();
 
-        assert_eq!(PRIVATE_NETWORKS.len(), 9);
-        assert_eq!(set.range_count(), 9);
+        // No two of Xray's 18 networks overlap or touch, so none merge.
+        assert_eq!(PRIVATE_NETWORKS.len(), 18);
+        assert_eq!(set.range_count(), 18);
         for address in [
+            v4(0, 1, 2, 3),
             v4(10, 1, 2, 3),
             v4(100, 64, 0, 1),
             v4(127, 0, 0, 1),
             v4(169, 254, 1, 1),
             v4(172, 31, 255, 255),
+            v4(192, 0, 0, 9),
+            v4(192, 0, 2, 1),
+            v4(192, 88, 99, 1),
             v4(192, 168, 0, 1),
+            v4(198, 18, 0, 1),
+            v4(198, 19, 255, 255),
+            v4(198, 51, 100, 1),
+            v4(203, 0, 113, 1),
+            v4(224, 0, 0, 251),
+            v4(239, 255, 255, 250),
+            v4(240, 0, 0, 1),
+            v4(255, 255, 255, 255),
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED),
             IpAddr::V6(Ipv6Addr::LOCALHOST),
             v6([0xfd00, 0, 0, 0, 0, 0, 0, 1]),
             v6([0xfe80, 0, 0, 0, 0, 0, 0, 1]),
+            v6([0xff02, 0, 0, 0, 0, 0, 0, 0xfb]),
         ] {
             assert!(set.contains(address), "{address} must be private");
         }
         for address in [
+            v4(1, 0, 0, 1),
             v4(8, 8, 8, 8),
             v4(172, 32, 0, 1),
             v4(100, 128, 0, 1),
+            v4(192, 0, 1, 1),
+            v4(198, 20, 0, 1),
+            v4(223, 255, 255, 255),
+            v6([0, 0, 0, 0, 0, 0, 0, 2]),
             v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1]),
+            v6([0xfec0, 0, 0, 0, 0, 0, 0, 1]),
         ] {
             assert!(!set.contains(address), "{address} must not be private");
         }
