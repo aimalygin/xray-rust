@@ -39,20 +39,27 @@ pub struct ReferenceServer {
 }
 impl ReferenceServer {
     pub async fn start(network: &str) -> Self {
-        Self::start_protocol(network, None, None).await
+        Self::start_protocol(network, None, None, None).await
     }
     pub async fn start_shadowsocks(network: &str, method: &str, identity: bool) -> Self {
-        Self::start_protocol(network, Some((method, identity)), None).await
+        Self::start_protocol(network, Some((method, identity)), None, None).await
     }
     pub async fn start_vmess(network: &str, cipher: &str, experiments: &str) -> Self {
-        Self::start_protocol(network, None, Some((cipher, experiments))).await
+        Self::start_protocol(network, None, Some((cipher, experiments)), None).await
+    }
+    /// VLESS over TLS with the client `flow`; `encrypted` adds a fresh
+    /// X25519 VLESS encryption pair from the reference's `vlessenc`.
+    pub async fn start_vless(network: &str, flow: &str, encrypted: bool) -> Self {
+        Self::start_protocol(network, None, None, Some((flow, encrypted))).await
     }
     async fn start_protocol(
         network: &str,
         shadowsocks: Option<(&str, bool)>,
         vmess: Option<(&str, &str)>,
+        vless: Option<(&str, bool)>,
     ) -> Self {
         let independent = independent_reference();
+        assert!(vless.is_none() || !independent);
         assert!(reference_supports(
             if shadowsocks.is_some() {
                 "shadowsocks"
@@ -102,7 +109,21 @@ impl ReferenceServer {
         if (shadowsocks.is_some() || vmess.is_some()) && network == "raw" {
             stream = json!({"network":"raw"});
         }
-        let (protocol, settings, server_settings) = if let Some((cipher, experiments)) = vmess {
+        let (protocol, settings, server_settings) = if let Some((flow, encrypted)) = vless {
+            let id = "00112233-4455-6677-8899-aabbccddeeff";
+            let (decryption, encryption) = if encrypted {
+                vless_encryption_pair()
+            } else {
+                ("none".to_owned(), "none".to_owned())
+            };
+            // Xray's inbound takes the request flow without the -udp443 suffix.
+            let server_flow = flow.trim_end_matches("-udp443");
+            (
+                "vless",
+                json!({"vnext":[{"address":"bootstrap.example","port":address.port(),"users":[{"id":id,"flow":flow,"encryption":encryption}]}]}),
+                json!({"clients":[{"id":id,"flow":server_flow}],"decryption":decryption}),
+            )
+        } else if let Some((cipher, experiments)) = vmess {
             let id = "00112233-4455-6677-8899-aabbccddeeff";
             (
                 "vmess",
@@ -280,6 +301,21 @@ impl ReferenceServer {
             dialer,
         )
     }
+}
+/// The first (X25519) decryption/encryption pair printed by `xray vlessenc`.
+fn vless_encryption_pair() -> (String, String) {
+    let output = Command::new(std::env::var_os("XRAY_CLIENT_PROTOCOL_BINARY").unwrap())
+        .arg("vlessenc")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "vlessenc failed");
+    let text = String::from_utf8(output.stdout).unwrap();
+    let value = |key: &str| {
+        let prefix = format!("\"{key}\": \"");
+        let line = text.lines().find(|line| line.starts_with(&prefix)).unwrap();
+        line[prefix.len()..line.len() - 1].to_owned()
+    };
+    (value("decryption"), value("encryption"))
 }
 impl Drop for ReferenceServer {
     fn drop(&mut self) {

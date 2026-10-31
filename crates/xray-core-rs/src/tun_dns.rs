@@ -3944,12 +3944,35 @@ async fn exchange_udp_candidate(
     failure_phase: &mut DnsUdpFailurePhase,
 ) -> Result<DnsUpstreamResponse, crate::CoreError> {
     let response = match outbound {
-        outbound @ (UdpOutbound::Trojan(_)
-        | UdpOutbound::Socks(_)
-        | UdpOutbound::Vmess(_)
-        | UdpOutbound::Shadowsocks2022(_)
-        | UdpOutbound::Hysteria(_)
-        | UdpOutbound::Wireguard(_)) => {
+        UdpOutbound::Freedom => {
+            let upstream = resolve_freedom_dns_upstream(upstream, context).await?;
+            exchange_udp_freedom(upstream, query, max_payload, context, failure_phase).await?
+        }
+        UdpOutbound::Vless(ref outbound)
+            if !outbound.udp_uses_mux(target)
+                && upstream
+                    .socket_addr()
+                    .is_some_and(socket_addr_has_nonzero_scope) =>
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "scoped IPv6 DNS upstream cannot be encoded in a VLESS target",
+            )
+            .into());
+        }
+        UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(target) => {
+            exchange_udp_vless(
+                &outbound,
+                target,
+                query,
+                max_payload,
+                context,
+                failure_phase,
+            )
+            .await?
+        }
+        // Connection-oriented outbounds, and VLESS flows its Mux pool owns.
+        outbound => {
             if upstream
                 .socket_addr()
                 .is_some_and(socket_addr_has_nonzero_scope)
@@ -3992,32 +4015,6 @@ async fn exchange_udp_candidate(
                     prefix: Bytes::copy_from_slice(&reply.payload[..prefix_len]),
                 }
             }
-        }
-        UdpOutbound::Freedom => {
-            let upstream = resolve_freedom_dns_upstream(upstream, context).await?;
-            exchange_udp_freedom(upstream, query, max_payload, context, failure_phase).await?
-        }
-        UdpOutbound::Vless(_)
-            if upstream
-                .socket_addr()
-                .is_some_and(socket_addr_has_nonzero_scope) =>
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "scoped IPv6 DNS upstream cannot be encoded in a VLESS target",
-            )
-            .into());
-        }
-        UdpOutbound::Vless(outbound) => {
-            exchange_udp_vless(
-                &outbound,
-                target,
-                query,
-                max_payload,
-                context,
-                failure_phase,
-            )
-            .await?
         }
     };
     context.tun.record_udp_remote_read(response.observed_len());
