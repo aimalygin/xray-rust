@@ -21,7 +21,10 @@ repeated samples, rejected attempts and charts:
 The smaller [2026-10-30 XHTTP H3 send-budget report](benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)
 reran the collector's twelve `xhttp-h3` cases in five AB/BA pairs each, with
 interleaved stream-transport pairs, before (`a87a0292`) and after
-(`bae0ed5b`) the shared H3 send budget.
+(`bae0ed5b`) the shared H3 send budget. The
+[2026-10-31 XHTTP H3 receive-budget report](benchmarks/results/2026-10-31-xhttp-h3-receive-budget/README.md)
+reran them before (`591216c5`) and after (`95280e73`) the shared H3 receive
+budget, with rotated stream-transport runs in Docker's Linux VM.
 
 Two Linux reports measure 32-flow XHTTP H3 transfers in Docker Desktop's Linux
 VM on the same Mac, against the same Xray-core v26.10.21, with their own

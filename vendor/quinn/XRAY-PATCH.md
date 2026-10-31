@@ -9,7 +9,7 @@ A final GSO group may exceed that threshold by up to nine datagrams.
 The quantum remains finite; socket backpressure and the congestion controller
 still bound sends. This reduces connection-lock and task scheduling handoffs.
 `Connection::set_stream_receive_window` forwards to quinn-proto's setter of the
-same name, which grows the window every receive stream offers.
+same name, which sets the window every receive stream offers.
 
 `AsyncUdpSocket::max_receive_batch` lets a socket ask its endpoint for fewer
 receive slots than quinn-udp's `BATCH_SIZE`, 32 on Linux and Android. The
