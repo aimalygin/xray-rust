@@ -436,9 +436,9 @@ static XHTTP_UPLOADS: UploadActivity = UploadActivity::new();
 /// now keeps an `n`th of the budget, between 128 KiB and 2 MiB, and grows
 /// toward twice its congestion window up to an `n`th of 10 MB. A lone upload
 /// keeps the former 2 MiB to 10 MB range: a single fast loopback upload has
-/// less than 128 KiB in flight, but a window that small cost it 13–32% more
-/// CPU per byte in writer wakeups. Eight lossless uploads sharing 8 MiB
-/// cost 3–4% more CPU per byte than with 2 MiB each.
+/// less than 128 KiB in flight, but a window that small cost it 12–32% more
+/// CPU per byte. Eight lossless uploads sharing 8 MiB cost 2–4% more CPU
+/// per byte than with 2 MiB each.
 struct XhttpSendWindow {
     window: AtomicU64,
     /// The activity period in which this connection last counted.

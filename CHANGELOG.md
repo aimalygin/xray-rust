@@ -53,6 +53,19 @@ long-term supported release series.
   through TUN, which the client now feeds faster than a local server drains,
   hold more in their QUIC buffers: a 31.9 MiB peak footprint instead of 9.6,
   for 37% more throughput.
+- Share one QUIC send budget between XHTTP H3 uploads. Each XHTTP H3 request
+  owns a QUIC connection, and every connection kept a send window of at
+  least 2 MiB, so 32 uploads to a local Xray-core server that drained slower
+  than they wrote held 71 MiB of a 95 MiB heap in quinn's send buffers.
+  While several connections upload, each now keeps its share of 16 MiB,
+  between 128 KiB and 2 MiB, and grows with its congestion window only to
+  its share of 10 MB; up to eight uploads keep the 2 MiB they had. With the
+  mobile and low-memory profiles they share 4 MiB and never grow past it.
+  Against Xray-core v26.10.21, 32 uploads now peak at 87.7 instead of
+  162.1 MiB RSS and 32 duplex transfers at 78.2 instead of 140.6, at the
+  same throughput and CPU per byte; a single upload peaks 0.2 MiB higher.
+  An 8 MiB budget took 32 uploads to 53 MiB but cost eight uploads 2–4% more
+  CPU per byte; see the [2026-10-30 report](docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md).
 - Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
   and the migration collector can pin a Go-verified reference by SHA-256.
   `scripts/run-migration-campaign.py` runs a whole before/after campaign: it

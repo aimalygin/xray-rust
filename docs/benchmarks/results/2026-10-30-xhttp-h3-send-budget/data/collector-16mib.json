@@ -1,0 +1,1717 @@
+{
+ "inputs": {
+  "after": {
+   "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)\n",
+   "command": "cargo build --locked --release -p xray-cli",
+   "commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "incremental": false,
+   "isolated_target": true,
+   "lock_sha256": "15202f3d7421563c9788b6a22374b452e8a0e4862fd800a26ea3c3404e59c316",
+   "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-h3-send-budget-16m.noindex/bin/after",
+   "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+   "rustflags": null,
+   "sha256": "a9026942dcd0ff25bc10a466fbaebaa114df564e84c38ab5ca7dd604a6430397",
+   "tree": "a8b97cfdf65e6976244cede5904b7fccbcd48075",
+   "workspace_packages_compiled": [
+    "crates/xray-cli",
+    "crates/xray-config",
+    "crates/xray-core-rs",
+    "crates/xray-proxy",
+    "crates/xray-routing",
+    "crates/xray-runtime",
+    "crates/xray-transport",
+    "crates/xray-tun",
+    "crates/xray-utls",
+    "crates/xray-vless-encryption",
+    "crates/xray-wireguard",
+    "vendor/blake3",
+    "vendor/gotatun",
+    "vendor/h2",
+    "vendor/h3-quinn",
+    "vendor/quinn",
+    "vendor/quinn-proto",
+    "vendor/smoltcp"
+   ]
+  },
+  "before": {
+   "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)\n",
+   "command": "cargo build --locked --release -p xray-cli",
+   "commit": "a87a02922a500207a687c1d921237b2b253eb871",
+   "incremental": false,
+   "isolated_target": true,
+   "lock_sha256": "15202f3d7421563c9788b6a22374b452e8a0e4862fd800a26ea3c3404e59c316",
+   "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-h3-send-budget.noindex/bin/before",
+   "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+   "rustflags": null,
+   "sha256": "ef91bdc7dac747b7f0161d6d8f0d8dee0397cb776ba6e3638c8b6e1d6939edbf",
+   "tree": "2e067e0eb8aa3382cdc093e8decc9170c90c20be",
+   "workspace_packages_compiled": [
+    "crates/xray-cli",
+    "crates/xray-config",
+    "crates/xray-core-rs",
+    "crates/xray-proxy",
+    "crates/xray-routing",
+    "crates/xray-runtime",
+    "crates/xray-transport",
+    "crates/xray-tun",
+    "crates/xray-utls",
+    "crates/xray-vless-encryption",
+    "crates/xray-wireguard",
+    "vendor/blake3",
+    "vendor/gotatun",
+    "vendor/h2",
+    "vendor/h3-quinn",
+    "vendor/quinn",
+    "vendor/quinn-proto",
+    "vendor/smoltcp"
+   ]
+  },
+  "harness": {
+   "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)\n",
+   "command": "cargo build --locked --release -p xray-cli -p xray-bench",
+   "commit": "b01fcd066471473426ab07996cc2608f9d108f59",
+   "incremental": false,
+   "isolated_target": true,
+   "lock_sha256": "15202f3d7421563c9788b6a22374b452e8a0e4862fd800a26ea3c3404e59c316",
+   "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+   "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+   "rustflags": null,
+   "sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+   "tree": "1b54af6604b729661bcf24f5126978adbe50861b",
+   "workspace_packages_compiled": [
+    "crates/xray-bench",
+    "crates/xray-cli",
+    "crates/xray-config",
+    "crates/xray-core-rs",
+    "crates/xray-proxy",
+    "crates/xray-routing",
+    "crates/xray-runtime",
+    "crates/xray-transport",
+    "crates/xray-tun",
+    "crates/xray-utls",
+    "crates/xray-vless-encryption",
+    "crates/xray-wireguard",
+    "vendor/blake3",
+    "vendor/gotatun",
+    "vendor/h2",
+    "vendor/h3-quinn",
+    "vendor/quinn",
+    "vendor/quinn-proto",
+    "vendor/smoltcp"
+   ]
+  },
+  "origin": {
+   "build_command": "CGO_ENABLED=0 GOTOOLCHAIN=local go -C <clean pinned Xray checkout> build -mod=readonly -o <origin> <collector checkout>/tools/vless-encryption-oracle/main.go",
+   "go_build": "/private/tmp/xray-migration-bench-20261027/bin/origin: go1.27.3\n\tpath\tcommand-line-arguments\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.4.1\th1:I9KxadAkvo+QjtcEE2f2tyfEvmIla/T0m+14PrZNl0U=\n\tdep\tgithub.com/xtls/xray-core\t(devel)\t\n\tdep\tgithub.com/yuin/gopher-lua\tv1.1.2\th1:yF/FjE3hD65tBbt0VXLE13HWS9h34fdzJmrWRXwobGA=\n\tdep\tgolang.org/x/crypto\tv0.58.0\th1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=\n\tdep\tgolang.org/x/sync\tv0.24.0\th1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=\n\tdep\tgolang.org/x/sys\tv0.49.0\th1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=\n\tdep\tgoogle.golang.org/protobuf\tv1.36.12\th1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=\n\tdep\tlukechampine.com/blake3\tv1.4.1\th1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n",
+   "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/origin",
+   "reference_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+   "sha256": "9e2f46e0a0378ff6a15ae5601f897b6feac2c342a161507667834a7dc5e67922",
+   "source_commit": "5df1a4bcc7d6650e32a2c5630c0ac7fc456c6aa8",
+   "source_sha256": "68b2e66eba9daeb6ed4c3f7ddcffc4e321a03c94da1ec4c9c77f59ce4f81f903"
+  },
+  "reference": {
+   "commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+   "go_build": "/private/tmp/xray-migration-bench-20261027/bin/reference: go1.27.3\n\tpath\tgithub.com/xtls/xray-core/main\n\tmod\tgithub.com/xtls/xray-core\tv0.0.0-20261021115930-1b1647cd9ddf\t\n\tdep\tgithub.com/andybalholm/brotli\tv1.2.3\th1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA5NQ=\n\tdep\tgithub.com/apernet/quic-go\tv0.61.1-0.20260806010916-184d081eef3e\th1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=\n\tdep\tgithub.com/ghodss/yaml\tv1.0.1-0.20220118164431-d8423dcdf344\th1:Arcl6UOIS/kgO2nW3A65HN+7CMjSDP/gofXL4CZt1V4=\n\tdep\tgithub.com/google/gopacket\tv1.1.19\th1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=\n\tdep\tgithub.com/google/uuid\tv1.6.0\th1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\n\tdep\tgithub.com/gorilla/websocket\tv1.5.3\th1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=\n\tdep\tgithub.com/huin/goupnp\tv1.2.0\th1:uOKW26NG1hsSSbXIZ1IR7XP9Gjd1U8pnLaCMgntmkmY=\n\tdep\tgithub.com/jackpal/go-nat-pmp\tv1.0.2\th1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=\n\tdep\tgithub.com/juju/ratelimit\tv1.0.2\th1:sRxmtRiajbvrcLQT7S+JbqU0ntsb9W2yhSdNN8tWfaI=\n\tdep\tgithub.com/klauspost/compress\tv1.20.0\th1:a3C1ke2ohxFymNlb2HWAHjDeKCI90scRskErZkR0ezA=\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.4.1\th1:I9KxadAkvo+QjtcEE2f2tyfEvmIla/T0m+14PrZNl0U=\n\tdep\tgithub.com/koron/go-ssdp\tv0.0.4\th1:1IDwrghSKYM7yLf7XCzbByg2sJ/JcNOZRXS2jczTwz0=\n\tdep\tgithub.com/libp2p/go-nat\tv1.0.1-0.20250821073202-01afc089f138\th1:YohuNPT/1k3VcThCQlBZ43PCPWPfMRS1zcxWBF2SLK8=\n\tdep\tgithub.com/libp2p/go-netroute\tv0.2.1\th1:V8kVrpD8GK0Riv15/7VN6RbUQ3URNZVosw7H2v9tksU=\n\tdep\tgithub.com/miekg/dns\tv1.1.73\th1:uhT8nJxmTrPJYClxVxTCX+CVn6qnzSiybRk72Z6DgrE=\n\tdep\tgithub.com/pelletier/go-toml\tv1.9.5\th1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=\n\tdep\tgithub.com/pion/dtls/v3\tv3.1.5\th1:9xJtVsHwMYeSjPp5Hh1FTis4DchnQWtnOa5o+6ygqfc=\n\tdep\tgithub.com/pion/logging\tv0.2.4\th1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=\n\tdep\tgithub.com/pion/stun/v3\tv3.1.7\th1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=\n\tdep\tgithub.com/pion/transport/v4\tv4.1.0\th1:8S+nF2reM2cJuqC6g78OVy2BBgmbdns+acx3jA97BvQ=\n\tdep\tgithub.com/pires/go-proxyproto\tv0.15.0\th1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=\n\tdep\tgithub.com/quic-go/qpack\tv0.6.0\th1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=\n\tdep\tgithub.com/refraction-networking/utls\tv1.8.3-0.20260301010127-aa6edf4b11af\th1:er2acxbi3N1nvEq6HXHUAR1nTWEJmQfqiGR8EVT9rfs=\n\tdep\tgithub.com/robfig/cron/v3\tv3.0.1\th1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=\n\tdep\tgithub.com/wlynxg/anet\tv0.0.5\th1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=\n\tdep\tgithub.com/xtls/reality\tv0.0.0-20261014101318-83f621788ca8\th1:RjLnVvlzK4q6zWaSBPNRGsrgx2fbJDeUWffjw574uzs=\n\tdep\tgithub.com/yuin/gopher-lua\tv1.1.2\th1:yF/FjE3hD65tBbt0VXLE13HWS9h34fdzJmrWRXwobGA=\n\tdep\tgo4.org/netipx\tv0.0.0-20231129151722-fdeea329fbba\th1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=\n\tdep\tgolang.org/x/crypto\tv0.58.0\th1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=\n\tdep\tgolang.org/x/crypto/x509roots/fallback\tv0.0.0-20261020153306-9f2b28d4331a\th1:V5oicZXS0oqZx30gY/apgSVD7YvNBfrIOdcMnlelJY4=\n\tdep\tgolang.org/x/exp\tv0.0.0-20240506185415-9bf2ced13842\th1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=\n\tdep\tgolang.org/x/net\tv0.61.0\th1:RR+6j/BTBCrggOLugxa+66R8FvoN6MHlzDlZIbN9YFw=\n\tdep\tgolang.org/x/sync\tv0.24.0\th1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=\n\tdep\tgolang.org/x/sys\tv0.49.0\th1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=\n\tdep\tgolang.org/x/text\tv0.43.0\th1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=\n\tdep\tgolang.zx2c4.com/wireguard\tv0.0.0-20250521234502-f333402bd9cb\th1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=\n\tdep\tgoogle.golang.org/genproto/googleapis/rpc\tv0.0.0-20260706201446-f0a921348800\th1:qEHAMpSaUhtD0p3NbEEI83HwNGFxEwaSJ1G9PLnCBZE=\n\tdep\tgoogle.golang.org/grpc\tv1.84.0\th1:soMyaPJ8pAak5PIQ0DGBUir0XRo2fRoMqhNWMLlLxO0=\n\tdep\tgoogle.golang.org/protobuf\tv1.36.12\th1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=\n\tdep\tgopkg.in/yaml.v2\tv2.4.0\th1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=\n\tdep\tlayeh.com/gopher-luar\tv1.0.11\th1:8zJudpKI6HWkoh9eyyNFaTM79PY6CAPcIr6X/KTiliw=\n\tdep\tlukechampine.com/blake3\tv1.4.1\th1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=1b1647cd9ddf0abc34b981d4611fc03bcac1ca74\n\tbuild\tvcs.time=2026-10-21T11:59:30Z\n\tbuild\tvcs.modified=false\n",
+   "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/reference",
+   "sha256": "b8c58f14180eb0cad5665fa2cefb7d10897eec945d007212a053fc1de2257ee8"
+  }
+ },
+ "rows": [
+  {
+   "block": "case-xhttp-h3-socks-upload-1-1",
+   "case": "xhttp-h3-socks-upload-1",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     2600.0,
+     2480.0,
+     2280.0,
+     2280.0,
+     2320.0
+    ],
+    "before": [
+     2280.0,
+     2280.0,
+     2280.0,
+     2560.0,
+     2280.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.890625,
+      1.1403508771929824
+     ],
+     "max": 1.1403508771929824,
+     "median": 1.0175438596491229,
+     "min": 0.890625,
+     "samples": [
+      1.1403508771929824,
+      1.087719298245614,
+      1.0,
+      0.890625,
+      1.0175438596491229
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     5.296875,
+     5.65625,
+     5.96875,
+     6.078125,
+     5.890625
+    ],
+    "before": [
+     5.765625,
+     5.703125,
+     5.796875,
+     5.703125,
+     5.671875
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9186991869918699,
+      1.0657534246575342
+     ],
+     "max": 1.0657534246575342,
+     "median": 1.0296495956873315,
+     "min": 0.9186991869918699,
+     "samples": [
+      0.9186991869918699,
+      0.9917808219178083,
+      1.0296495956873315,
+      1.0657534246575342,
+      1.0385674931129476
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     11.125,
+     11.46875,
+     11.78125,
+     11.90625,
+     11.71875
+    ],
+    "before": [
+     11.609375,
+     11.5625,
+     11.65625,
+     11.5625,
+     11.53125
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9582772543741588,
+      1.0297297297297296
+     ],
+     "max": 1.0297297297297296,
+     "median": 1.0107238605898123,
+     "min": 0.9582772543741588,
+     "samples": [
+      0.9582772543741588,
+      0.9918918918918919,
+      1.0107238605898123,
+      1.0297297297297296,
+      1.016260162601626
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     448.4812954385022,
+     462.41862759801506,
+     488.25214790416334,
+     479.58875324357956,
+     432.8661826272468
+    ],
+    "before": [
+     474.9711318204915,
+     492.89861708513223,
+     481.56403027904577,
+     425.0884669292871,
+     426.0607727427621
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9381617467961921,
+      1.128209280077595
+     ],
+     "max": 1.128209280077595,
+     "median": 1.013888324718194,
+     "min": 0.9381617467961921,
+     "samples": [
+      0.9442285338890853,
+      0.9381617467961921,
+      1.013888324718194,
+      1.128209280077595,
+      1.0159728619010733
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-socks-download-1-1",
+   "case": "xhttp-h3-socks-download-1",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     4160.0,
+     4200.0,
+     4160.0,
+     4200.0,
+     4160.0
+    ],
+    "before": [
+     4200.0,
+     4160.0,
+     4240.0,
+     4200.0,
+     4200.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9811320754716981,
+      1.0096153846153846
+     ],
+     "max": 1.0096153846153846,
+     "median": 0.9904761904761905,
+     "min": 0.9811320754716981,
+     "samples": [
+      0.9904761904761905,
+      1.0096153846153846,
+      0.9811320754716981,
+      1.0,
+      0.9904761904761905
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     3.296875,
+     3.34375,
+     3.3125,
+     3.375,
+     3.28125
+    ],
+    "before": [
+     3.34375,
+     3.359375,
+     3.34375,
+     3.296875,
+     3.34375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9813084112149533,
+      1.0236966824644549
+     ],
+     "max": 1.0236966824644549,
+     "median": 0.9906542056074766,
+     "min": 0.9813084112149533,
+     "samples": [
+      0.985981308411215,
+      0.9953488372093023,
+      0.9906542056074766,
+      1.0236966824644549,
+      0.9813084112149533
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     9.125,
+     9.171875,
+     9.140625,
+     9.203125,
+     9.109375
+    ],
+    "before": [
+     9.203125,
+     9.21875,
+     9.203125,
+     9.15625,
+     9.203125
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9898132427843803,
+      1.0051194539249146
+     ],
+     "max": 1.0051194539249146,
+     "median": 0.9932088285229203,
+     "min": 0.9898132427843803,
+     "samples": [
+      0.9915110356536503,
+      0.9949152542372881,
+      0.9932088285229203,
+      1.0051194539249146,
+      0.9898132427843803
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     292.25437432590985,
+     292.1247697984068,
+     291.7857189918174,
+     289.00715844540196,
+     292.9551442325974
+    ],
+    "before": [
+     292.44383950202297,
+     294.1449358956498,
+     290.64332863104977,
+     289.7677461371308,
+     289.83849994990095
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9931320724897347,
+      1.010753037582085
+     ],
+     "max": 1.010753037582085,
+     "median": 0.9993521314162892,
+     "min": 0.9931320724897347,
+     "samples": [
+      0.9993521314162892,
+      0.9931320724897347,
+      1.0039305576568656,
+      0.9973751816692223,
+      1.010753037582085
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-socks-full-duplex-1-1",
+   "case": "xhttp-h3-socks-full-duplex-1",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     2800.0,
+     2800.0,
+     2780.0,
+     2740.0,
+     2820.0
+    ],
+    "before": [
+     2760.0,
+     2820.0,
+     2760.0,
+     2800.0,
+     2820.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9785714285714285,
+      1.0144927536231885
+     ],
+     "max": 1.0144927536231885,
+     "median": 1.0,
+     "min": 0.9785714285714285,
+     "samples": [
+      1.0144927536231885,
+      0.9929078014184397,
+      1.0072463768115942,
+      0.9785714285714285,
+      1.0
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     6.359375,
+     6.9375,
+     6.375,
+     6.59375,
+     6.84375
+    ],
+    "before": [
+     6.421875,
+     6.296875,
+     6.21875,
+     6.296875,
+     6.1875
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9902676399026764,
+      1.106060606060606
+     ],
+     "max": 1.106060606060606,
+     "median": 1.0471464019851116,
+     "min": 0.9902676399026764,
+     "samples": [
+      0.9902676399026764,
+      1.1017369727047146,
+      1.0251256281407035,
+      1.0471464019851116,
+      1.106060606060606
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     12.171875,
+     12.765625,
+     12.203125,
+     12.40625,
+     12.65625
+    ],
+    "before": [
+     12.265625,
+     12.140625,
+     12.0625,
+     12.140625,
+     12.046875
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9923566878980892,
+      1.0514800514800515
+     ],
+     "max": 1.0514800514800515,
+     "median": 1.021879021879022,
+     "min": 0.9923566878980892,
+     "samples": [
+      0.9923566878980892,
+      1.0514800514800515,
+      1.011658031088083,
+      1.021879021879022,
+      1.0505836575875487
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     431.47153657443647,
+     426.25763694255056,
+     434.4677310115713,
+     439.75109400967966,
+     425.8442549492959
+    ],
+    "before": [
+     432.8890865448433,
+     434.2627052252391,
+     438.8005220437236,
+     441.67718848267,
+     434.9580239129099
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9790467850630138,
+      0.9967253737401394
+     ],
+     "max": 0.9967253737401394,
+     "median": 0.9901258298144855,
+     "min": 0.9790467850630138,
+     "samples": [
+      0.9967253737401394,
+      0.9815663003376343,
+      0.9901258298144855,
+      0.9956391352707004,
+      0.9790467850630138
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-socks-upload-8-1",
+   "case": "xhttp-h3-socks-upload-8",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     3020.0,
+     3090.0,
+     2970.0,
+     2960.0,
+     3095.0
+    ],
+    "before": [
+     2955.0,
+     3030.0,
+     3030.0,
+     2900.0,
+     2855.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9801980198019802,
+      1.084063047285464
+     ],
+     "max": 1.084063047285464,
+     "median": 1.0206896551724138,
+     "min": 0.9801980198019802,
+     "samples": [
+      1.0219966159052454,
+      1.0198019801980198,
+      0.9801980198019802,
+      1.0206896551724138,
+      1.084063047285464
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     26.4375,
+     26.59375,
+     30.390625,
+     23.875,
+     27.03125
+    ],
+    "before": [
+     31.09375,
+     30.734375,
+     32.1875,
+     26.28125,
+     24.421875
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8502512562814071,
+      1.106845809341011
+     ],
+     "max": 1.106845809341011,
+     "median": 0.9084423305588585,
+     "min": 0.8502512562814071,
+     "samples": [
+      0.8502512562814071,
+      0.8652770716827657,
+      0.9441747572815534,
+      0.9084423305588585,
+      1.106845809341011
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     32.234375,
+     32.390625,
+     36.203125,
+     29.671875,
+     32.828125
+    ],
+    "before": [
+     36.921875,
+     36.5625,
+     38.03125,
+     32.125,
+     30.25
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8730427422767668,
+      1.0852272727272727
+     ],
+     "max": 1.0852272727272727,
+     "median": 0.9236381322957199,
+     "min": 0.8730427422767668,
+     "samples": [
+      0.8730427422767668,
+      0.8858974358974359,
+      0.9519309778142975,
+      0.9236381322957199,
+      1.0852272727272727
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     467.9408445900359,
+     456.57510650748554,
+     469.982048085612,
+     469.302721107921,
+     461.23852396803295
+    ],
+    "before": [
+     478.32859198407874,
+     462.3807903358802,
+     465.4283475506535,
+     474.6000204335238,
+     478.3161682717681
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9642963264958418,
+      1.0097838916751045
+     ],
+     "max": 1.0097838916751045,
+     "median": 0.9874439337668476,
+     "min": 0.9642963264958418,
+     "samples": [
+      0.9782832396638573,
+      0.9874439337668476,
+      1.0097838916751045,
+      0.9888383921248802,
+      0.9642963264958418
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-socks-download-8-1",
+   "case": "xhttp-h3-socks-download-8",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     4630.0,
+     4640.0,
+     4645.0,
+     4635.0,
+     4640.0
+    ],
+    "before": [
+     4630.0,
+     4640.0,
+     4635.0,
+     4620.0,
+     4635.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      1.0,
+      1.0032467532467533
+     ],
+     "max": 1.0032467532467533,
+     "median": 1.0010787486515642,
+     "min": 1.0,
+     "samples": [
+      1.0,
+      1.0,
+      1.0021574973031284,
+      1.0032467532467533,
+      1.0010787486515642
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     4.828125,
+     4.875,
+     4.8125,
+     4.84375,
+     4.859375
+    ],
+    "before": [
+     4.796875,
+     4.671875,
+     4.734375,
+     4.6875,
+     4.734375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      1.006514657980456,
+      1.0434782608695652
+     ],
+     "max": 1.0434782608695652,
+     "median": 1.0264026402640265,
+     "min": 1.006514657980456,
+     "samples": [
+      1.006514657980456,
+      1.0434782608695652,
+      1.0165016501650166,
+      1.0333333333333334,
+      1.0264026402640265
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     10.65625,
+     10.703125,
+     10.640625,
+     10.671875,
+     10.6875
+    ],
+    "before": [
+     10.65625,
+     10.546875,
+     10.59375,
+     10.546875,
+     10.59375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      1.0,
+      1.0148148148148148
+     ],
+     "max": 1.0148148148148148,
+     "median": 1.008849557522124,
+     "min": 1.0,
+     "samples": [
+      1.0,
+      1.0148148148148148,
+      1.0044247787610618,
+      1.0118518518518518,
+      1.008849557522124
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     277.84276686209444,
+     277.2835236202142,
+     277.5618235882989,
+     277.078325174174,
+     277.5109646936522
+    ],
+    "before": [
+     277.1258818777653,
+     277.7303376405211,
+     276.9453540353766,
+     277.91099499070003,
+     276.76634072632584
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9970038255717306,
+      1.0026904426505487
+     ],
+     "max": 1.0026904426505487,
+     "median": 1.0022259609845037,
+     "min": 0.9970038255717306,
+     "samples": [
+      1.00258685684452,
+      0.9983911947679075,
+      1.0022259609845037,
+      0.9970038255717306,
+      1.0026904426505487
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-socks-full-duplex-8-1",
+   "case": "xhttp-h3-socks-full-duplex-8",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     3595.0,
+     3565.0,
+     3495.0,
+     3525.0,
+     3542.5
+    ],
+    "before": [
+     3605.0,
+     3550.0,
+     3487.5,
+     3652.5,
+     3635.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9650924024640657,
+      1.004225352112676
+     ],
+     "max": 1.004225352112676,
+     "median": 0.9972260748959778,
+     "min": 0.9650924024640657,
+     "samples": [
+      0.9972260748959778,
+      1.004225352112676,
+      1.0021505376344086,
+      0.9650924024640657,
+      0.9745529573590096
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     32.015625,
+     24.828125,
+     25.421875,
+     32.65625,
+     26.828125
+    ],
+    "before": [
+     24.546875,
+     29.78125,
+     28.390625,
+     28.453125,
+     31.296875
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8336831059811123,
+      1.3042647994907701
+     ],
+     "max": 1.3042647994907701,
+     "median": 0.895432030820033,
+     "min": 0.8336831059811123,
+     "samples": [
+      1.3042647994907701,
+      0.8336831059811123,
+      0.895432030820033,
+      1.1477210323997804,
+      0.8572141787319022
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     37.796875,
+     30.640625,
+     31.21875,
+     38.453125,
+     32.625
+    ],
+    "before": [
+     30.375,
+     35.609375,
+     34.21875,
+     34.28125,
+     37.125
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8604651162790697,
+      1.2443415637860082
+     ],
+     "max": 1.2443415637860082,
+     "median": 0.9123287671232877,
+     "min": 0.8604651162790697,
+     "samples": [
+      1.2443415637860082,
+      0.8604651162790697,
+      0.9123287671232877,
+      1.1216955332725616,
+      0.8787878787878788
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     389.5629575238846,
+     405.5514759342242,
+     403.552170442072,
+     406.8543889274419,
+     407.12226407887255
+    ],
+    "before": [
+     388.69089020913106,
+     403.4790115680319,
+     399.4796264082177,
+     390.87108619222346,
+     391.3832150253507
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      1.0022436011152316,
+      1.0408914941520082
+     ],
+     "max": 1.0408914941520082,
+     "median": 1.010194622615604,
+     "min": 1.0022436011152316,
+     "samples": [
+      1.0022436011152316,
+      1.0051364861783965,
+      1.010194622615604,
+      1.0408914941520082,
+      1.0402139091542348
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-tun-upload-1-1",
+   "case": "xhttp-h3-tun-upload-1",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     6400.0,
+     6400.0,
+     6400.0,
+     6400.0,
+     6400.0
+    ],
+    "before": [
+     6400.0,
+     6400.0,
+     6400.0,
+     6400.0,
+     6400.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      1.0,
+      1.0
+     ],
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "samples": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     4.390625,
+     4.671875,
+     4.65625,
+     4.296875,
+     4.390625
+    ],
+    "before": [
+     4.453125,
+     4.71875,
+     4.34375,
+     4.375,
+     4.484375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9790940766550522,
+      1.0719424460431655
+     ],
+     "max": 1.0719424460431655,
+     "median": 0.9859649122807017,
+     "min": 0.9790940766550522,
+     "samples": [
+      0.9859649122807017,
+      0.9900662251655629,
+      1.0719424460431655,
+      0.9821428571428571,
+      0.9790940766550522
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     10.5625,
+     10.828125,
+     10.828125,
+     10.453125,
+     10.546875
+    ],
+    "before": [
+     10.65625,
+     10.9375,
+     10.546875,
+     10.578125,
+     10.703125
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9854014598540146,
+      1.0266666666666666
+     ],
+     "max": 1.0266666666666666,
+     "median": 0.99,
+     "min": 0.9854014598540146,
+     "samples": [
+      0.9912023460410557,
+      0.99,
+      1.0266666666666666,
+      0.9881831610044313,
+      0.9854014598540146
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     190.70084969862472,
+     228.06263386742086,
+     223.34307565135285,
+     225.53953285124257,
+     219.5746189141824
+    ],
+    "before": [
+     228.33561659435946,
+     192.17266560266265,
+     223.05299238623948,
+     221.08468318544175,
+     225.82802137603366
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8351778515456338,
+      1.1867589657051671
+     ],
+     "max": 1.1867589657051671,
+     "median": 1.0013005127705754,
+     "min": 0.8351778515456338,
+     "samples": [
+      0.8351778515456338,
+      1.1867589657051671,
+      1.0013005127705754,
+      1.020149969693125,
+      0.9723090056594946
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-tun-download-1-1",
+   "case": "xhttp-h3-tun-download-1",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     8960.0,
+     8960.0,
+     7680.0,
+     8960.0,
+     8960.0
+    ],
+    "before": [
+     8320.0,
+     8960.0,
+     8960.0,
+     8960.0,
+     8960.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8571428571428571,
+      1.0769230769230769
+     ],
+     "max": 1.0769230769230769,
+     "median": 1.0,
+     "min": 0.8571428571428571,
+     "samples": [
+      1.0769230769230769,
+      1.0,
+      0.8571428571428571,
+      1.0,
+      1.0
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     4.203125,
+     4.234375,
+     4.25,
+     4.28125,
+     4.390625
+    ],
+    "before": [
+     4.25,
+     4.3125,
+     4.109375,
+     4.140625,
+     4.40625
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9818840579710145,
+      1.0342205323193916
+     ],
+     "max": 1.0342205323193916,
+     "median": 0.9964539007092199,
+     "min": 0.9818840579710145,
+     "samples": [
+      0.9889705882352942,
+      0.9818840579710145,
+      1.0342205323193916,
+      1.0339622641509434,
+      0.9964539007092199
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     10.359375,
+     10.40625,
+     10.4375,
+     10.46875,
+     10.546875
+    ],
+    "before": [
+     10.4375,
+     10.5,
+     10.328125,
+     10.34375,
+     10.609375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9910714285714286,
+      1.012084592145015
+     ],
+     "max": 1.012084592145015,
+     "median": 0.9941089837997055,
+     "min": 0.9910714285714286,
+     "samples": [
+      0.9925149700598802,
+      0.9910714285714286,
+      1.0105900151285931,
+      1.012084592145015,
+      0.9941089837997055
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     188.03702566558496,
+     187.16369170368628,
+     209.85601909689774,
+     183.1988516363184,
+     188.16713112782875
+    ],
+    "before": [
+     190.49301055546775,
+     188.703073496592,
+     189.95353558438165,
+     183.4478449177781,
+     185.67417445606577
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.987107217830611,
+      1.104775536034574
+     ],
+     "max": 1.104775536034574,
+     "median": 0.9986427026080831,
+     "min": 0.987107217830611,
+     "samples": [
+      0.987107217830611,
+      0.9918423067288646,
+      1.104775536034574,
+      0.9986427026080831,
+      1.0134265127558322
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-tun-full-duplex-1-1",
+   "case": "xhttp-h3-tun-full-duplex-1",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     4800.0,
+     5120.0,
+     5120.0,
+     5120.0,
+     5120.0
+    ],
+    "before": [
+     5120.0,
+     4800.0,
+     5120.0,
+     4480.0,
+     5120.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9375,
+      1.1428571428571428
+     ],
+     "max": 1.1428571428571428,
+     "median": 1.0,
+     "min": 0.9375,
+     "samples": [
+      0.9375,
+      1.0666666666666667,
+      1.0,
+      1.1428571428571428,
+      1.0
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     6.5,
+     6.3125,
+     6.203125,
+     6.171875,
+     6.578125
+    ],
+    "before": [
+     6.453125,
+     6.234375,
+     5.765625,
+     6.34375,
+     6.359375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9729064039408867,
+      1.075880758807588
+     ],
+     "max": 1.075880758807588,
+     "median": 1.012531328320802,
+     "min": 0.9729064039408867,
+     "samples": [
+      1.0072639225181599,
+      1.012531328320802,
+      1.075880758807588,
+      0.9729064039408867,
+      1.0343980343980343
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     12.6875,
+     12.484375,
+     12.359375,
+     12.328125,
+     12.75
+    ],
+    "before": [
+     12.65625,
+     12.421875,
+     11.96875,
+     12.53125,
+     12.5625
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.983790523690773,
+      1.0326370757180157
+     ],
+     "max": 1.0326370757180157,
+     "median": 1.0050314465408805,
+     "min": 0.983790523690773,
+     "samples": [
+      1.002469135802469,
+      1.0050314465408805,
+      1.0326370757180157,
+      0.983790523690773,
+      1.0149253731343284
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     305.63733742123276,
+     305.80114227620805,
+     300.9759370490769,
+     304.2879661117535,
+     304.4527402530526
+    ],
+    "before": [
+     306.3233017302136,
+     302.10244514827394,
+     302.42268830955896,
+     341.68412903914685,
+     303.02324970504003
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.8905534095699574,
+      1.01224318832017
+     ],
+     "max": 1.01224318832017,
+     "median": 0.9977606525357154,
+     "min": 0.8905534095699574,
+     "samples": [
+      0.9977606525357154,
+      1.01224318832017,
+      0.9952161285630753,
+      0.8905534095699574,
+      1.0047174286111842
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-tun-upload-8-1",
+   "case": "xhttp-h3-tun-upload-8",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     4480.0,
+     4560.0,
+     4560.0,
+     4560.0,
+     4560.0
+    ],
+    "before": [
+     4640.0,
+     4560.0,
+     4560.0,
+     4640.0,
+     4480.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9655172413793104,
+      1.0178571428571428
+     ],
+     "max": 1.0178571428571428,
+     "median": 1.0,
+     "min": 0.9655172413793104,
+     "samples": [
+      0.9655172413793104,
+      1.0,
+      1.0,
+      0.9827586206896551,
+      1.0178571428571428
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     29.390625,
+     30.90625,
+     31.4375,
+     32.3125,
+     30.921875
+    ],
+    "before": [
+     32.03125,
+     30.0,
+     33.265625,
+     31.875,
+     30.203125
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9175609756097561,
+      1.0302083333333334
+     ],
+     "max": 1.0302083333333334,
+     "median": 1.0137254901960784,
+     "min": 0.9175609756097561,
+     "samples": [
+      0.9175609756097561,
+      1.0302083333333334,
+      0.9450446218882105,
+      1.0137254901960784,
+      1.023797206414899
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     35.546875,
+     37.0625,
+     37.578125,
+     38.453125,
+     37.078125
+    ],
+    "before": [
+     38.203125,
+     36.203125,
+     39.453125,
+     38.046875,
+     36.40625
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9304703476482618,
+      1.0237375917134226
+     ],
+     "max": 1.0237375917134226,
+     "median": 1.0106776180698152,
+     "min": 0.9304703476482618,
+     "samples": [
+      0.9304703476482618,
+      1.0237375917134226,
+      0.9524752475247524,
+      1.0106776180698152,
+      1.0184549356223176
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     368.8363090830635,
+     364.82281510679974,
+     364.9736936085989,
+     364.8555283844603,
+     366.7670811896872
+    ],
+    "before": [
+     363.0858460686947,
+     370.62600687033483,
+     365.2178503077603,
+     362.4694077943666,
+     358.4138231609661
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9843421895496789,
+      1.0233061826551528
+     ],
+     "max": 1.0233061826551528,
+     "median": 1.0065829571786853,
+     "min": 0.9843421895496789,
+     "samples": [
+      1.015837750429084,
+      0.9843421895496789,
+      0.9993314765448742,
+      1.0065829571786853,
+      1.0233061826551528
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-tun-download-8-1",
+   "case": "xhttp-h3-tun-download-8",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     6400.0,
+     6400.0,
+     6080.0,
+     6400.0,
+     6400.0
+    ],
+    "before": [
+     6320.0,
+     6480.0,
+     6400.0,
+     6480.0,
+     6400.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.95,
+      1.0126582278481013
+     ],
+     "max": 1.0126582278481013,
+     "median": 0.9876543209876543,
+     "min": 0.95,
+     "samples": [
+      1.0126582278481013,
+      0.9876543209876543,
+      0.95,
+      0.9876543209876543,
+      1.0
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     6.515625,
+     6.46875,
+     6.625,
+     6.6875,
+     6.53125
+    ],
+    "before": [
+     6.421875,
+     6.609375,
+     6.375,
+     6.53125,
+     6.359375
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9787234042553191,
+      1.0392156862745099
+     ],
+     "max": 1.0392156862745099,
+     "median": 1.0239234449760766,
+     "min": 0.9787234042553191,
+     "samples": [
+      1.0145985401459854,
+      0.9787234042553191,
+      1.0392156862745099,
+      1.0239234449760766,
+      1.027027027027027
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     12.6875,
+     12.65625,
+     12.796875,
+     12.859375,
+     12.703125
+    ],
+    "before": [
+     12.625,
+     12.828125,
+     12.578125,
+     12.734375,
+     12.5625
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9866017052375152,
+      1.017391304347826
+     ],
+     "max": 1.017391304347826,
+     "median": 1.0098159509202453,
+     "min": 0.9866017052375152,
+     "samples": [
+      1.004950495049505,
+      0.9866017052375152,
+      1.017391304347826,
+      1.0098159509202453,
+      1.0111940298507462
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     238.36191346679672,
+     238.31953064189827,
+     245.83247125519324,
+     235.2738810658659,
+     238.47846980230233
+    ],
+    "before": [
+     241.8089768854761,
+     235.77909357166317,
+     236.65750851412366,
+     234.79241459668046,
+     236.2857904325022
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9857446838282106,
+      1.0387689484211824
+     ],
+     "max": 1.0387689484211824,
+     "median": 1.0092797766881647,
+     "min": 0.9857446838282106,
+     "samples": [
+      0.9857446838282106,
+      1.0107746494048802,
+      1.0387689484211824,
+      1.0020506048715947,
+      1.0092797766881647
+     ]
+    }
+   }
+  },
+  {
+   "block": "case-xhttp-h3-tun-full-duplex-8-1",
+   "case": "xhttp-h3-tun-full-duplex-8",
+   "collector_commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+   "cpu_ms_per_gib": {
+    "after": [
+     5000.0,
+     4880.0,
+     4760.0,
+     4800.0,
+     4720.0
+    ],
+    "before": [
+     4960.0,
+     4800.0,
+     4800.0,
+     4840.0,
+     4760.0
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9915966386554622,
+      1.0166666666666666
+     ],
+     "max": 1.0166666666666666,
+     "median": 0.9917355371900827,
+     "min": 0.9915966386554622,
+     "samples": [
+      1.0080645161290323,
+      1.0166666666666666,
+      0.9916666666666667,
+      0.9917355371900827,
+      0.9915966386554622
+     ]
+    }
+   },
+   "footprint_mib": {
+    "after": [
+     31.015625,
+     30.828125,
+     30.703125,
+     31.28125,
+     30.4375
+    ],
+    "before": [
+     30.15625,
+     30.265625,
+     30.796875,
+     29.9375,
+     30.015625
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9969558599695586,
+      1.0448851774530272
+     ],
+     "max": 1.0448851774530272,
+     "median": 1.0185854414042335,
+     "min": 0.9969558599695586,
+     "samples": [
+      1.028497409326425,
+      1.0185854414042335,
+      0.9969558599695586,
+      1.0448851774530272,
+      1.0140551795939614
+     ]
+    }
+   },
+   "rss_mib": {
+    "after": [
+     37.1875,
+     36.96875,
+     36.84375,
+     37.4375,
+     36.578125
+    ],
+    "before": [
+     36.359375,
+     36.46875,
+     36.984375,
+     36.125,
+     36.203125
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9961977186311787,
+      1.0363321799307958
+     ],
+     "max": 1.0363321799307958,
+     "median": 1.0137103684661526,
+     "min": 0.9961977186311787,
+     "samples": [
+      1.0227761065749892,
+      1.0137103684661526,
+      0.9961977186311787,
+      1.0363321799307958,
+      1.0103582218385845
+     ]
+    }
+   },
+   "throughput_mib_s": {
+    "after": [
+     326.0703253014744,
+     336.0174807844105,
+     344.47521553033783,
+     341.9610219389195,
+     348.32058623987416
+    ],
+    "before": [
+     329.8200132506221,
+     346.87808329393175,
+     338.65489326933204,
+     335.49807129563357,
+     344.9793627213751
+    ],
+    "paired": {
+     "bootstrap_95_percentile": [
+      0.9686904332312101,
+      1.019263749023436
+     ],
+     "max": 1.019263749023436,
+     "median": 1.009685285207039,
+     "min": 0.9686904332312101,
+     "samples": [
+      0.9886311084879545,
+      0.9686904332312101,
+      1.0171865884021847,
+      1.019263749023436,
+      1.009685285207039
+     ]
+    }
+   }
+  }
+ ]
+}
