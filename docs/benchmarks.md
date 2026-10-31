@@ -23,6 +23,13 @@ reran the collector's twelve `xhttp-h3` cases in five AB/BA pairs each, with
 interleaved stream-transport pairs, before (`a87a0292`) and after
 (`bae0ed5b`) the shared H3 send budget.
 
+Two Linux reports measure 32-flow XHTTP H3 transfers in Docker Desktop's Linux
+VM on the same Mac, against the same Xray-core v26.10.21, with their own
+scripts: the [2026-10-30 receive-buffer report](benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md)
+(`33d5d35c` against `9340a335`) and the
+[2026-10-31 download-memory report](benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md)
+(`94347de0` against `54c77a31`).
+
 `scripts/run-migration-benchmarks.py` compares two frozen Rust release builds.
 Both use one driver and the same local Xray-core v26.10.21 server, so this
 controls for server and driver changes. It does not measure old versus new Go
