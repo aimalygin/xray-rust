@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.14`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.15`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -24,6 +24,8 @@ Hysteria carrier rebind requires minor >=7 and `HYSTERIA2_OUTBOUND`.
 Hysteria stream limits require minor >=10 and `HYSTERIA_STREAM_LIMITS` (bit 23).
 TUN flow admission requires minor >=11 and `TUN_ADMISSION` (bit 24).
 The on-demand outbound probe requires minor >=9 and `OUTBOUND_PROBE`.
+Cancelling in-flight probes without the teardown latch requires minor >=15 and
+`OUTBOUND_PROBE_CANCEL` (bit 28).
 Startup-probe preflight requires minor >=12 and `STARTUP_PROBE_PREFLIGHT` (bit 25).
 
 An incompatible function signature, enum representation, ownership rule, or
@@ -292,6 +294,19 @@ on an unstarted core; the legacy probe inside `xray_core_start` is unaffected.
 Create a new handle and load its config to enable probes again. Raw C hosts must
 cancel, drain shared callers, then acquire exclusive access for stop/load/free;
 cancellation alone does not make lifecycle calls safe to overlap a probe.
+
+ABI 1.15 adds `XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL` (bit 28) and
+`xray_core_cancel_inflight_outbound_probes(handle, error)` for a host that
+abandons a probe while the core keeps running, for example when the user
+dismisses a health check. It cancels the probes already in flight on that core;
+each returns `RUNTIME_ERROR` with zero outputs, the error message
+`outbound probe cancelled by the host`, and no health failure. Later probes run
+normally, and a probe that starts concurrently with the call may complete. It
+is a nonblocking shared call, idempotent, and a no-op before config load or
+when nothing is in flight. It is not a teardown step: it does not set the
+latch above and does not cancel startup-probe preflights. Kotlin
+`cancelOutboundProbes()` and Swift `cancelOutboundProbes()` require minor 15
+and the capability.
 
 It is a shared call: it may overlap packet, statistics, snapshot, and other
 shared calls, including other probes, but not load/start/stop/free. Each

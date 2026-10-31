@@ -51,6 +51,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_rebind_hysteria",
         "xray_core_probe_outbound_url",
         "xray_core_cancel_outbound_probes",
+        "xray_core_cancel_inflight_outbound_probes",
         "XrayOutboundProbeFailureKind",
         "xray_core_start",
         "xray_core_stop",
@@ -100,6 +101,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT = 1 << 25"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT = 1 << 26"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL = 1 << 28"));
     // The Rust enum, the JNI result carrier and the Swift mapping all rely on
     // these discriminants staying stable within ABI major 1.
     for (name, value) in [
@@ -482,6 +484,10 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("OutboundProbe(1L shl 22)"));
     assert!(core.contains("fun probeOutboundUrl("));
     assert!(core.contains("requireCapability(XrayFfiCapability.OutboundProbe)"));
+    assert!(core.contains("OutboundProbeCancel(1L shl 28)"));
+    assert!(core.contains("fun cancelOutboundProbes()"));
+    assert!(core.contains("requireFeature(15, XrayFfiCapability.OutboundProbeCancel)"));
+    assert!(jni.contains("xray_core_cancel_inflight_outbound_probes(native->core, &error)"));
     assert!(core.contains("StartupProbePreflight(1L shl 25)"));
     assert!(core.contains("fun preflightStartupProbe()"));
     assert!(core.contains("requireFeature(12, XrayFfiCapability.StartupProbePreflight)"));
@@ -1233,6 +1239,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_rebind_hysteria",
     "xray_core_probe_outbound_url",
     "xray_core_cancel_outbound_probes",
+    "xray_core_cancel_inflight_outbound_probes",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -1320,6 +1327,7 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
+  capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
   (void)capabilities;
   (void)xray_profile_import_json(packet, sizeof(packet), NULL, 0, &written, &error);
@@ -1380,6 +1388,7 @@ static void use_xray_ffi_api(void) {
     int32_t probe_failure_kind = XRAY_OUTBOUND_PROBE_FAILURE_NONE;
     uint16_t probe_http_status = 0;
     (void)xray_core_cancel_outbound_probes(handle, &error);
+    (void)xray_core_cancel_inflight_outbound_probes(handle, &error);
     (void)xray_core_probe_outbound_url(
         handle,
         "http://probe.test/health",

@@ -243,7 +243,8 @@ typedef enum XrayFfiCapability {
   XRAY_FFI_CAPABILITY_TUN_ADMISSION = 1 << 24,
   XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT = 1 << 25,
   XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT = 1 << 26,
-  XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27
+  XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27,
+  XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL = 1 << 28
 } XrayFfiCapability;
 
 /* ABI 1.9. Outcome written by xray_core_probe_outbound_url through an int32_t.
@@ -395,6 +396,14 @@ XrayStatus xray_core_rebind_hysteria(
  * Then drain shared calls before exclusive stop/load/free. A new handle with loaded config
  * resets the latch. Normal traffic and health state are unaffected. */
 XrayStatus xray_core_cancel_outbound_probes(
+    XrayCoreHandle *handle,
+    XrayError **error);
+/* ABI 1.15, OUTBOUND_PROBE_CANCEL. Nonblocking shared call that cancels the
+ * probes already running on this core; later probes run normally. A cancelled
+ * probe returns RUNTIME_ERROR with zero outputs and no health failure; a probe
+ * starting concurrently may complete. No-op when unloaded or idle. Not a
+ * teardown step: preflights and the cancel_outbound_probes latch are unaffected. */
+XrayStatus xray_core_cancel_inflight_outbound_probes(
     XrayCoreHandle *handle,
     XrayError **error);
 /* ABI 1.9, OUTBOUND_PROBE. Blocks for at most timeout_ms (1..=60000) while one

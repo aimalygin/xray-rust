@@ -44,6 +44,7 @@ enum class XrayFfiCapability(val mask: Long) {
     StartupProbePreflight(1L shl 25),
     SocksProfileImport(1L shl 26),
     HttpProfileImport(1L shl 27),
+    OutboundProbeCancel(1L shl 28),
 }
 
 /** Concurrent flows per Hysteria outbound; all inbounds share one bounded session. */
@@ -753,8 +754,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
      * or typed failure. A null or empty [outboundTag] uses the default outbound; routing rules and
      * selector overrides are bypassed, and health snapshots are not updated.
      *
-     * Blocks the calling thread for at most [timeoutMs], so call it off the main thread. [stop]
-     * and [close] cancel probes before draining shared calls. An empty [url], a [timeoutMs] outside 1..60000, or
+     * Blocks the calling thread for at most [timeoutMs], so call it off the main thread.
+     * [cancelOutboundProbes] ends it early and keeps later probes working; [stop] and [close]
+     * cancel probes before draining shared calls. An empty [url], a [timeoutMs] outside 1..60000, or
      * an argument with an embedded NUL throws [IllegalArgumentException]. A non-empty unsupported
      * URL, an unknown [outboundTag], or a missing default outbound throws [XrayCoreException]
      * with code INVALID_ARGUMENT (9). Neither makes any network call.
@@ -772,6 +774,22 @@ class XrayCore private constructor(handle: Long) : Closeable {
         return outboundProbeResultFromNative(
             withDataPathHandle { nativeProbeOutboundUrl(it, url, timeoutMs, outboundTag) },
         )
+    }
+
+    /**
+     * Cancels the [probeOutboundUrl] calls already running on this core, for example when the
+     * user dismisses a health check, and leaves later probes and traffic untouched. Each cancelled
+     * call throws [XrayCoreException] with code RUNTIME_ERROR (5); a probe that starts
+     * concurrently with this call may still complete. Thread-safe and does not wait for the
+     * probes; it waits only behind a concurrent lifecycle call and is a no-op after [close].
+     * Startup-probe preflights are not affected; [stop] and [close] still cancel them.
+     * Requires ABI 1.15.
+     */
+    fun cancelOutboundProbes() {
+        requireFeature(15, XrayFfiCapability.OutboundProbeCancel)
+        lifecycleLock.read {
+            if (nativeHandle != 0L) nativeCancelInflightOutboundProbes(nativeHandle)
+        }
     }
 
     fun pollTcpSlowFlowEvents(maxEvents: Int = 16): List<XrayTcpSlowFlowEvent> =
@@ -990,6 +1008,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     private external fun nativeStart(handle: Long)
     private external fun nativeStop(handle: Long)
     private external fun nativeCancelOutboundProbes(handle: Long)
+    private external fun nativeCancelInflightOutboundProbes(handle: Long)
     private external fun nativeFree(handle: Long)
     private external fun nativeSetOutboundSelectorOverride(
         handle: Long,

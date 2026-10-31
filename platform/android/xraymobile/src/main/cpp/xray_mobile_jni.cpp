@@ -1323,6 +1323,18 @@ Java_org_xrayrust_mobile_XrayCore_nativeCancelOutboundProbes(
 } XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeCancelInflightOutboundProbes(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_cancel_inflight_outbound_probes(native->core, &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStop(JNIEnv *env, jobject, jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
