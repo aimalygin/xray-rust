@@ -31,6 +31,7 @@ pub fn validate_tls_server_name(server_name: &str) -> Result<(), TransportError>
     tls::parse_tls_server_name(server_name).map(|_| ())
 }
 mod penetrating_tls;
+mod quic_receive_batch;
 pub mod reality;
 pub mod reality_connector;
 pub mod reality_runtime;

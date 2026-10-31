@@ -47,6 +47,21 @@ const XRAY_MAX_CONNECTION_RECEIVE_WINDOW: u64 = 15 * 1024 * 1024;
 /// (`ConnectionFlowControlMultiplier`).
 const CONNECTION_FLOW_CONTROL_MULTIPLIER: f64 = 1.5;
 const XRAY_BBR_INITIAL_WINDOW: u64 = 32 * 1280;
+/// Datagrams an XHTTP H3 or DoQ endpoint reads per receive call.
+///
+/// Every XHTTP H3 request owns a QUIC connection and its own endpoint, and
+/// quinn sized each endpoint's receive buffer for 32 datagrams. With UDP GRO
+/// on Linux and Android a datagram holds up to 64 segments, so the buffer
+/// took 2.9 MiB, and when datagrams queue up the kernel writes up to 64 KiB
+/// into each slot it fills. Thirty-two downloads from Xray-core on Linux
+/// kept 43 MiB of these buffers resident, and glibc's `calloc` zeroes a
+/// reused one in full. Batches of eight down to one datagram moved as many
+/// bytes as 32 within run-to-run noise, with GRO and without it; with four,
+/// those downloads kept 2 MiB resident, and no endpoint's buffer exceeds
+/// 368 KiB.
+const XHTTP_RECEIVE_BATCH: usize = 4;
+/// A constrained host reads two at a time, for at most 184 KiB per endpoint.
+const CONSTRAINED_XHTTP_RECEIVE_BATCH: usize = 2;
 
 type H3SendRequest = client::SendRequest<h3_quinn::OpenStreams, Bytes>;
 type H3SendHalf = client::RequestStream<h3_quinn::SendStream<Bytes>, Bytes>;
@@ -816,17 +831,10 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         ..Default::default()
     };
     let carrier = carrier.or_else(|| noise_carrier.enabled().then_some(&noise_carrier));
-    let endpoint = if let Some(carrier) = carrier.filter(|c| c.enabled()) {
+    let socket = if let Some(carrier) = carrier.filter(|c| c.enabled()) {
         let wire_peer = carrier.next_peer(remote_addr);
-        let socket =
-            crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, noise_state)
-                .map_err(H3Error::UdpSocket)?;
-        Endpoint::new_with_abstract_socket(
-            endpoint_config,
-            None,
-            socket,
-            Arc::new(quinn::TokioRuntime),
-        )
+        crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, noise_state)
+            .map_err(H3Error::UdpSocket)?
     } else {
         // Every connection owns its socket and talks to one peer, so XHTTP H3
         // takes the connected send path too: an unconnected macOS socket looks
@@ -834,18 +842,29 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         // cost of an XHTTP H3 upload.
         #[cfg(target_os = "macos")]
         {
-            let socket =
-                crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?;
-            Endpoint::new_with_abstract_socket(
-                endpoint_config,
-                None,
-                socket,
-                Arc::new(quinn::TokioRuntime),
-            )
+            crate::connected_quic::wrap(socket, remote_addr).map_err(H3Error::UdpSocket)?
         }
         #[cfg(not(target_os = "macos"))]
-        Endpoint::new(endpoint_config, None, socket, Arc::new(quinn::TokioRuntime))
-    }
+        {
+            use quinn::Runtime as _;
+            quinn::TokioRuntime
+                .wrap_udp_socket(socket)
+                .map_err(H3Error::Endpoint)?
+        }
+    };
+    // XHTTP and DoQ open an endpoint for every connection; Hysteria keeps one
+    // endpoint, and quinn's batch, for all of its traffic.
+    let socket = if datagram_buffers.is_none() {
+        crate::quic_receive_batch::cap(socket, xhttp_receive_batch(memory_class()))
+    } else {
+        socket
+    };
+    let endpoint = Endpoint::new_with_abstract_socket(
+        endpoint_config,
+        None,
+        socket,
+        Arc::new(quinn::TokioRuntime),
+    )
     .map_err(H3Error::Endpoint)?;
     let connecting = endpoint
         .connect_with(client_config, remote_addr, &config.server_name)
@@ -1054,6 +1073,13 @@ fn quinn_varint(name: &'static str, value: u64) -> Result<VarInt, H3Error> {
         name,
         value: u128::from(value),
     })
+}
+
+fn xhttp_receive_batch(class: MemoryClass) -> usize {
+    match class {
+        MemoryClass::Standard => XHTTP_RECEIVE_BATCH,
+        MemoryClass::Constrained => CONSTRAINED_XHTTP_RECEIVE_BATCH,
+    }
 }
 
 // Match the bounded carrier buffer request used by the Go QUIC references.

@@ -23,3 +23,99 @@
  
  /// The maximum amount of datagrams that are sent in a single transmit
  ///
+--- a/src/endpoint.rs
++++ b/src/endpoint.rs
+@@ -680,7 +680,12 @@
+         runtime: Arc<dyn Runtime>,
+     ) -> Self {
+         let (sender, events) = mpsc::unbounded_channel();
+-        let recv_state = RecvState::new(sender, socket.max_receive_segments(), &inner);
++        let recv_state = RecvState::new(
++            sender,
++            socket.max_receive_segments(),
++            socket.max_receive_batch(),
++            &inner,
++        );
+         Self(Arc::new(EndpointInner {
+             shared: Shared {
+                 incoming: Notify::new(),
+@@ -738,6 +743,8 @@
+     incoming: VecDeque<proto::Incoming>,
+     connections: ConnectionSet,
+     recv_buf: Box<[u8]>,
++    /// Number of datagrams `recv_buf` holds, at most `BATCH_SIZE`
++    recv_batch: usize,
+     recv_limiter: WorkLimiter,
+ }
+ 
+@@ -745,13 +752,15 @@
+     fn new(
+         sender: mpsc::UnboundedSender<(ConnectionHandle, EndpointEvent)>,
+         max_receive_segments: usize,
++        max_receive_batch: usize,
+         endpoint: &proto::Endpoint,
+     ) -> Self {
++        let recv_batch = max_receive_batch.clamp(1, BATCH_SIZE);
+         let recv_buf = vec![
+             0;
+             endpoint.config().get_max_udp_payload_size().min(64 * 1024) as usize
+                 * max_receive_segments
+-                * BATCH_SIZE
++                * recv_batch
+         ];
+         Self {
+             connections: ConnectionSet {
+@@ -761,6 +770,7 @@
+             },
+             incoming: VecDeque::new(),
+             recv_buf: recv_buf.into(),
++            recv_batch,
+             recv_limiter: WorkLimiter::new(RECV_TIME_BOUND),
+         }
+     }
+@@ -774,20 +784,20 @@
+         now: Instant,
+     ) -> Result<PollProgress, io::Error> {
+         let mut received_connection_packet = false;
++        let batch = self.recv_batch;
+         let mut metas = [RecvMeta::default(); BATCH_SIZE];
+         let mut iovs: [IoSliceMut; BATCH_SIZE] = {
+             let mut bufs = self
+                 .recv_buf
+-                .chunks_mut(self.recv_buf.len() / BATCH_SIZE)
++                .chunks_mut(self.recv_buf.len() / batch)
+                 .map(IoSliceMut::new);
+ 
+-            // expect() safe as self.recv_buf is chunked into BATCH_SIZE items
+-            // and iovs will be of size BATCH_SIZE, thus from_fn is called
+-            // exactly BATCH_SIZE times.
+-            std::array::from_fn(|_| bufs.next().expect("BATCH_SIZE elements"))
++            // self.recv_buf is chunked into `batch` items; the iovs past them
++            // stay empty and are never passed to the socket.
++            std::array::from_fn(|_| bufs.next().unwrap_or_else(|| IoSliceMut::new(&mut [])))
+         };
+         loop {
+-            match socket.poll_recv(cx, &mut iovs, &mut metas) {
++            match socket.poll_recv(cx, &mut iovs[..batch], &mut metas[..batch]) {
+                 Poll::Ready(Ok(msgs)) => {
+                     self.recv_limiter.record_work(msgs);
+                     for (meta, buf) in metas.iter().zip(iovs.iter()).take(msgs) {
+--- a/src/runtime.rs
++++ b/src/runtime.rs
+@@ -78,6 +78,16 @@
+         1
+     }
+ 
++    /// Maximum number of [`RecvMeta`]s to fill in one [`poll_recv`](Self::poll_recv) call
++    ///
++    /// The endpoint keeps a receive buffer for this many datagrams of
++    /// [`max_receive_segments`](Self::max_receive_segments) segments each, so the socket of an
++    /// endpoint that carries a single connection can ask for a smaller one. The endpoint clamps
++    /// the value to `1..=`[`udp::BATCH_SIZE`].
++    fn max_receive_batch(&self) -> usize {
++        udp::BATCH_SIZE
++    }
++
+     /// Whether datagrams might get fragmented into multiple parts
+     ///
+     /// Sockets should prevent this for best performance. See e.g. the `IPV6_DONTFRAG` socket
