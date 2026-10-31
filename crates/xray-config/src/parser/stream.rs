@@ -638,7 +638,7 @@ impl Parser<'_> {
             );
         }
 
-        let udp_hop = self.parse_quic_udp_hop(quic, &quic_path)?;
+        let udp_hop = self.parse_quic_udp_hop(quic, &quic_path, network)?;
         let init_stream_receive_window =
             self.quic_u64_at(quic, "initStreamReceiveWindow", &quic_path)?;
         let max_stream_receive_window =
@@ -741,6 +741,7 @@ impl Parser<'_> {
         &mut self,
         quic: &Value,
         quic_path: &str,
+        network: StreamNetwork,
     ) -> Option<QuicUdpHopSettings> {
         let Some(udp_hop) = quic.get("udpHop") else {
             return Some(QuicUdpHopSettings::default());
@@ -749,7 +750,13 @@ impl Parser<'_> {
             return Some(QuicUdpHopSettings::default());
         }
         let udp_hop_path = format!("{quic_path}.udpHop");
-        self.warning(&udp_hop_path, "legacy udpHop: migrate to finalmask.udp udphop with mode=intervalLocal,intervalRemote and remotePorts");
+        // The udphop mask is parsed for Hysteria only, so pointing other
+        // transports at it would trade one failure for another.
+        if network == StreamNetwork::Hysteria {
+            self.warning(&udp_hop_path, "legacy udpHop: migrate to finalmask.udp udphop with mode=intervalLocal,intervalRemote and remotePorts");
+        } else {
+            self.warning(&udp_hop_path, "legacy udpHop: UDP hopping is implemented only for Hysteria; XHTTP H3 rejects nonempty ports and other transports do not use quicParams");
+        }
         self.parse_udp_hop_fields(udp_hop, &udp_hop_path, "ports")
     }
 

@@ -35,6 +35,37 @@ fn dialer_proxy_matches_legacy_and_rejects_conflicts() {
 }
 
 #[test]
+fn legacy_udp_hop_points_only_hysteria_at_the_udphop_mask() {
+    let hop_warnings = |raw: &Value| -> Vec<String> {
+        parse_xray_json(&raw.to_string())
+            .unwrap()
+            .diagnostics
+            .into_iter()
+            .map(|d| d.message)
+            .filter(|message| message.contains("legacy udpHop"))
+            .collect()
+    };
+    let mut hysteria = hysteria();
+    hysteria["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"]["udpHop"] =
+        json!({"ports": "443"});
+    let [warning] = hop_warnings(&hysteria).try_into().unwrap();
+    assert!(
+        warning.contains("migrate to finalmask.udp udphop"),
+        "{warning}"
+    );
+
+    // The udphop mask is rejected outside Hysteria, so XHTTP must not be sent there.
+    let xhttp = json!({"outbounds":[{"tag":"proxy","protocol":"vless",
+        "settings":{"vnext":[{"address":"server.example","port":443,
+            "users":[{"id":"00010203-0405-0607-0809-0a0b0c0d0e0f"}]}]},
+        "streamSettings":{"network":"xhttp","security":"none",
+            "finalmask":{"quicParams":{"udpHop":{"ports":"443"}}}}}]});
+    let [warning] = hop_warnings(&xhttp).try_into().unwrap();
+    assert!(!warning.contains("migrate"), "{warning}");
+    assert!(warning.contains("only for Hysteria"), "{warning}");
+}
+
+#[test]
 fn udp_hop_mask_normalizes_supported_mode_and_rejects_unimplemented_modes() {
     let mut raw = hysteria();
     let settings = json!({"mode":"intervalRemote,intervalLocal","remotePorts":"443,8443-8444","interval":"10-5"});

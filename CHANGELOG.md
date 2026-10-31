@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+- The legacy `finalmask.quicParams.udpHop` warning recommends the
+  `finalmask.udp` udphop mask only for Hysteria. Other transports reject that
+  mask, so XHTTP users were sent to a form that fails; they are now told that
+  UDP hopping is implemented only for Hysteria.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
