@@ -1,7 +1,7 @@
 use super::*;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex as AsyncMutex;
-use xray_proxy::shadowsocks2022::{self as wire, Method};
+use xray_proxy::shadowsocks::{self as wire, Method};
 
 #[derive(Debug, Clone)]
 pub struct Shadowsocks2022Outbound(Arc<Payload>);
@@ -9,7 +9,7 @@ pub struct Shadowsocks2022Outbound(Arc<Payload>);
 struct Payload {
     carrier: StreamCarrier,
     mux: Option<super::mux::Runtime>,
-    method: Arc<Method>,
+    method: Method,
     level: u32,
 }
 impl Shadowsocks2022Outbound {
@@ -35,7 +35,7 @@ impl Shadowsocks2022Outbound {
             .map_err(|_| CoreError::UnsupportedOutboundSecurity)?;
         Ok(Self(Arc::new(Payload {
             carrier,
-            method: Arc::new(method),
+            method,
             level: settings.level,
             mux: super::mux::Runtime::new(&config.mux, &config.stream.transport)?,
         })))
@@ -59,6 +59,14 @@ impl Shadowsocks2022Outbound {
     }
     pub fn level(&self) -> u32 {
         self.0.level
+    }
+    /// Debug-log protocol label for the configured method family.
+    pub(crate) fn label(&self) -> &'static str {
+        if self.0.method.is_2022() {
+            "shadowsocks-2022"
+        } else {
+            "shadowsocks"
+        }
     }
     pub(super) async fn open(
         &self,
@@ -108,7 +116,7 @@ impl Shadowsocks2022Outbound {
         Method::validate_target(target)?;
         let mut inner = self.0.carrier.open(candidates, download, dialer).await?;
         inner.release_record_alignment();
-        let mut stream = wire::ClientStream::new(inner, self.0.method.clone(), target)?;
+        let mut stream = wire::ClientStream::new(inner, &self.0.method, target)?;
         stream.flush().await?;
         Ok(Box::new(protocol_stream::ProtocolStream(stream)))
     }
@@ -158,7 +166,7 @@ impl Shadowsocks2022Outbound {
                 Ok(socket) => {
                     return Ok(UdpSession::Native(Box::new(NativeUdpSession {
                         socket,
-                        codec: Mutex::new(wire::UdpSession::new(self.0.method.clone())?),
+                        codec: Mutex::new(wire::UdpSession::new(&self.0.method)?),
                         reader: AsyncMutex::new(vec![0; wire::MAX_UDP_WIRE_LENGTH + 1]),
                     })))
                 }
@@ -166,7 +174,7 @@ impl Shadowsocks2022Outbound {
             }
         }
         Err(last
-            .unwrap_or_else(|| io::Error::other("no Shadowsocks 2022 server address"))
+            .unwrap_or_else(|| io::Error::other("no Shadowsocks server address"))
             .into())
     }
 }
@@ -182,22 +190,21 @@ impl NativeUdpSession {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .encode(target, payload)?;
-        // Xray v26.7.28 receives native UDP in an 8192-byte buffer, including
-        // SS2022 framing. Oversized ciphertext would be silently truncated.
+        // Xray receives native UDP in an 8192-byte buffer, including the
+        // Shadowsocks framing of either family. Oversized ciphertext would be
+        // silently truncated (and Xray's own AEAD-2017 encoder cannot build it).
         if bytes.len() > 8192 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "SS2022 packet exceeds pinned peer UDP limit",
+                "Shadowsocks packet exceeds pinned peer UDP limit",
             )
             .into());
         }
         let sent = self.socket.send(&bytes).await?;
         if sent != bytes.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::WriteZero,
-                "partial Shadowsocks 2022 datagram",
-            )
-            .into());
+            return Err(
+                io::Error::new(io::ErrorKind::WriteZero, "partial Shadowsocks datagram").into(),
+            );
         }
         Ok(())
     }

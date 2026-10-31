@@ -869,6 +869,9 @@ pub struct HttpOutboundSettings {
     pub level: u32,
 }
 
+/// Settings of the `shadowsocks` outbound for both method families:
+/// Shadowsocks 2022 (`2022-blake3-*`) and the classic AEAD methods. The
+/// historical name is kept for API stability; `method` selects the family.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Shadowsocks2022OutboundSettings {
     pub server: TargetAddr,

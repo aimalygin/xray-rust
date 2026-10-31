@@ -18,7 +18,9 @@ or claim complete upstream feature parity.
 ```
 
 `format` is `http`, `socks`, `trojan`, `shadowsocks2022`, `vmess`, `hysteria2` or
-`wireguard`. `name` and `dnsServers` are optional;
+`wireguard`. Despite its name, `shadowsocks2022` also imports SIP002 links with
+the classic AEAD methods; an older library rejects them with a configuration
+error. `name` and `dnsServers` are optional;
 unknown/duplicate fields are errors. The result is:
 
 ```json

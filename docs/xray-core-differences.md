@@ -305,6 +305,47 @@ open listeners over plain TCP and TLS, in both settings forms, with refused
 wrong and missing credentials, and the Go-client request comparison. Physical
 device routing and HTTP/2 `CONNECT` are not established.
 
+## Shadowsocks classic AEAD: implemented scope
+
+The `shadowsocks` outbound accepts the classic AEAD ("AEAD-2017") methods of
+the pinned client (`proxy/shadowsocks`, `infra/conf/shadowsocks.go` at
+v26.10.21) next to Shadowsocks 2022. Tested against the reference:
+
+- Method names, aliases and rejections: the oracle runs Xray's own config
+  builder over 21 strings (`tools/v08-protocol-oracle/ssaead.go`), including
+  `none`, `plain`, stream ciphers, an empty name and a leading space, and the
+  Rust classifier must agree (`accepted_method_names_match_pinned_go_config_builder`).
+  Both families are matched case-insensitively, as upstream lowercases them;
+  SS2022 names were previously case-sensitive here.
+- Wire bytes from the pinned Go code for all four ciphers and two passwords:
+  EVP_BytesToKey master keys, the request (salt, sealed address record), the
+  next payload record, the chunk boundaries of a 20000-byte write (8158-byte
+  records), UDP packets, and a server response ending in an empty record
+  followed by bytes that must not be read.
+- Live TCP, native UDP, TUN and Mux/XUDP through the pinned Go server
+  (`scripts/check-shadowsocks2022-interop.sh`, `check-mux-interop.sh`): all
+  four ciphers and two aliases on raw, one cipher on each other carrier, and
+  the native UDP codec up to the 8192-byte peer limit with forged and
+  wrong-key replies rejected.
+
+Deliberate differences, source-derived:
+
+- Records above the SIP004 0x3FFF limit fail the stream; upstream's reader
+  accepts lengths up to 65519. Conforming writers, Xray's included, never
+  exceed the limit, and the cap bounds per-stream memory.
+- A datagram whose framing exceeds 8192 bytes is refused before sending.
+  Upstream's encoder writes into an 8192-byte buffer and fails on overflow,
+  and its server reads into one; the limit is the same, the failure is local.
+- The nonce counter fails closed at exhaustion instead of wrapping.
+- Like upstream's client, salts are not replay-filtered and UDP replies have
+  no replay window; the format carries no identifier to bind them to.
+  Shadowsocks 2022 remains the recommended family.
+
+Pending: `check-v08-independent-interop.sh` now also runs the raw classic AEAD
+cases against sing-box, but that run is not yet recorded; no physical-device
+run yet; the legacy fully-base64 `ss://` form and SIP003 plugins are not
+imported.
+
 ## Follow-up checks
 
 - [x] Integrate the #87 review follow-up, including both relay-address fixes,
