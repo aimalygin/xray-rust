@@ -52,6 +52,46 @@ final class XrayOutboundProbeTests: XCTestCase {
         wait(for: [finished], timeout: 2)
     }
 
+    func testCancelOutboundProbesEndsStalledProbeAndKeepsLaterProbes() throws {
+        let server = try StalledProbeServer()
+        defer { server.close() }
+        // The later probe connects again.
+        server.accepted.assertForOverFulfill = false
+        wait(for: [server.ready], timeout: 5)
+        let port = try XCTUnwrap(server.listener.port)
+        let core = try XrayCore(configJSON: config)
+        try core.start()
+        defer { try? core.stop() }
+        // Idle cancellation must not disable later probes.
+        try core.cancelOutboundProbes()
+        let finished = expectation(description: "probe cancelled")
+        DispatchQueue.global().async {
+            defer { finished.fulfill() }
+            do {
+                _ = try core.probeOutboundURL("http://127.0.0.1:\(port.rawValue)/", timeoutMs: 60_000)
+                XCTFail("stalled probe must be cancelled")
+            } catch {
+                guard case let XrayCoreError.status(code, message) = error else {
+                    return XCTFail("unexpected error: \(error)")
+                }
+                XCTAssertEqual(code, XRAY_STATUS_RUNTIME_ERROR)
+                XCTAssertTrue(message.contains("cancelled by the host"))
+            }
+        }
+        wait(for: [server.accepted], timeout: 5)
+        try core.cancelOutboundProbes()
+        wait(for: [finished], timeout: 2)
+
+        // The next probe reaches the stalled listener again instead of failing at once.
+        let second = expectation(description: "later probe runs")
+        DispatchQueue.global().async {
+            defer { second.fulfill() }
+            let result = try? core.probeOutboundURL("http://127.0.0.1:\(port.rawValue)/", timeoutMs: 500)
+            XCTAssertEqual(result?.failureKind, .timeout)
+        }
+        wait(for: [second], timeout: 5)
+    }
+
     func testStopCancelsStalledStartupPreflightBeforeCoreStart() throws {
         let server = try StalledProbeServer()
         defer { server.close() }

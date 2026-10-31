@@ -137,6 +137,7 @@ class XrayTunBackendTest {
         assertEquals(1L shl 14, XrayFfiCapability.ConnectionManagement.mask)
         assertEquals(1L shl 15, XrayFfiCapability.RoutingPolicyUpdate.mask)
         assertEquals(1L shl 22, XrayFfiCapability.OutboundProbe.mask)
+        assertEquals(1L shl 28, XrayFfiCapability.OutboundProbeCancel.mask)
     }
 
     @Test

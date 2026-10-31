@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Mobile: cancel in-flight on-demand outbound probes without stopping the core
+  (ABI 1.15, `OUTBOUND_PROBE_CANCEL`, bit 28). The existing
+  `xray_core_cancel_outbound_probes` is a teardown latch: after it every later
+  probe on that core fails, so a host whose user dismissed a health check had
+  no way to abort it and probe again later. The new
+  `xray_core_cancel_inflight_outbound_probes`, Kotlin
+  `XrayCore.cancelOutboundProbes()` and Swift `XrayCore.cancelOutboundProbes()`
+  end only the probes already running; they return `RUNTIME_ERROR` with
+  `outbound probe cancelled by the host`, and later probes run normally.
+  Startup-probe preflights and the teardown latch keep their behaviour (#81).
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
