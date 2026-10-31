@@ -1,0 +1,232 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -86,6 +86,7 @@
+ panic = "unwind"
+ 
+ [patch.crates-io]
++quinn-udp = { path = "exp-quinn-udp" }
+ quinn = { path = "vendor/quinn" }
+ smoltcp = { path = "vendor/smoltcp" }
+ blake3 = { path = "vendor/blake3" }
+--- a/vendor/quinn/Cargo.toml
++++ b/vendor/quinn/Cargo.toml
+@@ -146,6 +146,9 @@
+ [dependencies.bytes]
+ version = "1"
+ 
++[dependencies.libc]
++version = "0.2"
++
+ [dependencies.futures-io]
+ version = "0.3.19"
+ optional = true
+--- a/vendor/quinn/src/endpoint.rs
++++ b/vendor/quinn/src/endpoint.rs
+@@ -738,6 +738,7 @@
+     incoming: VecDeque<proto::Incoming>,
+     connections: ConnectionSet,
+     recv_buf: Box<[u8]>,
++    recv_batch: usize,
+     recv_limiter: WorkLimiter,
+ }
+ 
+@@ -747,12 +748,19 @@
+         max_receive_segments: usize,
+         endpoint: &proto::Endpoint,
+     ) -> Self {
++        let recv_batch = std::env::var("XRAY_EXP_RECV_BATCH")
++            .ok()
++            .and_then(|value| value.parse::<usize>().ok())
++            .filter(|value| (1..=BATCH_SIZE).contains(value))
++            .unwrap_or(BATCH_SIZE);
+         let recv_buf = vec![
+             0;
+             endpoint.config().get_max_udp_payload_size().min(64 * 1024) as usize
+                 * max_receive_segments
+-                * BATCH_SIZE
++                * recv_batch
+         ];
++        let recv_buf: Box<[u8]> = recv_buf.into();
++        exp_residency::register(recv_buf.as_ptr() as usize, recv_buf.len(), max_receive_segments, recv_batch);
+         Self {
+             connections: ConnectionSet {
+                 senders: FxHashMap::default(),
+@@ -760,7 +768,8 @@
+                 close: None,
+             },
+             incoming: VecDeque::new(),
+-            recv_buf: recv_buf.into(),
++            recv_buf,
++            recv_batch,
+             recv_limiter: WorkLimiter::new(RECV_TIME_BOUND),
+         }
+     }
+@@ -775,19 +784,16 @@
+     ) -> Result<PollProgress, io::Error> {
+         let mut received_connection_packet = false;
+         let mut metas = [RecvMeta::default(); BATCH_SIZE];
++        let batch = self.recv_batch;
+         let mut iovs: [IoSliceMut; BATCH_SIZE] = {
+             let mut bufs = self
+                 .recv_buf
+-                .chunks_mut(self.recv_buf.len() / BATCH_SIZE)
++                .chunks_mut(self.recv_buf.len() / batch)
+                 .map(IoSliceMut::new);
+-
+-            // expect() safe as self.recv_buf is chunked into BATCH_SIZE items
+-            // and iovs will be of size BATCH_SIZE, thus from_fn is called
+-            // exactly BATCH_SIZE times.
+-            std::array::from_fn(|_| bufs.next().expect("BATCH_SIZE elements"))
++            std::array::from_fn(|_| bufs.next().unwrap_or_else(|| IoSliceMut::new(&mut [])))
+         };
+         loop {
+-            match socket.poll_recv(cx, &mut iovs, &mut metas) {
++            match socket.poll_recv(cx, &mut iovs[..batch], &mut metas[..batch]) {
+                 Poll::Ready(Ok(msgs)) => {
+                     self.recv_limiter.record_work(msgs);
+                     for (meta, buf) in metas.iter().zip(iovs.iter()).take(msgs) {
+@@ -850,9 +856,121 @@
+                     received_connection_packet,
+                     keep_going: true,
+                 });
++            }
++        }
++    }
++}
++
++impl Drop for RecvState {
++    fn drop(&mut self) {
++        exp_residency::unregister(self.recv_buf.as_ptr() as usize);
++    }
++}
++
++/// Measurement-only: samples how many pages of every live endpoint receive
++/// buffer are resident, via mincore(2). Enabled by XRAY_EXP_RESIDENCY_LOG=<path>.
++mod exp_residency {
++    use std::io::Write;
++    use std::sync::Mutex;
++    use std::time::{Duration, Instant};
++
++    struct Live {
++        addr: usize,
++        len: usize,
++        segments: usize,
++        batch: usize,
++        id: u64,
++        peak: usize,
++    }
++
++    static LIVE: Mutex<Vec<Live>> = Mutex::new(Vec::new());
++    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
++    static STARTED: std::sync::Once = std::sync::Once::new();
++
++    pub(super) fn register(addr: usize, len: usize, segments: usize, batch: usize) {
++        let Some(path) = std::env::var_os("XRAY_EXP_RESIDENCY_LOG") else {
++            return;
++        };
++        let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++        LIVE.lock().unwrap().push(Live { addr, len, segments, batch, id, peak: 0 });
++        STARTED.call_once(|| {
++            std::thread::spawn(move || sampler(path));
++        });
++    }
++
++    pub(super) fn unregister(addr: usize) {
++        if std::env::var_os("XRAY_EXP_RESIDENCY_LOG").is_none() {
++            return;
++        }
++        let mut live = LIVE.lock().unwrap();
++        if let Some(index) = live.iter().position(|entry| entry.addr == addr) {
++            let entry = live.swap_remove(index);
++            let (pages, resident, slots) = measure(&entry);
++            eprintln!(
++                "exp_residency drop id={} len={} segments={} pages={} resident={} slots_touched={} peak={}",
++                entry.id, entry.len, entry.segments, pages, resident, slots, entry.peak.max(resident)
++            );
++        }
++    }
++
++    fn measure(entry: &Live) -> (usize, usize, usize) {
++        let page = 4096usize;
++        let start = entry.addr & !(page - 1);
++        let end = (entry.addr + entry.len + page - 1) & !(page - 1);
++        let pages = (end - start) / page;
++        let mut vec = vec![0u8; pages];
++        // SAFETY: the range covers a live allocation registered above; the LIVE
++        // lock is held by the caller, and RecvState unregisters before freeing.
++        let rc = unsafe { libc::mincore(start as *mut libc::c_void, end - start, vec.as_mut_ptr()) };
++        if rc != 0 {
++            return (pages, usize::MAX, 0);
++        }
++        let resident = vec.iter().filter(|b| **b & 1 != 0).count();
++        // slots: the endpoint chunks its buffer into BATCH_SIZE equal slots.
++        let slot_len = entry.len / entry.batch;
++        let mut slots = 0;
++        for slot in 0..entry.batch {
++            let a = entry.addr + slot * slot_len;
++            let first = (a - start) / page;
++            if vec.get(first).is_some_and(|b| *b & 1 != 0) {
++                slots += 1;
+             }
+         }
++        (pages, resident, slots)
+     }
++
++    fn sampler(path: std::ffi::OsString) {
++        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(&path).unwrap();
++        let started = Instant::now();
++        let mut peak_sum = 0usize;
++        loop {
++            std::thread::sleep(Duration::from_millis(200));
++            let mut live = LIVE.lock().unwrap();
++            let mut sum = 0usize;
++            let mut virt = 0usize;
++            let mut rows = Vec::with_capacity(live.len());
++            for entry in live.iter_mut() {
++                let (pages, resident, slots) = measure(entry);
++                entry.peak = entry.peak.max(resident);
++                sum += resident;
++                virt += pages;
++                rows.push(format!("{}:{}:{}", entry.id, resident, slots));
++            }
++            let count = live.len();
++            drop(live);
++            peak_sum = peak_sum.max(sum);
++            let _ = writeln!(
++                file,
++                "t_ms={} buffers={} virt_pages={} resident_pages={} peak_resident_pages={} per_buffer(id:resident:slots)={}",
++                started.elapsed().as_millis(),
++                count,
++                virt,
++                sum,
++                peak_sum,
++                rows.join(",")
++            );
++        }
++    }
+ }
+ 
+ impl fmt::Debug for RecvState {
+--- a/quinn-udp-0.5.15/src/unix.rs
++++ b/exp-quinn-udp/src/unix.rs
+@@ -126,7 +126,9 @@
+         #[cfg(any(target_os = "linux", target_os = "android"))]
+         {
+             // opportunistically try to enable GRO. See gro::gro_segments().
+-            let _ = set_socket_option(&*io, libc::SOL_UDP, gro::UDP_GRO, OPTION_ON);
++            if std::env::var_os("XRAY_EXP_NO_GRO").is_none() {
++                let _ = set_socket_option(&*io, libc::SOL_UDP, gro::UDP_GRO, OPTION_ON);
++            }
+ 
+             // Forbid IPv4 fragmentation. Set even for IPv6 to account for IPv6 mapped IPv4 addresses.
+             // Set `may_fragment` to `true` if this option is not supported on the platform.
+@@ -994,6 +996,9 @@
+     pub(crate) const UDP_GRO: libc::c_int = 104;
+ 
+     pub(crate) fn gro_segments() -> usize {
++        if std::env::var_os("XRAY_EXP_NO_GRO").is_some() {
++            return 1;
++        }
+         let socket = match std::net::UdpSocket::bind("[::]:0")
+             .or_else(|_| std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)))
+         {

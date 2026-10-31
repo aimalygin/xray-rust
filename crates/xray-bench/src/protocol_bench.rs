@@ -277,6 +277,9 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
         },
     )
     .await;
+    // Read before the client is stopped: the lifetime peak covers the whole
+    // measured window exactly, including spikes between 100 ms RSS samples.
+    let footprint = process_metrics::process_footprint_kib(child.child.id());
     let report = match result {
         Ok(((outcome, elapsed), samples)) => {
             let seconds = outcome
@@ -297,6 +300,8 @@ pub async fn run(args: Vec<String>) -> Result<(), BenchError> {
                 "transfer_seconds":seconds,"wall_seconds":elapsed.as_secs_f64(),
                 "throughput_mib_s":(outcome.bytes_sent+outcome.bytes_received) as f64/1048576.0/seconds,
                 "peak_rss_kib":summary.peak_rss_kib,"cpu_millis":cpu_ms,
+                "peak_footprint_kib":footprint.map(|(_, peak)| peak),
+                "final_footprint_kib":footprint.map(|(current, _)| current),
                 "warmup":r.warmup,"prepare_client":r.prepare_client,
                 "client_preface":r.client_preface,
                 "client_startup_seconds":client_startup_seconds,

@@ -101,3 +101,23 @@ does not advance and the ACK is not reported as congestion-controlled delivery.
 The complete 298-test protocol suite passed in the focused source copy.
 The paired WAN control did not demonstrate a throughput improvement; this
 correction must not be advertised as a measured speed gain.
+
+## Resizing the stream receive window
+
+`Connection::set_stream_receive_window` sets the window every receive stream
+offers past the bytes it has read, for open and new streams alike. A read
+sends a larger MAX_STREAM_DATA once it frees an eighth of the window. Credit
+already sent is never withdrawn: `Recv::max_stream_data` never offers less
+than the stream's last sent limit, so under a smaller window a stream grants
+nothing new until its reader catches up, and a lost update is resent whole.
+A new stream, or a reused one, starts from the handshake's stream window,
+which is exactly the credit the peer holds on it, whatever the window is when
+it opens.
+
+XHTTP H3 calls it to auto-tune its download window as quic-go does, and to
+hold each download to its share of a receive budget shared by concurrent
+downloads; upstream only allows `set_receive_window` for the connection. The
+unit test `a_resized_stream_window_is_offered_from_the_next_read` covers a
+grown window, a smaller one with a resent update and the reader catching up,
+and a stream that opens under the smaller window; each of the three changes
+fails it when reverted. The complete 299-test library suite passes.

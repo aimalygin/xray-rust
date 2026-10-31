@@ -233,6 +233,19 @@ def clean(run):
 
 
 
+def require_isolated_builds(inputs):
+    """Rust binaries must come from scripts/build-isolated-release.py.
+
+    Building two revisions in one target directory can silently reuse the other
+    revision's workspace crates: the 2026-10-27 "before" client was such a mix.
+    """
+    for name in (*VERSIONS, 'harness'):
+        record = inputs[name]
+        if record.get('isolated_target') is not True or not record.get('workspace_packages_compiled'):
+            raise ValueError(f'{name} lacks isolated build provenance; build it with '
+                             'scripts/build-isolated-release.py instead of a shared target directory')
+
+
 def progress_pause(control, block, completed, cooldown=3):
     """UI updates happen only with no measured client or fixture alive."""
     control.mkdir(parents=True, exist_ok=True)
@@ -256,6 +269,8 @@ def main():
     parser.add_argument('--case-id', action='append', help='complete five-pair case block; original order index is preserved')
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--control-dir', type=Path, help='cooperative UI pauses between pairs; resume.txt must echo paused.json token')
+    parser.add_argument('--reference-sha256', help='pin a reference binary already verified with '
+                        '`go version -m`, instead of running Go again')
     a = parser.parse_args()
     if a.profile and len(a.profile) != len(set(a.profile)):
         raise ValueError('duplicate profile')
@@ -264,13 +279,14 @@ def main():
             del os.environ[key]
     os.umask(0o077)
     inputs = json.loads(a.inputs.read_text())
+    require_isolated_builds(inputs)
     paths = {name: Path(inputs[name]['path']).resolve(strict=True) for name in (*VERSIONS, 'harness', 'reference', 'origin')}
     for name, path in paths.items():
         if b.sha(path) != inputs[name]['sha256']:
             raise ValueError('binary changed: ' + name)
     if inputs['reference']['commit'] != REFERENCE:
         raise ValueError('wrong reference source')
-    c.device.verify_reference(paths['reference'])
+    c.device.verify_reference(paths['reference'], a.reference_sha256)
     if c.followup.inventory(paths.values()) or c.ambient()['compiler_load_detected']:
         raise RuntimeError('benchmark/compiler already running')
     source = b.command(['git', 'rev-parse', 'HEAD'], ROOT)

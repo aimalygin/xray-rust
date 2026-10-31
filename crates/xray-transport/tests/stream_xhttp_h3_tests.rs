@@ -695,6 +695,489 @@ async fn streaming_upload_and_download_progress_full_duplex() {
 }
 
 #[tokio::test]
+async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
+    // The server grants 16 MiB of stream credit, but a 100 ms round trip keeps
+    // the congestion window small, so accepted bytes wait in the client's own
+    // QUIC send buffer. quinn's default window let one request buffer 10 MB;
+    // a lone upload keeps 2 MiB and grows only with its congestion window.
+    let (client_tls, server_addr, server) = server_with_options(Some(16 * 1024 * 1024)).await;
+    let (relay_addr, relay) = udp_delay_relay(server_addr, Duration::from_millis(50)).await;
+    let client = connect_h3(H3ConnectConfig {
+        remote_addr: relay_addr,
+        server_name: "localhost".to_owned(),
+        tls_config: Arc::clone(&client_tls),
+        socket_protector: None,
+        quic: H3QuicConfig::default(),
+    })
+    .await
+    .expect("connect HTTP/3 client through the delay relay");
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_request, stream) = server.accept().await;
+            // Hold the stream open without reading it.
+            tokio::time::sleep(DEADLINE).await;
+            drop(stream);
+        }
+    });
+    let (mut upload, _pending) = client
+        .start_streaming(request(Method::POST, "/blocked"))
+        .await
+        .expect("open streaming request");
+
+    // Write for less than one round trip: no ACK can free buffer space yet,
+    // so the accepted bytes are what the client buffers before backpressure.
+    let chunk = vec![0x5a; 64 * 1024];
+    let mut accepted = 0usize;
+    let deadline = Instant::now() + Duration::from_millis(60);
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        match timeout(remaining, upload.write(&chunk)).await {
+            Ok(Ok(written)) => accepted += written,
+            Ok(Err(error)) => panic!("upload failed on the slow path: {error}"),
+            Err(_) => break,
+        }
+    }
+    assert!(
+        accepted >= 3 * 1024 * 1024 / 2,
+        "the initial window must still be usable: {accepted} bytes"
+    );
+    assert!(
+        accepted < 3 * 1024 * 1024,
+        "a slow-path upload buffered {accepted} bytes"
+    );
+    handler.abort();
+    relay.abort();
+
+    // Sixteen uploads, each with its own connection and a 400 ms round trip,
+    // share the budget. The first to sample take up to 2 MiB before the rest
+    // count, and each narrows to its 1 MiB share at its next sample: about
+    // 16 MiB in all, where every connection used to keep 2 MiB (32 MiB).
+    const UPLOADS: usize = 16;
+    let holder = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let mut exchanges = Vec::new();
+            for _ in 0..UPLOADS {
+                exchanges.push(server.accept().await);
+            }
+            tokio::time::sleep(DEADLINE).await;
+            drop(exchanges);
+        }
+    });
+    let opened = futures_util::future::join_all((0..UPLOADS).map(|_| {
+        let client_tls = Arc::clone(&client_tls);
+        async move {
+            let (relay_addr, relay) =
+                udp_delay_relay(server_addr, Duration::from_millis(200)).await;
+            let client = connect_h3(H3ConnectConfig {
+                remote_addr: relay_addr,
+                server_name: "localhost".to_owned(),
+                tls_config: client_tls,
+                socket_protector: None,
+                quic: H3QuicConfig::default(),
+            })
+            .await
+            .expect("connect HTTP/3 client through its delay relay");
+            let exchange = client
+                .start_streaming(request(Method::POST, "/shared"))
+                .await
+                .expect("open streaming request");
+            (exchange, relay)
+        }
+    }))
+    .await;
+
+    let deadline = Instant::now() + Duration::from_millis(300);
+    let mut writers = tokio::task::JoinSet::new();
+    let mut relays = Vec::new();
+    for ((mut upload, pending), relay) in opened {
+        relays.push(relay);
+        let chunk = chunk.clone();
+        writers.spawn(async move {
+            let mut accepted = 0usize;
+            while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+                match timeout(remaining, upload.write(&chunk)).await {
+                    Ok(Ok(written)) => accepted += written,
+                    Ok(Err(error)) => panic!("upload failed on the slow path: {error}"),
+                    Err(_) => break,
+                }
+            }
+            (accepted, upload, pending)
+        });
+    }
+    let mut total = 0usize;
+    let mut finished = Vec::new();
+    while let Some(writer) = writers.join_next().await {
+        let (accepted, upload, pending) = writer.expect("upload writer");
+        total += accepted;
+        finished.push((upload, pending));
+    }
+    assert!(
+        total > 4 * 1024 * 1024,
+        "{UPLOADS} slow-path uploads buffered only {total} bytes"
+    );
+    assert!(
+        total < 24 * 1024 * 1024,
+        "{UPLOADS} slow-path uploads buffered {total} bytes"
+    );
+    drop(finished);
+    holder.abort();
+    for relay in relays {
+        relay.abort();
+    }
+}
+
+/// Held by tests whose stream windows depend on how many connections of this
+/// process download at once: XHTTP H3 downloads share one receive budget.
+static RECEIVE_BUDGET: Mutex<()> = Mutex::const_new(());
+
+/// A download that keeps its reader busy grows the stream window past its
+/// initial 2 MiB, as quic-go auto-tunes it; fixed maxima keep it at 2 MiB.
+#[tokio::test]
+async fn a_fast_download_grows_the_stream_receive_window() {
+    let _budget = RECEIVE_BUDGET.lock().await;
+    let tuned = credit_after_a_fast_download(H3QuicConfig::default()).await;
+    let fixed = credit_after_a_fast_download(H3QuicConfig {
+        max_stream_receive_window: Some(2 * 1024 * 1024),
+        max_connection_receive_window: Some(3 * 1024 * 1024),
+        ..H3QuicConfig::default()
+    })
+    .await;
+
+    assert!(
+        fixed <= 2 * 1024 * 1024 + 256 * 1024,
+        "fixed window granted {fixed}"
+    );
+    assert!(tuned > 3 * 1024 * 1024, "tuned window granted {tuned}");
+}
+
+/// Reads 16 MiB as fast as it arrives over a 40 ms round trip, then stops,
+/// and returns how far past the bytes read the server could still write: the
+/// stream credit the client last granted.
+async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
+    const READ: usize = 16 * 1024 * 1024;
+
+    let (client_tls, server_addr, server) = server_with_options(None).await;
+    let (relay_addr, relay) = udp_delay_relay(server_addr, Duration::from_millis(20)).await;
+    let client = connect_h3(H3ConnectConfig {
+        remote_addr: relay_addr,
+        server_name: "localhost".to_owned(),
+        tls_config: client_tls,
+        socket_protector: None,
+        quic,
+    })
+    .await
+    .expect("connect HTTP/3 client through the delay relay");
+    let (written_tx, written_rx) = tokio::sync::oneshot::channel();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_, mut stream) = server.accept().await;
+            drain_request(&mut stream).await.expect("request FIN");
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("headers");
+            let chunk = Bytes::from(vec![0x5a; 64 * 1024]);
+            let mut written = 0;
+            // A write that waits several round trips is out of credit.
+            while let Ok(sent) =
+                timeout(Duration::from_millis(500), stream.send_data(chunk.clone())).await
+            {
+                sent.expect("DATA");
+                written += chunk.len();
+            }
+            let _ = written_tx.send(written);
+            std::future::pending::<()>().await;
+        }
+    });
+
+    let mut body = client
+        .send_fixed(request(Method::GET, "/credit"), Bytes::new())
+        .await
+        .expect("response");
+    let mut downloaded = vec![0; READ];
+    timeout(Duration::from_secs(20), body.read_exact(&mut downloaded))
+        .await
+        .expect("download in time")
+        .expect("download");
+    let written = timeout(Duration::from_secs(20), written_rx)
+        .await
+        .expect("server runs out of credit")
+        .expect("written bytes");
+    handler.abort();
+    relay.abort();
+    written - READ
+}
+
+/// Sixteen downloads whose readers fall behind their servers share the
+/// receive budget: each stream grants about a 1 MiB share past its reader,
+/// where each used to grant its 2 MiB handshake window, 32 MiB in all.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
+    let _budget = RECEIVE_BUDGET.lock().await;
+    let ahead = credit_ahead_of_readers(BudgetReader::FallsBehind).await;
+    // Each response task and body may hold three 16 KiB batches past its
+    // reader; QUIC packets add a little more.
+    assert!(
+        ahead <= 16 * 1024 * 1024 + BUDGET_DOWNLOADS * 128 * 1024,
+        "{BUDGET_DOWNLOADS} slow readers let their servers write {ahead} bytes ahead"
+    );
+    assert!(
+        ahead >= BUDGET_DOWNLOADS * 512 * 1024,
+        "{BUDGET_DOWNLOADS} slow readers granted only {ahead} bytes"
+    );
+    // These connections count as downloading for up to two seconds after
+    // their last read.
+    tokio::time::sleep(Duration::from_millis(2100)).await;
+}
+
+/// Sixteen downloads whose readers keep up hold almost nothing, so the
+/// receive budget leaves their 2 MiB windows alone: on a long path those
+/// windows are in flight, and holding them to a 1 MiB share would only slow
+/// the downloads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn downloads_whose_readers_keep_up_keep_their_windows() {
+    let _budget = RECEIVE_BUDGET.lock().await;
+    let ahead = credit_ahead_of_readers(BudgetReader::KeepsUp).await;
+    assert!(
+        ahead >= BUDGET_DOWNLOADS * 3 * 1024 * 1024 / 2,
+        "{BUDGET_DOWNLOADS} readers that kept up granted only {ahead} bytes"
+    );
+    tokio::time::sleep(Duration::from_millis(2100)).await;
+}
+
+const BUDGET_DOWNLOADS: usize = 16;
+
+#[derive(Clone, Copy, PartialEq)]
+enum BudgetReader {
+    /// Reads as soon as data arrives from a server paced at 32 KiB per 2 ms.
+    KeepsUp,
+    /// Pauses 25 ms after each 64 KiB: 42 MB/s for all sixteen, well below
+    /// what even a debug build receives, so data waits in each stream.
+    FallsBehind,
+}
+
+/// Runs sixteen downloads, each on its own connection, whose readers take
+/// 2 MiB each, past the 2 MiB handshake credit once a share applies. Each
+/// server writes as far as its credit allows, paced while its reader keeps
+/// up. Returns how far the servers got ahead of their readers in all once
+/// these stopped: the stream credit granted past the bytes read.
+async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
+    const READ: usize = 2 * 1024 * 1024;
+    const PIECE: usize = 64 * 1024;
+    const SERVER_PIECE: usize = 32 * 1024;
+
+    let (client_tls, server_addr, server) = server_with_options(None).await;
+    let written: Arc<Vec<AtomicUsize>> =
+        Arc::new((0..BUDGET_DOWNLOADS).map(|_| AtomicUsize::new(0)).collect());
+    let handler = tokio::spawn({
+        let server = server.clone();
+        let written = Arc::clone(&written);
+        async move {
+            let mut writers = tokio::task::JoinSet::new();
+            for index in 0..BUDGET_DOWNLOADS {
+                let (_, mut stream) = server.accept().await;
+                let written = Arc::clone(&written);
+                writers.spawn(async move {
+                    drain_request(&mut stream).await.expect("request FIN");
+                    stream
+                        .send_response(response(StatusCode::OK))
+                        .await
+                        .expect("headers");
+                    let chunk = Bytes::from(vec![0x5a; SERVER_PIECE]);
+                    loop {
+                        stream.send_data(chunk.clone()).await.expect("DATA");
+                        let total = written[index].fetch_add(SERVER_PIECE, Ordering::Relaxed);
+                        if reader == BudgetReader::KeepsUp && total < READ {
+                            tokio::time::sleep(Duration::from_millis(2)).await;
+                        }
+                    }
+                });
+            }
+            writers.join_all().await;
+        }
+    });
+
+    let clients = futures_util::future::join_all((0..BUDGET_DOWNLOADS).map(|_| {
+        connect_h3(H3ConnectConfig {
+            remote_addr: server_addr,
+            server_name: "localhost".to_owned(),
+            tls_config: Arc::clone(&client_tls),
+            socket_protector: None,
+            quic: H3QuicConfig::default(),
+        })
+    }))
+    .await;
+    let start = Arc::new(tokio::sync::Barrier::new(BUDGET_DOWNLOADS));
+    let mut readers = tokio::task::JoinSet::new();
+    for client in clients {
+        let client = client.expect("connect HTTP/3 client");
+        let start = Arc::clone(&start);
+        readers.spawn(async move {
+            let mut body = client
+                .send_fixed(request(Method::GET, "/budget"), Bytes::new())
+                .await
+                .expect("response");
+            // Read together, so that every share is sampled while all
+            // sixteen count as downloading.
+            start.wait().await;
+            let mut piece = vec![0; PIECE];
+            for _ in 0..READ / PIECE {
+                timeout(DEADLINE, body.read_exact(&mut piece))
+                    .await
+                    .expect("read in time")
+                    .expect("read");
+                if reader == BudgetReader::FallsBehind {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+            }
+            (client, body)
+        });
+    }
+    let mut downloads = Vec::new();
+    while let Some(reader) = readers.join_next().await {
+        downloads.push(reader.expect("reader"));
+    }
+    // The servers use up the credit granted until the readers stopped.
+    let total = || -> usize { written.iter().map(|w| w.load(Ordering::Relaxed)).sum() };
+    let mut settled = total();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let now = total();
+        if now == settled || Instant::now() > deadline {
+            break;
+        }
+        settled = now;
+    }
+    handler.abort();
+    drop(downloads);
+    settled - BUDGET_DOWNLOADS * READ
+}
+
+/// A reader that keeps a server of small DATA frames waiting lets it write
+/// only about a stream window past the bytes read. h3 0.0.8 read one more
+/// QUIC chunk for every frame while the stream stayed full, buffering it
+/// outside flow control, and each such chunk let the server write that much
+/// further ahead.
+#[tokio::test]
+async fn small_data_frames_wait_in_the_stream_window() {
+    const WINDOW: u64 = 256 * 1024;
+    const READ: usize = 1024 * 1024;
+    const FRAME: usize = 700;
+
+    let (client_tls, server_addr, server) = server_with_options(None).await;
+    let client = connect_h3(H3ConnectConfig {
+        remote_addr: server_addr,
+        server_name: "localhost".to_owned(),
+        tls_config: client_tls,
+        socket_protector: None,
+        quic: H3QuicConfig {
+            initial_stream_receive_window: WINDOW,
+            max_stream_receive_window: Some(WINDOW),
+            initial_connection_receive_window: 2 * WINDOW,
+            max_connection_receive_window: Some(2 * WINDOW),
+            ..H3QuicConfig::default()
+        },
+    })
+    .await
+    .expect("connect HTTP/3 client");
+    let (written_tx, written_rx) = tokio::sync::oneshot::channel();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_, mut stream) = server.accept().await;
+            drain_request(&mut stream).await.expect("request FIN");
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("headers");
+            let frame = Bytes::from(vec![0x5a; FRAME]);
+            let mut written = 0;
+            // A write that waits this long is out of credit.
+            while let Ok(sent) =
+                timeout(Duration::from_millis(500), stream.send_data(frame.clone())).await
+            {
+                sent.expect("DATA");
+                written += FRAME;
+            }
+            let _ = written_tx.send(written);
+            std::future::pending::<()>().await;
+        }
+    });
+
+    let mut body = client
+        .send_fixed(request(Method::GET, "/frames"), Bytes::new())
+        .await
+        .expect("response");
+    let mut downloaded = vec![0; 64 * 1024];
+    for _ in 0..READ / downloaded.len() {
+        timeout(DEADLINE, body.read_exact(&mut downloaded))
+            .await
+            .expect("read in time")
+            .expect("read");
+        // The server fills the window again while the reader waits.
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let written = timeout(Duration::from_secs(20), written_rx)
+        .await
+        .expect("server runs out of credit")
+        .expect("written bytes");
+    handler.abort();
+    // The response task and body may hold three 16 KiB batches past the
+    // reader; QUIC packets add a little more.
+    let ahead = written - READ;
+    assert!(
+        ahead <= WINDOW as usize + 128 * 1024,
+        "server wrote {ahead} bytes past a {WINDOW}-byte window"
+    );
+}
+
+/// Forwards UDP between one client and `server`, delaying each datagram.
+async fn udp_delay_relay(server: SocketAddr, delay: Duration) -> (SocketAddr, JoinHandle<()>) {
+    let front = Arc::new(
+        tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind relay"),
+    );
+    let back = Arc::new(
+        tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("bind relay upstream"),
+    );
+    back.connect(server).await.expect("connect relay upstream");
+    let relay_addr = front.local_addr().expect("relay address");
+    let task = tokio::spawn(async move {
+        let mut client = None;
+        let mut up = vec![0; 65_535];
+        let mut down = vec![0; 65_535];
+        loop {
+            tokio::select! {
+                received = front.recv_from(&mut up) => {
+                    let Ok((len, from)) = received else { return };
+                    client = Some(from);
+                    let (back, datagram) = (Arc::clone(&back), up[..len].to_vec());
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        let _ = back.send(&datagram).await;
+                    });
+                }
+                received = back.recv(&mut down) => {
+                    let (Ok(len), Some(to)) = (received, client) else { continue };
+                    let (front, datagram) = (Arc::clone(&front), down[..len].to_vec());
+                    tokio::spawn(async move {
+                        tokio::time::sleep(delay).await;
+                        let _ = front.send_to(&datagram, to).await;
+                    });
+                }
+            }
+        }
+    });
+    (relay_addr, task)
+}
+
+#[tokio::test]
 async fn flush_delivers_request_data_without_half_closing_upload() {
     const SERVER_STREAM_WINDOW: u32 = 1024;
     const PAYLOAD_BYTES: usize = 8 * 1024;
@@ -2005,7 +2488,8 @@ fn default_quic_diagnostics_expose_static_window_approximation() {
     assert_eq!(config.max_connection_receive_window, None);
     assert_eq!(diagnostics.stream_receive_window, 2 * 1024 * 1024);
     assert_eq!(diagnostics.connection_receive_window, 3 * 1024 * 1024);
-    assert!(!diagnostics.adaptive_receive_windows);
+    // Downloads grow toward Xray's 6 MiB / 15 MiB on a standard host.
+    assert!(diagnostics.adaptive_receive_windows);
 }
 
 #[test]
@@ -2032,9 +2516,11 @@ fn unsupported_quic_parity_modes_fail_closed() {
 
     config.version = H3QuicVersion::V1;
     config.max_stream_receive_window = Some(6 * 1024 * 1024);
+    assert!(config.diagnostics().is_ok());
+    config.max_stream_receive_window = Some(1024 * 1024);
     assert!(matches!(
         config.diagnostics(),
-        Err(H3Error::UnsupportedAdaptiveReceiveWindows { .. })
+        Err(H3Error::ReceiveWindowMaximumBelowInitial { .. })
     ));
 
     config.max_stream_receive_window = None;

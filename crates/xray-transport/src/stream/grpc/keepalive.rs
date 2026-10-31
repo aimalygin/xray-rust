@@ -30,6 +30,7 @@ use tokio::sync::Notify;
 use tokio::time::{Duration, Instant};
 
 use super::config::GrpcKeepalive;
+use crate::stream::h2_bdp::{BdpSampler, DataArrivals};
 use crate::BoxedTransportStream;
 
 /// When the peer last put anything on the connection.
@@ -81,7 +82,8 @@ impl LastRead {
     }
 }
 
-/// The socket, with a stamp taken every time the peer is heard from.
+/// The socket, with a stamp taken every time the peer is heard from and its
+/// DATA frames counted for the window estimate as they arrive.
 ///
 /// Wrapping is the only way to see the reads: h2 owns the socket from the
 /// handshake onwards and reports nothing about them. `LastRead` is optional so
@@ -92,21 +94,27 @@ impl LastRead {
 pub(super) struct WatchedIo {
     io: BoxedTransportStream,
     last_read: Option<Arc<LastRead>>,
+    /// Dropped once the estimate stops, or absent when `initialWindowsSize`
+    /// pinned the windows.
+    data: Option<DataArrivals>,
 }
 
 impl WatchedIo {
-    /// Wraps `io`, watching it only if `keepalive` is configured.
+    /// Wraps `io`, watching it only if `keepalive` is configured, and counting
+    /// its DATA into `bdp` if there is one.
     ///
     /// Returns the clock the ping loop reads, or `None` when there is no ping
     /// loop to read it.
     pub(super) fn new(
         io: BoxedTransportStream,
         keepalive: Option<GrpcKeepalive>,
+        bdp: Option<Arc<BdpSampler>>,
     ) -> (Self, Option<Arc<LastRead>>) {
         let last_read = keepalive.map(|_| Arc::new(LastRead::new()));
         let watched = Self {
             io,
             last_read: last_read.clone(),
+            data: bdp.map(DataArrivals::new),
         };
         (watched, last_read)
     }
@@ -114,19 +122,26 @@ impl WatchedIo {
 
 impl AsyncRead for WatchedIo {
     fn poll_read(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         output: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
         let before = output.filled().len();
-        let polled = Pin::new(&mut self.io).poll_read(cx, output);
+        let polled = Pin::new(&mut this.io).poll_read(cx, output);
         // Only bytes count. A `Ready(Ok(()))` that filled nothing is the end of
         // the socket, which is the opposite of the peer being alive, and
         // stamping it would hold a dead connection off the ping that is
         // supposed to notice.
         if matches!(polled, Poll::Ready(Ok(()))) && output.filled().len() > before {
-            if let Some(last_read) = &self.last_read {
+            if let Some(last_read) = &this.last_read {
                 last_read.mark();
+            }
+            if let Some(data) = &mut this.data {
+                data.observe(&output.filled()[before..]);
+                if data.is_finished() {
+                    this.data = None;
+                }
             }
         }
         polled
@@ -301,7 +316,9 @@ impl Drop for OpenCall {
 
 /// Everything one connection's ping loop needs.
 pub(super) struct Pings {
-    pub(super) ping_pong: h2::PingPong,
+    /// Shared with the BDP loop ([`crate::stream::h2_bdp`]): h2 allows one user PING in
+    /// flight, so whichever loop pings first holds the handle until its ACK.
+    pub(super) ping_pong: Arc<tokio::sync::Mutex<h2::PingPong>>,
     pub(super) keepalive: GrpcKeepalive,
     pub(super) last_read: Arc<LastRead>,
     pub(super) calls: Arc<OpenCalls>,
@@ -334,7 +351,7 @@ impl Pings {
     /// `poll_pong` — both `#[doc(hidden)]` in h2 — by hand for a peer that is
     /// alive and specifically refuses to answer pings, which is not a peer
     /// anything in the population is.
-    pub(super) async fn run(mut self) {
+    pub(super) async fn run(self) {
         // grpc-go opens with `prevNano = time.Now()`. The stamp is the same
         // instant on a connection nothing has been read on yet, and on one
         // where the server's SETTINGS have already landed it reaches the same
@@ -353,8 +370,12 @@ impl Pings {
                 self.calls.wait_for_one().await;
             }
 
-            let pong =
-                tokio::time::timeout(self.keepalive.timeout, self.ping_pong.ping(Ping::opaque()));
+            // The timeout covers waiting out a BDP PING too: its ACK is at
+            // most a round trip away, and a peer that answers neither is the
+            // dead connection this loop exists to find.
+            let pong = tokio::time::timeout(self.keepalive.timeout, async {
+                self.ping_pong.lock().await.ping(Ping::opaque()).await
+            });
             if !matches!(pong.await, Ok(Ok(_))) {
                 return;
             }

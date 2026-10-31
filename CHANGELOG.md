@@ -10,6 +10,153 @@ long-term supported release series.
 
 ## Unreleased
 
+- Grow gRPC stream receive windows with the link, as grpc-go's BDP estimator
+  does under Xray's default `grpcSettings`. Every stream kept HTTP/2's
+  65,535-byte window, which capped a flow's download at one window per round
+  trip. Windows now start there and double while a sample fills two thirds of
+  them, up to 16 MiB, or 1 MiB with the mobile and low-memory profiles; any
+  configured `initialWindowsSize` still pins them, as in grpc-go, and the
+  opening burst is unchanged. Samples start as DATA arrives, as grpc-go's
+  do, so grpc-go's server never counts a BDP ping toward its
+  `too_many_pings` limit. At an added 113 ms, gRPC downloads rose from 4.4 to
+  124.9 Mbit/s under a 150 Mbit/s limit (Go 124.6) and from 4.4 to 187.6
+  without one (Go 183.8). On loopback one download runs 2.2 times as fast and
+  its larger window raises its peak footprint from 3.1 to 6.9 MiB.
+- Return XHTTP H2 stream credit once a sixteenth of the window has been
+  read, instead of after about a third of it, through a vendored h2 option.
+  Without a rate limit at an added 113 ms, XHTTP H2 downloads rose from 181.5
+  to 261.9 Mbit/s (Go 253.0). Go's client returns credit every 4 KiB; a
+  WINDOW_UPDATE for every read cost a fast local download 16% of its speed.
+  On loopback a single download now runs about 2% below the previous policy,
+  and a duplex transfer peaks at 7.6 MiB instead of 6.0.
+- Let a new XHTTP H2 connection carry 100 streams before the server's
+  SETTINGS arrive, as Go's client assumes, instead of one. A packet-up flow's
+  first upload found the connection full while its download held the only
+  stream and dialed a second connection: a TLS round trip before the first
+  byte, and twice the connections per flow. At an added 113 ms such a flow now
+  reaches its first byte in 239 ms instead of 362 (Go 241) on two connections
+  per warmup and download instead of four, as Go does.
+- With the mobile and low-memory profiles, open XHTTP H2 streams at 1 MiB and
+  grow them to Go's 4 MiB only for a reader that keeps up, so a stalled
+  download pins a quarter of the memory. A configured window stays fixed.
+  With the mobile profile, eight XHTTP H2 downloads whose readers stall
+  through TUN fell from a 61.5 MiB to a 19.2 MiB peak footprint at the same
+  speed, for about 3% more CPU.
+- Auto-tune XHTTP H3 receive windows as Xray's quic-go does, from 2 MiB per
+  stream and 3 MiB per connection up to 6 MiB and 15 MiB or the configured
+  maxima, which were rejected before. The mobile profiles keep the initial
+  windows fixed.
+- Send XHTTP H3 datagrams on a connected UDP socket on macOS, as Hysteria
+  already did: an unconnected socket looks up the route for every datagram.
+  In one profiled run of eight SOCKS uploads, throughput rose from 281 to
+  372 MiB/s and client CPU per MiB fell from 6.3 to 3.4 ms. Eight uploads
+  through TUN, which the client now feeds faster than a local server drains,
+  hold more in their QUIC buffers: a 31.9 MiB peak footprint instead of 9.6,
+  for 37% more throughput.
+- Share one QUIC send budget between XHTTP H3 uploads. Each XHTTP H3 request
+  owns a QUIC connection, and every connection kept a send window of at
+  least 2 MiB, so 32 uploads to a local Xray-core server that drained slower
+  than they wrote held 71 MiB of a 95 MiB heap in quinn's send buffers.
+  While several connections upload, each now keeps its share of 16 MiB,
+  between 128 KiB and 2 MiB, and grows with its congestion window only to
+  its share of 10 MB; up to eight uploads keep the 2 MiB they had. With the
+  mobile and low-memory profiles they share 4 MiB and never grow past it.
+  Against Xray-core v26.10.21, 32 uploads now peak at 87.7 instead of
+  162.1 MiB RSS and 32 duplex transfers at 78.2 instead of 140.6, at the
+  same throughput and CPU per byte; a single upload peaks 0.2 MiB higher.
+  An 8 MiB budget took 32 uploads to 53 MiB but cost eight uploads 2–4% more
+  CPU per byte; see the [2026-10-30 report](docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md).
+- Give each XHTTP H3 and DoQ endpoint a receive buffer for four datagrams,
+  two with the mobile and low-memory profiles, through a vendored quinn
+  option. On Linux and Android quinn reserved room for 32 datagrams of 64 GRO
+  segments, 2.9 MiB, in every endpoint, and every XHTTP H3 request owns one:
+  32 downloads from Xray-core v26.10.21 kept 43 MiB of these buffers
+  resident, and glibc's `calloc` zeroes a reused one in full. In a Linux
+  container 32 downloads, duplex transfers and uploads now peak at 114.6,
+  131.9 and 42.3 MiB RSS instead of 154.3, 183.9 and 73.4, at the same
+  throughput and CPU per byte. GRO stays on: without it downloads lost a
+  quarter of their throughput. macOS and Hysteria are unchanged; see the
+  [2026-10-30 receive-buffer report](docs/benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md).
+- Stop h3 from buffering XHTTP H3 downloads outside QUIC flow control,
+  through a vendored h3 0.0.8. While a download's stream stayed full, h3 read
+  one more QUIC chunk than it handed out for every DATA frame, and those
+  chunks no longer counted against the receive window: in 32 downloads from
+  Xray-core v26.10.21 in a Linux container they reached about 20 MiB in six
+  seconds and 46 MiB in 28, and a server of 700-byte frames got 4.1 MiB ahead
+  of a reader that had taken 1 MiB. h3 now decodes buffered frames before
+  reading, as upstream's unreleased fix does, and reads during a DATA frame
+  only while part of it is missing. 32 downloads now peak at 95.8 MiB RSS
+  instead of 112.5, and four times as long a transfer at 103.9 instead of
+  140.7, with 4–7% more throughput and less CPU per byte. Most of the rest is
+  data waiting in the 32 full 2 MiB stream windows; see the
+  [2026-10-31 report](docs/benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md).
+  On macOS, where readers keep up, the XHTTP H3 cases are unchanged
+  ([macOS re-check](docs/benchmarks/results/2026-10-31-xhttp-h3-macos-recheck/README.md)).
+- Share one QUIC receive budget between concurrent XHTTP H3 downloads, and
+  hold a download to it only while its reader falls behind. Every XHTTP H3
+  request owns a QUIC connection, and a reader slower than its server keeps
+  the whole 2 MiB stream window full: 32 downloads from Xray-core v26.10.21
+  in a Linux container held 57 MiB that way. A download whose reader has not
+  found its stream empty for four 64 KiB samples and two round trips now
+  grants at most its share of 16 MiB, or 4 MiB with the mobile and
+  low-memory profiles, split between the connections that downloaded in the
+  last one to two seconds. It never grants less than 128 KiB or than its
+  reader took in those round trips. A lone download keeps its full auto-tuned
+  window, and the 2 MiB handshake windows are unchanged. 32 downloads now
+  peak at 50.0 instead of 96.7 MiB RSS, 32 duplex transfers at 63.6 instead
+  of 110.6, and with the mobile profile 32 downloads at 43.5 instead of 96.3,
+  at equal or higher throughput. One- and eight-flow cases, the macOS
+  collector's `xhttp-h3` cases and eight downloads over 54 and 114 ms round
+  trips stay within run-to-run spread; holding every download to its share
+  would have cut those eight downloads at 54 ms from 3.5 to 1.4 Gbit/s.
+  Vendored quinn-proto's `set_stream_receive_window` now also lowers a
+  window, without withdrawing credit already sent; see the
+  [2026-10-31 receive-budget report](docs/benchmarks/results/2026-10-31-xhttp-h3-receive-budget/README.md).
+- Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
+  and the migration collector can pin a Go-verified reference by SHA-256.
+  `scripts/run-migration-campaign.py` runs a whole before/after campaign: it
+  waits for a quiet machine before every attempt, retries blocks that only
+  external load rejected, and resumes after the last attempt. The publisher
+  takes `--pin` and `--label` for comparisons other than the migration; the
+  [2026-10-30 report](docs/benchmarks/results/2026-10-30-perf-branch/README.md)
+  compares this branch with `main`, and the
+  [2026-10-30 three-engine group](docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md)
+  compares it with Xray-core v26.10.21 and sing-box v1.14.4. `xray-bench
+  chart --omit-sing-box-1000-flows` leaves out a sing-box 1,000-flow series
+  that did not complete, as `--omit-sing-box-reality` does for REALITY.
+
+- Bound the bytes each TUN TCP flow can queue toward its outbound: 512 KiB on
+  desktop, 256 KiB with the mobile profiles and 128 KiB with `low-memory`. The
+  queue was bounded only by message count, which allowed up to 8 MiB per flow
+  (4 MiB on mobile), and its copy buffer grew past its cap. With a slow
+  outbound, eight XHTTP packet-up uploads through TUN reached a 92 MiB
+  footprint on desktop and 63 MiB on mobile; they now stay near 35 and 33 MiB
+  at the same speed, and duplex transfers fall from 111 to 42 MiB. Data beyond
+  the limit waits in the TCP window, so applications see ordinary
+  backpressure. Such paced uploads cost 7–9% more client CPU on desktop and
+  about 4.5% with the mobile profile; faster outbounds measured no change.
+- Mask WebSocket client frames without a system call per frame: mask keys come
+  from the thread-local ChaCha CSPRNG instead of `getentropy` for every 4 KiB
+  frame, and masking runs eight bytes at a time. Keys stay fresh and
+  unpredictable per frame, and the wire shape is unchanged. Client CPU for
+  WebSocket uploads fell by 53–59% and for duplex transfers by 24%.
+- Copy XHTTP H2 response frames that wait for a slow reader out of h2's shared
+  read buffer, which each queued frame otherwise pinned at roughly twice its
+  size. Eight stalled XHTTP H2 downloads through TUN fell from a 65 MiB to a
+  44 MiB footprint, at about 4% more CPU for the copies. Flow control is
+  unchanged: credit still returns only as the reader consumes data. Readers
+  also take several frames per read, which lowered CPU on fast SOCKS
+  transfers.
+- Start XHTTP H3 connections with a 2 MiB QUIC send window that grows with the
+  congestion window up to 10 MB, as Hysteria already did, instead of quinn's
+  fixed 10 MB. Each XHTTP H3 request has its own connection, so a slow uplink
+  could otherwise buffer 10 MB per upload.
+- Benchmarks: build comparison binaries with `scripts/build-isolated-release.py`
+  (the collector now requires its provenance record), report the exact peak
+  physical footprint, and drive TUN TCP echo by readiness instead of 1 ms
+  sleeps. The v26.10.21 migration report gains an erratum: its "before" client
+  was a mixed build, and the flagged regressions did not reproduce.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
