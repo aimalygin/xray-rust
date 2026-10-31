@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Treat an outbound `"proxySettings": null` as absent, as Xray-core does.
+  Next to `sockopt.dialerProxy` it was rejected as a combination, and alone it
+  was rejected as a non-object, so panel output with explicit null fields
+  failed to load.
+
+- `sockopt.dialerProxy` chains no longer depend on outbound order. An outbound
+  that chains to a freedom fragment handler gains its mask; listed before an
+  outbound that chains through it, it was then mistaken for a fragment handler
+  itself and rejected. Xray-core resolves the tags at dial time, so both orders
+  now parse to the same configuration.
+
 - Grow gRPC stream receive windows with the link, as grpc-go's BDP estimator
   does under Xray's default `grpcSettings`. Every stream kept HTTP/2's
   65,535-byte window, which capped a flow's download at one window per round
