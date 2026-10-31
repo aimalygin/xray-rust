@@ -104,7 +104,7 @@ pub struct H3UdpHopConfig {
 ///
 /// Xray/quic-go auto-tunes its receive windows from the configured initial
 /// values (2 MiB per stream and 3 MiB per connection) up to larger maxima, and
-/// [`XhttpReceiveWindow`] does the same for XHTTP downloads. A `None` maximum
+/// `XhttpReceiveWindow` does the same for XHTTP downloads. A `None` maximum
 /// is Xray's default, 6 MiB and 15 MiB, on a [`MemoryClass::Standard`] host;
 /// a constrained host keeps such windows at their initial size.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -690,8 +690,8 @@ impl XhttpReceiveWindow {
     /// stream window too quickly.
     fn on_read(&self, bytes: usize, connection: &quinn::Connection) {
         let bytes = bytes as u64;
-        let sample =
-            self.unsampled.fetch_add(bytes, Ordering::Relaxed) + bytes >= XHTTP_RECEIVE_SAMPLE_BYTES;
+        let sample = self.unsampled.fetch_add(bytes, Ordering::Relaxed) + bytes
+            >= XHTTP_RECEIVE_SAMPLE_BYTES;
         if !sample && !self.tunes {
             return;
         }
@@ -1976,7 +1976,10 @@ mod receive_window_tests {
         assert_eq!(share(32), 512 * 1024);
         assert_eq!(share(128), XHTTP_MIN_STREAM_RECEIVE_WINDOW);
         assert_eq!(share(1000), XHTTP_MIN_STREAM_RECEIVE_WINDOW);
-        assert_eq!(xhttp_stream_receive_share(32, 64 * MIB, MemoryClass::Standard), 2 * MIB);
+        assert_eq!(
+            xhttp_stream_receive_share(32, 64 * MIB, MemoryClass::Standard),
+            2 * MIB
+        );
     }
 
     #[test]
