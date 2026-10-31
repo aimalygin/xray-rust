@@ -20,6 +20,7 @@ mod utls_tls_shaping_tests {
     const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
     const EXT_KEY_SHARE: u16 = 0x0033;
     const EXT_ENCRYPTED_CLIENT_HELLO: u16 = 0xfe0d;
+    const GROUP_X25519: u16 = 0x001d;
     const GROUP_SECP256R1: u16 = 0x0017;
     const CHROME_GREASE_CIPHER: u16 = 0x0a0a;
     const CHROME_PROVIDER_SUPPORTED_CIPHERS: &[u16] = &[
@@ -40,6 +41,9 @@ mod utls_tls_shaping_tests {
         include_str!("../../../tests/fixtures/reality/clienthello_shape_android.json");
     const CLIENTHELLO_SHAPE_HELLOCHROME_58_JSON: &str =
         include_str!("../../../tests/fixtures/reality/clienthello_shape_hellochrome_58.json");
+    /// Xray's `randomizednoalpn` preset, from `-fingerprint randomizednoalpn`.
+    const CLIENTHELLO_SHAPE_RANDOMIZEDNOALPN_JSON: &str =
+        include_str!("../../../tests/fixtures/reality/clienthello_shape_randomizednoalpn.json");
 
     /// The same oracle run with `-websocket-alpn`, which applies Xray's
     /// `WebsocketHandshakeContext` ALPN rebuild before emitting the shape.
@@ -698,15 +702,56 @@ mod utls_tls_shaping_tests {
         }
     }
 
-    /// `randomizednoalpn` keeps its frozen snapshot on purpose: every modern
+    /// `randomizednoalpn` keeps a frozen snapshot on purpose: every modern
     /// fingerprint carries ALPN, so drawing one would add the extension the
     /// name exists to suppress. Documented in `docs/config-compatibility.md`.
+    ///
+    /// The snapshot is of Xray's preset, not of the bare uTLS ID: Xray-core's
+    /// `init()` forces TLS 1.3 and an X25519 first key share, so the hello
+    /// must offer TLS 1.3 with an X25519 share and still carry no ALPN.
     #[test]
-    fn randomizednoalpn_still_emits_no_alpn_extension() {
+    fn randomizednoalpn_offers_tls13_with_x25519_and_no_alpn() {
         let hello = plain_tls_client_hello_bytes(&config("randomizednoalpn", &[]))
             .expect("randomizednoalpn ClientHello must be produced");
 
         assert_eq!(alpn_protocols(&hello), None);
+        assert!(
+            supported_versions(&hello).is_some_and(|versions| versions.contains(&0x0304)),
+            "randomizednoalpn must offer TLS 1.3"
+        );
+        assert_eq!(
+            key_share(&hello, GROUP_X25519).map(<[u8]>::len),
+            Some(32),
+            "randomizednoalpn must carry an X25519 key share"
+        );
+    }
+
+    /// The whole extension order comes from the uTLS oracle run on Xray's
+    /// preset weights, so the snapshot cannot drift from the Go reference.
+    #[test]
+    fn randomizednoalpn_matches_the_xray_preset_oracle() {
+        let (fingerprint, expected) =
+            oracle_extension_order(CLIENTHELLO_SHAPE_RANDOMIZEDNOALPN_JSON);
+        assert_eq!(fingerprint, "randomizednoalpn");
+
+        let hello = plain_tls_client_hello_bytes(&config(&fingerprint, &[]))
+            .expect("randomizednoalpn ClientHello must be produced");
+
+        assert_eq!(extension_order(&hello), expected);
+    }
+
+    /// The versions a hello's `supported_versions` extension lists, or `None`
+    /// when it has none.
+    fn supported_versions(hello: &[u8]) -> Option<Vec<u16>> {
+        let payload = extension_payload(hello, EXT_SUPPORTED_VERSIONS)?;
+        let versions_len = usize::from(*payload.first()?);
+        Some(
+            payload
+                .get(1..1 + versions_len)?
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect(),
+        )
     }
 
     /// Walks the extension list and renders it the way the Go oracle's
@@ -1064,17 +1109,17 @@ mod utls_tls_shaping_tests {
     /// against a Go `tls.Listen` with `MaxVersion: VersionTLS13` negotiates TLS
     /// 1.2 and completes.
     ///
-    /// The two `randomized` names are here on their frozen snapshots, not on
-    /// uTLS' live behaviour: uTLS re-rolls those specs per call and lands on TLS
-    /// 1.3 some of the time. `docs/config-compatibility.md` covers why we hold
-    /// one recorded spec instead.
+    /// The two bare uTLS `hellorandomized*` names are here on their frozen
+    /// snapshots, not on uTLS' live behaviour: uTLS re-rolls those specs per
+    /// call and lands on TLS 1.3 some of the time. `docs/config-compatibility.md`
+    /// covers why we hold one recorded spec instead. Xray's `randomizednoalpn`
+    /// preset is not here: its weights force TLS 1.3.
     ///
     /// Every name a profile answers to is listed, because a name is what a
     /// config file carries.
     const TLS12_ERA_FINGERPRINTS: &[&str] = &[
         "android",
         "helloandroid_11_okhttp",
-        "randomizednoalpn",
         "hellorandomizednoalpn",
         "hellorandomizedalpn",
         "hellofirefox_55",
@@ -1123,6 +1168,17 @@ mod utls_tls_shaping_tests {
         SocketAddr,
         tokio::task::JoinHandle<Result<ProtocolVersion, String>>,
     ) {
+        spawn_version_reporting_tls_server_with(rustls::DEFAULT_VERSIONS).await
+    }
+
+    /// The same listener limited to `versions`, so a test can stand up a
+    /// TLS-1.3-only server.
+    async fn spawn_version_reporting_tls_server_with(
+        versions: &[&'static rustls::SupportedProtocolVersion],
+    ) -> (
+        SocketAddr,
+        tokio::task::JoinHandle<Result<ProtocolVersion, String>>,
+    ) {
         let CertifiedKey { cert, signing_key } =
             generate_simple_self_signed(vec!["server.test".to_owned()])
                 .expect("a self-signed certificate must generate");
@@ -1132,8 +1188,8 @@ mod utls_tls_shaping_tests {
         let server_config = rustls::ServerConfig::builder_with_provider(Arc::new(
             rustls::crypto::aws_lc_rs::default_provider(),
         ))
-        .with_safe_default_protocol_versions()
-        .expect("the provider must support the default TLS versions")
+        .with_protocol_versions(versions)
+        .expect("the provider must support the requested TLS versions")
         .with_no_client_auth()
         .with_single_cert(vec![certificate], key)
         .expect("the TLS server config must build");
@@ -1324,6 +1380,22 @@ mod utls_tls_shaping_tests {
         dial_shaped("chrome", addr)
             .await
             .expect("chrome must still complete a handshake");
+
+        let negotiated = served.await.expect("the server task must finish");
+        assert_eq!(negotiated, Ok(ProtocolVersion::TLSv1_3));
+    }
+
+    /// Xray's `randomizednoalpn` preset always offers TLS 1.3, so a Go client
+    /// on it reaches a TLS-1.3-only server. The TLS 1.2 snapshot this name
+    /// used to share with `hellorandomizednoalpn` could not.
+    #[tokio::test]
+    async fn randomizednoalpn_reaches_a_tls13_only_server() {
+        let (addr, served) =
+            spawn_version_reporting_tls_server_with(&[&rustls::version::TLS13]).await;
+
+        dial_shaped("randomizednoalpn", addr)
+            .await
+            .expect("randomizednoalpn must complete a TLS 1.3 handshake");
 
         let negotiated = served.await.expect("the server task must finish");
         assert_eq!(negotiated, Ok(ProtocolVersion::TLSv1_3));
