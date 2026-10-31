@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
+  uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2
+  snapshot of the bare uTLS `hellorandomizednoalpn`, so plain TLS failed against
+  TLS-1.3-only servers, and REALITY configs and share links with
+  `fp=randomizednoalpn` were rejected although Xray-core dials them. The new
+  snapshot leads with the X25519MLKEM768 share, so REALITY v26.10.21 servers
+  accept it. `hellorandomizednoalpn` keeps its TLS 1.2 shape.
+
 - Android: `XrayNetworkChangeCoordinator` no longer mistakes a partial initial
   callback burst for a migration. Until the network passed to `start` reports
   or is lost, the control worker reads its current state and offers it as a

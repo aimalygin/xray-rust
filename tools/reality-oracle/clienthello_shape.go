@@ -283,7 +283,9 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 		return utls.HelloQQ_Auto, nil
 	case "random", "randomized", "hellorandomized":
 		return utls.HelloRandomized, nil
-	case "randomizednoalpn", "hellorandomizednoalpn":
+	case "randomizednoalpn":
+		return xrayRandomizedNoALPN(), nil
+	case "hellorandomizednoalpn":
 		return utls.HelloRandomizedNoALPN, nil
 	case "hellorandomizedalpn":
 		return utls.HelloRandomizedALPN, nil
@@ -368,6 +370,26 @@ func clientHelloID(fingerprint string) (utls.ClientHelloID, error) {
 	default:
 		return utls.ClientHelloID{}, fmt.Errorf("unsupported fingerprint fixture: %s", fingerprint)
 	}
+}
+
+// xrayRandomizedNoALPN mirrors the `randomizednoalpn` preset Xray-core's
+// `init()` builds in transport/internet/tls/tls.go: `HelloRandomizedNoALPN`
+// under uTLS's default weights with TLS 1.3 forced and the legacy P-256 first
+// key share disabled, so the spec always carries supported_versions and an
+// X25519 key share. `hellorandomizednoalpn` is the bare uTLS ID from
+// `OtherFingerprints` and keeps the default weights.
+//
+// Xray seeds the preset once per process with `NewPRNGSeed`. The seed stays
+// nil here, so uTLS draws it from the zeroed `crypto/rand` in
+// `buildRawClientHello`, which pins the snapshot the same way the bare
+// randomized IDs are pinned.
+func xrayRandomizedNoALPN() utls.ClientHelloID {
+	weights := utls.DefaultWeights
+	weights.TLSVersMax_Set_VersionTLS13 = 1
+	weights.FirstKeyShare_Set_CurveP256 = 0
+	id := utls.HelloRandomizedNoALPN
+	id.Weights = &weights
+	return id
 }
 
 func parseClientHelloShape(fingerprint string, utlsID string, raw []byte) (clientHelloShape, error) {

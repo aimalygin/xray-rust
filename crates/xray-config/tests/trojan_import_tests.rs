@@ -46,7 +46,14 @@ fn trojan_uri_projects_stream_settings_through_the_shared_validator() {
 #[test]
 fn trojan_uri_keeps_reality_fingerprints_older_servers_accept() {
     let reality = "security=reality&sni=www.example.com&pbk=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE&sid=02030405";
-    for fingerprint in ["chrome", "ios", "edge", "qq", "hellochrome_100"] {
+    for fingerprint in [
+        "chrome",
+        "randomizednoalpn",
+        "ios",
+        "edge",
+        "qq",
+        "hellochrome_100",
+    ] {
         let profile = import_profile(
             ProfileFormat::Trojan,
             &format!(

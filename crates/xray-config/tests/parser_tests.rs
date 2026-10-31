@@ -6294,6 +6294,24 @@ fn warns_that_new_reality_servers_reject_x25519_only_fingerprints() {
     }
 }
 
+/// Xray-core's REALITY client dials `randomizednoalpn`: the preset its
+/// `init()` builds forces TLS 1.3 with an X25519 key share. The recorded
+/// snapshot leads with X25519MLKEM768, so it parses without a warning.
+#[test]
+fn parses_randomizednoalpn_reality_fingerprint_like_xray_core() {
+    let raw = vless_raw_with_reality_settings(
+        r#""serverName": "server.example", "publicKey": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE", "shortId": "02030405", "fingerprint": "randomizednoalpn""#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("randomizednoalpn should parse for REALITY");
+    let StreamSecurity::Reality(reality) = &parsed.config.outbounds[0].stream.security else {
+        panic!("expected reality security");
+    };
+
+    assert_eq!(reality.fingerprint, "randomizednoalpn");
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+}
+
 #[test]
 fn rejects_known_reality_fingerprints_without_x25519_key_share() {
     for fingerprint in xray_utls::XRAY_REALITY_INCAPABLE_FINGERPRINTS {

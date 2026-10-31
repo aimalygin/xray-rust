@@ -4445,6 +4445,98 @@ const PROFILE_42: UtlsClientHelloProfile = UtlsClientHelloProfile {
     encrypted_client_hello: Some(ECH_GREASE_BORING),
 };
 
+// Xray's `randomizednoalpn` preset: `HelloRandomizedNoALPN` under the weights
+// Xray-core's `init()` sets in transport/internet/tls/tls.go, which force TLS
+// 1.3 and an X25519 first key share. Recorded from `clienthello_shape.go
+// -fingerprint randomizednoalpn` with the oracle's zero seed, like the other
+// randomized snapshots; `tests/fixtures/reality/clienthello_shape_randomizednoalpn.json`
+// holds the oracle output. The bare `hellorandomizednoalpn` keeps uTLS's
+// default weights and stays on `PROFILE_9`.
+const PROFILE_43_CIPHERS: &[u16] = &[
+    0x1301, 0x1303, 0x1302, 0xc023, 0x003c, 0xc02f, 0x009d, 0xc02c, 0xcca8, 0xc02b, 0xcca9, 0x009c,
+    0xc030, 0xc027, 0xc013, 0x000a, 0x0035, 0x002f, 0xc00a, 0xc014, 0xc012,
+];
+const PROFILE_43_VERSIONS: &[u16] = &[0x0304, 0x0303];
+const PROFILE_43_GROUPS: &[u16] = &[0x11ec, 0x001d, 0x0017, 0x0018, 0x0019];
+const PROFILE_43_KEY_SHARES: &[UtlsKeyShare] = &[
+    UtlsKeyShare {
+        group: 0x11ec,
+        key_exchange_len: 1216,
+    },
+    UtlsKeyShare {
+        group: 0x001d,
+        key_exchange_len: 32,
+    },
+    UtlsKeyShare {
+        group: 0x0017,
+        key_exchange_len: 65,
+    },
+];
+const PROFILE_43_SIGALGS: &[u16] = &[
+    0x0601, 0x0806, 0x0503, 0x0401, 0x0201, 0x0805, 0x0403, 0x0804, 0x0501,
+];
+const PROFILE_43_DELEGATED_CREDENTIALS: &[u16] = &[];
+const PROFILE_43_ALPN: &[&[u8]] = &[];
+const PROFILE_43_CERT_COMP: &[u16] = &[];
+const PROFILE_43_APPS: &[UtlsApplicationSettings] = &[];
+const PROFILE_43_EXTENSIONS: &[UtlsExtension] = &[
+    UtlsExtension {
+        extension_type: 0x000b,
+        payload_len: 2,
+    },
+    UtlsExtension {
+        extension_type: 0x000a,
+        payload_len: 12,
+    },
+    UtlsExtension {
+        extension_type: 0x000d,
+        payload_len: 20,
+    },
+    UtlsExtension {
+        extension_type: 0x0000,
+        payload_len: 16,
+    },
+    UtlsExtension {
+        extension_type: 0x0017,
+        payload_len: 0,
+    },
+    UtlsExtension {
+        extension_type: 0x0023,
+        payload_len: 0,
+    },
+    UtlsExtension {
+        extension_type: 0x002d,
+        payload_len: 2,
+    },
+    UtlsExtension {
+        extension_type: 0x002b,
+        payload_len: 5,
+    },
+    UtlsExtension {
+        extension_type: 0x0033,
+        payload_len: 1327,
+    },
+    UtlsExtension {
+        extension_type: 0xff01,
+        payload_len: 1,
+    },
+];
+const PROFILE_43: UtlsClientHelloProfile = UtlsClientHelloProfile {
+    cipher_suites: PROFILE_43_CIPHERS,
+    supported_versions: PROFILE_43_VERSIONS,
+    supported_groups: PROFILE_43_GROUPS,
+    key_shares: PROFILE_43_KEY_SHARES,
+    signature_algorithms: PROFILE_43_SIGALGS,
+    delegated_credentials_algorithms: PROFILE_43_DELEGATED_CREDENTIALS,
+    alpn_protocols: PROFILE_43_ALPN,
+    certificate_compression_algorithms: PROFILE_43_CERT_COMP,
+    record_size_limit: None,
+    application_settings: PROFILE_43_APPS,
+    extensions: PROFILE_43_EXTENSIONS,
+    padding_length: None,
+    encrypted_client_hello: None,
+};
+
 /// Resolves a fingerprint name to the ClientHello shape it stands for.
 ///
 /// `random` and `randomized` do not name a fixed shape. Xray's `init()` draws
@@ -4563,11 +4655,11 @@ fn named_profile(fingerprint: &str) -> Option<&'static UtlsClientHelloProfile> {
         "helloqq_11_1" => Some(&PROFILE_7),
         "helloqq_auto" => Some(&PROFILE_7),
         // `random` and `randomized` are resolved by the caller: they name a
-        // per-process draw, not a fixed shape. `hellorandomized` and its two
-        // siblings keep their frozen snapshots -- see
+        // per-process draw, not a fixed shape. `randomizednoalpn`,
+        // `hellorandomized` and its two siblings keep frozen snapshots -- see
         // `docs/config-compatibility.md`.
         "hellorandomized" => Some(&PROFILE_8),
-        "randomizednoalpn" => Some(&PROFILE_9),
+        "randomizednoalpn" => Some(&PROFILE_43),
         "hellorandomizednoalpn" => Some(&PROFILE_9),
         "hellofirefox_120" => Some(&PROFILE_10),
         "hellochrome_120" => Some(&PROFILE_11),
