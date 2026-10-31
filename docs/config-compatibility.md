@@ -1635,7 +1635,11 @@ Domain matchers:
 IP matchers:
 
 - IPv4/IPv6 address or CIDR;
-- `geoip:private`;
+- `geoip:private`, built in so no `geoip.dat` is needed: Xray-core's own
+  private/reserved set (`common/geodata/consts.go`), which includes `0.0.0.0/8`,
+  `198.18.0.0/15`, the TEST-NETs, IPv4 multicast and reserved space through
+  `255.255.255.255` (`224.0.0.0/3`), `::/127` and `ff00::/8`, as common
+  `geoip.dat` builds do;
 - `geoip:code`;
 - `ext:file.dat:code` and `ext-ip:file.dat:code`;
 - the supported inverse `!` forms.

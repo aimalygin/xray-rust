@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Match the routing `geoip:private` set to Xray-core's built-in private set
+  (`common/geodata/consts.go`), which the plaintext-server exemption already
+  used. The previous nine networks left out `0.0.0.0/8`, `198.18.0.0/15`, the
+  TEST-NETs, multicast and broadcast (`224.0.0.0/3`), `::` and `ff00::/8`, so a
+  `geoip:private` -> direct rule sent mDNS, SSDP and broadcast traffic through
+  the proxy; Xray-core, reading `geoip:private` from any common `geoip.dat`,
+  keeps it direct. DNS `expectedIPs`/`unexpectedIPs` still load
+  `geoip:private` from `geoip.dat`.
+
 - HTTP profile import refuses a legacy Base64 whole-authority link such as
   `http://<Base64 of user:pass@host:port>` with `Unsupported`. With the default
   port it was imported as a one-label host, so the profile reached no server

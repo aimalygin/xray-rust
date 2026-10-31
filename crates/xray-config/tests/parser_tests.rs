@@ -1416,6 +1416,52 @@ fn parses_field_routing_ip_matchers() {
 }
 
 #[test]
+fn routing_geoip_private_matches_xray_core_private_set() {
+    // Xray-core resolves `geoip:private` from geoip.dat; every common build of
+    // that list and Xray's own `privateIPMatcher` (common/geodata/consts.go)
+    // include multicast, broadcast, `0.0.0.0/8`, benchmarking and TEST-NET
+    // ranges, so a `geoip:private` -> direct rule keeps mDNS/SSDP traffic local.
+    let raw = raw_with_routing(
+        r#""rules": [{
+          "type": "field",
+          "ip": ["geoip:private"],
+          "outboundTag": "direct"
+        }]"#,
+    );
+
+    let parsed = parse_xray_json(&raw).expect("config should parse");
+    let rule = &parsed.config.routing.rules[0];
+
+    for address in [
+        "224.0.0.251",
+        "239.255.255.250",
+        "255.255.255.255",
+        "0.1.2.3",
+        "198.18.0.1",
+        "192.0.0.9",
+        "192.0.2.1",
+        "192.88.99.1",
+        "198.51.100.1",
+        "203.0.113.1",
+        "10.1.2.3",
+        "192.168.1.1",
+        "::",
+        "::1",
+        "ff02::fb",
+        "fd00::1",
+        "fe80::1",
+        "::ffff:224.0.0.251",
+    ] {
+        let ip: IpAddr = address.parse().unwrap();
+        assert!(rule.matches_ip(Some(&ip)), "{address} must be private");
+    }
+    for address in ["8.8.8.8", "1.1.1.1", "2606:4700::1111"] {
+        let ip: IpAddr = address.parse().unwrap();
+        assert!(!rule.matches_ip(Some(&ip)), "{address} must be public");
+    }
+}
+
+#[test]
 fn parses_field_routing_inverse_ip_matchers() {
     let raw = raw_with_routing(
         r#""rules": [{
