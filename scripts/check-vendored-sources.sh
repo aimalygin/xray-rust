@@ -46,8 +46,6 @@ patch --batch --fuzz=0 -p1 \
   <"$ROOT/vendor/quinn/XRAY-PATCH.diff"
 diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/quinn-0.11.9" "$ROOT/vendor/quinn"
-cargo test --locked --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
-  --no-default-features --features runtime-tokio,rustls-ring --lib
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/blake3-1.8.5" \
@@ -74,6 +72,18 @@ diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
   "$temporary/quinn-proto-0.11.16" "$ROOT/vendor/quinn-proto"
 cargo test --locked --manifest-path "$temporary/quinn-proto-0.11.16/Cargo.toml" \
   --no-default-features --features rustls-ring --lib
+
+# The quinn patch calls quinn-proto's patched `set_stream_receive_window`, so
+# quinn is tested against the reconstruction above. Its published lockfile
+# pins crates.io quinn-proto 0.11.13: move that entry, and only what 0.11.16
+# needs, before the locked test.
+quinn_proto_patch="patch.crates-io.quinn-proto.path=\"$temporary/quinn-proto-0.11.16\""
+cargo update --config "$quinn_proto_patch" \
+  --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
+  -p quinn-proto --precise 0.11.16
+cargo test --locked --config "$quinn_proto_patch" \
+  --manifest-path "$temporary/quinn-0.11.9/Cargo.toml" \
+  --no-default-features --features runtime-tokio,rustls-ring --lib
 
 download_and_verify \
   smoltcp 0.14.0 \

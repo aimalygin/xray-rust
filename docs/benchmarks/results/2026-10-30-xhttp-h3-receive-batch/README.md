@@ -148,11 +148,6 @@ few dozen 10 ms ticks.
   macOS in the send-budget report, and the mobile profile, whose receive
   windows do not grow, peaks the same. That remainder was not attributed.
 - Hysteria keeps quinn's batch: it has one endpoint per client.
-- `scripts/check-vendored-sources.sh` builds quinn's tests against
-  crates.io quinn-proto, which has no `set_stream_receive_window`, so that
-  step has failed to compile since `e98fe285` added quinn's forwarder to it.
-  With the vendored quinn-proto, quinn's library tests pass with this patch
-  on Linux: 17 passed, 3 ignored.
 
 ## Evidence and replay
 
@@ -173,3 +168,9 @@ few dozen 10 ms ticks.
   "-s -w -buildid= -X github.com/xtls/xray-core/core.build=1b1647c"`; only
   its Linux-only `vishvananda/netlink` came from the Go module proxy, checked
   against Xray-core's `go.sum`.
+- `scripts/check-vendored-sources.sh` reconstructs vendored quinn with this
+  patch and runs its library tests: 17 passed, 3 ignored, on Linux and
+  macOS. That step had failed to compile since `e98fe285`, because it built
+  quinn against crates.io quinn-proto, which has no
+  `set_stream_receive_window`; it now builds against the check's own
+  reconstruction of the vendored quinn-proto.
