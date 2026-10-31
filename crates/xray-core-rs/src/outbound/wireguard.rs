@@ -146,6 +146,22 @@ impl WireguardOutbound {
         });
         Ok((client, dns))
     }
+    /// Destination DNS runs through the tunnel when a `remoteDNS` server is
+    /// routable there. With none routable (a split `allowedIPs` excluding the
+    /// configured servers), every tunnel query would fail with NoRoute, so the
+    /// caller's resolver is used, as wg-quick sends such DNS outside the tunnel.
+    fn destination_resolver<'a>(
+        &self,
+        tunnel: &'a dyn DnsResolver,
+        caller: &'a dyn DnsResolver,
+    ) -> &'a dyn DnsResolver {
+        let settings = &self.0.settings;
+        if settings.remote_dns.iter().any(|ip| routable(settings, *ip)) {
+            tunnel
+        } else {
+            caller
+        }
+    }
     async fn destinations(
         &self,
         target: &Target,
@@ -174,17 +190,7 @@ impl WireguardOutbound {
                     .collect(),
             },
         };
-        candidates.retain(|addr| {
-            config
-                .addresses
-                .iter()
-                .any(|ip| ip.is_ipv4() == addr.is_ipv4())
-                && config
-                    .peers
-                    .iter()
-                    .flat_map(|p| &p.allowed_ips)
-                    .any(|p| p.contains(addr.ip()))
-        });
+        candidates.retain(|addr| routable(config, addr.ip()));
         match config.domain_strategy {
             WireguardDomainStrategy::ForceIpv4v6 => candidates.sort_by_key(SocketAddr::is_ipv6),
             WireguardDomainStrategy::ForceIpv6v4 => candidates.sort_by_key(SocketAddr::is_ipv4),
@@ -198,13 +204,14 @@ impl WireguardOutbound {
     pub(crate) async fn open_tcp(
         &self,
         target: &Target,
-        _destination: &dyn DnsResolver,
+        destination: &dyn DnsResolver,
         bootstrap: &dyn DnsResolver,
         dialer: &TransportDialer,
     ) -> Result<BoxedTransportStream, CoreError> {
         self.bounded(async {
             let (client, dns) = self.client(bootstrap, dialer).await?;
-            let addresses = self.destinations(target, dns.as_ref()).await?;
+            let resolver = self.destination_resolver(dns.as_ref(), destination);
+            let addresses = self.destinations(target, resolver).await?;
             let mut error = Error::NoRoute;
             let last = addresses.len() - 1;
             for (index, address) in addresses.into_iter().enumerate() {
@@ -230,14 +237,15 @@ impl WireguardOutbound {
     pub(crate) async fn open_udp(
         &self,
         target: &Target,
-        _destination: &dyn DnsResolver,
+        destination: &dyn DnsResolver,
         bootstrap: &dyn DnsResolver,
         dialer: &TransportDialer,
     ) -> Result<xray_wireguard::UdpSession, CoreError> {
         self.bounded(async {
             let (client, dns) = self.client(bootstrap, dialer).await?;
+            let resolver = self.destination_resolver(dns.as_ref(), destination);
             let address = self
-                .destinations(target, dns.as_ref())
+                .destinations(target, resolver)
                 .await?
                 .into_iter()
                 .next()
@@ -285,3 +293,16 @@ fn same_protector(
 
 #[cfg(test)]
 mod tests;
+/// An address the tunnel can reach: covered by a peer's `allowedIPs` and with a
+/// local interface address of the same family.
+fn routable(settings: &WireguardOutboundSettings, address: IpAddr) -> bool {
+    settings
+        .addresses
+        .iter()
+        .any(|ip| ip.is_ipv4() == address.is_ipv4())
+        && settings
+            .peers
+            .iter()
+            .flat_map(|p| &p.allowed_ips)
+            .any(|p| p.contains(address))
+}
