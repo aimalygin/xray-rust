@@ -212,6 +212,9 @@ These tools and tests do not open a connection to a live node:
 ```sh
 go run ./tools/reality-oracle/session_id_vectors.go \
   --check tests/fixtures/reality/session_id_vectors.json
+go run -tags reality_oracle_certificate_binding \
+  ./tools/reality-oracle/certificate_binding_vectors.go \
+  --check tests/fixtures/reality/certificate_binding_vectors.json
 go run ./tools/reality-oracle/clienthello_fixture.go \
   --check tests/fixtures/reality/clienthello_chrome_auto.json
 cargo test --locked -p xray-transport reality

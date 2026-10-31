@@ -15,6 +15,8 @@ mod reality_tests {
 
     const SESSION_ID_VECTORS_JSON: &str =
         include_str!("../../../tests/fixtures/reality/session_id_vectors.json");
+    const CERTIFICATE_BINDING_VECTORS_JSON: &str =
+        include_str!("../../../tests/fixtures/reality/certificate_binding_vectors.json");
     const HANDSHAKE_HELLO_RANDOM: [u8; 32] = [
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
         0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
@@ -52,6 +54,21 @@ mod reality_tests {
 
     fn session_id_vectors() -> Vec<SessionIdVector> {
         serde_json::from_str(SESSION_ID_VECTORS_JSON).unwrap()
+    }
+
+    /// Go-generated REALITY server leaves; see
+    /// `tools/reality-oracle/certificate_binding_vectors.go`.
+    #[derive(Debug, Deserialize)]
+    struct CertificateBindingVector {
+        name: String,
+        auth_key_hex: String,
+        ed25519_public_hex: String,
+        certificate_signature_hex: String,
+        leaf_der_hex: String,
+    }
+
+    fn certificate_binding_vectors() -> Vec<CertificateBindingVector> {
+        serde_json::from_str(CERTIFICATE_BINDING_VECTORS_JSON).unwrap()
     }
 
     fn decode_hex(hex: &str) -> Vec<u8> {
@@ -716,6 +733,42 @@ mod reality_tests {
         let result = verify_reality_certificate_der(&auth_key, &leaf_der).unwrap();
 
         assert_eq!(result, RealityCertificateVerification::Verified);
+    }
+
+    #[test]
+    fn reality_certificate_binding_matches_go_hmac_sha512_vectors() {
+        for vector in certificate_binding_vectors() {
+            let mut auth_key = decode_hex_array::<32>(&vector.auth_key_hex);
+            let public_key = decode_hex_array::<32>(&vector.ed25519_public_hex);
+            let signature = decode_hex(&vector.certificate_signature_hex);
+            let leaf_der = decode_hex(&vector.leaf_der_hex);
+
+            let binding = verify_reality_certificate_binding(RealityCertificateInput {
+                auth_key: &auth_key,
+                ed25519_public_key: &public_key,
+                certificate_signature: &signature,
+            });
+            assert_eq!(
+                binding,
+                RealityCertificateVerification::Verified,
+                "{}",
+                vector.name
+            );
+            assert_eq!(
+                verify_reality_certificate_der(&auth_key, &leaf_der).unwrap(),
+                RealityCertificateVerification::Verified,
+                "{}",
+                vector.name
+            );
+
+            auth_key[31] ^= 1;
+            assert_eq!(
+                verify_reality_certificate_der(&auth_key, &leaf_der).unwrap(),
+                RealityCertificateVerification::NotReality,
+                "{}",
+                vector.name
+            );
+        }
     }
 
     #[test]
