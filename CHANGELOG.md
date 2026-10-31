@@ -15,6 +15,12 @@ long-term supported release series.
   port it was imported as a one-label host, so the profile reached no server
   and DNS bootstrap sent the encoded credentials to the carrier resolver.
 
+- Profile import rejects display names containing bidi embeddings, overrides
+  or isolates (U+202A..U+202E, U+2066..U+2069), from the link fragment or the
+  `name` option. They reorder surrounding text, so a name could display as a
+  different profile in system VPN UI (CVE-2021-42574). LRM, RLM and ALM stay
+  allowed for right-to-left names.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
