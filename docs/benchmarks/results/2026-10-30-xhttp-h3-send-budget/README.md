@@ -155,32 +155,89 @@ footprints by 9–10%.
 
 All twelve rows of both campaigns are in [data](data/).
 
+## What holds the rest
+
+With the 16 MiB budget, 32 uploads hold 32 MiB of live heap eight seconds
+in, 18 MiB of it send buffers, yet peak at an 88 MiB footprint. The rest is
+freed memory the allocator keeps resident. The same `bae0ed5b` client with
+macOS malloc's `MallocSpaceEfficient=1`, which returns such pages, peaked at
+35–46 MiB instead of 79–82 in three rotating rounds, at the same throughput.
+RSS barely moves in that mode, because returned pages stay counted until
+reclaimed; footprint is what iOS limits.
+
+Three ways to close that gap were tried after the budget landed:
+
+- **A loss-aware split**, sharing 8 MiB while any upload lost packets in the
+  last one to two seconds: at 512 KiB windows the 32 uploads lost only 333
+  packets in a whole run, against about 300,000 with 2 MiB windows, so the
+  split engaged in 12% of samples and one run still peaked at 74 MiB. The
+  peak forms in the first half second, before most losses.
+- **A window that at most doubles per sample**, so connections that count
+  early cannot take 2 MiB before the rest are counted: 3–5 MiB lower.
+- **Fewer, uniform allocations in the write path.** h3-quinn handed every
+  frame to quinn's `poll_write`, which copies whatever the flow-control
+  window allows into an allocation of exactly that size and keeps it until
+  acknowledged. Copying frames into 64 KiB arena blocks and passing quinn
+  slices of them (`write_chunks`), plus reading uploads into one reused
+  buffer, gave the largest drop. It is kept on the local branch
+  `claude/xhttp-h3-arena-experiment` (`90d53393`, `be5d999a`), not on this
+  branch, because it costs memory at the flow counts phones use most.
+
+Interleaved A/B of that branch against `bae0ed5b` (22:31–22:58, five pairs
+each, none repeated):
+
+| Case | Peak RSS, MiB | Peak footprint, MiB | Throughput | CPU per GiB |
+| --- | ---: | ---: | ---: | ---: |
+| `stream-xhttp-h3-upload-32` | 90.4 → 62.3 (−32.0%) | 82.4 → 56.4 (−32.9%) | +1.3% | −2.6% |
+| `stream-xhttp-h3-full-duplex-32` | 76.0 → 70.8 (−9.2%) | 68.9 → 64.1 (−9.8%) | +0.9% | −1.5% |
+| `stream-xhttp-h3-upload-1` | 11.9 → 12.2 (+2.1%) | 5.9 → 6.2 (+5.6%) | −0.6% | +0.0% |
+| `stream-xhttp-h3-full-duplex-1` | 12.1 → 12.5 (+3.4%) | 6.1 → 6.6 (+8.0%) | −0.2% | +1.8% |
+| `stream-xhttp-h3-download-32` | 16.9 → 16.7 (−1.1%) | 10.9 → 10.8 (−0.7%) | −0.1% | −0.2% |
+| `stream-xhttp-h3-download-1` | 9.2 → 9.2 (−0.3%) | 3.2 → 3.3 (+1.9%) | −0.2% | +0.0% |
+
+The collector (22:59–23:47; 13 attempts were rejected while a Docker VM ran
+on the same Mac) put the cost at one and eight SOCKS flows, where XHTTP H3
+uses `stream-one`, and found none through TUN or in downloads:
+
+| Case | Throughput | CPU per GiB | Peak footprint, MiB |
+| --- | ---: | ---: | ---: |
+| `xhttp-h3-socks-upload-1` | −3.8% (−10.6 to +5.0) | −1.6% (−9.0 to +6.6) | 6.0 → 6.5 (+9.5%) |
+| `xhttp-h3-socks-full-duplex-1` | +1.5% (−3.4 to +3.5) | −1.4% (−2.7 to +4.2) | 6.5 → 7.2 (+15.5%) |
+| `xhttp-h3-socks-upload-8` | −1.7% (−7.2 to +5.5) | +2.3% (−5.3 to +4.5) | 27.0 → 29.4 (+7.5%) |
+| `xhttp-h3-socks-full-duplex-8` | −0.5% (−9.3 to +3.0) | −0.1% (−2.6 to +4.2) | 26.9 → 31.0 (+15.3%) |
+| `xhttp-h3-tun-upload-8` | −0.5% (−10.6 to +1.6) | +0.0% (−3.3 to +12.7) | 30.9 → 30.2 (−3.4%) |
+| `xhttp-h3-tun-full-duplex-8` | +0.4% (−1.7 to +2.1) | +0.8% (−1.6 to +1.6) | 30.4 → 30.2 (+1.5%) |
+
+All twelve rows are in [data](data/collector-arena.json). Copying each frame
+into one allocation of its own size instead of arena blocks, in an
+exploratory rotation, kept most of the 32-upload saving (61.6 against 55.9
+and 75.1 MiB) but cost single flows as much (6.6 and 6.8 MiB against 6.0
+and 6.1). Neither variant changed throughput or CPU beyond the spread.
+
 ## Not covered
 
 - On Linux and Android quinn sizes each endpoint's receive buffer for up to
   64 GRO segments times a 32-datagram batch, about 3 MiB of address space
   per endpoint, and every XHTTP H3 request has its own endpoint. This Mac
   uses 1,472 bytes per endpoint, so nothing here measures it.
-- Much of what remains is allocator fragmentation: in a 32-flow upload with
-  an 8 MiB prototype, about half of the small-allocation zone. h3-quinn
-  copies every write into quinn in pieces of whatever size the window
-  allows.
+- Why both zero-copy write paths raise a single flow's footprint by
+  0.2–0.8 MiB is not isolated.
 - The vendored BBR keeps up to 4,096 delivery snapshots per connection,
   about 200 KiB for each fast upload.
 - Phones were not measured; their 4 MiB budget follows the memory class.
 
 ## Evidence and replay
 
-- [`data/stream-ab-16mib.jsonl`](data/stream-ab-16mib.jsonl) and
-  [`data/stream-ab-8mib.jsonl`](data/stream-ab-8mib.jsonl) hold every
-  stream run, rejected attempts included; names of unrelated processes were
-  removed. [`data/collector-16mib.json`](data/collector-16mib.json) and
-  [`data/collector-8mib.json`](data/collector-8mib.json) hold every trial's
-  metrics and the build inputs.
+- `data/stream-ab-{16mib,8mib,arena}.jsonl` hold every stream run, rejected
+  attempts included; names of unrelated processes were removed.
+  `data/collector-{16mib,8mib,arena}.json` hold every collector trial's
+  metrics and the build inputs. The arena campaign's "before" is the
+  isolated `bae0ed5b` client of the 16 MiB campaign.
 - [`scripts/stream_ab.py`](scripts/stream_ab.py) ran the stream rounds,
   [`scripts/collector_h3.py`](scripts/collector_h3.py) the collector
   campaign, and the two summarizers rendered the tables. The binary paths
   in them are this host's. The collector needs Python 3.11 or later; a
   first invocation under the system Python 3.9 stopped before measuring.
 - Raw results, collector blocks, build records and logs stay outside Git
-  under `target/benchmarks/2026-10-30-h3-send-budget*.noindex/`.
+  under `target/benchmarks/2026-10-30-h3-send-budget*.noindex/` and
+  `target/benchmarks/2026-10-31-h3-arena*.noindex/`.
