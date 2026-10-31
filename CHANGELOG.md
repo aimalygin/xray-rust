@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- Support `mux` on VLESS outbounds, matching Xray-core v26.10.21. VLESS joins
+  the bounded shared Mux/XUDP pools of Trojan, Shadowsocks 2022 and VMess on
+  raw, WebSocket, HTTPUpgrade, gRPC and XHTTP with TLS or REALITY, with VLESS
+  encryption too. UDP follows Xray's outbound handler: `xudpProxyUDP443`, then
+  the XUDP pool, then the TCP pool, then VLESS's own UDP command. Profiles that
+  enabled Mux on VLESS previously failed to parse. With `xtls-rprx-vision`, as
+  on XHTTP, `mux.concurrency` must be negative, because the Xray inbound drops
+  a Vision account's Mux connection on its first TCP child; XUDP pooling stays
+  available.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
