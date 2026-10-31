@@ -2141,7 +2141,8 @@ before redistributing those files.
 
 For the CLI, lookup starts with the config directory, then the current working
 directory and executable directory. Embedders should set a resource directory
-with `xray_core_set_geodata_search_dir` before loading the config.
+with `xray_core_set_geodata_search_dir` before loading the config. The Swift and
+Kotlin adapters expose it as `geodataSearchDirectory`.
 
 File names must be relative and cannot escape a configured search directory.
 Parsing enforces file, entry, matcher, rule, attribute, domain, and CIDR budgets
