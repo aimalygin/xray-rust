@@ -10,6 +10,14 @@ long-term supported release series.
 
 ## Unreleased
 
+- Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
+  uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2
+  snapshot of the bare uTLS `hellorandomizednoalpn`, so plain TLS failed against
+  TLS-1.3-only servers, and REALITY configs and share links with
+  `fp=randomizednoalpn` were rejected although Xray-core dials them. The new
+  snapshot leads with the X25519MLKEM768 share, so REALITY v26.10.21 servers
+  accept it. `hellorandomizednoalpn` keeps its TLS 1.2 shape.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
