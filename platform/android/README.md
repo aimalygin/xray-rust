@@ -67,6 +67,9 @@ artifact directory.
 - `XrayVlessUrlImporter`: fail-closed VLESS share-link conversion into a
   self-contained mobile TUN profile.
 - `XrayVpnService`: reference VPN interface setup and lifecycle coordination.
+- `XrayTunInterface` and `VpnService.Builder.applyXrayTunInterface(dnsAnchor)`:
+  the interface addresses, MTU and DNS anchor that `XrayVpnService` uses, for
+  hosts that run their own `VpnService`.
 - `XrayNetworkChangeCoordinator`: opt-in underlying-network observation and
   Hysteria2/WireGuard rebind requests with application-owned selection/binding.
 - `XrayTunBackend.FileDescriptor`: default direct borrowed raw-IP fd path.
@@ -87,6 +90,25 @@ MTU-sized buffers and bounded worker teardown. `EINTR` retries respect the
 active/interrupted checks; terminal poll errors use the existing fatal path.
 FileDescriptor remains the default path. See the separately identified
 [physical Android baseline and follow-up](../../docs/device-results/2026-10-04-android-v08/README.md).
+
+A host that establishes the interface in its own `VpnService` can apply the
+same values instead of copying them:
+
+```kotlin
+val tunnel = Builder()
+    .setSession("my-vpn")
+    .applyXrayTunInterface(dnsAnchor = true)
+    .addRoute("0.0.0.0", 0)
+    .addRoute("::", 0)
+    .establish()
+```
+
+`XrayTunInterface.MTU` (1500) equals the core's TUN MTU: longer packets are
+dropped, so do not raise it. Pass `dnsAnchor = true` only when the config
+enables `dns.fakeIp` or a non-empty `dns.servers` list; the core answers DNS at
+`XrayTunInterface.DNS_ANCHOR` (`198.18.0.1`) only then. The IPv4 and IPv6
+addresses are the reference service's choice and the core does not depend on
+them. Routes, session name, metering and application rules stay with the host.
 
 ## VLESS share-link import
 
@@ -213,8 +235,8 @@ its Xray-compatible `tryDelayMs: 0` default is disabled. Network-migration DNS
 refresh still requires a new tunnel start or host-specific policy.
 
 When enabled `dns.fakeIp` or a non-empty `dns.servers` list activates the core's
-local DNS endpoint, the reference service also installs `198.18.0.1` with
-`Builder.addDnsServer`. Apps that override `buildTunnel()` retain control of all
+local DNS endpoint, the reference service also installs `198.18.0.1`
+(`XrayTunInterface.DNS_ANCHOR`) with `Builder.addDnsServer`. Apps that override `buildTunnel()` retain control of all
 other addresses, routes, and application exclusions. On Android 10 and later
 the default `buildTunnel()` also calls `setMetered(false)`: a VPN of an app
 targeting API 29+ is otherwise metered even on Wi-Fi. An override decides this

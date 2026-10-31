@@ -10,6 +10,12 @@ long-term supported release series.
 
 ## Unreleased
 
+- Android: publish the TUN interface contract as `XrayTunInterface` (IPv4
+  `10.7.0.1/32`, IPv6 `fd00:7872::1/128`, DNS anchor `198.18.0.1`, MTU 1500)
+  and add `VpnService.Builder.applyXrayTunInterface(dnsAnchor)`, so hosts with
+  their own `VpnService` stop copying SDK internals. `XrayVpnService` uses the
+  same helper; the established interface is unchanged (#81).
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a

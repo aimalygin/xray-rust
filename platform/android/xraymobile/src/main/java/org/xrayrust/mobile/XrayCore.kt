@@ -814,7 +814,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withDataPathHandle { nativePushPacket(it, packet, length) }
     }
 
-    fun pollPacket(maxBytes: Int = 1_500): ByteArray? {
+    fun pollPacket(maxBytes: Int = XrayTunInterface.MTU): ByteArray? {
         require(maxBytes > 0) { "maxBytes must be positive" }
         val storage = ByteBuffer.allocateDirect(maxBytes)
         val lengths = IntArray(1)
@@ -836,7 +836,7 @@ class XrayCore private constructor(handle: Long) : Closeable {
     fun pollPacketsInto(
         storage: ByteBuffer,
         lengths: IntArray,
-        maxPacketBytes: Int = 1_500,
+        maxPacketBytes: Int = XrayTunInterface.MTU,
         waitMilliseconds: Int = 250,
     ): Int {
         require(storage.isDirect) { "packet storage must be a direct ByteBuffer" }
