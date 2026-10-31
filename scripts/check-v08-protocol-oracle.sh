@@ -21,12 +21,12 @@ module.verify_xray_core_checkout(Path(sys.argv[2]))
 PY
 
 env -u GOFLAGS -u GOEXPERIMENT GOENV=off GOWORK=off CGO_ENABLED=0 \
-  go -C "$CHECKOUT" run -mod=readonly "$WORKSPACE_ROOT/tools/v08-protocol-oracle/main.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/ss2022.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/vmess.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/mux.go" \
+  go -C "$CHECKOUT" run -mod=readonly "$WORKSPACE_ROOT/tools/v08-protocol-oracle/main.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/ss2022.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/vmess.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/mux.go" "$WORKSPACE_ROOT/tools/v08-protocol-oracle/ssaead.go" \
   > "$TEST_ROOT/protocol-primitives.json"
 cmp "$WORKSPACE_ROOT/tests/fixtures/v08/protocol-primitives.json" "$TEST_ROOT/protocol-primitives.json"
 
 cd "$WORKSPACE_ROOT"
 cargo test --locked -p xray-proxy --test trojan_wire_tests
-cargo test --locked -p xray-proxy --lib shadowsocks2022
+cargo test --locked -p xray-proxy --lib shadowsocks
 cargo test --locked -p xray-proxy --lib vmess
 cargo test --locked -p xray-proxy --lib mux
