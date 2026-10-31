@@ -118,7 +118,7 @@ objects! {
         "Literal substring costs only; regexp=true is unsupported."),
     MUX: ("$.outbounds[].mux",
         ["enabled", "concurrency", "xudpConcurrency", "xudpProxyUDP443"],
-        "Enabled Mux supports Trojan, Shadowsocks 2022 and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool has four parents and 128 lifetime children per parent."),
+        "Enabled Mux supports VLESS, Trojan, Shadowsocks 2022 and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XHTTP and VLESS Vision require negative TCP concurrency because the pinned server accepts only UDP children there. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool has four parents and 128 lifetime children per parent."),
     OBSERVATORY: ("$.observatory",
         ["subjectSelector", "probeURL", "probeInterval", "enableConcurrency"],
         "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."),

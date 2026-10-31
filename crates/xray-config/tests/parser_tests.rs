@@ -1972,10 +1972,12 @@ fn rejects_socks_udp_non_bool_with_path() {
 }
 
 #[test]
-fn rejects_enabled_mux_with_path() {
+fn accepts_enabled_vless_mux_with_pinned_defaults() {
     let raw = raw_with_outbound_extra(r#""mux": { "enabled": true }"#);
 
-    assert_parse_error_path(&raw, "$.outbounds[0].mux.enabled");
+    let config = parse_xray_json(&raw).expect("config should parse").config;
+    let mux = config.outbounds[0].mux.as_ref().expect("enabled Mux");
+    assert_eq!(mux.concurrency, 8);
 }
 
 #[test]

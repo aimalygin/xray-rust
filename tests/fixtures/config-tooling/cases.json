@@ -2491,6 +2491,45 @@
       }
     },
     {
+      "name": "vless-reality-mux",
+      "accepted": true,
+      "base": "reality-compatible-unknown",
+      "set": {
+        "/outbounds/0/mux": {
+          "enabled": true,
+          "concurrency": 4,
+          "xudpConcurrency": 16,
+          "xudpProxyUDP443": "allow"
+        }
+      }
+    },
+    {
+      "name": "vless-vision-xudp-mux",
+      "accepted": true,
+      "base": "reality-compatible-unknown",
+      "set": {
+        "/outbounds/0/settings/vnext/0/users/0/flow": "xtls-rprx-vision",
+        "/outbounds/0/mux": {
+          "enabled": true,
+          "concurrency": -1,
+          "xudpConcurrency": 16,
+          "xudpProxyUDP443": "skip"
+        }
+      }
+    },
+    {
+      "name": "vless-vision-tcp-mux",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].mux.concurrency",
+      "base": "reality-compatible-unknown",
+      "set": {
+        "/outbounds/0/settings/vnext/0/users/0/flow": "xtls-rprx-vision",
+        "/outbounds/0/mux": {
+          "enabled": true
+        }
+      }
+    },
+    {
       "name": "http-outbound-non-raw-network",
       "accepted": false,
       "errorPath": "$.outbounds[0].streamSettings.network",

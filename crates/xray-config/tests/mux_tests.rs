@@ -79,3 +79,75 @@ fn xhttp_only_allows_udp_mux_as_required_by_pinned_server() {
         }
     }
 }
+
+fn vless_profile(flow: &str, mux: Value) -> Value {
+    let mut config: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/configs/vless_reality_vision.json"
+    ))
+    .unwrap();
+    config["outbounds"][0]["settings"]["vnext"][0]["users"][0]["flow"] = json!(flow);
+    config["outbounds"][0]["mux"] = mux;
+    config
+}
+
+fn concurrency_rejected(config: &Value) -> bool {
+    parse_xray_json(&config.to_string())
+        .unwrap_err()
+        .diagnostics
+        .iter()
+        .any(|d| d.path.as_deref() == Some("$.outbounds[0].mux.concurrency"))
+}
+
+#[test]
+fn vless_mux_follows_the_shared_pool_settings() {
+    let config = parse_xray_json(&vless_profile("", json!({"enabled":true})).to_string())
+        .unwrap()
+        .config;
+    let mux = config.outbounds[0].mux.as_ref().unwrap();
+    assert_eq!(mux.concurrency, 8);
+    assert_eq!(mux.xudp_concurrency, 0);
+    assert_eq!(mux.udp443, MuxUdp443::Reject);
+    let mux = json!({"enabled":true,"concurrency":4,"xudpConcurrency":-1,"xudpProxyUDP443":"skip"});
+    let config = parse_xray_json(&vless_profile("", mux).to_string())
+        .unwrap()
+        .config;
+    let mux = config.outbounds[0].mux.as_ref().unwrap();
+    assert_eq!((mux.concurrency, mux.xudp_concurrency), (4, -1));
+    assert_eq!(mux.udp443, MuxUdp443::Skip);
+}
+
+#[test]
+fn vless_vision_only_allows_udp_mux_as_required_by_pinned_server() {
+    for flow in ["xtls-rprx-vision", "xtls-rprx-vision-udp443"] {
+        for concurrency in [None, Some(0), Some(8), Some(-1)] {
+            let mut mux = json!({"enabled":true,"xudpConcurrency":8,"xudpProxyUDP443":"allow"});
+            if let Some(n) = concurrency {
+                mux["concurrency"] = json!(n);
+            }
+            let config = vless_profile(flow, mux);
+            if concurrency == Some(-1) {
+                let parsed = parse_xray_json(&config.to_string()).unwrap().config;
+                let mux = parsed.outbounds[0].mux.as_ref().unwrap();
+                assert_eq!((mux.concurrency, mux.xudp_concurrency), (-1, 8));
+            } else {
+                assert!(concurrency_rejected(&config), "{flow} {concurrency:?}");
+            }
+        }
+        // A disabled Mux object is ignored, as in Xray.
+        let disabled = vless_profile(flow, json!({"enabled":false,"concurrency":8}));
+        assert!(parse_xray_json(&disabled.to_string()).is_ok());
+    }
+}
+
+#[test]
+fn vless_mux_keeps_the_xhttp_udp_only_rule() {
+    for concurrency in [8, -1] {
+        let mut config = vless_profile("", json!({"enabled":true,"concurrency":concurrency}));
+        config["outbounds"][0]["streamSettings"] = json!({"network":"xhttp","security":"tls","tlsSettings":{"serverName":"server.example"},"xhttpSettings":{"path":"/test","mode":"stream-one"}});
+        if concurrency < 0 {
+            assert!(parse_xray_json(&config.to_string()).is_ok());
+        } else {
+            assert!(concurrency_rejected(&config));
+        }
+    }
+}
