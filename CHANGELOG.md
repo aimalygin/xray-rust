@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- WireGuard resolves destinations with the caller's resolver when no
+  `remoteDNS` server is routable through the tunnel. A split `allowedIPs` that
+  excluded the configured servers (as in an imported wg-quick profile with
+  `DNS` outside `AllowedIPs`) made every domain destination fail with no route,
+  reported only as "all configured DNS servers are unavailable". A failed
+  tunnel query still never falls back to host DNS.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a
