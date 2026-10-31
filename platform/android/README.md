@@ -110,6 +110,15 @@ enables `dns.fakeIp` or a non-empty `dns.servers` list; the core answers DNS at
 addresses are the reference service's choice and the core does not depend on
 them. Routes, session name, metering and application rules stay with the host.
 
+For a live traffic meter, sample `XrayCore.stats()` and take the difference of
+`XrayTunStats.uplinkBytes` and `downlinkBytes` between samples. They add the TCP
+(`tcpRemoteWrittenBytes`, `tcpRemoteReadBytes`) and UDP remote payload counters
+of every TUN flow, including direct ones, and only grow while the core exists.
+They exclude proxy protocol overhead, probes and SOCKS/HTTP inbounds.
+`outboundAccountingSnapshot()` adds a connection's bytes only when it closes, so
+it suits per-outbound totals rather than a live rate. The Swift adapter exposes
+the same TCP counters in `XrayTunStatsSnapshot`.
+
 ## VLESS share-link import
 
 Development ABI 1.14 provides `XrayProfileFormat.Http` for `http://` and

@@ -1112,11 +1112,28 @@ data class XrayTunStats(
     val tcp443FirstByteEvents: Long,
     val tcp443FirstByteDurationMsTotal: Long,
     val tcp443FirstByteDurationMsMax: Long,
-)
+    val tcpRemoteWrittenBytes: Long = 0,
+    val tcpRemoteReadBytes: Long = 0,
+) {
+    /**
+     * Live payload bytes sent towards remotes by all TUN flows, TCP plus UDP, whichever outbound
+     * carries them (including direct ones). The counters only grow from [XrayCore.create] until
+     * the core is closed, so the difference between two samples is the traffic in between. Proxy
+     * protocol overhead, startup or outbound probes and SOCKS/HTTP inbounds are not counted.
+     * [XrayCore.outboundAccountingSnapshot] adds a connection's bytes only when it closes, so it
+     * cannot drive a live traffic meter.
+     */
+    val uplinkBytes: Long
+        get() = tcpRemoteWrittenBytes + udpRemoteWrittenBytes
 
-internal const val NATIVE_TUN_STATS_VALUE_COUNT = 19
+    /** Live payload bytes received from remotes by all TUN flows; counted as [uplinkBytes]. */
+    val downlinkBytes: Long
+        get() = tcpRemoteReadBytes + udpRemoteReadBytes
+}
 
-/** Decodes the `XrayTunStats` carrier returned by the JNI bridge, in C ABI field order. */
+internal const val NATIVE_TUN_STATS_VALUE_COUNT = 21
+
+/** Decodes the `XrayTunStats` carrier returned by the JNI bridge; new values are appended. */
 internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
     check(values.size == NATIVE_TUN_STATS_VALUE_COUNT) {
         "unexpected native TUN stats size: ${values.size}"
@@ -1141,6 +1158,8 @@ internal fun tunStatsFromNative(values: LongArray): XrayTunStats {
         tcp443FirstByteEvents = values[16],
         tcp443FirstByteDurationMsTotal = values[17],
         tcp443FirstByteDurationMsMax = values[18],
+        tcpRemoteWrittenBytes = values[19],
+        tcpRemoteReadBytes = values[20],
     )
 }
 
