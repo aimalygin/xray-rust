@@ -571,6 +571,10 @@ const XHTTP_RECEIVE_SAMPLE_BYTES: u64 = 64 * 1024;
 /// Samples in a row in which a reader never found its stream empty before
 /// its window is held to its share.
 const XHTTP_BEHIND_SAMPLES: u32 = 4;
+/// And the least time since it last did, at least two round trips: a reader
+/// that drains what each round trip delivers keeps up, however large the
+/// bursts its endpoint hands it.
+const XHTTP_BEHIND_TIME: Duration = Duration::from_millis(10);
 
 static XHTTP_DOWNLOADS: TransferActivity = TransferActivity::new();
 
@@ -586,14 +590,17 @@ static XHTTP_DOWNLOADS: TransferActivity = TransferActivity::new();
 /// Every XHTTP H3 request owns a QUIC connection, and a reader slower than
 /// its server keeps the whole stream window filled: 32 downloads from
 /// Xray-core on Linux held 57 MiB in their 2 MiB windows. While `n`
-/// connections download, one whose reader has not found its stream empty for
-/// four samples offers at most an `n`th of the budget, never less than
-/// 128 KiB, until it keeps up again; then its allowance doubles at every
-/// sample. A reader that keeps up holds little, since its window is in
-/// flight: capping it would only limit a long path to the budget per round
-/// trip. A lone download still reaches its full auto-tuned window. The
-/// handshake still grants the configured window, as Xray's client does, and
-/// a smaller share applies once the reader has passed that credit.
+/// connections download, one whose reader has not found its stream empty
+/// for four samples and two round trips (10 ms at least) offers at most an
+/// `n`th of the budget, never less than 128 KiB, until it keeps up again;
+/// then its allowance doubles at every sample. A reader that keeps up holds
+/// little, since its window is in flight: capping it limited eight downloads
+/// over a 54 ms round trip to 1.4 instead of 3.5 Gbit/s. Counting samples
+/// alone was not enough there, because an endpoint hands over up to four
+/// datagrams of 64 coalesced segments at once. A lone download still reaches
+/// its full auto-tuned window. The handshake still grants the configured
+/// window, as Xray's client does, and a smaller share applies once the
+/// reader has passed that credit.
 struct XhttpReceiveWindow {
     class: MemoryClass,
     max_stream: u64,
@@ -620,6 +627,8 @@ struct ReceiveTuning {
     allowance: u64,
     /// Samples in a row in which the reader never found its stream empty.
     behind: u32,
+    /// The sample at which the reader last had found its stream empty.
+    caught_up_at: std::time::Instant,
     /// The stream window the connection offers: the auto-tuned one, held to
     /// the larger of the share and the allowance.
     offered: u64,
@@ -629,17 +638,28 @@ struct ReceiveTuning {
 }
 
 impl ReceiveTuning {
-    /// Takes the connection's new share, and whether its reader found the
-    /// stream empty since the last sample.
-    fn resample(&mut self, share: u64, caught_up: bool) {
+    /// Takes the connection's new share at `now`, and whether its reader
+    /// found the stream empty since the last sample; `rtt` is read only when
+    /// the reader may have fallen behind.
+    fn resample(
+        &mut self,
+        share: u64,
+        caught_up: bool,
+        now: std::time::Instant,
+        rtt: impl FnOnce() -> Duration,
+    ) {
         self.share = share;
         if caught_up {
             self.behind = 0;
+            self.caught_up_at = now;
             self.allowance = self.allowance.max(share).saturating_mul(2);
         } else {
             self.behind = self.behind.saturating_add(1);
-            if self.behind >= XHTTP_BEHIND_SAMPLES {
-                self.allowance = share;
+            if self.behind >= XHTTP_BEHIND_SAMPLES && self.allowance > share {
+                let since = now.saturating_duration_since(self.caught_up_at);
+                if since >= XHTTP_BEHIND_TIME && since >= rtt().saturating_mul(2) {
+                    self.allowance = share;
+                }
             }
         }
     }
@@ -677,6 +697,7 @@ impl XhttpReceiveWindow {
                 share: u64::MAX,
                 allowance: u64::MAX,
                 behind: 0,
+                caught_up_at: std::time::Instant::now(),
                 offered: initial_stream,
                 read: 0,
                 epoch_offset: 0,
@@ -699,10 +720,13 @@ impl XhttpReceiveWindow {
         // A read on another request of this connection may have taken the
         // sample first.
         if sample && self.unsampled.swap(0, Ordering::Relaxed) >= XHTTP_RECEIVE_SAMPLE_BYTES {
-            let downloading = XHTTP_DOWNLOADS.mark(&self.period, std::time::Instant::now());
+            let now = std::time::Instant::now();
+            let downloading = XHTTP_DOWNLOADS.mark(&self.period, now);
             tuning.resample(
                 xhttp_stream_receive_share(downloading, self.max_stream, self.class),
                 self.caught_up.swap(false, Ordering::Relaxed),
+                now,
+                || connection.rtt(),
             );
         }
         if self.tunes {
@@ -2003,22 +2027,26 @@ mod receive_window_tests {
         let window = H3QuicConfig::default().receive_window(MemoryClass::Standard);
         assert!(window.tunes);
         let mut tuning = lock_unpoisoned(&window.tuning);
-        // Until its reader falls behind, a connection offers its tuned window.
-        for _ in 1..XHTTP_BEHIND_SAMPLES {
-            tuning.resample(SHARE, false);
+        let start = tuning.caught_up_at;
+        let at = |millis| start + Duration::from_millis(millis);
+        let loopback = || Duration::from_millis(1);
+        // Until its reader falls behind, a connection offers its tuned window:
+        // four samples are not enough within the first 10 ms.
+        for millis in 1..=u64::from(XHTTP_BEHIND_SAMPLES) {
+            tuning.resample(SHARE, false, at(millis), loopback);
             assert_eq!(tuning.reoffer(), None);
         }
-        tuning.resample(SHARE, false);
+        tuning.resample(SHARE, false, at(12), loopback);
         assert_eq!(tuning.reoffer(), Some(SHARE));
         tuning.stream = 4 * MIB;
         assert_eq!(tuning.reoffer(), None);
         // Keeping up again doubles its allowance at every sample.
-        for offered in [MIB, 2 * MIB, 4 * MIB] {
-            tuning.resample(SHARE, true);
+        for (millis, offered) in [(13, MIB), (14, 2 * MIB), (15, 4 * MIB)] {
+            tuning.resample(SHARE, true, at(millis), loopback);
             assert_eq!(tuning.reoffer(), Some(offered));
         }
         // A sample behind is not yet falling behind.
-        tuning.resample(SHARE, false);
+        tuning.resample(SHARE, false, at(16), loopback);
         assert_eq!(tuning.reoffer(), None);
 
         // A constrained host's window never grows, but its share applies.
@@ -2026,8 +2054,9 @@ mod receive_window_tests {
         assert!(!window.tunes);
         let mut tuning = lock_unpoisoned(&window.tuning);
         let share = xhttp_stream_receive_share(32, window.max_stream, window.class);
-        for _ in 0..XHTTP_BEHIND_SAMPLES {
-            tuning.resample(share, false);
+        let start = tuning.caught_up_at;
+        for millis in 0..u64::from(XHTTP_BEHIND_SAMPLES) {
+            tuning.resample(share, false, start + Duration::from_millis(10 + millis), loopback);
         }
         assert_eq!(tuning.reoffer(), Some(XHTTP_MIN_STREAM_RECEIVE_WINDOW));
     }
@@ -2039,12 +2068,23 @@ mod receive_window_tests {
         tuning.stream = XRAY_MAX_STREAM_RECEIVE_WINDOW;
         assert_eq!(tuning.reoffer(), Some(XRAY_MAX_STREAM_RECEIVE_WINDOW));
         // Its window waits in the network, so a small share does not hold it,
-        // nor do bursts that keep it from catching up for a few samples.
-        let pattern = [true, false, false, false];
-        for caught_up in pattern.iter().cycle().take(100) {
-            tuning.resample(XHTTP_MIN_STREAM_RECEIVE_WINDOW, *caught_up);
-            assert_eq!(tuning.reoffer(), None);
+        // nor does a 100 ms round trip's burst that keeps it from catching up
+        // for many samples.
+        let start = tuning.caught_up_at;
+        let long_path = || Duration::from_millis(100);
+        for burst in 0..10 {
+            let begin = start + Duration::from_millis(150 * burst);
+            tuning.resample(XHTTP_MIN_STREAM_RECEIVE_WINDOW, true, begin, long_path);
+            for sample in 1..=40 {
+                let now = begin + Duration::from_millis(3 * sample);
+                tuning.resample(XHTTP_MIN_STREAM_RECEIVE_WINDOW, false, now, long_path);
+                assert_eq!(tuning.reoffer(), None);
+            }
         }
+        // Two round trips without catching up are falling behind.
+        let now = start + Duration::from_millis(150 * 9 + 201);
+        tuning.resample(XHTTP_MIN_STREAM_RECEIVE_WINDOW, false, now, long_path);
+        assert_eq!(tuning.reoffer(), Some(XHTTP_MIN_STREAM_RECEIVE_WINDOW));
     }
 }
 
