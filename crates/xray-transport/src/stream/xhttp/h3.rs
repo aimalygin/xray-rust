@@ -412,9 +412,10 @@ impl QuicSendWindow {
     }
 }
 
-/// Bytes the send windows of uploading XHTTP H3 connections share.
-const XHTTP_SEND_BUDGET: u64 = 8 * 1024 * 1024;
-/// A constrained host shares half as much and never grows past it.
+/// Bytes the send windows of uploading XHTTP H3 connections share: eight
+/// uploads keep the 2 MiB a lone one has.
+const XHTTP_SEND_BUDGET: u64 = 16 * 1024 * 1024;
+/// A constrained host shares a quarter as much and never grows past it.
 const CONSTRAINED_XHTTP_SEND_BUDGET: u64 = 4 * 1024 * 1024;
 /// No uploading connection's window falls below this; a new connection
 /// starts here until its first sample.
@@ -436,7 +437,8 @@ static XHTTP_UPLOADS: UploadActivity = UploadActivity::new();
 /// toward twice its congestion window up to an `n`th of 10 MB. A lone upload
 /// keeps the former 2 MiB to 10 MB range: a single fast loopback upload has
 /// less than 128 KiB in flight, but a window that small cost it 13–32% more
-/// CPU per byte in writer wakeups.
+/// CPU per byte in writer wakeups. Eight lossless uploads sharing 8 MiB
+/// cost 3–4% more CPU per byte than with 2 MiB each.
 struct XhttpSendWindow {
     window: AtomicU64,
     /// The activity period in which this connection last counted.
@@ -1738,12 +1740,14 @@ mod send_window_tests {
     #[test]
     fn concurrent_uploads_split_the_budget_and_the_ceiling() {
         let window = |cwnd, uploading| xhttp_send_window(cwnd, uploading, MemoryClass::Standard);
+        assert_eq!(window(1_500_000, 2), 3_000_000);
         assert_eq!(window(0, 4), 2 * MIB);
-        assert_eq!(window(0, 8), MIB);
-        assert_eq!(window(u64::MAX, 8), 1_250_000);
-        assert_eq!(window(0, 32), 256 * 1024);
-        assert_eq!(window(200_000, 32), 312_500);
-        assert_eq!(window(u64::MAX, 32), 312_500);
+        assert_eq!(window(u64::MAX, 4), 2_500_000);
+        assert_eq!(window(0, 8), 2 * MIB);
+        assert_eq!(window(u64::MAX, 8), 2 * MIB);
+        assert_eq!(window(0, 16), MIB);
+        assert_eq!(window(0, 32), 512 * 1024);
+        assert_eq!(window(u64::MAX, 32), 512 * 1024);
         assert_eq!(window(u64::MAX, 1000), XHTTP_MIN_SEND_WINDOW);
     }
 

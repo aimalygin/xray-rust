@@ -750,8 +750,8 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
 
     // Sixteen uploads, each with its own connection and a 400 ms round trip,
     // share the budget. The first to sample take up to 2 MiB before the rest
-    // count, and each narrows to its 512 KiB share at its next sample: about
-    // 11 MiB in all, where every connection used to keep 2 MiB.
+    // count, and each narrows to its 1 MiB share at its next sample: about
+    // 16 MiB in all, where every connection used to keep 2 MiB (32 MiB).
     const UPLOADS: usize = 16;
     let holder = tokio::spawn({
         let server = server.clone();
@@ -817,7 +817,7 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
         "{UPLOADS} slow-path uploads buffered only {total} bytes"
     );
     assert!(
-        total < 16 * 1024 * 1024,
+        total < 24 * 1024 * 1024,
         "{UPLOADS} slow-path uploads buffered {total} bytes"
     );
     drop(finished);
