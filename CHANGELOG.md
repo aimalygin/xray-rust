@@ -90,6 +90,8 @@ long-term supported release series.
   140.7, with 4–7% more throughput and less CPU per byte. Most of the rest is
   data waiting in the 32 full 2 MiB stream windows; see the
   [2026-10-31 report](docs/benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md).
+  On macOS, where readers keep up, the XHTTP H3 cases are unchanged
+  ([macOS re-check](docs/benchmarks/results/2026-10-31-xhttp-h3-macos-recheck/README.md)).
 - Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
   and the migration collector can pin a Go-verified reference by SHA-256.
   `scripts/run-migration-campaign.py` runs a whole before/after campaign: it

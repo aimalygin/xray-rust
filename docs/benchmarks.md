@@ -28,7 +28,11 @@ VM on the same Mac, against the same Xray-core v26.10.21, with their own
 scripts: the [2026-10-30 receive-buffer report](benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md)
 (`33d5d35c` against `9340a335`) and the
 [2026-10-31 download-memory report](benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md)
-(`94347de0` against `54c77a31`).
+(`94347de0` against `54c77a31`). The
+[2026-10-31 macOS re-check](benchmarks/results/2026-10-31-xhttp-h3-macos-recheck/README.md)
+reran the twelve `xhttp-h3` collector cases and the stream pairs with both
+changes, `bae0ed5b` against `57b5a655`; nothing moved beyond the run-to-run
+spread.
 
 `scripts/run-migration-benchmarks.py` compares two frozen Rust release builds.
 Both use one driver and the same local Xray-core v26.10.21 server, so this
