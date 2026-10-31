@@ -905,6 +905,84 @@ async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
     written - READ
 }
 
+/// A reader that keeps a server of small DATA frames waiting lets it write
+/// only about a stream window past the bytes read. h3 0.0.8 read one more
+/// QUIC chunk for every frame while the stream stayed full, buffering it
+/// outside flow control, and each such chunk let the server write that much
+/// further ahead.
+#[tokio::test]
+async fn small_data_frames_wait_in_the_stream_window() {
+    const WINDOW: u64 = 256 * 1024;
+    const READ: usize = 1024 * 1024;
+    const FRAME: usize = 700;
+
+    let (client_tls, server_addr, server) = server_with_options(None).await;
+    let client = connect_h3(H3ConnectConfig {
+        remote_addr: server_addr,
+        server_name: "localhost".to_owned(),
+        tls_config: client_tls,
+        socket_protector: None,
+        quic: H3QuicConfig {
+            initial_stream_receive_window: WINDOW,
+            max_stream_receive_window: Some(WINDOW),
+            initial_connection_receive_window: 2 * WINDOW,
+            max_connection_receive_window: Some(2 * WINDOW),
+            ..H3QuicConfig::default()
+        },
+    })
+    .await
+    .expect("connect HTTP/3 client");
+    let (written_tx, written_rx) = tokio::sync::oneshot::channel();
+    let handler = tokio::spawn({
+        let server = server.clone();
+        async move {
+            let (_, mut stream) = server.accept().await;
+            drain_request(&mut stream).await.expect("request FIN");
+            stream
+                .send_response(response(StatusCode::OK))
+                .await
+                .expect("headers");
+            let frame = Bytes::from(vec![0x5a; FRAME]);
+            let mut written = 0;
+            // A write that waits this long is out of credit.
+            while let Ok(sent) =
+                timeout(Duration::from_millis(500), stream.send_data(frame.clone())).await
+            {
+                sent.expect("DATA");
+                written += FRAME;
+            }
+            let _ = written_tx.send(written);
+            std::future::pending::<()>().await;
+        }
+    });
+
+    let mut body = client
+        .send_fixed(request(Method::GET, "/frames"), Bytes::new())
+        .await
+        .expect("response");
+    let mut downloaded = vec![0; 64 * 1024];
+    for _ in 0..READ / downloaded.len() {
+        timeout(DEADLINE, body.read_exact(&mut downloaded))
+            .await
+            .expect("read in time")
+            .expect("read");
+        // The server fills the window again while the reader waits.
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let written = timeout(Duration::from_secs(20), written_rx)
+        .await
+        .expect("server runs out of credit")
+        .expect("written bytes");
+    handler.abort();
+    // The response task and body may hold three 16 KiB batches past the
+    // reader; QUIC packets add a little more.
+    let ahead = written - READ;
+    assert!(
+        ahead <= WINDOW as usize + 128 * 1024,
+        "server wrote {ahead} bytes past a {WINDOW}-byte window"
+    );
+}
+
 /// Forwards UDP between one client and `server`, delaying each datagram.
 async fn udp_delay_relay(server: SocketAddr, delay: Duration) -> (SocketAddr, JoinHandle<()>) {
     let front = Arc::new(

@@ -7,7 +7,7 @@ trap 'rm -rf "$temporary"' EXIT
 
 # Include ignored files here: an upstream .gitignore can hide crate files on
 # the developer's filesystem even though a clean checkout will omit them.
-untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp)"
+untracked="$(git -C "$ROOT" ls-files --others -- vendor/blake3 vendor/h2 vendor/h3 vendor/h3-quinn vendor/quinn vendor/quinn-proto vendor/gotatun vendor/smoltcp)"
 if [[ -n "$untracked" ]]; then
   echo 'vendored source files are absent from the Git index:' >&2
   printf '%s\n' "$untracked" >&2
@@ -64,6 +64,19 @@ for path in Cargo.toml LICENSE README.md src; do
     "$temporary/h3-quinn-0.0.10/$path" \
     "$ROOT/vendor/h3-quinn/$path"
 done
+
+download_and_verify \
+  h3 0.0.8 \
+  10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be
+patch --batch --fuzz=0 -p1 \
+  -d "$temporary/h3-0.0.8" \
+  <"$ROOT/vendor/h3/XRAY-PATCH.diff"
+diff -ruN --exclude XRAY-PATCH.diff --exclude XRAY-PATCH.md \
+  "$temporary/h3-0.0.8" "$ROOT/vendor/h3"
+# The published tests module includes h3-quinn from upstream's repository
+# layout, which no release ships; run the crate's other unit tests.
+: >"$temporary/h3-0.0.8/src/tests/mod.rs"
+cargo test --locked --manifest-path "$temporary/h3-0.0.8/Cargo.toml" --lib
 
 patch --batch --fuzz=0 -p1 \
   -d "$temporary/quinn-proto-0.11.16" \
