@@ -1,7 +1,7 @@
 use std::fmt;
 use std::future::poll_fn;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -195,6 +195,8 @@ pub(super) struct Shared {
     rebind_driver: Mutex<Option<JoinHandle<()>>>,
     bind_addr: SocketAddr,
     carrier: super::HysteriaCarrierConfig,
+    // The hop port the current carrier sends to, so the next hop leaves it.
+    wire_port: AtomicU16,
     noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
     protector: Option<Arc<dyn crate::SocketProtector>>,
     pub limits: HysteriaLimits,
@@ -300,7 +302,9 @@ impl Shared {
         // On the captured runtime. Quinn retains at most the current and
         // previous carrier until an authenticated packet arrives on the new one.
         let result = if self.carrier.enabled() {
-            let wire_peer = self.carrier.next_peer(logical_peer);
+            let wire_peer = self
+                .carrier
+                .next_hop_peer(logical_peer, self.wire_port.load(Ordering::Acquire));
             let socket = super::carrier::wrap(
                 socket,
                 logical_peer,
@@ -309,7 +313,9 @@ impl Shared {
                 self.noise_state.clone(),
             )
             .map_err(|_| HysteriaError::Connect)?;
-            endpoint.rebind_abstract(socket)
+            endpoint
+                .rebind_abstract(socket)
+                .map(|()| self.wire_port.store(wire_peer.port(), Ordering::Release))
         } else {
             #[cfg(target_os = "macos")]
             {
@@ -397,7 +403,7 @@ impl HysteriaClient {
             .as_ref()
             .filter(|noise| !noise.items.is_empty())
             .map(|_| Arc::new(crate::udp_noise::UdpNoiseState::default()));
-        let (endpoint, connection, _) = connect_quic_transport_with_datagrams(
+        let (endpoint, connection, _, wire_peer) = connect_quic_transport_with_datagrams(
             H3ConnectConfig {
                 remote_addr: config.remote_addr,
                 server_name: config.tls.server_name.clone(),
@@ -482,6 +488,7 @@ impl HysteriaClient {
             rebind_driver: Mutex::new(None),
             bind_addr,
             carrier: config.carrier.clone(),
+            wire_port: AtomicU16::new(wire_peer.port()),
             noise_state,
             protector: tls.socket_protector_arc(),
             limits: config.limits,

@@ -10,6 +10,19 @@ long-term supported release series.
 
 ## Unreleased
 
+- XHTTP over HTTP/3 (exact `h3` ALPN) now hops its UDP carrier, accepting the
+  `finalmask.udp` udphop mask and the legacy `quicParams.udpHop`, as Xray-core
+  does for any UDP transport. Previously the mask failed to parse and the
+  legacy form failed when the transport was built. The first Initial already
+  uses a hop port; each interval moves the connection to a fresh protected
+  socket while QUIC migrates the path, the timer starts with the connection and
+  stops with it, and a failed hop keeps the current path. Scheduled hops, for
+  Hysteria as well, now always change the port: Xray draws with replacement,
+  so with two ports half of its hops stay put. `H3Error::UnsupportedUdpHop` is
+  replaced by `InvalidUdpHop` for out-of-range policies. The legacy `udpHop`
+  warning points only QUIC carriers at the mask and tells others it has no
+  effect.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a

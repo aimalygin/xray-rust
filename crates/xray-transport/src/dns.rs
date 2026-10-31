@@ -972,7 +972,7 @@ pub async fn exchange_dns_quic_candidates(
             socket_protector: socket_protector.clone(),
             quic: crate::stream::H3QuicConfig::default(),
         };
-        let (endpoint, connection, _) =
+        let (endpoint, connection, _, _) =
             match crate::stream::connect_quic_transport(config, b"doq").await {
                 Ok(connected) => connected,
                 Err(error) => {

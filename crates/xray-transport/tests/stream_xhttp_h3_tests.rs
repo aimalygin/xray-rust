@@ -1801,6 +1801,139 @@ impl SocketProtector for RecordingProtector {
     }
 }
 
+/// A server-side UDP port redirect: each client source gets its own upstream
+/// socket, so the server sees a real QUIC path migration on every hop.
+struct HopRelay {
+    address: SocketAddr,
+    sources: Arc<AtomicUsize>,
+    task: JoinHandle<()>,
+}
+
+impl HopRelay {
+    async fn start(server: SocketAddr) -> Self {
+        let front = Arc::new(
+            tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                .await
+                .unwrap(),
+        );
+        let address = front.local_addr().unwrap();
+        let sources = Arc::new(AtomicUsize::new(0));
+        let seen = sources.clone();
+        let task = tokio::spawn(async move {
+            let mut paths: std::collections::HashMap<SocketAddr, Arc<tokio::net::UdpSocket>> =
+                std::collections::HashMap::new();
+            let mut buffer = [0; 65535];
+            loop {
+                let Ok((n, client)) = front.recv_from(&mut buffer).await else {
+                    return;
+                };
+                if let std::collections::hash_map::Entry::Vacant(path) = paths.entry(client) {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    let upstream = Arc::new(
+                        tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+                            .await
+                            .unwrap(),
+                    );
+                    upstream.connect(server).await.unwrap();
+                    let (source, output) = (upstream.clone(), front.clone());
+                    tokio::spawn(async move {
+                        let mut data = [0; 65535];
+                        while let Ok(n) = source.recv(&mut data).await {
+                            let _ = output.send_to(&data[..n], client).await;
+                        }
+                    });
+                    path.insert(upstream);
+                }
+                let _ = paths[&client].send(&buffer[..n]).await;
+            }
+        });
+        Self {
+            address,
+            sources,
+            task,
+        }
+    }
+}
+
+impl Drop for HopRelay {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+#[tokio::test]
+async fn xhttp_h3_hops_to_a_different_port_each_interval_on_one_connection() {
+    timeout(Duration::from_secs(40), async {
+        let (client_tls, server_addr, server) = server_with_options(None).await;
+        let first = HopRelay::start(server_addr).await;
+        let second = HopRelay::start(server_addr).await;
+        // Nothing listens on the nominal port: even the first Initial must use
+        // a hop port.
+        let nominal = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let protector = Arc::new(RecordingProtector::default());
+        let protector_dyn: Arc<dyn SocketProtector> = protector.clone();
+        let client = connect_h3(H3ConnectConfig {
+            remote_addr: nominal,
+            server_name: "localhost".to_owned(),
+            tls_config: client_tls,
+            socket_protector: Some(protector_dyn),
+            quic: H3QuicConfig {
+                udp_hop: H3UdpHopConfig {
+                    ports: vec![first.address.port(), second.address.port()],
+                    interval_min: Duration::from_secs(5),
+                    interval_max: Duration::from_secs(5),
+                },
+                ..H3QuicConfig::default()
+            },
+        })
+        .await
+        .expect("connect through a hop port");
+
+        for round in 0..3_u8 {
+            if round > 0 {
+                let before = client.local_addr().unwrap();
+                timeout(Duration::from_secs(8), async {
+                    while client.local_addr().unwrap() == before {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                })
+                .await
+                .expect("the timer moves the carrier to a fresh socket");
+            }
+            let handler = tokio::spawn({
+                let server = server.clone();
+                async move { serve_clean_exchange(&server).await }
+            });
+            let payload = vec![round; 4096];
+            let mut body = client
+                .send_fixed(request(Method::POST, "/hop"), Bytes::from(payload.clone()))
+                .await
+                .expect("request survives the hop");
+            body.read_to_end(&mut Vec::new())
+                .await
+                .expect("response body");
+            assert_eq!(handler.await.unwrap().2, payload);
+            assert!(client.is_live());
+        }
+
+        // Every hop changed the port, so the relays alternated from a random
+        // first port: three carrier sockets, each protected before use, over
+        // one QUIC connection.
+        let mut sources = [
+            first.sources.load(Ordering::SeqCst),
+            second.sources.load(Ordering::SeqCst),
+        ];
+        sources.sort_unstable();
+        assert_eq!(sources, [1, 2]);
+        assert_eq!(protector.calls.load(Ordering::SeqCst), 3);
+    })
+    .await
+    .expect("bounded UDP hop scenario");
+}
+
 #[tokio::test]
 async fn udp_socket_is_protected_before_quinn_takes_ownership() {
     let protector = Arc::new(RecordingProtector::default());
@@ -2054,9 +2187,17 @@ fn unsupported_quic_parity_modes_fail_closed() {
         interval_min: Duration::from_secs(5),
         interval_max: Duration::from_secs(10),
     };
+    assert!(config.diagnostics().unwrap().udp_hop);
+    config.udp_hop.interval_min = Duration::from_secs(4);
     assert!(matches!(
         config.diagnostics(),
-        Err(H3Error::UnsupportedUdpHop { port_count: 2, .. })
+        Err(H3Error::InvalidUdpHop { port_count: 2, .. })
+    ));
+    config.udp_hop.interval_min = Duration::from_secs(5);
+    config.udp_hop.ports.push(0);
+    assert!(matches!(
+        config.diagnostics(),
+        Err(H3Error::InvalidUdpHop { port_count: 3, .. })
     ));
 
     config.udp_hop = H3UdpHopConfig::default();
