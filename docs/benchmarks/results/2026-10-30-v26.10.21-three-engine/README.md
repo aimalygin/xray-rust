@@ -148,9 +148,11 @@ H3 uploads. On this host, with the same driver and Xray-core server, the
 [send-budget report](../2026-10-30-xhttp-h3-send-budget/README.md) measured
 these two scenarios at 87.7 and 78.2 MiB instead of 162.1 and 140.6, at the
 same throughput. That narrows the gap to Xray-core without closing it; the
-two rows above describe xray-rust before the change. The Linux receive-side
-fixes merged after it leave those values unchanged on this host
-([re-check](../2026-10-31-xhttp-h3-macos-recheck/README.md)).
+two rows above describe xray-rust before the change. The receive-buffer and
+h3 fixes merged after it leave those values unchanged on this host
+([re-check](../2026-10-31-xhttp-h3-macos-recheck/README.md)). The later
+receive budget was checked here only on the collector's 1- and 8-flow cases
+([receive-budget report](../2026-10-31-xhttp-h3-receive-budget/README.md)).
 
 ## XHTTP packet pressure
 

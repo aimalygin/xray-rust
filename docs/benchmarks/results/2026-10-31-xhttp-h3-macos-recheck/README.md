@@ -24,6 +24,9 @@ publishes. **Neither does.**
     ends at −0.01%, and the matching stream and TUN cases don't confirm it.
 - The macOS XHTTP H3 values in the send-budget report, the three-engine group
   and the performance-branch report need no new numbers.
+- The receive budget merged later (`95280e73`) was checked on this host only
+  on the collector's twelve cases, in the
+  [receive-budget report](../2026-10-31-xhttp-h3-receive-budget/README.md).
 
 | Build | Commit | Executable SHA-256 |
 | --- | --- | --- |
