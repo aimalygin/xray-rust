@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Match the routing `geoip:private` set to Xray-core's built-in private set
+  (`common/geodata/consts.go`), which the plaintext-server exemption already
+  used. The previous nine networks left out `0.0.0.0/8`, `198.18.0.0/15`, the
+  TEST-NETs, multicast and broadcast (`224.0.0.0/3`), `::` and `ff00::/8`, so a
+  `geoip:private` -> direct rule sent mDNS, SSDP and broadcast traffic through
+  the proxy; Xray-core, reading `geoip:private` from any common `geoip.dat`,
+  keeps it direct. DNS `expectedIPs`/`unexpectedIPs` still load
+  `geoip:private` from `geoip.dat`.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a

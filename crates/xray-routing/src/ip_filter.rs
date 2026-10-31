@@ -29,7 +29,7 @@ impl DnsIpFilter {
     /// Returns the number of source matcher entries supplied to the filter.
     ///
     /// `Private` counts as one source entry even though compilation expands it
-    /// into the nine Xray private-address networks. Inverting a matcher also
+    /// into the 18 Xray private-address networks. Inverting a matcher also
     /// does not change the source count.
     pub fn matcher_count(&self) -> usize {
         self.matcher_count
@@ -106,7 +106,7 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use super::*;
-    use crate::ip_range_set::Cidr;
+    use crate::ip_range_set::{Cidr, PRIVATE_NETWORKS};
 
     fn v4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(a, b, c, d))
@@ -142,7 +142,7 @@ mod tests {
         builder.custom().insert_private_networks(false);
         let private = builder.build();
         assert_eq!(private.matcher_count(), 1);
-        assert_eq!(private.compiled_range_count(), 9);
+        assert_eq!(private.compiled_range_count(), PRIVATE_NETWORKS.len());
         assert!(private.matches(v4(10, 1, 2, 3)));
         assert!(private.matches(v6([0xfd00, 0, 0, 0, 0, 0, 0, 1])));
         assert!(!private.matches(v4(8, 8, 8, 8)));
