@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- Android: `XrayNetworkChangeCoordinator` no longer mistakes a partial initial
+  callback burst for a migration. Until the network passed to `start` reports
+  or is lost, the control worker reads its current state and offers it as a
+  candidate, so another network reporting first neither requests rebind nor
+  moves a policy that keeps the previous carrier (#89).
+- Android: `XrayNetworkChangeCoordinator` works on API 24-25. Before Android O
+  `onAvailable` is not followed by capability or link-property callbacks, so
+  networks never became candidates and migrations were silently missed; the
+  coordinator now reads a network's current state once in `onAvailable` there.
+
 - Match the routing `geoip:private` set to Xray-core's built-in private set
   (`common/geodata/consts.go`), which the plaintext-server exemption already
   used. The previous nine networks left out `0.0.0.0/8`, `198.18.0.0/15`, the
