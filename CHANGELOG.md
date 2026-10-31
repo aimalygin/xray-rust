@@ -10,6 +10,17 @@ long-term supported release series.
 
 ## Unreleased
 
+- Treat an outbound `"proxySettings": null` as absent, as Xray-core does.
+  Next to `sockopt.dialerProxy` it was rejected as a combination, and alone it
+  was rejected as a non-object, so panel output with explicit null fields
+  failed to load.
+
+- `sockopt.dialerProxy` chains no longer depend on outbound order. An outbound
+  that chains to a freedom fragment handler gains its mask; listed before an
+  outbound that chains through it, it was then mistaken for a fragment handler
+  itself and rejected. Xray-core resolves the tags at dial time, so both orders
+  now parse to the same configuration.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a

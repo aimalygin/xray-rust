@@ -35,6 +35,34 @@ fn dialer_proxy_matches_legacy_and_rejects_conflicts() {
 }
 
 #[test]
+fn null_proxy_settings_is_absent_as_in_xray() {
+    // Xray decodes null into a nil *json.RawMessage (infra/conf/xray.go), so panel output with
+    // explicit null fields loads with or without dialerProxy.
+    let mut raw = json!({"outbounds":[
+        {"tag":"entry","protocol":"http","settings":{"address":"192.0.2.10","port":8080},
+        "proxySettings":null,"streamSettings":{"sockopt":{"dialerProxy":"exit"}}},
+        {"tag":"exit","protocol":"freedom"}
+    ]});
+    let parsed = parse_xray_json(&raw.to_string()).unwrap();
+    assert!(parsed.diagnostics.is_empty());
+    assert_eq!(
+        parsed.config.outbounds[0]
+            .proxy_settings
+            .as_ref()
+            .unwrap()
+            .tag,
+        "exit"
+    );
+    raw["outbounds"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("streamSettings");
+    let parsed = parse_xray_json(&raw.to_string()).unwrap();
+    assert!(parsed.diagnostics.is_empty());
+    assert!(parsed.config.outbounds[0].proxy_settings.is_none());
+}
+
+#[test]
 fn udp_hop_mask_normalizes_supported_mode_and_rejects_unimplemented_modes() {
     let mut raw = hysteria();
     let settings = json!({"mode":"intervalRemote,intervalLocal","remotePorts":"443,8443-8444","interval":"10-5"});

@@ -44,6 +44,43 @@ fn finalmask_sequences_override_scalars_and_normalize_ranges() {
 }
 
 #[test]
+fn dialer_proxy_chain_through_a_fragment_user_does_not_depend_on_outbound_order() {
+    let legacy = legacy_profile();
+    let vless = legacy["outbounds"][0].clone();
+    let fragment = legacy["outbounds"][1].clone();
+    let mut entry = vless.clone();
+    entry["tag"] = json!("entry");
+    entry["streamSettings"]["sockopt"]["dialerProxy"] = json!("chain");
+    let chain = json!({"protocol":"freedom","tag":"chain",
+        "streamSettings":{"sockopt":{"dialerProxy":"fragment"}}});
+    // Xray resolves dialerProxy tags at dial time, so both orders are one config.
+    for outbounds in [
+        [entry.clone(), chain.clone(), fragment.clone()],
+        [chain.clone(), fragment.clone(), entry.clone()],
+    ] {
+        let parsed = parse_xray_json(&json!({ "outbounds": outbounds }).to_string())
+            .unwrap_or_else(|error| panic!("{outbounds:?}: {error:?}"));
+        let by_tag = |tag: &str| {
+            parsed
+                .config
+                .outbounds
+                .iter()
+                .find(|o| o.tag.as_deref() == Some(tag))
+                .unwrap()
+        };
+        assert_eq!(
+            by_tag("chain").stream.tcp_fragment,
+            by_tag("fragment").stream.tcp_fragment
+        );
+        assert!(by_tag("entry").stream.tcp_fragment.is_none());
+        assert_eq!(
+            by_tag("entry").proxy_settings.as_ref().unwrap().tag,
+            "chain"
+        );
+    }
+}
+
+#[test]
 fn legacy_dialer_proxy_normalizes_only_dedicated_fragment_handlers() {
     let config = legacy_profile();
     let parsed = parse_xray_json(&config.to_string()).unwrap();
