@@ -18,6 +18,11 @@ repeated samples, rejected attempts and charts:
 - the [2026-10-27/28 migration report](benchmarks/results/2026-10-27-v26.10.21-migration/README.md):
   before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration.
 
+The smaller [2026-10-30 XHTTP H3 send-budget report](benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)
+reran the collector's twelve `xhttp-h3` cases in five AB/BA pairs each, with
+interleaved stream-transport pairs, before (`a87a0292`) and after
+(`bae0ed5b`) the shared H3 send budget.
+
 `scripts/run-migration-benchmarks.py` compares two frozen Rust release builds.
 Both use one driver and the same local Xray-core v26.10.21 server, so this
 controls for server and driver changes. It does not measure old versus new Go
@@ -169,7 +174,10 @@ exact inputs and arguments; reviewed `summary.json` files are under
 `chart-inputs/`, and raw run directories stay outside Git. It has no
 machine-validated manifest: `scripts/check-benchmark-publication.py` pins the
 RC4 comparators. Its charts pass `--omit-sing-box-reality` and
-`--omit-sing-box-1000-flows`.
+`--omit-sing-box-1000-flows`. Its 32-flow XHTTP H3 upload and duplex rows
+predate the shared H3 send budget; the
+[send-budget report](benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)
+measured them again on the same host.
 
 Stable sing-box v1.14.4 still cannot use REALITY against a v26.10.21 server.
 Xray-core v26.9.8 dropped the automatic `minClientVer` floor, but its REALITY

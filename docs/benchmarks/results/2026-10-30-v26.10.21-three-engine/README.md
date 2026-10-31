@@ -139,8 +139,16 @@ In the RC4 group, on another host, xray-rust's one-flow gRPC download trailed
 Xray-core's (7,018 against 12,860 Mbps). With the branch's gRPC windows it
 leads, 19,347 against 13,339, at 12.8 against 95.6 MiB. The 32-flow XHTTP H3
 upload and duplex RSS, 163.3 and 145.5 MiB against Xray-core's 49.9 and 51.3,
-remains the visible gap: every XHTTP H3 request has its own QUIC connection
-with its own send buffer. RC4 measured 172.4 and 185.9 MiB.
+was the visible gap at `123b9d8d`: every XHTTP H3 request has its own QUIC
+connection, and each kept a send window of at least 2 MiB. RC4 measured 172.4
+and 185.9 MiB.
+
+**Later on the branch:** `bae0ed5b` shares a 16 MiB send budget between XHTTP
+H3 uploads. On this host, with the same driver and Xray-core server, the
+[send-budget report](../2026-10-30-xhttp-h3-send-budget/README.md) measured
+these two scenarios at 87.7 and 78.2 MiB instead of 162.1 and 140.6, at the
+same throughput. That narrows the gap to Xray-core without closing it; the
+two rows above describe xray-rust before the change.
 
 ## XHTTP packet pressure
 

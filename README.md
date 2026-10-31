@@ -31,7 +31,10 @@ TUN cost 9.5% more CPU. The report explains each cost and keeps every repeat
 and rejected attempt; 131/156 bulk cases change throughput by at most 5%. This
 is a Rust before/after comparison; the earlier
 [v26.10.21 migration comparison](docs/benchmarks/results/2026-10-27-v26.10.21-migration/README.md)
-remains with its erratum.
+remains with its erratum. A later change on the branch shares one send budget
+between XHTTP H3 uploads: 32 parallel uploads now peak at 87.7 instead of
+162.1 MiB RSS and 32 duplex transfers at 78.2 instead of 140.6, at the same
+throughput ([send-budget report](docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)).
 
 ![Performance branch against main: median paired changes in throughput, CPU per GiB and peak footprint across all 156 bulk scenarios](docs/benchmarks/results/2026-10-30-perf-branch/bulk-changes.svg)
 
