@@ -1183,26 +1183,6 @@ async fn bridge_socks_udp_flow(
     };
 
     match outbound {
-        outbound @ (UdpOutbound::Trojan(_)
-        | UdpOutbound::Socks(_)
-        | UdpOutbound::Vmess(_)
-        | UdpOutbound::Shadowsocks2022(_)
-        | UdpOutbound::Hysteria(_)
-        | UdpOutbound::Wireguard(_)) => {
-            datagram::bridge(
-                dial_target,
-                client_visible_target,
-                outbound,
-                context,
-                from_client,
-                shutdown,
-                first_payload,
-                pending_open_permit,
-                connection,
-                connection_close,
-            )
-            .await
-        }
         UdpOutbound::Freedom => {
             if context.runtime_logger.is_enabled() {
                 let source = context.client_addr.to_string();
@@ -1226,7 +1206,7 @@ async fn bridge_socks_udp_flow(
             )
             .await;
         }
-        UdpOutbound::Vless(outbound) => {
+        UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(&dial_target) => {
             if context.runtime_logger.is_enabled() {
                 let source = context.client_addr.to_string();
                 crate::debug_log::log_access_accepted(
@@ -1249,6 +1229,23 @@ async fn bridge_socks_udp_flow(
                 connection_close,
             )
             .await;
+        }
+        // Trojan, SOCKS, VMess, Shadowsocks, Hysteria, WireGuard, and VLESS
+        // flows owned by its Mux pool share the datagram relay.
+        outbound => {
+            datagram::bridge(
+                dial_target,
+                client_visible_target,
+                outbound,
+                context,
+                from_client,
+                shutdown,
+                first_payload,
+                pending_open_permit,
+                connection,
+                connection_close,
+            )
+            .await
         }
     }
 }

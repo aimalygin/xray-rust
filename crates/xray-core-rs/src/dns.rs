@@ -218,38 +218,6 @@ impl RoutedDnsQueryTransport {
             .map_err(io::Error::other)?;
 
         match outbound {
-            outbound @ (UdpOutbound::Trojan(_)
-            | UdpOutbound::Socks(_)
-            | UdpOutbound::Vmess(_)
-            | UdpOutbound::Shadowsocks2022(_)
-            | UdpOutbound::Hysteria(_)
-            | UdpOutbound::Wireguard(_)) => {
-                if server_socket_has_nonzero_scope(server) {
-                    return Err(io::Error::other(
-                        "scoped IPv6 DNS target is unsupported by this outbound",
-                    ));
-                }
-                let session = crate::outbound::datagram::open(
-                    &outbound,
-                    &target,
-                    self.bootstrap_resolver.as_ref(),
-                    self.bootstrap_resolver.as_ref(),
-                    self.transport_dialer.as_ref(),
-                    [0; 8],
-                )
-                .await
-                .map_err(io::Error::other)?;
-                session
-                    .send(&target, query)
-                    .await
-                    .map_err(io::Error::other)?;
-                loop {
-                    let reply = session.recv().await.map_err(io::Error::other)?;
-                    if dns_response_matches_query(query, &reply.payload) {
-                        return Ok(reply.payload);
-                    }
-                }
-            }
             UdpOutbound::Freedom => {
                 let server = self.resolved_server(server).await?;
                 let _udp_exchange_permit = self.direct_executor.try_reserve_udp_exchange()?;
@@ -261,7 +229,7 @@ impl RoutedDnsQueryTransport {
                 )
                 .await
             }
-            UdpOutbound::Vless(outbound) => {
+            UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(&target) => {
                 if server_socket_has_nonzero_scope(server) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
@@ -293,6 +261,34 @@ impl RoutedDnsQueryTransport {
                     };
                     if dns_response_matches_query(query, response.as_ref()) {
                         return Ok(response.to_vec());
+                    }
+                }
+            }
+            // Connection-oriented outbounds, and VLESS flows its Mux pool owns.
+            outbound => {
+                if server_socket_has_nonzero_scope(server) {
+                    return Err(io::Error::other(
+                        "scoped IPv6 DNS target is unsupported by this outbound",
+                    ));
+                }
+                let session = crate::outbound::datagram::open(
+                    &outbound,
+                    &target,
+                    self.bootstrap_resolver.as_ref(),
+                    self.bootstrap_resolver.as_ref(),
+                    self.transport_dialer.as_ref(),
+                    [0; 8],
+                )
+                .await
+                .map_err(io::Error::other)?;
+                session
+                    .send(&target, query)
+                    .await
+                    .map_err(io::Error::other)?;
+                loop {
+                    let reply = session.recv().await.map_err(io::Error::other)?;
+                    if dns_response_matches_query(query, &reply.payload) {
+                        return Ok(reply.payload);
                     }
                 }
             }

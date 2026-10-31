@@ -294,6 +294,7 @@ struct VlessTcpOutboundPayload {
     carrier: StreamCarrier,
     user: VlessUser,
     encryption: Option<xray_vless_encryption::Client>,
+    mux: Option<mux::Runtime>,
 }
 
 #[derive(Debug, Clone)]
@@ -610,6 +611,58 @@ impl VlessTcpOutbound {
         validate_outbound_flow(self)
             .map(|flow| flow.uses_vision() && !flow.allows_udp443())
             .unwrap_or(false)
+    }
+
+    pub(crate) fn close(&self) {
+        if let Some(mux) = &self.payload.mux {
+            mux.close();
+        }
+    }
+
+    pub(crate) async fn join(&self) {
+        if let Some(mux) = &self.payload.mux {
+            mux.join().await;
+        }
+    }
+
+    fn mux_pool(&self, target: &Target) -> Result<Option<&mux::Pool>, CoreError> {
+        self.payload
+            .mux
+            .as_ref()
+            .map_or(Ok(None), |mux| mux.pool(target))
+    }
+
+    /// True when Xray's Mux layer rather than the VLESS UDP command owns this
+    /// UDP flow: a pooled XUDP child, or a `xudpProxyUDP443: reject` refusal.
+    /// Xray's outbound handler applies both before VLESS sees the flow, so the
+    /// Vision UDP/443 rule only covers flows that fall through to native UDP.
+    pub(crate) fn udp_uses_mux(&self, target: &Target) -> bool {
+        !matches!(self.mux_pool(target), Ok(None))
+    }
+
+    pub(crate) async fn open_mux_udp(
+        &self,
+        target: &Target,
+        resolver: &dyn DnsResolver,
+        dialer: &TransportDialer,
+        global_id: [u8; 8],
+    ) -> Result<mux::UdpSession, CoreError> {
+        if target.network != RoutingNetwork::Udp {
+            return Err(CoreError::UnsupportedOutboundNetwork);
+        }
+        let pool = self
+            .mux_pool(target)?
+            .ok_or(CoreError::UnsupportedOutboundNetwork)?;
+        let server = resolve_server_candidates(self.server(), resolver).await?;
+        let download = self.payload.carrier.resolve_download(resolver).await?;
+        let child = pool
+            .open_datagram(
+                target,
+                global_id,
+                open_vless_mux_parent(self, &server, &download, dialer),
+            )
+            .await?;
+        Ok(mux::UdpSession::new(child, target.clone()))
     }
 }
 
@@ -2874,6 +2927,14 @@ impl OutboundFactory {
         let cached = self.entry(node)?.vless.get_or_init(|| {
             build_vless_tcp_outbound(configured).map_err(CachedOutboundError::from_core_error)
         });
+        // Only a Mux pool owns sessions; other VLESS opens keep their
+        // existing behaviour after shutdown begins.
+        if configured.mux.is_some() && self.sessions_closed.load(Ordering::Acquire) {
+            if let Ok(outbound) = cached {
+                outbound.close();
+            }
+            return Err(CachedOutboundError::NoSupportedOutbound);
+        }
         match cached {
             Ok(outbound) => Ok(outbound.clone()),
             Err(error) => Err(error.clone()),
@@ -3020,6 +3081,9 @@ impl OutboundFactory {
     pub(crate) fn close_sessions(&self) {
         self.sessions_closed.store(true, Ordering::Release);
         for entry in &self.entries {
+            if let Some(Ok(outbound)) = entry.vless.get() {
+                outbound.close();
+            }
             if let Some(Ok(outbound)) = entry.trojan.get() {
                 outbound.close();
             }
@@ -3040,6 +3104,9 @@ impl OutboundFactory {
 
     pub(crate) async fn join_sessions(&self) {
         for entry in &self.entries {
+            if let Some(Ok(outbound)) = entry.vless.get() {
+                outbound.join().await;
+            }
             if let Some(Ok(outbound)) = entry.trojan.get() {
                 outbound.join().await;
             }
@@ -3091,7 +3158,8 @@ impl OutboundFactory {
         if outbound.mux.is_some()
             && !matches!(
                 outbound.settings,
-                OutboundSettings::Trojan(_)
+                OutboundSettings::Vless(_)
+                    | OutboundSettings::Trojan(_)
                     | OutboundSettings::Shadowsocks2022(_)
                     | OutboundSettings::Vmess(_)
             )
@@ -3165,7 +3233,8 @@ impl OutboundFactory {
         if outbound.mux.is_some()
             && !matches!(
                 outbound.settings,
-                OutboundSettings::Trojan(_)
+                OutboundSettings::Vless(_)
+                    | OutboundSettings::Trojan(_)
                     | OutboundSettings::Shadowsocks2022(_)
                     | OutboundSettings::Vmess(_)
             )
@@ -3226,7 +3295,8 @@ impl OutboundFactory {
         if configured.mux.is_some()
             && !matches!(
                 configured.settings,
-                OutboundSettings::Trojan(_)
+                OutboundSettings::Vless(_)
+                    | OutboundSettings::Trojan(_)
                     | OutboundSettings::Shadowsocks2022(_)
                     | OutboundSettings::Vmess(_)
             )
@@ -3402,11 +3472,24 @@ fn build_vless_tcp_outbound(outbound: &OutboundConfig) -> Result<VlessTcpOutboun
         user.encryption.is_none(),
         carrier::VLESS_PATHS,
     )?;
+    // Xray's VLESS inbound restricts a Vision account's Mux.Cool connection to
+    // UDP children and breaks the whole connection on a TCP child, so the
+    // parser's Vision rule is repeated for configs built without it.
+    if user.flow.is_some()
+        && outbound
+            .mux
+            .as_ref()
+            .is_some_and(|mux| mux.concurrency >= 0)
+    {
+        return Err(CoreError::UnsupportedOutboundFlow);
+    }
+    let mux = mux::Runtime::new(&outbound.mux, &outbound.stream.transport)?;
     Ok(VlessTcpOutbound {
         payload: Arc::new(VlessTcpOutboundPayload {
             carrier,
             user,
             encryption,
+            mux,
         }),
     })
 }
@@ -3758,6 +3841,18 @@ async fn open_vless_tcp_stream_with_resolved_server_and_dialer(
     transport_dialer: &TransportDialer,
 ) -> Result<BoxedTransportStream, CoreError> {
     let flow = validate_outbound_flow(outbound)?;
+    if target.network == RoutingNetwork::Tcp {
+        if let Some(pool) = outbound.mux_pool(target)? {
+            let parent = open_vless_mux_parent(
+                outbound,
+                resolved_server,
+                resolved_download,
+                transport_dialer,
+            );
+            // Boxed so pooling adds no state to every TCP open future.
+            return Ok(Box::new(Box::pin(pool.open(target, parent)).await?));
+        }
+    }
 
     let stream = outbound
         .payload
@@ -3844,19 +3939,71 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
         .carrier
         .resolve_download(dns_resolver)
         .await?;
+    let command = if uses_xudp {
+        VlessCommand::Mux
+    } else {
+        VlessCommand::Udp
+    };
+    let stream = open_vless_command_stream(
+        outbound,
+        flow,
+        command,
+        target,
+        &resolved_server,
+        &resolved_download,
+        transport_dialer,
+    )
+    .await?;
+    let framing = if uses_xudp {
+        VlessUdpFraming::Xudp
+    } else {
+        VlessUdpFraming::LengthPrefixed
+    };
+    Ok((stream, framing))
+}
+
+/// Opens one Mux.Cool parent: the VLESS Mux command to `v1.mux.cool:9527`,
+/// as Xray's `DialingWorkerFactory` hands it to the VLESS outbound. Vision
+/// keeps its padding layer; the pinned server then admits only UDP children.
+async fn open_vless_mux_parent(
+    outbound: &VlessTcpOutbound,
+    resolved_server: &[SocketAddr],
+    resolved_download: &[SocketAddr],
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
+    let flow = validate_outbound_flow(outbound)?;
+    open_vless_command_stream(
+        outbound,
+        flow,
+        VlessCommand::Mux,
+        &mux::target(),
+        resolved_server,
+        resolved_download,
+        transport_dialer,
+    )
+    .await
+}
+
+/// Writes the request header for a UDP or Mux command. Unlike a TCP request,
+/// Vision queues no empty padding frame: an XUDP or Mux frame always follows.
+async fn open_vless_command_stream(
+    outbound: &VlessTcpOutbound,
+    flow: VisionFlow,
+    command: VlessCommand,
+    target: &Target,
+    resolved_server: &[SocketAddr],
+    resolved_download: &[SocketAddr],
+    transport_dialer: &TransportDialer,
+) -> Result<BoxedTransportStream, CoreError> {
     let stream = outbound
         .payload
         .carrier
-        .open(&resolved_server, &resolved_download, transport_dialer)
+        .open(resolved_server, resolved_download, transport_dialer)
         .await?;
     let mut stream = encryption::wrap(stream, outbound.encryption(), flow.uses_vision()).await?;
     let request = VlessRequest {
         user_id: outbound.user().id,
-        command: if uses_xudp {
-            VlessCommand::Mux
-        } else {
-            VlessCommand::Udp
-        },
+        command,
         target: target.clone(),
         flow: flow.request_flow(),
     };
@@ -3864,33 +4011,21 @@ pub(crate) async fn open_vless_udp_stream_with_resolver_dialer_and_options(
 
     stream.write_all(&header).await?;
 
-    if uses_vision {
+    if flow.uses_vision() {
         let stream = VlessResponseStream::new(VisionTransportStream::new(stream));
-        return Ok((
-            Box::new(VisionOutboundStream::new(VisionStream::new(
-                stream,
-                *outbound.user().id.as_bytes(),
-                DEFAULT_VISION_SEED,
-            ))),
-            VlessUdpFraming::Xudp,
-        ));
+        return Ok(Box::new(VisionOutboundStream::new(VisionStream::new(
+            stream,
+            *outbound.user().id.as_bytes(),
+            DEFAULT_VISION_SEED,
+        ))));
     }
 
     // Without Vision there is no direct mode, so the transport never needs
     // record-aligned reads.
     stream.release_record_alignment();
-    let stream = VlessResponseStream::new(stream);
-    if uses_xudp {
-        return Ok((
-            Box::new(VlessOutboundStream::new(stream)),
-            VlessUdpFraming::Xudp,
-        ));
-    }
-
-    Ok((
-        Box::new(VlessOutboundStream::new(stream)),
-        VlessUdpFraming::LengthPrefixed,
-    ))
+    Ok(Box::new(VlessOutboundStream::new(
+        VlessResponseStream::new(stream),
+    )))
 }
 
 fn should_use_xudp_for_udp_target(target: &Target) -> bool {
@@ -5141,6 +5276,7 @@ mod tests {
             .expect_lookup("proxy.example", 443);
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7872,6 +8008,7 @@ mod tests {
     async fn open_vless_tcp_stream_rejects_outbound_with_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7908,6 +8045,7 @@ mod tests {
     async fn open_vless_tcp_stream_uses_default_live_reality_transport_for_vision_flow() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -7962,6 +8100,7 @@ mod tests {
         };
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -8047,6 +8186,7 @@ mod tests {
     async fn open_vless_udp_stream_rejects_udp443_for_regular_vision_flow_before_connecting() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -8108,6 +8248,7 @@ mod tests {
     async fn open_vless_udp_stream_allows_udp443_flow_and_sends_vision_addons() {
         let outbound = VlessTcpOutbound {
             payload: Arc::new(VlessTcpOutboundPayload {
+                mux: None,
                 user: VlessUser {
                     id: Uuid::parse_str("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap(),
                     encryption: Default::default(),
@@ -8340,6 +8481,195 @@ mod tests {
                 "{network}"
             );
         }
+    }
+
+    fn vless_mux(
+        concurrency: i16,
+        xudp_concurrency: i16,
+        udp443: xray_config::MuxUdp443,
+    ) -> Option<xray_config::MuxSettings> {
+        Some(xray_config::MuxSettings {
+            concurrency,
+            xudp_concurrency,
+            udp443,
+        })
+    }
+
+    async fn read_mux_frames(peer: &mut tokio::io::DuplexStream, count: usize) -> Vec<Vec<u8>> {
+        let mut bytes = Vec::new();
+        let mut frames = Vec::new();
+        while frames.len() < count {
+            if let Some((_, n)) = xray_proxy::mux::decode(&bytes).unwrap() {
+                frames.push(bytes.drain(..n).collect());
+                continue;
+            }
+            let mut chunk = [0; 512];
+            let n = peer.read(&mut chunk).await.unwrap();
+            assert_ne!(n, 0, "Mux parent closed early");
+            bytes.extend_from_slice(&chunk[..n]);
+        }
+        frames
+    }
+
+    #[tokio::test]
+    async fn vless_mux_shares_one_mux_command_parent_for_tcp_and_xudp_children() {
+        let mut config = direct_selection_vless("proxy");
+        config.mux = vless_mux(4, 0, xray_config::MuxUdp443::Reject);
+        let outbound = build_vless_tcp_outbound(&config).unwrap();
+        let connector = Arc::new(RecordingTcpConnector::default());
+        let dialer = TransportDialer::system()
+            .unwrap()
+            .with_resolved_tcp_connector(connector.clone());
+        let tcp = |port| {
+            Target::new(
+                RoutingTargetAddr::Domain("destination.example".to_owned()),
+                port,
+                RoutingNetwork::Tcp,
+            )
+        };
+        let udp = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 53))),
+            5353,
+            RoutingNetwork::Udp,
+        );
+        let mut children = Vec::new();
+        for port in [8443, 8444] {
+            children.push(
+                open_vless_tcp_stream_with_resolver_and_dialer(
+                    &outbound,
+                    &tcp(port),
+                    &SystemDnsResolver,
+                    &dialer,
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        assert!(outbound.udp_uses_mux(&udp));
+        let datagrams = outbound
+            .open_mux_udp(&udp, &SystemDnsResolver, &dialer, [9; 8])
+            .await
+            .unwrap();
+        datagrams.send(&udp, b"query").await.unwrap();
+        // Xray's xudpConcurrency 0 shares the TCP pool: one carrier dial.
+        assert_eq!(connector.calls.load(Ordering::SeqCst), 1);
+
+        let mut peer = connector.peers.lock().unwrap().pop().unwrap();
+        let header = encode_request_header(&VlessRequest {
+            user_id: outbound.user().id,
+            command: VlessCommand::Mux,
+            target: mux::target(),
+            flow: None,
+        })
+        .unwrap();
+        let mut received = vec![0; header.len()];
+        peer.read_exact(&mut received).await.unwrap();
+        assert_eq!(received, header);
+        let frames = read_mux_frames(&mut peer, 3).await;
+        let frames = frames
+            .iter()
+            .map(|bytes| xray_proxy::mux::decode(bytes).unwrap().unwrap().0)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            frames.iter().map(|f| f.session_id).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert!(frames
+            .iter()
+            .all(|f| f.status == xray_proxy::mux::Status::New));
+        assert_eq!(frames[0].target.as_ref(), Some(&tcp(8443)));
+        assert_eq!(frames[1].target.as_ref(), Some(&tcp(8444)));
+        assert_eq!(frames[2].target.as_ref(), Some(&udp));
+        assert_eq!(frames[2].payload, Some(&b"query"[..]));
+        assert!(frames[2].global_id.is_some_and(|id| id != [0; 8]));
+
+        outbound.close();
+        outbound.join().await;
+        assert!(children[0].write_all(b"closed").await.is_err());
+    }
+
+    #[test]
+    fn vless_mux_udp_dispatch_follows_xray_outbound_handler_order() {
+        use xray_config::MuxUdp443::{Allow, Reject, Skip};
+        let quic = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            443,
+            RoutingNetwork::Udp,
+        );
+        let dns = Target::new(quic.addr.clone(), 53, RoutingNetwork::Udp);
+        for (tcp, xudp, policy, quic_mux, dns_mux) in [
+            // xudpProxyUDP443 is checked before either pool, as in
+            // app/proxyman/outbound/handler.go; reject is a Mux-layer refusal.
+            (4, 0, Reject, true, true),
+            (4, 0, Skip, false, true),
+            (4, 0, Allow, true, true),
+            // Negative xudpConcurrency, or no pool at all, uses native UDP.
+            (4, -1, Allow, false, false),
+            (-1, 0, Allow, false, false),
+            (-1, 4, Allow, true, true),
+        ] {
+            let mut config = direct_selection_vless("proxy");
+            config.mux = vless_mux(tcp, xudp, policy);
+            let outbound = build_vless_tcp_outbound(&config).unwrap();
+            assert_eq!(
+                outbound.udp_uses_mux(&quic),
+                quic_mux,
+                "{tcp} {xudp} {policy:?}"
+            );
+            assert_eq!(
+                outbound.udp_uses_mux(&dns),
+                dns_mux,
+                "{tcp} {xudp} {policy:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn vless_vision_mux_admits_only_the_udp_pool() {
+        let mut config = direct_selection_vless("proxy");
+        config.stream.security = StreamSecurity::Reality(RealitySettings {
+            server_name: "server.example".to_owned(),
+            fingerprint: "chrome".to_owned(),
+            public_key: [7; 32],
+            short_id: RealityShortId::try_from_slice(&[1, 2, 3, 4]).unwrap(),
+            spider_x: "/".to_owned(),
+            mldsa65_verify: None,
+        });
+        let OutboundSettings::Vless(settings) = &mut config.settings else {
+            unreachable!()
+        };
+        settings.users[0].flow = Some(VISION_UDP443_FLOW.to_owned());
+        for tcp in [8, 1] {
+            config.mux = vless_mux(tcp, 4, xray_config::MuxUdp443::Allow);
+            assert!(matches!(
+                build_vless_tcp_outbound(&config),
+                Err(CoreError::UnsupportedOutboundFlow)
+            ));
+        }
+        config.mux = vless_mux(-1, 4, xray_config::MuxUdp443::Allow);
+        let outbound = build_vless_tcp_outbound(&config).unwrap();
+        // Vision still refuses native UDP/443 only when the flow forbids it;
+        // a pooled XUDP child is outside VLESS's UDP command entirely.
+        let quic = Target::new(
+            RoutingTargetAddr::Ip(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))),
+            443,
+            RoutingNetwork::Udp,
+        );
+        assert!(outbound.udp_uses_mux(&quic));
+        assert!(outbound
+            .mux_pool(&Target::new(quic.addr.clone(), 443, RoutingNetwork::Tcp))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn vless_mux_over_xhttp_reports_a_cacheable_error() {
+        let mut config = direct_selection_vless("proxy");
+        config.mux = vless_mux(8, 0, xray_config::MuxUdp443::Reject);
+        let error = mux::Runtime::new(&config.mux, &StreamTransport::Xhttp(Default::default()))
+            .unwrap_err();
+        assert!(matches!(error, CoreError::InvalidXhttpConfiguration(_)));
+        let _ = CachedOutboundError::from_core_error(error);
     }
 }
 

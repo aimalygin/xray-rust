@@ -56,12 +56,12 @@ impl Runtime {
         }
         // The pinned Xray XHTTP inbound only permits UDP Mux children.
         // TCP already shares the carrier's HTTP/2 or HTTP/3 connection.
+        // A cacheable error keeps a config built without the parser from
+        // reaching the router's non-cacheable-error panic.
         if options.concurrency > 0 && matches!(transport, StreamTransport::Xhttp(_)) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "XHTTP requires mux.concurrency < 0; use xudpConcurrency for UDP pooling",
-            )
-            .into());
+            return Err(CoreError::InvalidXhttpConfiguration(
+                "XHTTP requires mux.concurrency < 0; use xudpConcurrency for UDP pooling".into(),
+            ));
         }
         Ok(Some(Self {
             tcp: (options.concurrency > 0).then(|| Pool::new(options.concurrency as u16)),

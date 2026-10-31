@@ -4454,7 +4454,7 @@ async fn bridge_udp_flow(
 
     if dial_target.port == 443 {
         if let UdpOutbound::Vless(outbound) = &outbound {
-            if outbound.blocks_udp443() {
+            if outbound.blocks_udp443() && !outbound.udp_uses_mux(&dial_target) {
                 if let Some(reply) = icmp_port_unreachable_reply(&first_packet) {
                     let _ = context.tun.push_outbound(reply).await;
                 }
@@ -4483,26 +4483,6 @@ async fn bridge_udp_flow(
     }
 
     match outbound {
-        outbound @ (UdpOutbound::Trojan(_)
-        | UdpOutbound::Socks(_)
-        | UdpOutbound::Vmess(_)
-        | UdpOutbound::Shadowsocks2022(_)
-        | UdpOutbound::Hysteria(_)
-        | UdpOutbound::Wireguard(_)) => {
-            datagram::bridge(
-                key,
-                generation,
-                dial_target,
-                outbound,
-                context,
-                from_stack,
-                shutdown,
-                first_payload,
-                connection,
-                connection_close,
-            )
-            .await
-        }
         UdpOutbound::Freedom => {
             bridge_udp_freedom_flow(
                 key,
@@ -4518,7 +4498,7 @@ async fn bridge_udp_flow(
             )
             .await;
         }
-        UdpOutbound::Vless(outbound) => {
+        UdpOutbound::Vless(outbound) if !outbound.udp_uses_mux(&dial_target) => {
             bridge_udp_vless_flow(
                 key,
                 generation,
@@ -4533,6 +4513,23 @@ async fn bridge_udp_flow(
                 connection_close,
             )
             .await;
+        }
+        // Trojan, SOCKS, VMess, Shadowsocks, Hysteria, WireGuard, and VLESS
+        // flows owned by its Mux pool share the datagram relay.
+        outbound => {
+            datagram::bridge(
+                key,
+                generation,
+                dial_target,
+                outbound,
+                context,
+                from_stack,
+                shutdown,
+                first_payload,
+                connection,
+                connection_close,
+            )
+            .await
         }
     }
 }
