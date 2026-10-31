@@ -90,6 +90,26 @@ long-term supported release series.
   140.7, with 4–7% more throughput and less CPU per byte. Most of the rest is
   data waiting in the 32 full 2 MiB stream windows; see the
   [2026-10-31 report](docs/benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md).
+- Share one QUIC receive budget between concurrent XHTTP H3 downloads, and
+  hold a download to it only while its reader falls behind. Every XHTTP H3
+  request owns a QUIC connection, and a reader slower than its server keeps
+  the whole 2 MiB stream window full: 32 downloads from Xray-core v26.10.21
+  in a Linux container held 57 MiB that way. A download whose reader has not
+  found its stream empty for four 64 KiB samples and two round trips now
+  grants at most its share of 16 MiB, or 4 MiB with the mobile and
+  low-memory profiles, split between the connections that downloaded in the
+  last one to two seconds. It never grants less than 128 KiB or than its
+  reader took in those round trips. A lone download keeps its full auto-tuned
+  window, and the 2 MiB handshake windows are unchanged. 32 downloads now
+  peak at 50.0 instead of 96.7 MiB RSS, 32 duplex transfers at 63.6 instead
+  of 110.6, and with the mobile profile 32 downloads at 43.5 instead of 96.3,
+  at equal or higher throughput. One- and eight-flow cases, the macOS
+  collector's `xhttp-h3` cases and eight downloads over 54 and 114 ms round
+  trips stay within run-to-run spread; holding every download to its share
+  would have cut those eight downloads at 54 ms from 3.5 to 1.4 Gbit/s.
+  Vendored quinn-proto's `set_stream_receive_window` now also lowers a
+  window, without withdrawing credit already sent; see the
+  [2026-10-31 receive-budget report](docs/benchmarks/results/2026-10-31-xhttp-h3-receive-budget/README.md).
 - Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
   and the migration collector can pin a Go-verified reference by SHA-256.
   `scripts/run-migration-campaign.py` runs a whole before/after campaign: it

@@ -42,6 +42,10 @@ the same throughput
 A vendored h3 no longer buffers downloads outside QUIC flow control: 32
 downloads now peak at 95.8 instead of 112.5 MiB, and the longer they run
 the more that saves ([download-memory report](docs/benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md)).
+Concurrent downloads now share a receive budget that holds only readers
+that fall behind: 32 downloads peak at 50.0 instead of 96.7 MiB and 32
+duplex transfers at 63.6 instead of 110.6, while one-, eight-flow and
+long-path downloads keep their speed ([receive-budget report](docs/benchmarks/results/2026-10-31-xhttp-h3-receive-budget/README.md)).
 
 ![Performance branch against main: median paired changes in throughput, CPU per GiB and peak footprint across all 156 bulk scenarios](docs/benchmarks/results/2026-10-30-perf-branch/bulk-changes.svg)
 
