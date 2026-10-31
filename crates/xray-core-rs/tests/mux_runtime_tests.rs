@@ -12,7 +12,7 @@ use xray_routing::{Network, Target, TargetAddr};
 #[tokio::test]
 #[ignore = "requires pinned Xray; run scripts/check-mux-interop.sh"]
 async fn mux_runtime_selected_protocols_share_tcp_udp_and_close_children() {
-    for protocol in ["trojan", "shadowsocks", "vmess"] {
+    for protocol in ["vless", "trojan", "shadowsocks", "vmess"] {
         for carrier in ["raw", "ws", "httpupgrade", "grpc", "xhttp"] {
             for separate_udp in [false, true] {
                 if carrier == "xhttp" && !separate_udp {
@@ -20,6 +20,7 @@ async fn mux_runtime_selected_protocols_share_tcp_udp_and_close_children() {
                 }
                 eprintln!("Mux {protocol}/{carrier}, separate UDP pool: {separate_udp}");
                 let server = match protocol {
+                    "vless" => ReferenceServer::start_vless(carrier, "", false).await,
                     "trojan" => ReferenceServer::start(carrier).await,
                     "shadowsocks" => {
                         ReferenceServer::start_shadowsocks(
@@ -182,5 +183,99 @@ async fn mux_runtime_ipv6_and_domain_datagrams_preserve_destination_identity() {
             .await
             .unwrap();
         }
+    }
+}
+
+/// Vision and VLESS encryption against the pinned VLESS inbound. A Vision
+/// account's Mux connection admits only UDP children there, so Vision pools
+/// XUDP while TCP keeps one Vision connection per stream. Encryption without
+/// a flow pools both, and Vision under encryption also works off raw TLS.
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-mux-interop.sh"]
+async fn mux_runtime_vless_vision_and_encryption_follow_the_pinned_inbound() {
+    for (carrier, flow, encrypted) in [
+        ("raw", "xtls-rprx-vision", false),
+        ("raw", "xtls-rprx-vision-udp443", false),
+        ("raw", "", true),
+        ("ws", "xtls-rprx-vision", true),
+        ("grpc", "xtls-rprx-vision", true),
+    ] {
+        eprintln!("Mux VLESS {carrier}, flow {flow:?}, encrypted: {encrypted}");
+        let vision = !flow.is_empty();
+        let server = ReferenceServer::start_vless(carrier, flow, encrypted).await;
+        timeout(DEADLINE, async {
+            let (tcp_addr, _tcp) = tcp_echo().await;
+            let (udp_addr, _udp) = udp_echo().await;
+            let (second_udp_addr, _second_udp) = udp_echo().await;
+            let (_, protector, bootstrap, dialer) = server.core();
+            let mut profile = server.profile();
+            profile["outbounds"][0]["mux"] = serde_json::json!({
+                "enabled": true,
+                "concurrency": if vision { -1 } else { 4 },
+                "xudpConcurrency": 4,
+                "xudpProxyUDP443": "allow",
+            });
+            let config = xray_config::parse_xray_json(&profile.to_string())
+                .unwrap()
+                .config;
+            let mut core = Core::with_runtime_dependencies(config, bootstrap, dialer).unwrap();
+            core.start().await.unwrap();
+            let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+            let mut streams = Vec::new();
+            for index in 0..3 {
+                let (mut stream, _) = socks(proxy, 1, "localhost", tcp_addr.port()).await;
+                echo(&mut stream, &vec![index; 8192]).await;
+                streams.push(stream);
+            }
+            let tcp_dials = protector.0.load(Ordering::SeqCst);
+            let (_control, relay) = socks(proxy, 3, "0.0.0.0", 0).await;
+            let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            // Two destinations are two UDP flows: native VLESS UDP would dial
+            // twice, while both XUDP children share one Mux parent.
+            for (addr, size) in [(udp_addr, 1), (second_udp_addr, 4096), (udp_addr, 8192)] {
+                let target = Target::new(TargetAddr::Ip(addr.ip()), addr.port(), Network::Udp);
+                let payload = vec![0x5a; size];
+                udp.send_to(
+                    &encode_socks5_udp_datagram(&target, &payload).unwrap(),
+                    relay,
+                )
+                .await
+                .unwrap();
+                let mut bytes = [0; 9000];
+                let n = udp.recv(&mut bytes).await.unwrap();
+                let reply = parse_socks5_udp_datagram(&bytes[..n]).unwrap();
+                assert_eq!(reply.payload.as_ref(), payload);
+                assert_eq!(reply.target, target);
+            }
+            let h2 = carrier == "grpc";
+            // Vision TCP is native, one carrier each (gRPC shares its H2
+            // socket); without a flow, the three streams share one parent.
+            let expected_tcp = if h2 || !vision { 1 } else { 3 };
+            assert_eq!(tcp_dials, expected_tcp);
+            // Both UDP flows share one dedicated XUDP parent.
+            assert_eq!(
+                protector.0.load(Ordering::SeqCst),
+                expected_tcp + usize::from(!h2)
+            );
+            let udp_flows = core
+                .connection_snapshot()
+                .connections
+                .iter()
+                .filter(|c| c.network == Network::Udp)
+                .map(|c| c.id)
+                .collect::<Vec<_>>();
+            assert_eq!(udp_flows.len(), 2);
+            core.close_connection(udp_flows[0]).unwrap();
+            for stream in &mut streams {
+                echo(stream, b"siblings survive child close").await;
+            }
+            core.stop().await.unwrap();
+            assert!(core.connection_snapshot().connections.is_empty());
+            for stream in &mut streams {
+                assert!(stream.read_u8().await.is_err());
+            }
+        })
+        .await
+        .unwrap();
     }
 }
