@@ -385,6 +385,10 @@ impl H3ConnectionDriver {
     fn record_download(&self, bytes: usize) {
         self.receive_window.on_read(bytes, &self.connection);
     }
+
+    fn record_caught_up(&self) {
+        self.receive_window.on_caught_up();
+    }
 }
 
 /// Bytes a QUIC connection may hold written but not yet acknowledged. quinn's
@@ -564,11 +568,14 @@ const XHTTP_MIN_STREAM_RECEIVE_WINDOW: u64 = 128 * 1024;
 /// Downloaded bytes between samples of a connection's share; the first
 /// sample makes it count as downloading.
 const XHTTP_RECEIVE_SAMPLE_BYTES: u64 = 64 * 1024;
+/// Samples in a row in which a reader never found its stream empty before
+/// its window is held to its share.
+const XHTTP_BEHIND_SAMPLES: u32 = 4;
 
 static XHTTP_DOWNLOADS: TransferActivity = TransferActivity::new();
 
 /// One XHTTP H3 connection's download window: quic-go's auto-tuning, held to
-/// the connection's share of download memory.
+/// the connection's share of download memory while its reader falls behind.
 ///
 /// quic-go doubles a stream's window when its reader consumed more than half
 /// of it within four round trips scaled by that fraction, and keeps the
@@ -579,11 +586,14 @@ static XHTTP_DOWNLOADS: TransferActivity = TransferActivity::new();
 /// Every XHTTP H3 request owns a QUIC connection, and a reader slower than
 /// its server keeps the whole stream window filled: 32 downloads from
 /// Xray-core on Linux held 57 MiB in their 2 MiB windows. While `n`
-/// connections download, each now offers at most an `n`th of the budget, and
-/// never less than 128 KiB; a lone download still reaches its full
-/// auto-tuned window. The handshake still grants the configured window, as
-/// Xray's client does, and a smaller share applies once the reader has
-/// passed that credit.
+/// connections download, one whose reader has not found its stream empty for
+/// four samples offers at most an `n`th of the budget, never less than
+/// 128 KiB, until it keeps up again; then its allowance doubles at every
+/// sample. A reader that keeps up holds little, since its window is in
+/// flight: capping it would only limit a long path to the budget per round
+/// trip. A lone download still reaches its full auto-tuned window. The
+/// handshake still grants the configured window, as Xray's client does, and
+/// a smaller share applies once the reader has passed that credit.
 struct XhttpReceiveWindow {
     class: MemoryClass,
     max_stream: u64,
@@ -592,6 +602,8 @@ struct XhttpReceiveWindow {
     tunes: bool,
     /// Bytes read since the share was last sampled.
     unsampled: AtomicU64,
+    /// Whether a read found the stream empty since the last sample.
+    caught_up: AtomicBool,
     /// The activity period in which this connection last counted.
     period: AtomicU64,
     tuning: Mutex<ReceiveTuning>,
@@ -603,7 +615,13 @@ struct ReceiveTuning {
     connection: u64,
     /// This connection's share of the receive budget.
     share: u64,
-    /// The stream window the connection offers: the smaller of the two.
+    /// What the connection may offer beyond its share while its reader
+    /// keeps up.
+    allowance: u64,
+    /// Samples in a row in which the reader never found its stream empty.
+    behind: u32,
+    /// The stream window the connection offers: the auto-tuned one, held to
+    /// the larger of the share and the allowance.
     offered: u64,
     read: u64,
     epoch_offset: u64,
@@ -611,10 +629,25 @@ struct ReceiveTuning {
 }
 
 impl ReceiveTuning {
-    /// The stream window to offer from now on, if the tuned window or the
-    /// share changed it.
+    /// Takes the connection's new share, and whether its reader found the
+    /// stream empty since the last sample.
+    fn resample(&mut self, share: u64, caught_up: bool) {
+        self.share = share;
+        if caught_up {
+            self.behind = 0;
+            self.allowance = self.allowance.max(share).saturating_mul(2);
+        } else {
+            self.behind = self.behind.saturating_add(1);
+            if self.behind >= XHTTP_BEHIND_SAMPLES {
+                self.allowance = share;
+            }
+        }
+    }
+
+    /// The stream window to offer from now on, if the tuned window, the
+    /// share or the allowance changed it.
     fn reoffer(&mut self) -> Option<u64> {
-        let offered = self.stream.min(self.share);
+        let offered = self.stream.min(self.share.max(self.allowance));
         (offered != self.offered).then(|| {
             self.offered = offered;
             offered
@@ -636,11 +669,14 @@ impl XhttpReceiveWindow {
             max_connection,
             tunes: max_stream > initial_stream || max_connection > initial_connection,
             unsampled: AtomicU64::new(0),
+            caught_up: AtomicBool::new(false),
             period: AtomicU64::new(0),
             tuning: Mutex::new(ReceiveTuning {
                 stream: initial_stream,
                 connection: initial_connection,
                 share: u64::MAX,
+                allowance: u64::MAX,
+                behind: 0,
                 offered: initial_stream,
                 read: 0,
                 epoch_offset: 0,
@@ -664,7 +700,10 @@ impl XhttpReceiveWindow {
         // sample first.
         if sample && self.unsampled.swap(0, Ordering::Relaxed) >= XHTTP_RECEIVE_SAMPLE_BYTES {
             let downloading = XHTTP_DOWNLOADS.mark(&self.period, std::time::Instant::now());
-            tuning.share = xhttp_stream_receive_share(downloading, self.max_stream, self.class);
+            tuning.resample(
+                xhttp_stream_receive_share(downloading, self.max_stream, self.class),
+                self.caught_up.swap(false, Ordering::Relaxed),
+            );
         }
         if self.tunes {
             self.tune(&mut tuning, bytes, connection);
@@ -672,6 +711,12 @@ impl XhttpReceiveWindow {
         if let Some(offered) = tuning.reoffer() {
             connection.set_stream_receive_window(varint(offered));
         }
+    }
+
+    /// Records that a read found the download's stream empty: the reader
+    /// keeps up, so its window waits in the network rather than in memory.
+    fn on_caught_up(&self) {
+        self.caught_up.store(true, Ordering::Relaxed);
     }
 
     fn tune(&self, tuning: &mut ReceiveTuning, bytes: u64, connection: &quinn::Connection) {
@@ -1388,7 +1433,11 @@ async fn drive_response_inner(
                 break;
             }
             match poll_fn(|cx| Poll::Ready(recv.poll_recv_data(cx))).await {
-                Poll::Pending => break,
+                Poll::Pending => {
+                    // Nothing more is buffered: the reader keeps up.
+                    driver.record_caught_up();
+                    break;
+                }
                 Poll::Ready(Ok(None)) => {
                     end = true;
                     break;
@@ -1946,25 +1995,53 @@ mod receive_window_tests {
     }
 
     #[test]
-    fn a_connection_offers_the_smaller_of_its_tuned_window_and_its_share() {
+    fn a_reader_that_falls_behind_is_held_to_its_share() {
+        const SHARE: u64 = 512 * 1024;
         let window = H3QuicConfig::default().receive_window(MemoryClass::Standard);
         assert!(window.tunes);
         let mut tuning = lock_unpoisoned(&window.tuning);
-        // Until its first sample a connection offers the handshake window.
-        assert_eq!(tuning.reoffer(), None);
-        tuning.share = 512 * 1024;
-        assert_eq!(tuning.reoffer(), Some(512 * 1024));
+        // Until its reader falls behind, a connection offers its tuned window.
+        for _ in 1..XHTTP_BEHIND_SAMPLES {
+            tuning.resample(SHARE, false);
+            assert_eq!(tuning.reoffer(), None);
+        }
+        tuning.resample(SHARE, false);
+        assert_eq!(tuning.reoffer(), Some(SHARE));
         tuning.stream = 4 * MIB;
         assert_eq!(tuning.reoffer(), None);
-        tuning.share = 8 * MIB;
-        assert_eq!(tuning.reoffer(), Some(4 * MIB));
+        // Keeping up again doubles its allowance at every sample.
+        for offered in [MIB, 2 * MIB, 4 * MIB] {
+            tuning.resample(SHARE, true);
+            assert_eq!(tuning.reoffer(), Some(offered));
+        }
+        // A sample behind is not yet falling behind.
+        tuning.resample(SHARE, false);
+        assert_eq!(tuning.reoffer(), None);
 
         // A constrained host's window never grows, but its share applies.
         let window = H3QuicConfig::default().receive_window(MemoryClass::Constrained);
         assert!(!window.tunes);
         let mut tuning = lock_unpoisoned(&window.tuning);
-        tuning.share = xhttp_stream_receive_share(32, window.max_stream, window.class);
+        let share = xhttp_stream_receive_share(32, window.max_stream, window.class);
+        for _ in 0..XHTTP_BEHIND_SAMPLES {
+            tuning.resample(share, false);
+        }
         assert_eq!(tuning.reoffer(), Some(XHTTP_MIN_STREAM_RECEIVE_WINDOW));
+    }
+
+    #[test]
+    fn a_reader_that_keeps_up_keeps_its_tuned_window() {
+        let window = H3QuicConfig::default().receive_window(MemoryClass::Standard);
+        let mut tuning = lock_unpoisoned(&window.tuning);
+        tuning.stream = XRAY_MAX_STREAM_RECEIVE_WINDOW;
+        assert_eq!(tuning.reoffer(), Some(XRAY_MAX_STREAM_RECEIVE_WINDOW));
+        // Its window waits in the network, so a small share does not hold it,
+        // nor do bursts that keep it from catching up for a few samples.
+        let pattern = [true, false, false, false];
+        for caught_up in pattern.iter().cycle().take(100) {
+            tuning.resample(XHTTP_MIN_STREAM_RECEIVE_WINDOW, *caught_up);
+            assert_eq!(tuning.reoffer(), None);
+        }
     }
 }
 

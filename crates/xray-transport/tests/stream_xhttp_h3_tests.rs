@@ -910,26 +910,73 @@ async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
     written - READ
 }
 
-/// Sixteen downloads whose readers fall behind their server share the
+/// Sixteen downloads whose readers fall behind their servers share the
 /// receive budget: each stream grants about a 1 MiB share past its reader,
 /// where each used to grant its 2 MiB handshake window, 32 MiB in all.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
-    const DOWNLOADS: usize = 16;
-    // Past the 2 MiB handshake credit, so that each share applies.
-    const READ: usize = 3 * 1024 * 1024;
-    const PIECE: usize = 64 * 1024;
-
     let _budget = RECEIVE_BUDGET.lock().await;
+    let ahead = credit_ahead_of_readers(BudgetReader::FallsBehind).await;
+    // Each response task and body may hold three 16 KiB batches past its
+    // reader; QUIC packets add a little more.
+    assert!(
+        ahead <= 16 * 1024 * 1024 + BUDGET_DOWNLOADS * 128 * 1024,
+        "{BUDGET_DOWNLOADS} slow readers let their servers write {ahead} bytes ahead"
+    );
+    assert!(
+        ahead >= BUDGET_DOWNLOADS * 512 * 1024,
+        "{BUDGET_DOWNLOADS} slow readers granted only {ahead} bytes"
+    );
+    // These connections count as downloading for up to two seconds after
+    // their last read.
+    tokio::time::sleep(Duration::from_millis(2100)).await;
+}
+
+/// Sixteen downloads whose readers keep up hold almost nothing, so the
+/// receive budget leaves their 2 MiB windows alone: on a long path those
+/// windows are in flight, and holding them to a 1 MiB share would only slow
+/// the downloads.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn downloads_whose_readers_keep_up_keep_their_windows() {
+    let _budget = RECEIVE_BUDGET.lock().await;
+    let ahead = credit_ahead_of_readers(BudgetReader::KeepsUp).await;
+    assert!(
+        ahead >= BUDGET_DOWNLOADS * 3 * 1024 * 1024 / 2,
+        "{BUDGET_DOWNLOADS} readers that kept up granted only {ahead} bytes"
+    );
+    tokio::time::sleep(Duration::from_millis(2100)).await;
+}
+
+const BUDGET_DOWNLOADS: usize = 16;
+
+#[derive(Clone, Copy, PartialEq)]
+enum BudgetReader {
+    /// Reads as soon as data arrives from a server paced at 32 KiB per 2 ms.
+    KeepsUp,
+    /// Pauses 25 ms after each 64 KiB: 42 MB/s for all sixteen, well below
+    /// what even a debug build receives, so data waits in each stream.
+    FallsBehind,
+}
+
+/// Runs sixteen downloads, each on its own connection, whose readers take
+/// 2 MiB each, past the 2 MiB handshake credit once a share applies. Each
+/// server writes as far as its credit allows, paced while its reader keeps
+/// up. Returns how far the servers got ahead of their readers in all once
+/// these stopped: the stream credit granted past the bytes read.
+async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
+    const READ: usize = 2 * 1024 * 1024;
+    const PIECE: usize = 64 * 1024;
+    const SERVER_PIECE: usize = 32 * 1024;
+
     let (client_tls, server_addr, server) = server_with_options(None).await;
     let written: Arc<Vec<AtomicUsize>> =
-        Arc::new((0..DOWNLOADS).map(|_| AtomicUsize::new(0)).collect());
+        Arc::new((0..BUDGET_DOWNLOADS).map(|_| AtomicUsize::new(0)).collect());
     let handler = tokio::spawn({
         let server = server.clone();
         let written = Arc::clone(&written);
         async move {
             let mut writers = tokio::task::JoinSet::new();
-            for index in 0..DOWNLOADS {
+            for index in 0..BUDGET_DOWNLOADS {
                 let (_, mut stream) = server.accept().await;
                 let written = Arc::clone(&written);
                 writers.spawn(async move {
@@ -938,11 +985,13 @@ async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
                         .send_response(response(StatusCode::OK))
                         .await
                         .expect("headers");
-                    let chunk = Bytes::from(vec![0x5a; PIECE]);
-                    // Writes as far as the client's credit allows.
+                    let chunk = Bytes::from(vec![0x5a; SERVER_PIECE]);
                     loop {
                         stream.send_data(chunk.clone()).await.expect("DATA");
-                        written[index].fetch_add(chunk.len(), Ordering::Relaxed);
+                        let total = written[index].fetch_add(SERVER_PIECE, Ordering::Relaxed);
+                        if reader == BudgetReader::KeepsUp && total < READ {
+                            tokio::time::sleep(Duration::from_millis(2)).await;
+                        }
                     }
                 });
             }
@@ -950,7 +999,7 @@ async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
         }
     });
 
-    let clients = futures_util::future::join_all((0..DOWNLOADS).map(|_| {
+    let clients = futures_util::future::join_all((0..BUDGET_DOWNLOADS).map(|_| {
         connect_h3(H3ConnectConfig {
             remote_addr: server_addr,
             server_name: "localhost".to_owned(),
@@ -960,7 +1009,7 @@ async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
         })
     }))
     .await;
-    let start = Arc::new(tokio::sync::Barrier::new(DOWNLOADS));
+    let start = Arc::new(tokio::sync::Barrier::new(BUDGET_DOWNLOADS));
     let mut readers = tokio::task::JoinSet::new();
     for client in clients {
         let client = client.expect("connect HTTP/3 client");
@@ -979,8 +1028,9 @@ async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
                     .await
                     .expect("read in time")
                     .expect("read");
-                // The server fills the window again while the reader waits.
-                tokio::time::sleep(Duration::from_millis(2)).await;
+                if reader == BudgetReader::FallsBehind {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
             }
             (client, body)
         });
@@ -1003,21 +1053,7 @@ async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
     }
     handler.abort();
     drop(downloads);
-    let ahead = settled - DOWNLOADS * READ;
-
-    // Each response task and body may hold three 16 KiB batches past its
-    // reader; QUIC packets add a little more.
-    assert!(
-        ahead <= 16 * 1024 * 1024 + DOWNLOADS * 128 * 1024,
-        "{DOWNLOADS} slow readers let their servers write {ahead} bytes ahead"
-    );
-    assert!(
-        ahead >= DOWNLOADS * 512 * 1024,
-        "{DOWNLOADS} slow readers granted only {ahead} bytes"
-    );
-    // These connections count as downloading for up to two seconds after
-    // their last read.
-    tokio::time::sleep(Duration::from_millis(2100)).await;
+    settled - BUDGET_DOWNLOADS * READ
 }
 
 /// A reader that keeps a server of small DATA frames waiting lets it write
