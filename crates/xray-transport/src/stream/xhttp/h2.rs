@@ -314,7 +314,7 @@ pub async fn connect_h2_with_receive_window(
 
 /// Opens H2 with `window` and optional keepalive; connection credit stays
 /// 16 MiB. An adaptive window grows as grpc-go's BDP estimator grows one
-/// (see [`crate::stream::h2_bdp`]).
+/// (see `crate::stream::h2_bdp`).
 pub async fn connect_h2_with_window(
     mut io: BoxedTransportStream,
     read_idle: Option<Duration>,

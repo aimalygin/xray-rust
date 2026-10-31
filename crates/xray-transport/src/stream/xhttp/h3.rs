@@ -104,7 +104,7 @@ pub struct H3UdpHopConfig {
 ///
 /// Xray/quic-go auto-tunes its receive windows from the configured initial
 /// values (2 MiB per stream and 3 MiB per connection) up to larger maxima, and
-/// [`QuicReceiveWindows`] does the same for XHTTP downloads. A `None` maximum
+/// `QuicReceiveWindows` does the same for XHTTP downloads. A `None` maximum
 /// is Xray's default, 6 MiB and 15 MiB, on a [`MemoryClass::Standard`] host;
 /// a constrained host keeps such windows at their initial size.
 #[derive(Debug, Clone, PartialEq, Eq)]
