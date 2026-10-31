@@ -2069,7 +2069,12 @@ mod receive_window_tests {
         let share = xhttp_stream_receive_share(32, window.max_stream, window.class);
         let start = tuning.caught_up_at;
         for millis in 0..u64::from(XHTTP_BEHIND_SAMPLES) {
-            tuning.resample(share, false, start + Duration::from_millis(10 + millis), loopback);
+            tuning.resample(
+                share,
+                false,
+                start + Duration::from_millis(10 + millis),
+                loopback,
+            );
         }
         assert_eq!(tuning.reoffer(), Some(XHTTP_MIN_STREAM_RECEIVE_WINDOW));
     }
@@ -2100,7 +2105,10 @@ mod receive_window_tests {
         tuning.resample(XHTTP_MIN_STREAM_RECEIVE_WINDOW, false, now, long_path);
         let taken = 41 * XHTTP_RECEIVE_SAMPLE_BYTES * 200 / 201;
         let offered = tuning.reoffer().expect("a held window");
-        assert!(offered.abs_diff(taken) < 1024, "offered {offered}, took {taken}");
+        assert!(
+            offered.abs_diff(taken) < 1024,
+            "offered {offered}, took {taken}"
+        );
     }
 
     #[test]
