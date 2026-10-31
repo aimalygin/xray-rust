@@ -10,6 +10,18 @@ long-term supported release series.
 
 ## Unreleased
 
+- Report live bytes in per-outbound accounting. The accounting snapshot added a
+  connection's payload bytes to `uplinkBytes`/`downlinkBytes` only when it
+  completed, so a host polling it as a traffic meter saw nothing during a long
+  download and then a jump at close. Each outbound now also carries
+  `activeUplinkBytes`/`activeDownlinkBytes`: the bytes relayed so far by its
+  opening and active connections, read under the same registry lock that moves
+  them into the completed totals, so the sum never decreases. The existing
+  fields keep their completed-only meaning, `revision` still advances only on
+  inventory changes, and schema version 1 gains the fields additively. Swift
+  and Kotlin expose them as optional values that are absent with an older
+  native library.
+
 - Bound outbound UDP opens by the outbound level's `handshake` policy (10 s by
   default) on the SOCKS, TPROXY and TUN inbounds, as TCP opens already were.
   Through a `socks` outbound, or Trojan, VMess or VLESS over TLS or REALITY, a

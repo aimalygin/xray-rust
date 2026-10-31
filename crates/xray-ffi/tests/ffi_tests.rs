@@ -1135,6 +1135,30 @@ fn ffi_connection_snapshot_close_and_accounting_control_live_socks_flow() {
     assert_eq!(connection["port"], echo_addr.port());
     let connection_id = connection["id"].as_u64().unwrap();
 
+    // The relay counts a chunk after forwarding it, so the echo can arrive
+    // just before the downlink counter moves.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let live = loop {
+        let accounting =
+            read_snapshot_json(core, xray_core_outbound_accounting_snapshot_json, &mut err);
+        if accounting["outbounds"][0]["activeDownlinkBytes"] == payload.len() {
+            break accounting;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "live accounting stayed at {accounting}"
+        );
+        thread::yield_now();
+    };
+    assert_eq!(live["revision"], snapshot["revision"]);
+    let direct = &live["outbounds"][0];
+    assert_eq!(direct["outboundTag"], "direct");
+    assert_eq!(direct["completedConnections"], 0);
+    assert_eq!(direct["uplinkBytes"], 0);
+    assert_eq!(direct["downlinkBytes"], 0);
+    assert_eq!(direct["activeUplinkBytes"], payload.len());
+    assert_eq!(direct["activeDownlinkBytes"], payload.len());
+
     assert_eq!(
         unsafe { xray_core_close_connection(core, connection_id, &mut err) },
         XrayStatus::Ok
@@ -1160,6 +1184,8 @@ fn ffi_connection_snapshot_close_and_accounting_control_live_socks_flow() {
     assert_eq!(direct["hostClosedConnections"], 1);
     assert_eq!(direct["uplinkBytes"], payload.len());
     assert_eq!(direct["downlinkBytes"], payload.len());
+    assert_eq!(direct["activeUplinkBytes"], 0);
+    assert_eq!(direct["activeDownlinkBytes"], 0);
 
     assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
     unsafe { xray_core_free(core) };

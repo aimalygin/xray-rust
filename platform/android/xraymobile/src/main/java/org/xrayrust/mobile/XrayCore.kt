@@ -235,12 +235,34 @@ data class XrayConnectionInfo(
     val startedUnixMs: Long,
 )
 
+/**
+ * Per-outbound accounting for the managed connections of this core.
+ *
+ * [revision] is shared with [XrayConnectionSnapshot] and advances when a connection opens, becomes
+ * active, is asked to close or completes. Relayed bytes alone do not advance it, so a traffic meter
+ * must read the byte counters on every poll instead of skipping unchanged revisions.
+ */
 data class XrayOutboundAccountingSnapshot(
     val schemaVersion: Int,
     val revision: Long,
     val outbounds: List<XrayOutboundAccounting>,
 )
 
+/**
+ * Connection counts and relayed payload bytes for one outbound tag (`null` for flows without one).
+ *
+ * Bytes are application payload between the inbound client and the target: uplink toward the
+ * target, downlink back. Transport framing, encryption and handshakes are not counted.
+ *
+ * @property uplinkBytes payload bytes of completed connections only; a connection adds its bytes
+ *   once, when it leaves the inventory.
+ * @property downlinkBytes downlink counterpart of [uplinkBytes].
+ * @property activeUplinkBytes payload bytes relayed so far by the opening and active connections
+ *   routed to this outbound, read live when the snapshot is taken. A completing connection moves
+ *   its bytes into [uplinkBytes] under the same lock, so `uplinkBytes + activeUplinkBytes` never
+ *   decreases between snapshots. `null` when the loaded native library predates this field.
+ * @property activeDownlinkBytes downlink counterpart of [activeUplinkBytes].
+ */
 data class XrayOutboundAccounting(
     val outboundTag: String?,
     val openedConnections: Long,
@@ -248,6 +270,8 @@ data class XrayOutboundAccounting(
     val hostClosedConnections: Long,
     val uplinkBytes: Long,
     val downlinkBytes: Long,
+    val activeUplinkBytes: Long? = null,
+    val activeDownlinkBytes: Long? = null,
 )
 
 enum class XrayTcpSlowFlowEventKind(internal val ffiValue: Int) {
@@ -511,6 +535,8 @@ internal fun parseOutboundAccountingSnapshot(json: String): XrayOutboundAccounti
             hostClosedConnections = outbound.getLong("hostClosedConnections"),
             uplinkBytes = outbound.getLong("uplinkBytes"),
             downlinkBytes = outbound.getLong("downlinkBytes"),
+            activeUplinkBytes = outbound.optionalLong("activeUplinkBytes"),
+            activeDownlinkBytes = outbound.optionalLong("activeDownlinkBytes"),
         )
     }
     return XrayOutboundAccountingSnapshot(

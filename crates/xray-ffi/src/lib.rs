@@ -1459,6 +1459,11 @@ pub unsafe extern "C" fn xray_core_connection_snapshot_json(
 
 /// Copies the version-1 cumulative per-outbound accounting JSON document.
 ///
+/// `uplinkBytes`/`downlinkBytes` count completed connections only;
+/// `activeUplinkBytes`/`activeDownlinkBytes` count the bytes relayed so far by
+/// connections still in the inventory, read under the same registry lock, so
+/// their sum is a live per-outbound total that never decreases.
+///
 /// Buffer and concurrency semantics match
 /// `xray_core_outbound_selection_snapshot_json`.
 ///
@@ -4250,6 +4255,8 @@ fn outbound_accounting_snapshot_json(core: &Core) -> String {
                 "hostClosedConnections": accounting.host_closed_connections,
                 "uplinkBytes": accounting.uplink_bytes,
                 "downlinkBytes": accounting.downlink_bytes,
+                "activeUplinkBytes": accounting.active_uplink_bytes,
+                "activeDownlinkBytes": accounting.active_downlink_bytes,
             })
         })
         .collect::<Vec<_>>();

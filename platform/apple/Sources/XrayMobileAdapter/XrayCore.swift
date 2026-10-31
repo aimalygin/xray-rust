@@ -415,8 +415,13 @@ public struct XrayConnectionInfo: Codable, Equatable, Sendable {
     public let startedUnixMs: UInt64
 }
 
+/// Per-outbound accounting for the managed connections of this core.
 public struct XrayOutboundAccountingSnapshot: Codable, Equatable, Sendable {
     public let schemaVersion: Int
+    /// Shared with `XrayConnectionSnapshot`; advances when a connection opens, becomes
+    /// active, is asked to close or completes. Relayed bytes alone do not advance it, so
+    /// a traffic meter must read the byte counters on every poll instead of skipping
+    /// unchanged revisions.
     public let revision: UInt64
     public let outbounds: [XrayOutboundAccounting]
 
@@ -441,13 +446,30 @@ public struct XrayOutboundAccountingSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// Connection counts and relayed payload bytes for one outbound tag (`nil` for flows
+/// without one).
+///
+/// Bytes are application payload between the inbound client and the target: uplink
+/// toward the target, downlink back. Transport framing, encryption and handshakes are
+/// not counted.
 public struct XrayOutboundAccounting: Codable, Equatable, Sendable {
     public let outboundTag: String?
     public let openedConnections: UInt64
     public let completedConnections: UInt64
     public let hostClosedConnections: UInt64
+    /// Payload bytes of completed connections only; a connection adds its bytes once,
+    /// when it leaves the inventory.
     public let uplinkBytes: UInt64
+    /// Downlink counterpart of `uplinkBytes`.
     public let downlinkBytes: UInt64
+    /// Payload bytes relayed so far by the opening and active connections routed to
+    /// this outbound, read live when the snapshot is taken. A completing connection
+    /// moves its bytes into `uplinkBytes` under the same lock, so
+    /// `uplinkBytes + activeUplinkBytes` never decreases between snapshots. `nil` when
+    /// the loaded native library predates this field.
+    public let activeUplinkBytes: UInt64?
+    /// Downlink counterpart of `activeUplinkBytes`.
+    public let activeDownlinkBytes: UInt64?
 }
 
 /// Controls whether the core may use the platform resolver for bootstrap lookups.

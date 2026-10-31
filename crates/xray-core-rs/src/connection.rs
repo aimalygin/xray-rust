@@ -47,18 +47,37 @@ pub struct ConnectionSnapshot {
     pub connections: Vec<ConnectionInfo>,
 }
 
+/// Per-outbound connection and payload byte accounting.
+///
+/// Byte counters count relayed application payload: uplink flows from the
+/// inbound client toward the target, downlink flows back. Transport framing,
+/// encryption and handshake overhead are not included.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundAccounting {
     pub outbound_tag: Option<String>,
     pub opened_connections: u64,
     pub completed_connections: u64,
     pub host_closed_connections: u64,
+    /// Payload bytes of completed connections only. A connection adds its
+    /// bytes here once, when it leaves the active inventory.
     pub uplink_bytes: u64,
+    /// Downlink counterpart of `uplink_bytes`.
     pub downlink_bytes: u64,
+    /// Payload bytes relayed so far by the connections that are still opening
+    /// or active, read when the snapshot is taken. When such a connection
+    /// completes, its bytes move from here to `uplink_bytes`, so
+    /// `uplink_bytes + active_uplink_bytes` never decreases between snapshots.
+    pub active_uplink_bytes: u64,
+    /// Downlink counterpart of `active_uplink_bytes`.
+    pub active_downlink_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboundAccountingSnapshot {
+    /// The registry revision shared with [`ConnectionSnapshot`]. It advances
+    /// when a connection opens, becomes active, is asked to close, or
+    /// completes; relayed bytes alone do not advance it, so active byte
+    /// counters can differ between snapshots with the same revision.
     pub revision: u64,
     pub outbounds: Vec<OutboundAccounting>,
 }
@@ -134,9 +153,30 @@ impl ConnectionRegistry {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Completed totals and live counters are read under the same lock that
+        // `finish` holds while it moves a connection's bytes into the totals,
+        // so a snapshot counts every byte exactly once. `outbounds` keeps the
+        // map's key order, and `register` creates an outbound's entry before
+        // its first connection, so every active tag is found.
+        let mut outbounds = state.accounting.values().cloned().collect::<Vec<_>>();
+        for entry in state.active.values() {
+            let tag = entry.info.outbound_tag.as_deref();
+            let Ok(index) = outbounds
+                .binary_search_by(|accounting| accounting.outbound_tag.as_deref().cmp(&tag))
+            else {
+                continue;
+            };
+            let accounting = &mut outbounds[index];
+            accounting.active_uplink_bytes = accounting
+                .active_uplink_bytes
+                .saturating_add(entry.traffic.uplink_bytes.load(Ordering::Acquire));
+            accounting.active_downlink_bytes = accounting
+                .active_downlink_bytes
+                .saturating_add(entry.traffic.downlink_bytes.load(Ordering::Acquire));
+        }
         OutboundAccountingSnapshot {
             revision: state.revision,
-            outbounds: state.accounting.values().cloned().collect(),
+            outbounds,
         }
     }
 
@@ -204,6 +244,8 @@ impl ConnectionRegistry {
                 host_closed_connections: 0,
                 uplink_bytes: 0,
                 downlink_bytes: 0,
+                active_uplink_bytes: 0,
+                active_downlink_bytes: 0,
             });
         accounting.opened_connections = accounting.opened_connections.saturating_add(1);
         state.revision = state.revision.saturating_add(1);
@@ -362,6 +404,8 @@ mod tests {
         assert_eq!(accounting.outbounds[0].host_closed_connections, 1);
         assert_eq!(accounting.outbounds[0].uplink_bytes, 128);
         assert_eq!(accounting.outbounds[0].downlink_bytes, 256);
+        assert_eq!(accounting.outbounds[0].active_uplink_bytes, 0);
+        assert_eq!(accounting.outbounds[0].active_downlink_bytes, 0);
         assert_eq!(
             registry.close(id),
             Err(ConnectionCloseError::NotFound(id.get()))
@@ -379,5 +423,80 @@ mod tests {
         assert_eq!(accounting.outbounds[0].opened_connections, 1);
         assert_eq!(accounting.outbounds[0].completed_connections, 1);
         assert_eq!(accounting.outbounds[0].uplink_bytes, 0);
+    }
+
+    #[test]
+    fn accounting_reports_live_bytes_of_active_connections_per_outbound() {
+        let registry = Arc::new(ConnectionRegistry::new());
+        let first = registry.register(None, Some("proxy".to_owned()), target());
+        let second = registry.register(None, Some("proxy".to_owned()), target());
+        let direct = registry.register(None, Some("direct".to_owned()), target());
+        let untagged = registry.register(None, None, target());
+        first.mark_active();
+        let revision = registry.accounting_snapshot().revision;
+
+        first.traffic.record_uplink(10);
+        first.traffic.record_downlink(100);
+        second.traffic.record_uplink(1);
+        direct.traffic.record_downlink(7);
+        untagged.traffic.record_uplink(3);
+
+        let live = registry.accounting_snapshot();
+        assert_eq!(
+            live.revision, revision,
+            "relayed bytes must not advance the revision"
+        );
+        let tags = live
+            .outbounds
+            .iter()
+            .map(|accounting| accounting.outbound_tag.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(tags, [None, Some("direct"), Some("proxy")]);
+        let totals = live
+            .outbounds
+            .iter()
+            .map(|accounting| {
+                (
+                    accounting.uplink_bytes,
+                    accounting.downlink_bytes,
+                    accounting.active_uplink_bytes,
+                    accounting.active_downlink_bytes,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(totals, [(0, 0, 3, 0), (0, 0, 0, 7), (0, 0, 11, 100)]);
+
+        first.traffic.record_downlink(20);
+        first.finish();
+        let after_first = registry.accounting_snapshot();
+        let proxy = &after_first.outbounds[2];
+        assert_eq!(proxy.completed_connections, 1);
+        assert_eq!((proxy.uplink_bytes, proxy.downlink_bytes), (10, 120));
+        assert_eq!(
+            (proxy.active_uplink_bytes, proxy.active_downlink_bytes),
+            (1, 0)
+        );
+        assert!(
+            proxy.uplink_bytes + proxy.active_uplink_bytes
+                >= live.outbounds[2].uplink_bytes + live.outbounds[2].active_uplink_bytes
+        );
+
+        drop(second);
+        drop(direct);
+        drop(untagged);
+        let closed = registry.accounting_snapshot();
+        let totals = closed
+            .outbounds
+            .iter()
+            .map(|accounting| {
+                (
+                    accounting.uplink_bytes,
+                    accounting.downlink_bytes,
+                    accounting.active_uplink_bytes,
+                    accounting.active_downlink_bytes,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(totals, [(3, 0, 0, 0), (0, 7, 0, 0), (11, 120, 0, 0)]);
     }
 }
