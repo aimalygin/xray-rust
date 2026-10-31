@@ -827,10 +827,15 @@ async fn slow_path_uploads_buffer_only_their_share_of_the_send_budget() {
     }
 }
 
+/// Held by tests whose stream windows depend on how many connections of this
+/// process download at once: XHTTP H3 downloads share one receive budget.
+static RECEIVE_BUDGET: Mutex<()> = Mutex::const_new(());
+
 /// A download that keeps its reader busy grows the stream window past its
 /// initial 2 MiB, as quic-go auto-tunes it; fixed maxima keep it at 2 MiB.
 #[tokio::test]
 async fn a_fast_download_grows_the_stream_receive_window() {
+    let _budget = RECEIVE_BUDGET.lock().await;
     let tuned = credit_after_a_fast_download(H3QuicConfig::default()).await;
     let fixed = credit_after_a_fast_download(H3QuicConfig {
         max_stream_receive_window: Some(2 * 1024 * 1024),
@@ -903,6 +908,116 @@ async fn credit_after_a_fast_download(quic: H3QuicConfig) -> usize {
     handler.abort();
     relay.abort();
     written - READ
+}
+
+/// Sixteen downloads whose readers fall behind their server share the
+/// receive budget: each stream grants about a 1 MiB share past its reader,
+/// where each used to grant its 2 MiB handshake window, 32 MiB in all.
+#[tokio::test]
+async fn slow_reader_downloads_grant_only_their_share_of_the_receive_budget() {
+    const DOWNLOADS: usize = 16;
+    // Past the 2 MiB handshake credit, so that each share applies.
+    const READ: usize = 3 * 1024 * 1024;
+    const PIECE: usize = 64 * 1024;
+
+    let _budget = RECEIVE_BUDGET.lock().await;
+    let (client_tls, server_addr, server) = server_with_options(None).await;
+    let written: Arc<Vec<AtomicUsize>> =
+        Arc::new((0..DOWNLOADS).map(|_| AtomicUsize::new(0)).collect());
+    let handler = tokio::spawn({
+        let server = server.clone();
+        let written = Arc::clone(&written);
+        async move {
+            let mut writers = tokio::task::JoinSet::new();
+            for index in 0..DOWNLOADS {
+                let (_, mut stream) = server.accept().await;
+                let written = Arc::clone(&written);
+                writers.spawn(async move {
+                    drain_request(&mut stream).await.expect("request FIN");
+                    stream
+                        .send_response(response(StatusCode::OK))
+                        .await
+                        .expect("headers");
+                    let chunk = Bytes::from(vec![0x5a; PIECE]);
+                    // Writes as far as the client's credit allows.
+                    loop {
+                        stream.send_data(chunk.clone()).await.expect("DATA");
+                        written[index].fetch_add(chunk.len(), Ordering::Relaxed);
+                    }
+                });
+            }
+            writers.join_all().await;
+        }
+    });
+
+    let clients = futures_util::future::join_all((0..DOWNLOADS).map(|_| {
+        connect_h3(H3ConnectConfig {
+            remote_addr: server_addr,
+            server_name: "localhost".to_owned(),
+            tls_config: Arc::clone(&client_tls),
+            socket_protector: None,
+            quic: H3QuicConfig::default(),
+        })
+    }))
+    .await;
+    let start = Arc::new(tokio::sync::Barrier::new(DOWNLOADS));
+    let mut readers = tokio::task::JoinSet::new();
+    for client in clients {
+        let client = client.expect("connect HTTP/3 client");
+        let start = Arc::clone(&start);
+        readers.spawn(async move {
+            let mut body = client
+                .send_fixed(request(Method::GET, "/budget"), Bytes::new())
+                .await
+                .expect("response");
+            // Read together, so that every share is sampled while all
+            // sixteen count as downloading.
+            start.wait().await;
+            let mut piece = vec![0; PIECE];
+            for _ in 0..READ / PIECE {
+                timeout(DEADLINE, body.read_exact(&mut piece))
+                    .await
+                    .expect("read in time")
+                    .expect("read");
+                // The server fills the window again while the reader waits.
+                tokio::time::sleep(Duration::from_millis(2)).await;
+            }
+            (client, body)
+        });
+    }
+    let mut downloads = Vec::new();
+    while let Some(reader) = readers.join_next().await {
+        downloads.push(reader.expect("reader"));
+    }
+    // The servers use up the credit granted until the readers stopped.
+    let total = || -> usize { written.iter().map(|w| w.load(Ordering::Relaxed)).sum() };
+    let mut settled = total();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let now = total();
+        if now == settled || Instant::now() > deadline {
+            break;
+        }
+        settled = now;
+    }
+    handler.abort();
+    drop(downloads);
+    let ahead = settled - DOWNLOADS * READ;
+
+    // Each response task and body may hold three 16 KiB batches past its
+    // reader; QUIC packets add a little more.
+    assert!(
+        ahead <= 16 * 1024 * 1024 + DOWNLOADS * 128 * 1024,
+        "{DOWNLOADS} slow readers let their servers write {ahead} bytes ahead"
+    );
+    assert!(
+        ahead >= DOWNLOADS * 512 * 1024,
+        "{DOWNLOADS} slow readers granted only {ahead} bytes"
+    );
+    // These connections count as downloading for up to two seconds after
+    // their last read.
+    tokio::time::sleep(Duration::from_millis(2100)).await;
 }
 
 /// A reader that keeps a server of small DATA frames waiting lets it write
