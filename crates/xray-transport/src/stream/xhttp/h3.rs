@@ -1,7 +1,8 @@
 //! HTTP/3 wire engine for outbound XHTTP.
 //!
 //! This first implementation owns one protected, single-destination QUIC v1
-//! endpoint. UDP hopping and connection-pool policy belong above this layer.
+//! endpoint, optionally hopping its UDP carrier across configured ports.
+//! Connection-pool policy belongs above this layer.
 
 use std::fmt;
 use std::future::{poll_fn, Future};
@@ -65,11 +66,13 @@ pub enum H3Congestion {
     },
 }
 
-/// Parsed UDP-hop policy retained so phase one can reject it explicitly.
+/// UDP-hop policy for the QUIC carrier, Xray's `udphop` finalmask.
 ///
 /// An empty port list is disabled, matching Xray even when an interval was
-/// configured. A non-empty list requires packet-socket rebinding support and
-/// therefore fails closed before any UDP socket is opened.
+/// configured. Otherwise the first packet already goes to one of the ports,
+/// and each interval moves the connection to a fresh protected socket aimed at
+/// a different port. Zero intervals default to 30 seconds; bounds below five
+/// seconds are rejected.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct H3UdpHopConfig {
     pub ports: Vec<u16>,
@@ -171,11 +174,13 @@ impl H3QuicConfig {
             });
         }
         if !self.udp_hop.ports.is_empty() {
-            return Err(H3Error::UnsupportedUdpHop {
-                port_count: self.udp_hop.ports.len(),
-                interval_min: self.udp_hop.interval_min,
-                interval_max: self.udp_hop.interval_max,
-            });
+            self.hop_carrier()
+                .validate()
+                .map_err(|_| H3Error::InvalidUdpHop {
+                    port_count: self.udp_hop.ports.len(),
+                    interval_min: self.udp_hop.interval_min,
+                    interval_max: self.udp_hop.interval_max,
+                })?;
         }
         if self.debug {
             return Err(H3Error::UnsupportedDebugLogging);
@@ -205,8 +210,18 @@ impl H3QuicConfig {
             stream_receive_window: self.initial_stream_receive_window,
             connection_receive_window: self.initial_connection_receive_window,
             adaptive_receive_windows: false,
-            udp_hop: false,
+            udp_hop: !self.udp_hop.ports.is_empty(),
         })
+    }
+
+    /// The carrier transforms this XHTTP connection applies itself: UDP hop
+    /// and noise. Hysteria passes its own carrier instead.
+    fn hop_carrier(&self) -> crate::hysteria::HysteriaCarrierConfig {
+        crate::hysteria::HysteriaCarrierConfig {
+            udp_hop: self.udp_hop.clone(),
+            noise: self.udp_noise.clone(),
+            ..Default::default()
+        }
     }
 }
 
@@ -254,9 +269,9 @@ pub enum H3Error {
     #[error("QUIC congestion mode {requested:?} is not implemented without silent fallback")]
     UnsupportedCongestion { requested: H3Congestion },
     #[error(
-        "QUIC UDP hop is not implemented ({port_count} ports, interval {interval_min:?}-{interval_max:?})"
+        "invalid QUIC UDP hop ({port_count} ports, interval {interval_min:?}-{interval_max:?}): ports must be nonzero and both bounds at least 5 seconds"
     )]
-    UnsupportedUdpHop {
+    InvalidUdpHop {
         port_count: usize,
         interval_min: Duration,
         interval_max: Duration,
@@ -328,6 +343,7 @@ struct H3ConnectionDriver {
     endpoint: Endpoint,
     connection: quinn::Connection,
     task: JoinHandle<h3::error::ConnectionError>,
+    hop: Option<JoinHandle<()>>,
 }
 
 impl Drop for H3ConnectionDriver {
@@ -336,6 +352,9 @@ impl Drop for H3ConnectionDriver {
         self.connection.close(code, b"XHTTP H3 client dropped");
         self.endpoint.close(code, b"XHTTP H3 client dropped");
         self.task.abort();
+        if let Some(hop) = &self.hop {
+            hop.abort();
+        }
     }
 }
 
@@ -451,7 +470,19 @@ impl H3Client {
 
 /// Connects one protected UDP destination and starts its HTTP/3 driver.
 pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
-    let (endpoint, connection, diagnostics) = connect_quic_transport(config, b"h3").await?;
+    let carrier = config.quic.hop_carrier();
+    let protector = config.socket_protector.clone();
+    let (endpoint, connection, diagnostics, wire_peer) =
+        connect_quic_transport(config, b"h3").await?;
+    let hop = diagnostics.udp_hop.then(|| {
+        tokio::spawn(hop_udp_carrier(
+            endpoint.clone(),
+            connection.clone(),
+            carrier,
+            protector,
+            wire_peer.port(),
+        ))
+    });
     let (mut h3_connection, send_request) =
         client::new(h3_quinn::Connection::new(connection.clone()))
             .await
@@ -461,6 +492,7 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
         endpoint,
         connection,
         task,
+        hop,
     });
 
     Ok(H3Client {
@@ -470,10 +502,67 @@ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
     })
 }
 
+/// Hops one connection's carrier across `udp_hop` ports, as Xray's `udphop`
+/// finalmask does for any UDP transport, with these deliberate differences:
+/// the timer starts once the connection exists rather than at dial, every hop
+/// changes the port, Quinn keeps the previous socket until the new path
+/// authenticates, and the task ends with the connection. A failed hop keeps
+/// the current protected path until the next interval, as in Xray.
+async fn hop_udp_carrier(
+    endpoint: Endpoint,
+    connection: quinn::Connection,
+    carrier: crate::hysteria::HysteriaCarrierConfig,
+    protector: Option<Arc<dyn SocketProtector>>,
+    mut wire_port: u16,
+) {
+    let logical_peer = connection.remote_address();
+    while let Some(delay) = carrier.next_interval() {
+        tokio::select! {
+            _ = connection.closed() => return,
+            () = tokio::time::sleep(delay) => {}
+        }
+        let wire_peer = carrier.next_hop_peer(logical_peer, wire_port);
+        if rebind_carrier(
+            &endpoint,
+            logical_peer,
+            wire_peer,
+            &carrier,
+            protector.as_deref(),
+        )
+        .is_ok()
+        {
+            wire_port = wire_peer.port();
+        }
+    }
+}
+
+fn rebind_carrier(
+    endpoint: &Endpoint,
+    logical_peer: SocketAddr,
+    wire_peer: SocketAddr,
+    carrier: &crate::hysteria::HysteriaCarrierConfig,
+    protector: Option<&dyn SocketProtector>,
+) -> io::Result<()> {
+    let socket = StdUdpSocket::bind(unspecified_bind_addr(logical_peer))?;
+    crate::protect_std_udp_socket(&socket, protector).map_err(io::Error::other)?;
+    socket.set_nonblocking(true)?;
+    let socket = crate::hysteria::carrier::wrap(socket, logical_peer, wire_peer, carrier, None)?;
+    endpoint.rebind_abstract(socket)
+}
+
+fn unspecified_bind_addr(remote: SocketAddr) -> SocketAddr {
+    match remote.ip() {
+        IpAddr::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
+        IpAddr::V6(_) => SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 0),
+    }
+}
+
+/// Returns the endpoint, its connection, diagnostics and the carrier's first
+/// wire peer, which differs from the remote address only under UDP hop.
 pub(crate) async fn connect_quic_transport(
     config: H3ConnectConfig,
     expected_alpn: &'static [u8],
-) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
+) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
     connect_quic_transport_with_datagrams(config, expected_alpn, None, None, None).await
 }
 
@@ -485,7 +574,7 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     datagram_buffers: Option<(usize, usize, u16)>,
     carrier: Option<&crate::hysteria::HysteriaCarrierConfig>,
     noise_state: Option<Arc<crate::udp_noise::UdpNoiseState>>,
-) -> Result<(Endpoint, quinn::Connection, H3Diagnostics), H3Error> {
+) -> Result<(Endpoint, quinn::Connection, H3Diagnostics, SocketAddr), H3Error> {
     drop(crate::tls::parse_tls_server_name(&config.server_name)?);
     let diagnostics = config.quic.diagnostics()?;
     if config.tls_config.alpn_protocols.len() != 1
@@ -501,10 +590,7 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         carrier.is_some_and(|c| c.salamander_password.is_some()),
     )?;
     let remote_addr = canonicalize_socket_addr(config.remote_addr);
-    let bind_addr = match remote_addr.ip() {
-        IpAddr::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
-        IpAddr::V6(_) => SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), 0),
-    };
+    let bind_addr = unspecified_bind_addr(remote_addr);
     let socket = StdUdpSocket::bind(bind_addr).map_err(|source| H3Error::UdpBind {
         addr: bind_addr,
         source,
@@ -515,13 +601,11 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
     protect_quic_socket(&socket, config.socket_protector.as_deref())?;
     socket.set_nonblocking(true).map_err(H3Error::UdpSocket)?;
 
-    let noise_carrier = crate::hysteria::HysteriaCarrierConfig {
-        noise: config.quic.udp_noise.clone(),
-        ..Default::default()
-    };
-    let carrier = carrier.or_else(|| noise_carrier.enabled().then_some(&noise_carrier));
+    let own_carrier = config.quic.hop_carrier();
+    let carrier = carrier.or_else(|| own_carrier.enabled().then_some(&own_carrier));
+    let mut wire_peer = remote_addr;
     let endpoint = if let Some(carrier) = carrier.filter(|c| c.enabled()) {
-        let wire_peer = carrier.next_peer(remote_addr);
+        wire_peer = carrier.next_peer(remote_addr);
         let socket =
             crate::hysteria::carrier::wrap(socket, remote_addr, wire_peer, carrier, noise_state)
                 .map_err(H3Error::UdpSocket)?;
@@ -555,7 +639,7 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
         .connect_with(client_config, remote_addr, &config.server_name)
         .map_err(H3Error::ConnectStart)?;
     let connection = connecting.await.map_err(H3Error::Connect)?;
-    Ok((endpoint, connection, diagnostics))
+    Ok((endpoint, connection, diagnostics, wire_peer))
 }
 
 /// Connects the first successful protected UDP candidate.
