@@ -39,6 +39,9 @@ On Linux, where quinn reserved 2.9 MiB of receive buffer for every XHTTP H3
 connection, 32 parallel downloads now peak at 114.6 instead of 154.3 MiB at
 the same throughput
 ([receive-buffer report](docs/benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md)).
+A vendored h3 no longer buffers downloads outside QUIC flow control: 32
+downloads now peak at 95.8 instead of 112.5 MiB, and the longer they run
+the more that saves ([download-memory report](docs/benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md)).
 
 ![Performance branch against main: median paired changes in throughput, CPU per GiB and peak footprint across all 156 bulk scenarios](docs/benchmarks/results/2026-10-30-perf-branch/bulk-changes.svg)
 

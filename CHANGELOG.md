@@ -77,6 +77,19 @@ long-term supported release series.
   throughput and CPU per byte. GRO stays on: without it downloads lost a
   quarter of their throughput. macOS and Hysteria are unchanged; see the
   [2026-10-30 receive-buffer report](docs/benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md).
+- Stop h3 from buffering XHTTP H3 downloads outside QUIC flow control,
+  through a vendored h3 0.0.8. While a download's stream stayed full, h3 read
+  one more QUIC chunk than it handed out for every DATA frame, and those
+  chunks no longer counted against the receive window: in 32 downloads from
+  Xray-core v26.10.21 in a Linux container they reached about 20 MiB in six
+  seconds and 46 MiB in 28, and a server of 700-byte frames got 4.1 MiB ahead
+  of a reader that had taken 1 MiB. h3 now decodes buffered frames before
+  reading, as upstream's unreleased fix does, and reads during a DATA frame
+  only while part of it is missing. 32 downloads now peak at 95.8 MiB RSS
+  instead of 112.5, and four times as long a transfer at 103.9 instead of
+  140.7, with 4–7% more throughput and less CPU per byte. Most of the rest is
+  data waiting in the 32 full 2 MiB stream windows; see the
+  [2026-10-31 report](docs/benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md).
 - Benchmarks: the issue #28 runner compares gRPC and the time to first byte,
   and the migration collector can pin a Go-verified reference by SHA-256.
   `scripts/run-migration-campaign.py` runs a whole before/after campaign: it
