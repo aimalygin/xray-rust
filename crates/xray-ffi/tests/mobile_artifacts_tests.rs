@@ -726,6 +726,14 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayAndroidDnsBootstrap.kt",
     ))
     .expect("read Android DNS bootstrap preparation");
+    let tun_interface =
+        fs::read_to_string(workspace_root().join(
+            "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayTunInterface.kt",
+        ))
+        .expect("read Android TUN interface contract");
+    assert!(tun_interface.contains("const val DNS_ANCHOR = \"198.18.0.1\""));
+    assert!(tun_interface.contains("const val MTU = 1_500"));
+    assert!(tun_interface.contains("if (dnsAnchor) addDnsServer(XrayTunInterface.DNS_ANCHOR)"));
 
     for token in [
         "InetAddress.getAllByName(domain)",
@@ -739,7 +747,7 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "is JSONArray",
         "JSONArray(values)",
         "resolveSystemBootstrapAddresses(identity)",
-        "198.18.0.1",
+        "XrayTunInterface.DNS_ANCHOR,",
         "getJSONArray(\"servers\")",
         "dnsServerBootstrapUpstreamDomain(rawServer)",
         "dnsUpstreamPort = upstream.port",
@@ -762,7 +770,8 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "Android bootstrap must retain every usable system address"
     );
     assert!(service.contains("XrayDnsBootstrapMode.StaticOnly"));
-    assert!(service.contains("addDnsServer(XRAY_TUN_DNS_ANCHOR)"));
+    assert!(service.contains("addDnsServer(XrayTunInterface.DNS_ANCHOR)"));
+    assert!(service.contains(".applyXrayTunInterface(dnsAnchor = false)"));
 
     let start = service
         .find("open fun startXrayTunnel(")
@@ -772,7 +781,7 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         .find("prepareAndroidVpnConfig(configJson)")
         .expect("reference VPN should prepare bootstrap mappings");
     let add_dns = start_body
-        .find("tunnelBuilder.addDnsServer(XRAY_TUN_DNS_ANCHOR)")
+        .find("tunnelBuilder.addDnsServer(XrayTunInterface.DNS_ANCHOR)")
         .expect("reference VPN should install the local DNS anchor");
     let establish = start_body
         .find("tunnelBuilder.establish()")

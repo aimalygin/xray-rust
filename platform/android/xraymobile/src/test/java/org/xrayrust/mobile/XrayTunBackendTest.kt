@@ -503,22 +503,22 @@ class XrayTunBackendTest {
             "tcp://[2001:db8::53",
             "tcp://resolver example",
             "tcp://resolver\u0001.example",
-            "tcp://$XRAY_TUN_DNS_ANCHOR",
-            "tcp://$XRAY_TUN_DNS_ANCHOR:5353",
+            "tcp://${XrayTunInterface.DNS_ANCHOR}",
+            "tcp://${XrayTunInterface.DNS_ANCHOR}:5353",
             "tcp://10.7.0.1:5353",
             "tcp+local://[fd00:7872::1]:5353",
             "tls://resolver.example/dns-query",
-            "tls://$XRAY_TUN_DNS_ANCHOR",
+            "tls://${XrayTunInterface.DNS_ANCHOR}",
             "https:/resolver.example/dns-query",
             "https://user@resolver.example/dns-query",
             "https://resolver.example:0/dns-query",
             "https://resolver.example/dns-query#fragment",
             "https://2001:db8::53/dns-query",
-            "https://$XRAY_TUN_DNS_ANCHOR/dns-query",
+            "https://${XrayTunInterface.DNS_ANCHOR}/dns-query",
             "https+local://[fd00:7872::1]/dns-query",
             "quic://resolver.example",
             "quic+local://resolver.example/dns-query",
-            "quic+local://$XRAY_TUN_DNS_ANCHOR",
+            "quic+local://${XrayTunInterface.DNS_ANCHOR}",
             mapOf("address" to "tcp+local://resolver.example/path"),
             mapOf("address" to "tcp://resolver.example", "port" to "53"),
             mapOf("address" to "tcp://resolver.example", "port" to 65_536),
@@ -575,7 +575,7 @@ class XrayTunBackendTest {
             mapOf("address" to "resolver.example", "queryStrategy" to "UseSystem"),
             mapOf("address" to "resolver.example", "unexpected" to true),
             mapOf("address" to "localhost"),
-            mapOf("address" to XRAY_TUN_DNS_ANCHOR, "port" to 0),
+            mapOf("address" to XrayTunInterface.DNS_ANCHOR, "port" to 0),
         )) {
             assertThrows(IllegalArgumentException::class.java) {
                 dnsServerBootstrapDomain(server)
@@ -661,9 +661,9 @@ class XrayTunBackendTest {
     @Test
     fun directDnsServersRejectTunnelOwnedPort53ButAllowOtherPorts() {
         for (server in listOf<Any>(
-            XRAY_TUN_DNS_ANCHOR,
-            "$XRAY_TUN_DNS_ANCHOR:53",
-            mapOf("address" to XRAY_TUN_DNS_ANCHOR),
+            XrayTunInterface.DNS_ANCHOR,
+            "${XrayTunInterface.DNS_ANCHOR}:53",
+            mapOf("address" to XrayTunInterface.DNS_ANCHOR),
             mapOf("address" to "198.18.0.2", "port" to 0),
         )) {
             assertThrows(IllegalArgumentException::class.java) {
@@ -671,7 +671,7 @@ class XrayTunBackendTest {
             }
         }
 
-        assertNull(dnsServerBootstrapDomain("$XRAY_TUN_DNS_ANCHOR:5353"))
+        assertNull(dnsServerBootstrapDomain("${XrayTunInterface.DNS_ANCHOR}:5353"))
         assertNull(
             dnsServerBootstrapDomain(mapOf("address" to "198.18.0.2", "port" to 5353)),
         )
@@ -747,7 +747,7 @@ class XrayTunBackendTest {
         val mappings = canonicalizeExactDnsHostMappings(
             listOf<Pair<String, Any>>(
                 "resolver.example" to "alias.example",
-                "alias.example" to listOf(XRAY_TUN_DNS_ANCHOR),
+                "alias.example" to listOf(XrayTunInterface.DNS_ANCHOR),
             ),
         ).mappings.toMutableMap()
 
@@ -778,7 +778,7 @@ class XrayTunBackendTest {
                 depth = 0,
                 dnsUpstreamPort = 53,
             ) {
-                listOf(XRAY_TUN_DNS_ANCHOR)
+                listOf(XrayTunInterface.DNS_ANCHOR)
             }
         }
         assertFalse(mappings.containsKey("full:resolver.example"))
@@ -797,11 +797,11 @@ class XrayTunBackendTest {
                 depth = 0,
                 dnsUpstreamPort = 5353,
             ) {
-                listOf(XRAY_TUN_DNS_ANCHOR)
+                listOf(XrayTunInterface.DNS_ANCHOR)
             },
         )
         assertEquals(
-            AndroidDnsHostTarget.Addresses(listOf(XRAY_TUN_DNS_ANCHOR)),
+            AndroidDnsHostTarget.Addresses(listOf(XrayTunInterface.DNS_ANCHOR)),
             mappings["full:resolver.example"],
         )
     }
@@ -1163,7 +1163,7 @@ class XrayTunBackendTest {
 
     @Test
     fun tcpDnsServerUrlRejectsTunnelOwnedResolutionAtNonstandardPort() {
-        for (address in listOf(XRAY_TUN_DNS_ANCHOR, "10.7.0.1", "fd00:7872::1")) {
+        for (address in listOf(XrayTunInterface.DNS_ANCHOR, "10.7.0.1", "fd00:7872::1")) {
             val resolver = BoundedAndroidDnsBootstrapResolver(maxConcurrentLookups = 1) {
                 listOf(address)
             }

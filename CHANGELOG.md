@@ -10,6 +10,19 @@ long-term supported release series.
 
 ## Unreleased
 
+- Android: expose the live `tcpRemoteWrittenBytes` and `tcpRemoteReadBytes` TUN
+  counters that the C ABI and Swift adapter already report, and add
+  `XrayTunStats.uplinkBytes` / `downlinkBytes` (TCP plus UDP remote payload).
+  Hosts sampling `outboundAccountingSnapshot()` for a traffic meter only saw
+  bytes of closed connections. The new constructor parameters default to zero
+  and come last, so source callers keep compiling (#81).
+
+- Android: publish the TUN interface contract as `XrayTunInterface` (IPv4
+  `10.7.0.1/32`, IPv6 `fd00:7872::1/128`, DNS anchor `198.18.0.1`, MTU 1500)
+  and add `VpnService.Builder.applyXrayTunInterface(dnsAnchor)`, so hosts with
+  their own `VpnService` stop copying SDK internals. `XrayVpnService` uses the
+  same helper; the established interface is unchanged (#81).
+
 - Report live bytes in per-outbound accounting. The accounting snapshot added a
   connection's payload bytes to `uplinkBytes`/`downlinkBytes` only when it
   completed, so a host polling it as a traffic meter saw nothing during a long
