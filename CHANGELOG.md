@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- TUN TCP acknowledges client data after handing it to the outbound, so the
+  ACK advertises the drained receive window. The stack ran smoltcp's ingress
+  and egress in one `Interface::poll` and read the sockets only afterwards:
+  the ACK for a full-window burst offered what was left of the 32 KiB window,
+  and the reopened window followed on a later loop turn, up to 1 ms later
+  (tokio timer resolution). Kernel TCP senders (Android `VpnService`, Linux
+  tun, Darwin utun) do not send a partial segment into a window below one MSS,
+  so a window-limited upload stalled on every burst. In an emulation of such a
+  sender, a single upload through a 1500-byte TUN rose from 94 to 636 MiB/s.
+
 - Add classic Shadowsocks AEAD client support (`aes-128-gcm`, `aes-256-gcm`,
   `chacha20-poly1305`, `xchacha20-poly1305` and Xray's aliases such as
   `chacha20-ietf-poly1305`) to the `shadowsocks` outbound, its TCP and native
