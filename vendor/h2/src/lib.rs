@@ -132,7 +132,7 @@ pub mod server;
 mod share;
 
 #[cfg(fuzzing)]
-#[cfg_attr(feature = "unstable", allow(missing_docs))]
+#[allow(missing_docs)]
 pub mod fuzz_bridge;
 
 pub use crate::error::{Error, Reason};

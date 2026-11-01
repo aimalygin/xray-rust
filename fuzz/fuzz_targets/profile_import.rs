@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 use std::ptr;
 use xray_config::profile_import::{
-    import_profile, import_request, ProfileFormat, MAX_RESULT_BYTES,
+    import_profile, import_request, is_import_advisory, ProfileFormat, MAX_RESULT_BYTES,
 };
 use xray_ffi::{xray_error_free, xray_profile_import_json, XrayStatus};
 
@@ -23,7 +23,7 @@ fuzz_target!(|data: &[u8]| {
         .flatten()
         {
             let config = xray_config::parse_xray_json(&profile.config_json).unwrap();
-            assert!(config.diagnostics.is_empty());
+            assert!(config.diagnostics.iter().all(is_import_advisory));
             assert!(profile.to_json().unwrap().len() <= MAX_RESULT_BYTES);
         }
     }

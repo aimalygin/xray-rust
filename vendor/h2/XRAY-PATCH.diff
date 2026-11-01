@@ -47,6 +47,17 @@
              },
          );
          let send_request = SendRequest {
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -132,7 +132,7 @@
+ mod share;
+ 
+ #[cfg(fuzzing)]
+-#[cfg_attr(feature = "unstable", allow(missing_docs))]
++#[allow(missing_docs)]
+ pub mod fuzz_bridge;
+ 
+ pub use crate::error::{Error, Reason};
 --- a/src/proto/connection.rs
 +++ b/src/proto/connection.rs
 @@ -87,6 +87,7 @@
