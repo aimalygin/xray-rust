@@ -10,6 +10,55 @@ long-term supported release series.
 
 ## Unreleased
 
+- Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
+  uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2
+  snapshot of the bare uTLS `hellorandomizednoalpn`, so plain TLS failed against
+  TLS-1.3-only servers, and REALITY configs and share links with
+  `fp=randomizednoalpn` were rejected although Xray-core dials them. The new
+  snapshot leads with the X25519MLKEM768 share, so REALITY v26.10.21 servers
+  accept it. `hellorandomizednoalpn` keeps its TLS 1.2 shape.
+
+- Android: `XrayNetworkChangeCoordinator` no longer mistakes a partial initial
+  callback burst for a migration. Until the network passed to `start` reports
+  or is lost, the control worker reads its current state and offers it as a
+  candidate, so another network reporting first neither requests rebind nor
+  moves a policy that keeps the previous carrier (#89).
+- Android: `XrayNetworkChangeCoordinator` works on API 24-25. Before Android O
+  `onAvailable` is not followed by capability or link-property callbacks, so
+  networks never became candidates and migrations were silently missed; the
+  coordinator now reads a network's current state once in `onAvailable` there.
+
+- Match the routing `geoip:private` set to Xray-core's built-in private set
+  (`common/geodata/consts.go`), which the plaintext-server exemption already
+  used. The previous nine networks left out `0.0.0.0/8`, `198.18.0.0/15`, the
+  TEST-NETs, multicast and broadcast (`224.0.0.0/3`), `::` and `ff00::/8`, so a
+  `geoip:private` -> direct rule sent mDNS, SSDP and broadcast traffic through
+  the proxy; Xray-core, reading `geoip:private` from any common `geoip.dat`,
+  keeps it direct. DNS `expectedIPs`/`unexpectedIPs` still load
+  `geoip:private` from `geoip.dat`.
+
+- HTTP profile import refuses a legacy Base64 whole-authority link such as
+  `http://<Base64 of user:pass@host:port>` with `Unsupported`. With the default
+  port it was imported as a one-label host, so the profile reached no server
+  and DNS bootstrap sent the encoded credentials to the carrier resolver.
+
+- Profile import rejects display names containing bidi embeddings, overrides
+  or isolates (U+202A..U+202E, U+2066..U+2069), from the link fragment or the
+  `name` option. They reorder surrounding text, so a name could display as a
+  different profile in system VPN UI (CVE-2021-42574). LRM, RLM and ALM stay
+  allowed for right-to-left names.
+
+- Treat an outbound `"proxySettings": null` as absent, as Xray-core does.
+  Next to `sockopt.dialerProxy` it was rejected as a combination, and alone it
+  was rejected as a non-object, so panel output with explicit null fields
+  failed to load.
+
+- `sockopt.dialerProxy` chains no longer depend on outbound order. An outbound
+  that chains to a freedom fragment handler gains its mask; listed before an
+  outbound that chains through it, it was then mistaken for a fragment handler
+  itself and rejected. Xray-core resolves the tags at dial time, so both orders
+  now parse to the same configuration.
+
 - Grow gRPC stream receive windows with the link, as grpc-go's BDP estimator
   does under Xray's default `grpcSettings`. Every stream kept HTTP/2's
   65,535-byte window, which capped a flow's download at one window per round
@@ -222,6 +271,16 @@ long-term supported release series.
 - Android: the reference `XrayVpnService` marks its VPN as not metered on
   Android 10+, `XrayCore.ffiInfo()` reads the native version and capabilities
   once per process, and `XrayCore.stats()` checks the native value count.
+
+- Expose the geodata search directory in the Android adapter:
+  `XrayCore.create(geodataSearchDirectory = …, geodataSearchPolicy = …)` and an
+  overridable `XrayVpnService.geodataSearchDirectory()`. The policy defaults to
+  `Exclusive` because the core's process-default directories are meaningless in
+  an Android app. Routing replacement reuses the same directory, and the
+  reference service passes it to both the startup-probe preflight core and the
+  data-path core. Document how
+  to install geodata under `noBackupFilesDir` and correct the claim that
+  `geoip:private` never needs `geoip.dat`: DNS IP rules read it from the file.
 
 - Add RFC 1929 username/password authentication to the SOCKS inbound
   (`"auth": "password"` with `accounts`). Password-protected UDP associations

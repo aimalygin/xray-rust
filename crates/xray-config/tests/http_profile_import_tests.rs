@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use xray_config::profile_import::{import_profile, import_request, ProfileFormat};
+use xray_config::profile_import::{import_profile, import_request, ImportError, ProfileFormat};
 
 fn config(text: &str) -> Value {
     let profile = import_profile(ProfileFormat::Http, text, None, &[]).unwrap();
@@ -136,6 +136,29 @@ fn http_dns_uses_tcp_and_names_are_shared_with_mobile() {
         &vec!["192.0.2.53".into(); 9]
     )
     .is_err());
+}
+
+#[test]
+fn http_refuses_legacy_base64_authorities_but_keeps_one_label_hosts() {
+    // Base64 of `secret:secret@198.51.100.7:8080`, `secret:password@proxy.example:8443`
+    // and `secret@192.0.2.1:3128`: imported as one-label hosts, they would go to DNS.
+    for text in [
+        "http://c2VjcmV0OnNlY3JldEAxOTguNTEuMTAwLjc6ODA4MA",
+        "https://c2VjcmV0OnBhc3N3b3JkQHByb3h5LmV4YW1wbGU6ODQ0Mw#Office",
+        "http://c2VjcmV0QDE5Mi4wLjIuMTozMTI4/",
+    ] {
+        let error = import_profile(ProfileFormat::Http, text, None, &[]).unwrap_err();
+        assert!(
+            matches!(error, ImportError::Unsupported),
+            "{text}: {error:?}"
+        );
+        assert!(!error.to_string().contains("secret"));
+    }
+    // Labels that are not an encoded authority, including valid Base64 of `abcd`.
+    for host in ["proxy", "gateway1", "YWJjZA"] {
+        let root = config(&format!("http://{host}"));
+        assert_eq!(root["outbounds"][0]["settings"]["address"], host);
+    }
 }
 
 #[test]

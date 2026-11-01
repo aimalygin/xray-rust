@@ -951,7 +951,10 @@ const BUDGET_DOWNLOADS: usize = 16;
 
 #[derive(Clone, Copy, PartialEq)]
 enum BudgetReader {
-    /// Reads as soon as data arrives from a server paced at 32 KiB per 2 ms.
+    /// Takes each 64 KiB as it arrives, and its server writes the next 64 KiB
+    /// only once the reader has it, so the reader finds its stream empty
+    /// however slow the host is. A server paced at 32 KiB per 2 ms outran
+    /// readers on a loaded CI runner, and the budget rightly held them.
     KeepsUp,
     /// Pauses 25 ms after each 64 KiB: 42 MB/s for all sixteen, well below
     /// what even a debug build receives, so data waits in each stream.
@@ -960,9 +963,10 @@ enum BudgetReader {
 
 /// Runs sixteen downloads, each on its own connection, whose readers take
 /// 2 MiB each, past the 2 MiB handshake credit once a share applies. Each
-/// server writes as far as its credit allows, paced while its reader keeps
-/// up. Returns how far the servers got ahead of their readers in all once
-/// these stopped: the stream credit granted past the bytes read.
+/// server writes as far as its credit allows, waiting for its reader at every
+/// 64 KiB while that reader keeps up. Returns how far the servers got ahead of
+/// their readers in all once these stopped: the stream credit granted past
+/// the bytes read.
 async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
     const READ: usize = 2 * 1024 * 1024;
     const PIECE: usize = 64 * 1024;
@@ -971,14 +975,25 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
     let (client_tls, server_addr, server) = server_with_options(None).await;
     let written: Arc<Vec<AtomicUsize>> =
         Arc::new((0..BUDGET_DOWNLOADS).map(|_| AtomicUsize::new(0)).collect());
+    let taken: Arc<Vec<AtomicUsize>> =
+        Arc::new((0..BUDGET_DOWNLOADS).map(|_| AtomicUsize::new(0)).collect());
     let handler = tokio::spawn({
         let server = server.clone();
         let written = Arc::clone(&written);
+        let taken = Arc::clone(&taken);
         async move {
             let mut writers = tokio::task::JoinSet::new();
-            for index in 0..BUDGET_DOWNLOADS {
-                let (_, mut stream) = server.accept().await;
+            for _ in 0..BUDGET_DOWNLOADS {
+                let (request, mut stream) = server.accept().await;
+                // Connections arrive in any order; the path names the reader.
+                let index: usize = request
+                    .uri()
+                    .path()
+                    .trim_start_matches("/budget/")
+                    .parse()
+                    .expect("download index");
                 let written = Arc::clone(&written);
+                let taken = Arc::clone(&taken);
                 writers.spawn(async move {
                     drain_request(&mut stream).await.expect("request FIN");
                     stream
@@ -988,9 +1003,12 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
                     let chunk = Bytes::from(vec![0x5a; SERVER_PIECE]);
                     loop {
                         stream.send_data(chunk.clone()).await.expect("DATA");
-                        let total = written[index].fetch_add(SERVER_PIECE, Ordering::Relaxed);
-                        if reader == BudgetReader::KeepsUp && total < READ {
-                            tokio::time::sleep(Duration::from_millis(2)).await;
+                        let total = written[index].fetch_add(SERVER_PIECE, Ordering::Relaxed)
+                            + SERVER_PIECE;
+                        if reader == BudgetReader::KeepsUp && total <= READ {
+                            while taken[index].load(Ordering::Acquire) < total / PIECE * PIECE {
+                                tokio::time::sleep(Duration::from_millis(1)).await;
+                            }
                         }
                     }
                 });
@@ -1011,12 +1029,16 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
     .await;
     let start = Arc::new(tokio::sync::Barrier::new(BUDGET_DOWNLOADS));
     let mut readers = tokio::task::JoinSet::new();
-    for client in clients {
+    for (index, client) in clients.into_iter().enumerate() {
         let client = client.expect("connect HTTP/3 client");
         let start = Arc::clone(&start);
+        let taken = Arc::clone(&taken);
         readers.spawn(async move {
             let mut body = client
-                .send_fixed(request(Method::GET, "/budget"), Bytes::new())
+                .send_fixed(
+                    request(Method::GET, &format!("/budget/{index}")),
+                    Bytes::new(),
+                )
                 .await
                 .expect("response");
             // Read together, so that every share is sampled while all
@@ -1028,6 +1050,7 @@ async fn credit_ahead_of_readers(reader: BudgetReader) -> usize {
                     .await
                     .expect("read in time")
                     .expect("read");
+                taken[index].fetch_add(PIECE, Ordering::Release);
                 if reader == BudgetReader::FallsBehind {
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
