@@ -118,9 +118,11 @@ For a live traffic meter, sample `XrayCore.stats()` and take the difference of
 (`tcpRemoteWrittenBytes`, `tcpRemoteReadBytes`) and UDP remote payload counters
 of every TUN flow, including direct ones, and only grow while the core exists.
 They exclude proxy protocol overhead, probes and SOCKS/HTTP inbounds.
-`outboundAccountingSnapshot()` adds a connection's bytes only when it closes, so
-it suits per-outbound totals rather than a live rate. The Swift adapter exposes
-the same TCP counters in `XrayTunStatsSnapshot`.
+For a live rate per outbound, sample `outboundAccountingSnapshot()`: each
+outbound's `uplinkBytes + activeUplinkBytes` (and the downlink pair) never
+decreases between snapshots. The active fields are `null` with an older native
+library. The Swift adapter exposes the same TCP counters in
+`XrayTunStatsSnapshot`.
 
 ## VLESS share-link import
 

@@ -1203,8 +1203,8 @@ data class XrayTunStats(
      * carries them (including direct ones). The counters only grow from [XrayCore.create] until
      * the core is closed, so the difference between two samples is the traffic in between. Proxy
      * protocol overhead, startup or outbound probes and SOCKS/HTTP inbounds are not counted.
-     * [XrayCore.outboundAccountingSnapshot] adds a connection's bytes only when it closes, so it
-     * cannot drive a live traffic meter.
+     * For live bytes per outbound, read [XrayCore.outboundAccountingSnapshot] and add
+     * [XrayOutboundAccounting.activeUplinkBytes] to [XrayOutboundAccounting.uplinkBytes].
      */
     val uplinkBytes: Long
         get() = tcpRemoteWrittenBytes + udpRemoteWrittenBytes
