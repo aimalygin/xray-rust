@@ -59,6 +59,32 @@ fn binary_kdf_and_both_aeads_match_pinned_go_vectors() {
 }
 
 #[test]
+fn header_mask_counter_carries_like_pinned_go() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/vless-encryption/primitives.json"
+    ))
+    .unwrap();
+    // The IVs carry out of the low 32 and 64 counter bits and wrap all 128,
+    // which a narrower big-endian counter would get wrong.
+    let vectors = fixture["ctrCarry"].as_array().unwrap();
+    assert_eq!(vectors.len(), 3);
+    for vector in vectors {
+        let iv: [u8; 16] = unhex(vector["iv"].as_str().unwrap()).try_into().unwrap();
+        let mut mask = HeaderMask::new(&pattern(96), &iv);
+        let mut data = pattern(80);
+        for chunk in data.chunks_mut(7) {
+            mask.apply(chunk).unwrap();
+        }
+        assert_eq!(
+            data,
+            unhex(vector["masked"].as_str().unwrap()),
+            "{}",
+            vector["iv"]
+        );
+    }
+}
+
+#[test]
 fn byte_context_api_preserves_utf8_api() {
     for context in ["", "VLESS", "ключ 🔑"] {
         assert_eq!(

@@ -1,0 +1,1718 @@
+{
+  "inputs": {
+    "after": {
+      "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)\n",
+      "command": "cargo build --locked --release -p xray-cli",
+      "commit": "57b5a6553c5dd52d70b4f2dc13e3c1e1f3b37a9b",
+      "incremental": false,
+      "isolated_target": true,
+      "lock_sha256": "bef5b790473121d7d72f80046551177f4ba8777e1cf1f64f5e90c4fae2182db7",
+      "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-31-h3-merged.noindex/bin/after",
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "rustflags": null,
+      "sha256": "0b151cc25e2bff3c6a0a7600281997f05b10807ed3a7cb8930008442ca375f5d",
+      "tree": "c6c7114f386f82b5830668f124fc326435ed3186",
+      "workspace_packages_compiled": [
+        "crates/xray-cli",
+        "crates/xray-config",
+        "crates/xray-core-rs",
+        "crates/xray-proxy",
+        "crates/xray-routing",
+        "crates/xray-runtime",
+        "crates/xray-transport",
+        "crates/xray-tun",
+        "crates/xray-utls",
+        "crates/xray-vless-encryption",
+        "crates/xray-wireguard",
+        "vendor/blake3",
+        "vendor/gotatun",
+        "vendor/h2",
+        "vendor/h3",
+        "vendor/h3-quinn",
+        "vendor/quinn",
+        "vendor/quinn-proto",
+        "vendor/smoltcp"
+      ]
+    },
+    "before": {
+      "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)\n",
+      "command": "cargo build --locked --release -p xray-cli",
+      "commit": "bae0ed5b4e16ad4de6dcd5d104600cc11c30ea51",
+      "incremental": false,
+      "isolated_target": true,
+      "lock_sha256": "15202f3d7421563c9788b6a22374b452e8a0e4862fd800a26ea3c3404e59c316",
+      "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-h3-send-budget-16m.noindex/bin/after",
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "rustflags": null,
+      "sha256": "a9026942dcd0ff25bc10a466fbaebaa114df564e84c38ab5ca7dd604a6430397",
+      "tree": "a8b97cfdf65e6976244cede5904b7fccbcd48075",
+      "workspace_packages_compiled": [
+        "crates/xray-cli",
+        "crates/xray-config",
+        "crates/xray-core-rs",
+        "crates/xray-proxy",
+        "crates/xray-routing",
+        "crates/xray-runtime",
+        "crates/xray-transport",
+        "crates/xray-tun",
+        "crates/xray-utls",
+        "crates/xray-vless-encryption",
+        "crates/xray-wireguard",
+        "vendor/blake3",
+        "vendor/gotatun",
+        "vendor/h2",
+        "vendor/h3-quinn",
+        "vendor/quinn",
+        "vendor/quinn-proto",
+        "vendor/smoltcp"
+      ]
+    },
+    "harness": {
+      "cargo": "cargo 1.96.0 (30a34c682 2026-05-25)\n",
+      "command": "cargo build --locked --release -p xray-cli -p xray-bench",
+      "commit": "b01fcd066471473426ab07996cc2608f9d108f59",
+      "incremental": false,
+      "isolated_target": true,
+      "lock_sha256": "15202f3d7421563c9788b6a22374b452e8a0e4862fd800a26ea3c3404e59c316",
+      "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)\nbinary: rustc\ncommit-hash: ac68faa20c58cbccd01ee7208bf3b6e93a7d7f96\ncommit-date: 2026-05-25\nhost: aarch64-apple-darwin\nrelease: 1.96.0\nLLVM version: 22.1.2\n",
+      "rustflags": null,
+      "sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+      "tree": "1b54af6604b729661bcf24f5126978adbe50861b",
+      "workspace_packages_compiled": [
+        "crates/xray-bench",
+        "crates/xray-cli",
+        "crates/xray-config",
+        "crates/xray-core-rs",
+        "crates/xray-proxy",
+        "crates/xray-routing",
+        "crates/xray-runtime",
+        "crates/xray-transport",
+        "crates/xray-tun",
+        "crates/xray-utls",
+        "crates/xray-vless-encryption",
+        "crates/xray-wireguard",
+        "vendor/blake3",
+        "vendor/gotatun",
+        "vendor/h2",
+        "vendor/h3-quinn",
+        "vendor/quinn",
+        "vendor/quinn-proto",
+        "vendor/smoltcp"
+      ]
+    },
+    "origin": {
+      "build_command": "CGO_ENABLED=0 GOTOOLCHAIN=local go -C <clean pinned Xray checkout> build -mod=readonly -o <origin> <collector checkout>/tools/vless-encryption-oracle/main.go",
+      "go_build": "/private/tmp/xray-migration-bench-20261027/bin/origin: go1.27.3\n\tpath\tcommand-line-arguments\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.4.1\th1:I9KxadAkvo+QjtcEE2f2tyfEvmIla/T0m+14PrZNl0U=\n\tdep\tgithub.com/xtls/xray-core\t(devel)\t\n\tdep\tgithub.com/yuin/gopher-lua\tv1.1.2\th1:yF/FjE3hD65tBbt0VXLE13HWS9h34fdzJmrWRXwobGA=\n\tdep\tgolang.org/x/crypto\tv0.58.0\th1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=\n\tdep\tgolang.org/x/sync\tv0.24.0\th1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=\n\tdep\tgolang.org/x/sys\tv0.49.0\th1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=\n\tdep\tgoogle.golang.org/protobuf\tv1.36.12\th1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=\n\tdep\tlukechampine.com/blake3\tv1.4.1\th1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n",
+      "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/origin",
+      "reference_commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+      "sha256": "9e2f46e0a0378ff6a15ae5601f897b6feac2c342a161507667834a7dc5e67922",
+      "source_commit": "5df1a4bcc7d6650e32a2c5630c0ac7fc456c6aa8",
+      "source_sha256": "68b2e66eba9daeb6ed4c3f7ddcffc4e321a03c94da1ec4c9c77f59ce4f81f903"
+    },
+    "reference": {
+      "commit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+      "go_build": "/private/tmp/xray-migration-bench-20261027/bin/reference: go1.27.3\n\tpath\tgithub.com/xtls/xray-core/main\n\tmod\tgithub.com/xtls/xray-core\tv0.0.0-20261021115930-1b1647cd9ddf\t\n\tdep\tgithub.com/andybalholm/brotli\tv1.2.3\th1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA5NQ=\n\tdep\tgithub.com/apernet/quic-go\tv0.61.1-0.20260806010916-184d081eef3e\th1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=\n\tdep\tgithub.com/ghodss/yaml\tv1.0.1-0.20220118164431-d8423dcdf344\th1:Arcl6UOIS/kgO2nW3A65HN+7CMjSDP/gofXL4CZt1V4=\n\tdep\tgithub.com/google/gopacket\tv1.1.19\th1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=\n\tdep\tgithub.com/google/uuid\tv1.6.0\th1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\n\tdep\tgithub.com/gorilla/websocket\tv1.5.3\th1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=\n\tdep\tgithub.com/huin/goupnp\tv1.2.0\th1:uOKW26NG1hsSSbXIZ1IR7XP9Gjd1U8pnLaCMgntmkmY=\n\tdep\tgithub.com/jackpal/go-nat-pmp\tv1.0.2\th1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=\n\tdep\tgithub.com/juju/ratelimit\tv1.0.2\th1:sRxmtRiajbvrcLQT7S+JbqU0ntsb9W2yhSdNN8tWfaI=\n\tdep\tgithub.com/klauspost/compress\tv1.20.0\th1:a3C1ke2ohxFymNlb2HWAHjDeKCI90scRskErZkR0ezA=\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.4.1\th1:I9KxadAkvo+QjtcEE2f2tyfEvmIla/T0m+14PrZNl0U=\n\tdep\tgithub.com/koron/go-ssdp\tv0.0.4\th1:1IDwrghSKYM7yLf7XCzbByg2sJ/JcNOZRXS2jczTwz0=\n\tdep\tgithub.com/libp2p/go-nat\tv1.0.1-0.20250821073202-01afc089f138\th1:YohuNPT/1k3VcThCQlBZ43PCPWPfMRS1zcxWBF2SLK8=\n\tdep\tgithub.com/libp2p/go-netroute\tv0.2.1\th1:V8kVrpD8GK0Riv15/7VN6RbUQ3URNZVosw7H2v9tksU=\n\tdep\tgithub.com/miekg/dns\tv1.1.73\th1:uhT8nJxmTrPJYClxVxTCX+CVn6qnzSiybRk72Z6DgrE=\n\tdep\tgithub.com/pelletier/go-toml\tv1.9.5\th1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=\n\tdep\tgithub.com/pion/dtls/v3\tv3.1.5\th1:9xJtVsHwMYeSjPp5Hh1FTis4DchnQWtnOa5o+6ygqfc=\n\tdep\tgithub.com/pion/logging\tv0.2.4\th1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=\n\tdep\tgithub.com/pion/stun/v3\tv3.1.7\th1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=\n\tdep\tgithub.com/pion/transport/v4\tv4.1.0\th1:8S+nF2reM2cJuqC6g78OVy2BBgmbdns+acx3jA97BvQ=\n\tdep\tgithub.com/pires/go-proxyproto\tv0.15.0\th1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=\n\tdep\tgithub.com/quic-go/qpack\tv0.6.0\th1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=\n\tdep\tgithub.com/refraction-networking/utls\tv1.8.3-0.20260301010127-aa6edf4b11af\th1:er2acxbi3N1nvEq6HXHUAR1nTWEJmQfqiGR8EVT9rfs=\n\tdep\tgithub.com/robfig/cron/v3\tv3.0.1\th1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=\n\tdep\tgithub.com/wlynxg/anet\tv0.0.5\th1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=\n\tdep\tgithub.com/xtls/reality\tv0.0.0-20261014101318-83f621788ca8\th1:RjLnVvlzK4q6zWaSBPNRGsrgx2fbJDeUWffjw574uzs=\n\tdep\tgithub.com/yuin/gopher-lua\tv1.1.2\th1:yF/FjE3hD65tBbt0VXLE13HWS9h34fdzJmrWRXwobGA=\n\tdep\tgo4.org/netipx\tv0.0.0-20231129151722-fdeea329fbba\th1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=\n\tdep\tgolang.org/x/crypto\tv0.58.0\th1:COkYLr4k7nDI4r6QtMML2AfzeIswWHAJthLS6K/M/54=\n\tdep\tgolang.org/x/crypto/x509roots/fallback\tv0.0.0-20261020153306-9f2b28d4331a\th1:V5oicZXS0oqZx30gY/apgSVD7YvNBfrIOdcMnlelJY4=\n\tdep\tgolang.org/x/exp\tv0.0.0-20240506185415-9bf2ced13842\th1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=\n\tdep\tgolang.org/x/net\tv0.61.0\th1:RR+6j/BTBCrggOLugxa+66R8FvoN6MHlzDlZIbN9YFw=\n\tdep\tgolang.org/x/sync\tv0.24.0\th1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=\n\tdep\tgolang.org/x/sys\tv0.49.0\th1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=\n\tdep\tgolang.org/x/text\tv0.43.0\th1:1QivrlhwAsnMOcqgOdl9my7s9OyZl8O5/UGUTJVXoWc=\n\tdep\tgolang.zx2c4.com/wireguard\tv0.0.0-20250521234502-f333402bd9cb\th1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=\n\tdep\tgoogle.golang.org/genproto/googleapis/rpc\tv0.0.0-20260706201446-f0a921348800\th1:qEHAMpSaUhtD0p3NbEEI83HwNGFxEwaSJ1G9PLnCBZE=\n\tdep\tgoogle.golang.org/grpc\tv1.84.0\th1:soMyaPJ8pAak5PIQ0DGBUir0XRo2fRoMqhNWMLlLxO0=\n\tdep\tgoogle.golang.org/protobuf\tv1.36.12\th1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=\n\tdep\tgopkg.in/yaml.v2\tv2.4.0\th1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=\n\tdep\tlayeh.com/gopher-luar\tv1.0.11\th1:8zJudpKI6HWkoh9eyyNFaTM79PY6CAPcIr6X/KTiliw=\n\tdep\tlukechampine.com/blake3\tv1.4.1\th1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=darwin\n\tbuild\tGOARM64=v8.0\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=1b1647cd9ddf0abc34b981d4611fc03bcac1ca74\n\tbuild\tvcs.time=2026-10-21T11:59:30Z\n\tbuild\tvcs.modified=false\n",
+      "path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/reference",
+      "sha256": "b8c58f14180eb0cad5665fa2cefb7d10897eec945d007212a053fc1de2257ee8"
+    }
+  },
+  "rows": [
+    {
+      "case": "xhttp-h3-socks-upload-1",
+      "block": "case-xhttp-h3-socks-upload-1-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          476.67256452141146,
+          427.9087609931077,
+          428.3770512891577,
+          462.2321227848999,
+          413.8308409859035
+        ],
+        "after": [
+          430.09274388885336,
+          419.00492830650546,
+          414.8051408291809,
+          491.1204247367513,
+          421.3338962090853
+        ],
+        "paired": {
+          "median": 0.979192216897037,
+          "min": 0.9022813056603642,
+          "max": 1.062497391522256,
+          "samples": [
+            0.9022813056603642,
+            0.979192216897037,
+            0.9683178395781625,
+            1.062497391522256,
+            1.0181307299506888
+          ],
+          "bootstrap_95_percentile": [
+            0.9022813056603642,
+            1.062497391522256
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          2280.0,
+          2360.0,
+          2320.0,
+          2320.0,
+          2280.0
+        ],
+        "after": [
+          2240.0,
+          2280.0,
+          2320.0,
+          2240.0,
+          2320.0
+        ],
+        "paired": {
+          "median": 0.9824561403508771,
+          "min": 0.9655172413793104,
+          "max": 1.0175438596491229,
+          "samples": [
+            0.9824561403508771,
+            0.9661016949152542,
+            1.0,
+            0.9655172413793104,
+            1.0175438596491229
+          ],
+          "bootstrap_95_percentile": [
+            0.9655172413793104,
+            1.0175438596491229
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          5.90625,
+          5.890625,
+          5.921875,
+          5.890625,
+          5.859375
+        ],
+        "after": [
+          5.90625,
+          5.921875,
+          5.84375,
+          5.890625,
+          5.953125
+        ],
+        "paired": {
+          "median": 1.0,
+          "min": 0.9868073878627969,
+          "max": 1.016,
+          "samples": [
+            1.0,
+            1.0053050397877985,
+            0.9868073878627969,
+            1.0,
+            1.016
+          ],
+          "bootstrap_95_percentile": [
+            0.9868073878627969,
+            1.016
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          11.734375,
+          11.703125,
+          11.734375,
+          11.703125,
+          11.671875
+        ],
+        "after": [
+          11.65625,
+          11.671875,
+          11.59375,
+          11.640625,
+          11.71875
+        ],
+        "paired": {
+          "median": 0.9946595460614153,
+          "min": 0.9880159786950732,
+          "max": 1.0040160642570282,
+          "samples": [
+            0.9933422103861518,
+            0.9973297730307076,
+            0.9880159786950732,
+            0.9946595460614153,
+            1.0040160642570282
+          ],
+          "bootstrap_95_percentile": [
+            0.9880159786950732,
+            1.0040160642570282
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-socks-download-1",
+      "block": "case-xhttp-h3-socks-download-1-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          294.02358315841093,
+          291.0316770893769,
+          294.24930807332674,
+          291.1077802392116,
+          293.4398428262842
+        ],
+        "after": [
+          293.67918646276615,
+          293.40438954995017,
+          292.2438789599462,
+          296.1703782944791,
+          293.1710330249072
+        ],
+        "paired": {
+          "median": 0.9990839355733431,
+          "min": 0.9931845919145516,
+          "max": 1.0173908029909315,
+          "samples": [
+            0.9988286766253739,
+            1.0081527635902143,
+            0.9931845919145516,
+            1.0173908029909315,
+            0.9990839355733431
+          ],
+          "bootstrap_95_percentile": [
+            0.9931845919145516,
+            1.0173908029909315
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          4200.0,
+          4200.0,
+          4200.0,
+          4200.0,
+          4200.0
+        ],
+        "after": [
+          4200.0,
+          4200.0,
+          4160.0,
+          4160.0,
+          4160.0
+        ],
+        "paired": {
+          "median": 0.9904761904761905,
+          "min": 0.9904761904761905,
+          "max": 1.0,
+          "samples": [
+            1.0,
+            1.0,
+            0.9904761904761905,
+            0.9904761904761905,
+            0.9904761904761905
+          ],
+          "bootstrap_95_percentile": [
+            0.9904761904761905,
+            1.0
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          3.328125,
+          3.296875,
+          3.375,
+          3.296875,
+          3.328125
+        ],
+        "after": [
+          3.40625,
+          3.46875,
+          3.4375,
+          3.296875,
+          3.390625
+        ],
+        "paired": {
+          "median": 1.0187793427230047,
+          "min": 1.0,
+          "max": 1.052132701421801,
+          "samples": [
+            1.0234741784037558,
+            1.052132701421801,
+            1.0185185185185186,
+            1.0,
+            1.0187793427230047
+          ],
+          "bootstrap_95_percentile": [
+            1.0,
+            1.052132701421801
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          9.15625,
+          9.125,
+          9.203125,
+          9.125,
+          9.15625
+        ],
+        "after": [
+          9.1875,
+          9.234375,
+          9.203125,
+          9.078125,
+          9.15625
+        ],
+        "paired": {
+          "median": 1.0,
+          "min": 0.9948630136986302,
+          "max": 1.0119863013698631,
+          "samples": [
+            1.0034129692832765,
+            1.0119863013698631,
+            1.0,
+            0.9948630136986302,
+            1.0
+          ],
+          "bootstrap_95_percentile": [
+            0.9948630136986302,
+            1.0119863013698631
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-socks-full-duplex-1",
+      "block": "case-xhttp-h3-socks-full-duplex-1-2",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          438.56729698849165,
+          437.7060071978684,
+          437.1299333329553,
+          432.8322264726995,
+          429.8288039893647
+        ],
+        "after": [
+          421.0180374685594,
+          423.1412243001407,
+          430.45790963979226,
+          432.77658521860076,
+          426.8411824626215
+        ],
+        "paired": {
+          "median": 0.9847367494550389,
+          "min": 0.9599850247831115,
+          "max": 0.9998714484488547,
+          "samples": [
+            0.9599850247831115,
+            0.9667247361054755,
+            0.9847367494550389,
+            0.9998714484488547,
+            0.9930492756673953
+          ],
+          "bootstrap_95_percentile": [
+            0.9599850247831115,
+            0.9998714484488547
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          2760.0,
+          2760.0,
+          2760.0,
+          2800.0,
+          2780.0
+        ],
+        "after": [
+          2860.0,
+          2820.0,
+          2780.0,
+          2800.0,
+          2800.0
+        ],
+        "paired": {
+          "median": 1.0072463768115942,
+          "min": 1.0,
+          "max": 1.036231884057971,
+          "samples": [
+            1.036231884057971,
+            1.0217391304347827,
+            1.0072463768115942,
+            1.0,
+            1.0071942446043165
+          ],
+          "bootstrap_95_percentile": [
+            1.0,
+            1.036231884057971
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          6.453125,
+          6.484375,
+          6.359375,
+          6.671875,
+          6.78125
+        ],
+        "after": [
+          6.6875,
+          6.546875,
+          6.703125,
+          6.71875,
+          6.28125
+        ],
+        "paired": {
+          "median": 1.0096385542168675,
+          "min": 0.9262672811059908,
+          "max": 1.054054054054054,
+          "samples": [
+            1.036319612590799,
+            1.0096385542168675,
+            1.054054054054054,
+            1.0070257611241218,
+            0.9262672811059908
+          ],
+          "bootstrap_95_percentile": [
+            0.9262672811059908,
+            1.054054054054054
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          12.28125,
+          12.3125,
+          12.171875,
+          12.484375,
+          12.59375
+        ],
+        "after": [
+          12.4375,
+          12.3125,
+          12.453125,
+          12.46875,
+          12.046875
+        ],
+        "paired": {
+          "median": 1.0,
+          "min": 0.956575682382134,
+          "max": 1.0231065468549423,
+          "samples": [
+            1.0127226463104326,
+            1.0,
+            1.0231065468549423,
+            0.9987484355444305,
+            0.956575682382134
+          ],
+          "bootstrap_95_percentile": [
+            0.956575682382134,
+            1.0231065468549423
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-socks-upload-8",
+      "block": "case-xhttp-h3-socks-upload-8-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          457.5675711581349,
+          464.82641801527336,
+          462.6050429540246,
+          491.7335254487556,
+          459.11274205592287
+        ],
+        "after": [
+          483.8932092003218,
+          456.71940189952124,
+          472.35690092703214,
+          460.75794723266034,
+          469.9297047230086
+        ],
+        "paired": {
+          "median": 1.021080310561977,
+          "min": 0.9370073899520539,
+          "max": 1.0575338806803,
+          "samples": [
+            1.0575338806803,
+            0.9825590461265785,
+            1.021080310561977,
+            0.9370073899520539,
+            1.0235605803895729
+          ],
+          "bootstrap_95_percentile": [
+            0.9370073899520539,
+            1.0575338806803
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          3125.0,
+          3040.0,
+          3010.0,
+          2840.0,
+          3120.0
+        ],
+        "after": [
+          2905.0,
+          3090.0,
+          2925.0,
+          3105.0,
+          2970.0
+        ],
+        "paired": {
+          "median": 0.9717607973421927,
+          "min": 0.9296,
+          "max": 1.0933098591549295,
+          "samples": [
+            0.9296,
+            1.0164473684210527,
+            0.9717607973421927,
+            1.0933098591549295,
+            0.9519230769230769
+          ],
+          "bootstrap_95_percentile": [
+            0.9296,
+            1.0933098591549295
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          29.96875,
+          26.0625,
+          23.21875,
+          24.3125,
+          26.609375
+        ],
+        "after": [
+          26.703125,
+          29.4375,
+          26.890625,
+          27.15625,
+          26.9375
+        ],
+        "paired": {
+          "median": 1.1169665809768639,
+          "min": 0.8910323253388946,
+          "max": 1.15814266487214,
+          "samples": [
+            0.8910323253388946,
+            1.129496402877698,
+            1.15814266487214,
+            1.1169665809768639,
+            1.0123311802701116
+          ],
+          "bootstrap_95_percentile": [
+            0.8910323253388946,
+            1.15814266487214
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          35.75,
+          31.859375,
+          29.015625,
+          30.109375,
+          32.40625
+        ],
+        "after": [
+          32.453125,
+          35.171875,
+          32.625,
+          32.890625,
+          32.671875
+        ],
+        "paired": {
+          "median": 1.0923715620134924,
+          "min": 0.9077797202797203,
+          "max": 1.124394184168013,
+          "samples": [
+            0.9077797202797203,
+            1.1039725355566454,
+            1.124394184168013,
+            1.0923715620134924,
+            1.0081967213114753
+          ],
+          "bootstrap_95_percentile": [
+            0.9077797202797203,
+            1.124394184168013
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-socks-download-8",
+      "block": "case-xhttp-h3-socks-download-8-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          277.8983949836806,
+          278.2242266029253,
+          277.508274477296,
+          278.4166120351555,
+          278.5758965879741
+        ],
+        "after": [
+          276.74815359162153,
+          277.0513109714957,
+          278.35830601588617,
+          277.5155774632682,
+          278.2604111538743
+        ],
+        "paired": {
+          "median": 0.9967637183525043,
+          "min": 0.9957842792996472,
+          "max": 1.0030630853807556,
+          "samples": [
+            0.9958609282643515,
+            0.9957842792996472,
+            1.0030630853807556,
+            0.9967637183525043,
+            0.9988675063493867
+          ],
+          "bootstrap_95_percentile": [
+            0.9957842792996472,
+            1.0030630853807556
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          4630.0,
+          4630.0,
+          4640.0,
+          4635.0,
+          4610.0
+        ],
+        "after": [
+          4645.0,
+          4635.0,
+          4620.0,
+          4635.0,
+          4640.0
+        ],
+        "paired": {
+          "median": 1.0010799136069115,
+          "min": 0.9956896551724138,
+          "max": 1.0065075921908895,
+          "samples": [
+            1.0032397408207343,
+            1.0010799136069115,
+            0.9956896551724138,
+            1.0,
+            1.0065075921908895
+          ],
+          "bootstrap_95_percentile": [
+            0.9956896551724138,
+            1.0065075921908895
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          4.75,
+          4.796875,
+          4.71875,
+          4.796875,
+          4.84375
+        ],
+        "after": [
+          4.875,
+          4.765625,
+          4.796875,
+          4.671875,
+          4.890625
+        ],
+        "paired": {
+          "median": 1.0096774193548388,
+          "min": 0.9739413680781759,
+          "max": 1.0263157894736843,
+          "samples": [
+            1.0263157894736843,
+            0.993485342019544,
+            1.0165562913907285,
+            0.9739413680781759,
+            1.0096774193548388
+          ],
+          "bootstrap_95_percentile": [
+            0.9739413680781759,
+            1.0263157894736843
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          10.578125,
+          10.625,
+          10.546875,
+          10.625,
+          10.6875
+        ],
+        "after": [
+          10.640625,
+          10.53125,
+          10.578125,
+          10.453125,
+          10.65625
+        ],
+        "paired": {
+          "median": 0.9970760233918129,
+          "min": 0.9838235294117647,
+          "max": 1.0059084194977843,
+          "samples": [
+            1.0059084194977843,
+            0.9911764705882353,
+            1.002962962962963,
+            0.9838235294117647,
+            0.9970760233918129
+          ],
+          "bootstrap_95_percentile": [
+            0.9838235294117647,
+            1.0059084194977843
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-socks-full-duplex-8",
+      "block": "case-xhttp-h3-socks-full-duplex-8-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          402.50006983071586,
+          390.14638595202524,
+          393.5373689120515,
+          394.6735150702784,
+          397.10694117314154
+        ],
+        "after": [
+          405.92909522702706,
+          388.91697090653344,
+          405.3392929250667,
+          408.312100258454,
+          410.1009862134448
+        ],
+        "paired": {
+          "median": 1.0299893350551232,
+          "min": 0.996848836514295,
+          "max": 1.034556626344048,
+          "samples": [
+            1.0085193162767734,
+            0.996848836514295,
+            1.0299893350551232,
+            1.034556626344048,
+            1.0327217776700552
+          ],
+          "bootstrap_95_percentile": [
+            0.996848836514295,
+            1.034556626344048
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          3572.5,
+          3625.0,
+          3585.0,
+          3597.5,
+          3590.0
+        ],
+        "after": [
+          3525.0,
+          3622.5,
+          3485.0,
+          3480.0,
+          3502.5
+        ],
+        "paired": {
+          "median": 0.9756267409470752,
+          "min": 0.9673384294649062,
+          "max": 0.9993103448275862,
+          "samples": [
+            0.986703988803359,
+            0.9993103448275862,
+            0.9721059972105998,
+            0.9673384294649062,
+            0.9756267409470752
+          ],
+          "bootstrap_95_percentile": [
+            0.9673384294649062,
+            0.9993103448275862
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          26.265625,
+          28.296875,
+          26.40625,
+          26.34375,
+          27.578125
+        ],
+        "after": [
+          24.890625,
+          33.359375,
+          27.5625,
+          26.59375,
+          29.25
+        ],
+        "paired": {
+          "median": 1.0437869822485206,
+          "min": 0.9476502082093992,
+          "max": 1.1789066813914963,
+          "samples": [
+            0.9476502082093992,
+            1.1789066813914963,
+            1.0437869822485206,
+            1.0094899169632265,
+            1.0606232294617564
+          ],
+          "bootstrap_95_percentile": [
+            0.9476502082093992,
+            1.1789066813914963
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          32.0625,
+          34.078125,
+          32.21875,
+          32.140625,
+          33.375
+        ],
+        "after": [
+          30.625,
+          39.09375,
+          33.3125,
+          32.328125,
+          34.984375
+        ],
+        "paired": {
+          "median": 1.0339476236663434,
+          "min": 0.9551656920077972,
+          "max": 1.1471801925722145,
+          "samples": [
+            0.9551656920077972,
+            1.1471801925722145,
+            1.0339476236663434,
+            1.0058337384540592,
+            1.0482209737827715
+          ],
+          "bootstrap_95_percentile": [
+            0.9551656920077972,
+            1.1471801925722145
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-upload-1",
+      "block": "case-xhttp-h3-tun-upload-1-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          221.62954173299508,
+          222.34368672541623,
+          220.0787469266347,
+          221.8992601767716,
+          222.01793488630253
+        ],
+        "after": [
+          222.71030112673733,
+          222.08200519619146,
+          225.20422328294976,
+          220.9553105041478,
+          220.72174963702997
+        ],
+        "paired": {
+          "median": 0.9988230764134628,
+          "min": 0.9941617993612257,
+          "max": 1.0232892836218468,
+          "samples": [
+            1.0048764229952896,
+            0.9988230764134628,
+            1.0232892836218468,
+            0.995746044074812,
+            0.9941617993612257
+          ],
+          "bootstrap_95_percentile": [
+            0.9941617993612257,
+            1.0232892836218468
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          6400.0,
+          6400.0,
+          6400.0,
+          6400.0,
+          6400.0
+        ],
+        "after": [
+          6400.0,
+          6400.0,
+          5760.0,
+          6400.0,
+          6400.0
+        ],
+        "paired": {
+          "median": 1.0,
+          "min": 0.9,
+          "max": 1.0,
+          "samples": [
+            1.0,
+            1.0,
+            0.9,
+            1.0,
+            1.0
+          ],
+          "bootstrap_95_percentile": [
+            0.9,
+            1.0
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          4.890625,
+          4.359375,
+          4.390625,
+          4.234375,
+          4.53125
+        ],
+        "after": [
+          4.59375,
+          4.71875,
+          4.625,
+          4.625,
+          4.5
+        ],
+        "paired": {
+          "median": 1.0533807829181494,
+          "min": 0.939297124600639,
+          "max": 1.0922509225092252,
+          "samples": [
+            0.939297124600639,
+            1.082437275985663,
+            1.0533807829181494,
+            1.0922509225092252,
+            0.993103448275862
+          ],
+          "bootstrap_95_percentile": [
+            0.939297124600639,
+            1.0922509225092252
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          11.0625,
+          10.53125,
+          10.5625,
+          10.390625,
+          10.703125
+        ],
+        "after": [
+          10.65625,
+          10.78125,
+          10.671875,
+          10.671875,
+          10.578125
+        ],
+        "paired": {
+          "median": 1.0103550295857988,
+          "min": 0.963276836158192,
+          "max": 1.0270676691729324,
+          "samples": [
+            0.963276836158192,
+            1.0237388724035608,
+            1.0103550295857988,
+            1.0270676691729324,
+            0.9883211678832117
+          ],
+          "bootstrap_95_percentile": [
+            0.963276836158192,
+            1.0270676691729324
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-download-1",
+      "block": "case-xhttp-h3-tun-download-1-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          187.6661314428598,
+          221.98033148822358,
+          186.26354981469046,
+          185.61915589688857,
+          181.8100045000249
+        ],
+        "after": [
+          186.67101081220662,
+          186.2508114424024,
+          185.15464752630498,
+          185.28454831321233,
+          187.41178468728586
+        ],
+        "paired": {
+          "median": 0.9946973882660538,
+          "min": 0.83904195562607,
+          "max": 1.0308111767703092,
+          "samples": [
+            0.9946973882660538,
+            0.83904195562607,
+            0.9940465953242666,
+            0.9981973434688922,
+            1.0308111767703092
+          ],
+          "bootstrap_95_percentile": [
+            0.83904195562607,
+            1.0308111767703092
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          8960.0,
+          7680.0,
+          8960.0,
+          8960.0,
+          8960.0
+        ],
+        "after": [
+          8960.0,
+          8960.0,
+          8960.0,
+          8960.0,
+          8960.0
+        ],
+        "paired": {
+          "median": 1.0,
+          "min": 1.0,
+          "max": 1.1666666666666667,
+          "samples": [
+            1.0,
+            1.1666666666666667,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "bootstrap_95_percentile": [
+            1.0,
+            1.1666666666666667
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          4.09375,
+          4.515625,
+          4.34375,
+          3.984375,
+          4.078125
+        ],
+        "after": [
+          4.3125,
+          4.1875,
+          4.296875,
+          3.96875,
+          4.09375
+        ],
+        "paired": {
+          "median": 0.996078431372549,
+          "min": 0.9273356401384083,
+          "max": 1.0534351145038168,
+          "samples": [
+            1.0534351145038168,
+            0.9273356401384083,
+            0.9892086330935251,
+            0.996078431372549,
+            1.003831417624521
+          ],
+          "bootstrap_95_percentile": [
+            0.9273356401384083,
+            1.0534351145038168
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          10.25,
+          10.6875,
+          10.5,
+          10.15625,
+          10.25
+        ],
+        "after": [
+          10.375,
+          10.25,
+          10.359375,
+          10.03125,
+          10.15625
+        ],
+        "paired": {
+          "median": 0.9876923076923076,
+          "min": 0.9590643274853801,
+          "max": 1.0121951219512195,
+          "samples": [
+            1.0121951219512195,
+            0.9590643274853801,
+            0.9866071428571429,
+            0.9876923076923076,
+            0.9908536585365854
+          ],
+          "bootstrap_95_percentile": [
+            0.9590643274853801,
+            1.0121951219512195
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-full-duplex-1",
+      "block": "case-xhttp-h3-tun-full-duplex-1-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          317.42266130769923,
+          300.8985818978943,
+          311.67212092878293,
+          304.2061230722529,
+          297.55827953216175
+        ],
+        "after": [
+          297.975282168159,
+          303.686830244794,
+          299.20371979040556,
+          304.12228057420646,
+          283.90502489713987
+        ],
+        "paired": {
+          "median": 0.9599951349475162,
+          "min": 0.9387334884679561,
+          "max": 1.0092664057414729,
+          "samples": [
+            0.9387334884679561,
+            1.0092664057414729,
+            0.9599951349475162,
+            0.9997243891832297,
+            0.9541156957336616
+          ],
+          "bootstrap_95_percentile": [
+            0.9387334884679561,
+            1.0092664057414729
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          4800.0,
+          4800.0,
+          5120.0,
+          4800.0,
+          5120.0
+        ],
+        "after": [
+          5120.0,
+          5120.0,
+          4800.0,
+          5120.0,
+          5120.0
+        ],
+        "paired": {
+          "median": 1.0666666666666667,
+          "min": 0.9375,
+          "max": 1.0666666666666667,
+          "samples": [
+            1.0666666666666667,
+            1.0666666666666667,
+            0.9375,
+            1.0666666666666667,
+            1.0
+          ],
+          "bootstrap_95_percentile": [
+            0.9375,
+            1.0666666666666667
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          5.671875,
+          6.671875,
+          6.109375,
+          6.1875,
+          6.09375
+        ],
+        "after": [
+          5.921875,
+          6.546875,
+          6.40625,
+          5.9375,
+          6.015625
+        ],
+        "paired": {
+          "median": 0.9871794871794872,
+          "min": 0.9595959595959596,
+          "max": 1.0485933503836318,
+          "samples": [
+            1.044077134986226,
+            0.9812646370023419,
+            1.0485933503836318,
+            0.9595959595959596,
+            0.9871794871794872
+          ],
+          "bootstrap_95_percentile": [
+            0.9595959595959596,
+            1.0485933503836318
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          11.828125,
+          12.84375,
+          12.265625,
+          12.359375,
+          12.25
+        ],
+        "after": [
+          11.984375,
+          12.625,
+          12.46875,
+          12.0,
+          12.0625
+        ],
+        "paired": {
+          "median": 0.9846938775510204,
+          "min": 0.9709228824273072,
+          "max": 1.0165605095541401,
+          "samples": [
+            1.013210039630119,
+            0.9829683698296837,
+            1.0165605095541401,
+            0.9709228824273072,
+            0.9846938775510204
+          ],
+          "bootstrap_95_percentile": [
+            0.9709228824273072,
+            1.0165605095541401
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-upload-8",
+      "block": "case-xhttp-h3-tun-upload-8-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          364.9104401447098,
+          363.1609622075665,
+          368.37350351897567,
+          359.5954273879165,
+          367.96645912131817
+        ],
+        "after": [
+          364.6185631777091,
+          367.08815719316,
+          357.7208018094904,
+          364.3858390553297,
+          369.6786936190353
+        ],
+        "paired": {
+          "median": 1.0046532352481414,
+          "min": 0.9710817916931517,
+          "max": 1.0133216701397192,
+          "samples": [
+            0.9992001408156891,
+            1.0108139238361993,
+            0.9710817916931517,
+            1.0133216701397192,
+            1.0046532352481414
+          ],
+          "bootstrap_95_percentile": [
+            0.9710817916931517,
+            1.0133216701397192
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          4480.0,
+          4720.0,
+          4480.0,
+          4640.0,
+          4640.0
+        ],
+        "after": [
+          4560.0,
+          4560.0,
+          4560.0,
+          4560.0,
+          4560.0
+        ],
+        "paired": {
+          "median": 0.9827586206896551,
+          "min": 0.9661016949152542,
+          "max": 1.0178571428571428,
+          "samples": [
+            1.0178571428571428,
+            0.9661016949152542,
+            1.0178571428571428,
+            0.9827586206896551,
+            0.9827586206896551
+          ],
+          "bootstrap_95_percentile": [
+            0.9661016949152542,
+            1.0178571428571428
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          33.15625,
+          32.921875,
+          31.234375,
+          31.9375,
+          31.96875
+        ],
+        "after": [
+          32.59375,
+          32.15625,
+          30.015625,
+          32.40625,
+          31.34375
+        ],
+        "paired": {
+          "median": 0.9804496578690127,
+          "min": 0.9609804902451226,
+          "max": 1.0146771037181996,
+          "samples": [
+            0.9830348727615457,
+            0.9767441860465116,
+            0.9609804902451226,
+            1.0146771037181996,
+            0.9804496578690127
+          ],
+          "bootstrap_95_percentile": [
+            0.9609804902451226,
+            1.0146771037181996
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          39.296875,
+          39.078125,
+          37.390625,
+          38.078125,
+          38.109375
+        ],
+        "after": [
+          38.625,
+          38.203125,
+          36.0625,
+          38.453125,
+          37.375
+        ],
+        "paired": {
+          "median": 0.980729807298073,
+          "min": 0.9644797325532805,
+          "max": 1.009848173984407,
+          "samples": [
+            0.9829025844930418,
+            0.9776089564174331,
+            0.9644797325532805,
+            1.009848173984407,
+            0.980729807298073
+          ],
+          "bootstrap_95_percentile": [
+            0.9644797325532805,
+            1.009848173984407
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-download-8",
+      "block": "case-xhttp-h3-tun-download-8-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          237.5262200879914,
+          238.02981974355077,
+          235.6142793386054,
+          236.96852460943583,
+          235.3254617873349
+        ],
+        "after": [
+          236.3075285647525,
+          233.91383595990368,
+          235.84433076522507,
+          237.82796167016673,
+          237.22048007357512
+        ],
+        "paired": {
+          "median": 1.0009763900017667,
+          "min": 0.9827081170414632,
+          "max": 1.0080527549881226,
+          "samples": [
+            0.9948692337090724,
+            0.9827081170414632,
+            1.0009763900017667,
+            1.0036267983781701,
+            1.0080527549881226
+          ],
+          "bootstrap_95_percentile": [
+            0.9827081170414632,
+            1.0080527549881226
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          6400.0,
+          6400.0,
+          6480.0,
+          6400.0,
+          6320.0
+        ],
+        "after": [
+          6400.0,
+          6480.0,
+          6480.0,
+          6320.0,
+          6400.0
+        ],
+        "paired": {
+          "median": 1.0,
+          "min": 0.9875,
+          "max": 1.0126582278481013,
+          "samples": [
+            1.0,
+            1.0125,
+            1.0,
+            0.9875,
+            1.0126582278481013
+          ],
+          "bootstrap_95_percentile": [
+            0.9875,
+            1.0126582278481013
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          6.796875,
+          6.421875,
+          6.734375,
+          6.375,
+          6.53125
+        ],
+        "after": [
+          6.328125,
+          6.265625,
+          6.5625,
+          6.34375,
+          6.34375
+        ],
+        "paired": {
+          "median": 0.974477958236659,
+          "min": 0.9310344827586207,
+          "max": 0.9950980392156863,
+          "samples": [
+            0.9310344827586207,
+            0.975669099756691,
+            0.974477958236659,
+            0.9950980392156863,
+            0.9712918660287081
+          ],
+          "bootstrap_95_percentile": [
+            0.9310344827586207,
+            0.9950980392156863
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          12.96875,
+          12.609375,
+          12.921875,
+          12.5625,
+          12.703125
+        ],
+        "after": [
+          12.390625,
+          12.34375,
+          12.625,
+          12.40625,
+          12.40625
+        ],
+        "paired": {
+          "median": 0.9770253929866989,
+          "min": 0.9554216867469879,
+          "max": 0.9875621890547264,
+          "samples": [
+            0.9554216867469879,
+            0.9789343246592317,
+            0.9770253929866989,
+            0.9875621890547264,
+            0.976629766297663
+          ],
+          "bootstrap_95_percentile": [
+            0.9554216867469879,
+            0.9875621890547264
+          ]
+        }
+      }
+    },
+    {
+      "case": "xhttp-h3-tun-full-duplex-8",
+      "block": "case-xhttp-h3-tun-full-duplex-8-1",
+      "collector_commit": "70c35b8688b033dcb1c64ce28d158de9fe91549e",
+      "throughput_mib_s": {
+        "before": [
+          345.5213399074617,
+          346.534390843851,
+          337.93035617314365,
+          346.1318748922563,
+          336.8060980322827
+        ],
+        "after": [
+          347.6576704332451,
+          338.9712869458957,
+          339.3408370517776,
+          335.5179316523184,
+          335.2431388513896
+        ],
+        "paired": {
+          "median": 0.9953594688753429,
+          "min": 0.9693355509565774,
+          "max": 1.0061829191978577,
+          "samples": [
+            1.0061829191978577,
+            0.9781750264972597,
+            1.0041738803657854,
+            0.9693355509565774,
+            0.9953594688753429
+          ],
+          "bootstrap_95_percentile": [
+            0.9693355509565774,
+            1.0061829191978577
+          ]
+        }
+      },
+      "cpu_ms_per_gib": {
+        "before": [
+          4760.0,
+          4720.0,
+          4840.0,
+          4760.0,
+          4880.0
+        ],
+        "after": [
+          4720.0,
+          4800.0,
+          4880.0,
+          4880.0,
+          4920.0
+        ],
+        "paired": {
+          "median": 1.0082644628099173,
+          "min": 0.9915966386554622,
+          "max": 1.0252100840336134,
+          "samples": [
+            0.9915966386554622,
+            1.0169491525423728,
+            1.0082644628099173,
+            1.0252100840336134,
+            1.0081967213114753
+          ],
+          "bootstrap_95_percentile": [
+            0.9915966386554622,
+            1.0252100840336134
+          ]
+        }
+      },
+      "footprint_mib": {
+        "before": [
+          29.96875,
+          29.15625,
+          29.953125,
+          30.5625,
+          29.96875
+        ],
+        "after": [
+          28.953125,
+          30.359375,
+          30.109375,
+          31.09375,
+          30.671875
+        ],
+        "paired": {
+          "median": 1.0173824130879345,
+          "min": 0.9661105318039624,
+          "max": 1.0412647374062165,
+          "samples": [
+            0.9661105318039624,
+            1.0412647374062165,
+            1.0052164840897235,
+            1.0173824130879345,
+            1.0234619395203337
+          ],
+          "bootstrap_95_percentile": [
+            0.9661105318039624,
+            1.0412647374062165
+          ]
+        }
+      },
+      "rss_mib": {
+        "before": [
+          36.125,
+          35.3125,
+          36.09375,
+          36.734375,
+          36.125
+        ],
+        "after": [
+          35.0,
+          36.390625,
+          36.15625,
+          37.140625,
+          36.71875
+        ],
+        "paired": {
+          "median": 1.011059123777116,
+          "min": 0.9688581314878892,
+          "max": 1.0305309734513275,
+          "samples": [
+            0.9688581314878892,
+            1.0305309734513275,
+            1.0017316017316018,
+            1.011059123777116,
+            1.0164359861591696
+          ],
+          "bootstrap_95_percentile": [
+            0.9688581314878892,
+            1.0305309734513275
+          ]
+        }
+      }
+    }
+  ]
+}

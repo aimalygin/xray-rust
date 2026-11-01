@@ -99,6 +99,8 @@ fn add_flow(
             task: None,
             remote_open: false,
             upload_queue_packets: None,
+            upload_pending: Arc::default(),
+            upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
             has_deferred_remote_data: false,
@@ -296,7 +298,7 @@ fn global_upload_pressure_defers_data_but_not_control_and_recovers() {
     let handle = add_flow(&mut sockets, &mut flows);
     let mut budget = FlowBudgetState::new(LOW_MEMORY_FLOW_BUDGET_POLICY);
     let upload = budget
-        .reserve_pending_upload(budget.hard_total_bytes())
+        .reserve_pending_upload(budget.hard_total_bytes(), None)
         .unwrap();
     let mut delayed = VecDeque::new();
     let mut udp = HashMap::new();
@@ -473,7 +475,7 @@ fn fin_waits_for_deferred_tail_before_closing_the_local_tcp_socket() {
 
     let mut budget = FlowBudgetState::new(MOBILE_FLOW_BUDGET_POLICY);
     let upload = budget
-        .reserve_pending_upload(budget.hard_total_bytes())
+        .reserve_pending_upload(budget.hard_total_bytes(), None)
         .unwrap();
     let mut delayed = VecDeque::new();
     let mut udp = HashMap::new();

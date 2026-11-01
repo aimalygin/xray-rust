@@ -48,7 +48,8 @@ The C function, result schema and ownership rules are unchanged.
   fall back to an unauthenticated connection.
 - One optional terminal `/` and a percent-decoded display-name fragment are
   accepted. An absent/empty fragment defaults to `SOCKS5`; `name` can override
-  it. Names remain limited to 128 UTF-8 bytes without control characters.
+  it. Names remain limited to 128 UTF-8 bytes without control characters or
+  bidi embeddings, overrides and isolates.
 - Nonempty query strings, paths, scoped IPv6, unsupported schemes (including
   `socks4` and `socks5h`) and legacy whole-authority Base64 are rejected. TLS,
   custom transports and UDP switches are not inferred from link parameters.

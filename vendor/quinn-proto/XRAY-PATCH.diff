@@ -8,22 +8,22 @@
      pub(crate) datagram_send_buffer_size: usize,
      #[cfg(test)]
      pub(crate) deterministic_packet_numbers: bool,
-@@ -284,6 +285,15 @@
-     /// exceeds this value, old datagrams are dropped until it is no longer exceeded.
-     pub fn datagram_receive_buffer_size(&mut self, value: Option<usize>) -> &mut Self {
-         self.datagram_receive_buffer_size = value;
-+        self
-+    }
-+
+@@ -287,6 +288,15 @@
+         self
+     }
+ 
 +    /// Optional cap on the advertised maximum DATAGRAM frame size, independent
 +    /// of the aggregate receive queue budget. `None` preserves upstream behavior.
 +    /// Does not enable datagrams when receiving is disabled, and cannot advertise
 +    /// more than the configured receive buffer can hold. Zero advertises no support.
 +    pub fn advertised_datagram_frame_size(&mut self, value: Option<u16>) -> &mut Self {
 +        self.advertised_datagram_frame_size = value;
-         self
-     }
- 
++        self
++    }
++
+     /// Maximum number of outgoing application datagram bytes to buffer
+     ///
+     /// While datagrams are sent ASAP, it is possible for an application to generate data faster
 @@ -382,6 +392,7 @@
              crypto_buffer_size: 16 * 1024,
              allow_spin: true,
@@ -53,13 +53,13 @@
              .field("enable_segmentation_offload", enable_segmentation_offload);
 --- a/src/congestion/bbr/bw_estimation.rs
 +++ b/src/congestion/bbr/bw_estimation.rs
-@@ -1,70 +1,182 @@
+@@ -1,78 +1,191 @@
 +use std::collections::BTreeMap;
  use std::fmt::{Debug, Display, Formatter};
  
  use super::min_max::MinMax;
  use crate::{Duration, Instant};
-+
+ 
 +// Loss or abandoned packet-number spaces must not retain unbounded history.
 +// One entry is shared by packets sent in the same driver batch. Eviction only
 +// omits a rate sample; ACK accounting and congestion-window updates continue.
@@ -76,18 +76,18 @@
 +    sent_at_last_ack: u64,
 +    app_limited: bool,
 +}
- 
++
  #[derive(Clone, Debug, Default)]
  pub(crate) struct BandwidthEstimation {
      total_acked: u64,
 -    prev_total_acked: u64,
-+    total_sent: u64,
-     acked_time: Option<Instant>,
+-    acked_time: Option<Instant>,
 -    prev_acked_time: Option<Instant>,
--    total_sent: u64,
+     total_sent: u64,
 -    prev_total_sent: u64,
 -    sent_time: Option<Instant>,
 -    prev_sent_time: Option<Instant>,
++    acked_time: Option<Instant>,
 +    last_acked_sent: Option<Instant>,
 +    sent_at_last_ack: u64,
 +    batches: BTreeMap<u64, SendBatch>,
@@ -167,6 +167,9 @@
          app_limited: bool,
      ) {
 -        self.prev_total_acked = self.total_acked;
+-        self.total_acked += bytes;
+-        self.prev_acked_time = self.acked_time;
+-        self.acked_time = Some(now);
 +        // The old interface cannot distinguish reordered equal-time packets.
 +        // Preserve it for callers that ACK each timestamp batch in send order.
 +        let token = self
@@ -178,7 +181,11 @@
 +            .unwrap_or(0);
 +        self.ack_sample(now, sent, bytes, round, token, Some(app_limited));
 +    }
-+
+ 
+-        let prev_sent_time = match self.prev_sent_time {
+-            Some(prev_sent_time) => prev_sent_time,
+-            None => return,
+-        };
 +    pub(crate) fn ack_packet(
 +        &mut self,
 +        now: Instant,
@@ -189,7 +196,14 @@
 +    ) {
 +        self.ack_sample(now, sent, bytes, round, token, None);
 +    }
-+
+ 
+-        let send_rate = match self.sent_time {
+-            Some(sent_time) if sent_time > prev_sent_time => Self::bw_from_delta(
+-                self.total_sent - self.prev_total_sent,
+-                sent_time - prev_sent_time,
+-            )
+-            .unwrap_or(0),
+-            _ => u64::MAX, // will take the min of send and ack, so this is just a skip
 +    fn ack_sample(
 +        &mut self,
 +        now: Instant,
@@ -199,11 +213,10 @@
 +        token: u64,
 +        legacy_app_limited: Option<bool>,
 +    ) {
-         self.total_acked += bytes;
--        self.prev_acked_time = self.acked_time;
++        self.total_acked += bytes;
 +        let Some((&first, &batch)) = self.batches.range(..=token).next_back() else {
 +            return;
-+        };
+         };
 +        if token > batch.end || batch.sent != sent || bytes == 0 {
 +            return;
 +        }
@@ -211,12 +224,12 @@
 +        if batch.retired + bytes == batch.end - first + 1 {
 +            self.batches.remove(&first);
 +        }
-+
-         self.acked_time = Some(now);
--
--        let prev_sent_time = match self.prev_sent_time {
--            Some(prev_sent_time) => prev_sent_time,
--            None => return,
+ 
+-        let ack_rate = match self.prev_acked_time {
+-            Some(prev_acked_time) => Self::bw_from_delta(
+-                self.total_acked - self.prev_total_acked,
+-                now - prev_acked_time,
++        self.acked_time = Some(now);
 +        self.last_acked_sent = Some(sent);
 +        self.sent_at_last_ack = token;
 +
@@ -226,54 +239,39 @@
 +            Self::bw_from_delta(
 +                token.saturating_sub(batch.sent_at_last_ack),
 +                sent - batch.last_acked_sent,
-+            )
+             )
+-            .unwrap_or(0),
+-            None => 0,
 +            .unwrap_or(0)
 +        } else {
 +            u64::MAX
          };
 -
--        let send_rate = match self.sent_time {
--            Some(sent_time) if sent_time > prev_sent_time => Self::bw_from_delta(
--                self.total_sent - self.prev_total_sent,
--                sent_time - prev_sent_time,
--            )
--            .unwrap_or(0),
--            _ => u64::MAX, // will take the min of send and ack, so this is just a skip
 +        let Some(ack_rate) = Self::bw_from_delta(
 +            self.total_acked.saturating_sub(batch.delivered),
 +            now.saturating_duration_since(batch.ack_time),
 +        ) else {
 +            return;
-         };
--
--        let ack_rate = match self.prev_acked_time {
--            Some(prev_acked_time) => Self::bw_from_delta(
--                self.total_acked - self.prev_total_acked,
--                now - prev_acked_time,
--            )
--            .unwrap_or(0),
--            None => 0,
--        };
--
++        };
          let bandwidth = send_rate.min(ack_rate);
 -        if !app_limited && self.max_filter.get() < bandwidth {
 -            self.max_filter.update_max(round, bandwidth);
--        }
 +        let app_limited = batch.app_limited || legacy_app_limited.unwrap_or(false);
 +        if bandwidth != 0 {
 +            self.non_app_limited_sample |= !app_limited;
 +            if !app_limited || bandwidth > self.max_filter.get() {
 +                self.max_filter.update_max(round, bandwidth);
 +            }
-+        }
-+    }
-+
-+    pub(crate) fn app_limited_this_window(&self) -> bool {
-+        !self.non_app_limited_sample
+         }
      }
  
++    pub(crate) fn app_limited_this_window(&self) -> bool {
++        !self.non_app_limited_sample
++    }
++
      pub(crate) fn bytes_acked_this_window(&self) -> u64 {
-@@ -73,6 +185,7 @@
+         self.total_acked - self.acked_at_last_window
+     }
  
      pub(crate) fn end_acks(&mut self, _current_round: u64, _app_limited: bool) {
          self.acked_at_last_window = self.total_acked;
@@ -303,10 +301,12 @@
      }
  }
  
-@@ -99,3 +215,232 @@
+@@ -97,5 +213,234 @@
+             "{:.3} MB/s",
+             self.get_estimate() as f32 / (1024 * 1024) as f32
          )
-     }
- }
++    }
++}
 +
 +#[cfg(test)]
 +mod sample_filter_tests {
@@ -534,8 +534,8 @@
 +            BandwidthEstimation::bw_from_delta(1200, Duration::from_secs(60)),
 +            Some(20)
 +        );
-+    }
-+}
+     }
+ }
 --- a/src/congestion/bbr/mod.rs
 +++ b/src/congestion/bbr/mod.rs
 @@ -5,13 +5,13 @@
@@ -586,13 +586,10 @@
              min_rtt: Default::default(),
              exiting_quiescence: false,
              pacing_rate: 0,
-@@ -99,6 +103,24 @@
-             round_wo_bw_gain: 0,
-             ack_aggregation: AckAggregationState::default(),
-             random_number_generator: Pcg32::from_rng(&mut rand::rng()),
-+        }
-+    }
-+
+@@ -102,6 +106,24 @@
+         }
+     }
+ 
 +    fn update_min_rtt(&mut self, now: Instant, sample: Duration, app_limited: bool) {
 +        if sample.is_zero() {
 +            return;
@@ -608,9 +605,12 @@
 +            if lower && !expired {
 +                self.min_rtt_sample_epoch = Some(now);
 +            }
-         }
-     }
- 
++        }
++    }
++
+     fn enter_startup_mode(&mut self) {
+         self.mode = Mode::Startup;
+         self.pacing_gain = self.high_gain;
 @@ -213,9 +235,9 @@
      fn is_min_rtt_expired(&self, now: Instant, app_limited: bool) -> bool {
          !app_limited
@@ -688,7 +688,7 @@
      }
  
      fn on_ack(
-@@ -403,14 +437,46 @@
+@@ -403,16 +437,48 @@
          sent: Instant,
          bytes: u64,
          app_limited: bool,
@@ -701,8 +701,8 @@
 -        if self.is_min_rtt_expired(now, app_limited) || self.min_rtt > rtt.min() {
 -            self.min_rtt = rtt.min();
 -        }
-+    }
-+
+     }
+ 
 +    fn on_sent_with_in_flight(
 +        &mut self,
 +        now: Instant,
@@ -736,9 +736,11 @@
 +
 +    fn on_rtt_sample(&mut self, now: Instant, rtt: Duration, app_limited: bool) {
 +        self.update_min_rtt(now, rtt, app_limited);
-     }
- 
++    }
++
      fn on_end_acks(
+         &mut self,
+         now: Instant,
 @@ -427,9 +493,16 @@
              self.round_count,
              self.max_bandwidth.get_estimate(),
@@ -765,17 +767,17 @@
          }
  
          self.maybe_exit_startup_or_drain(now, in_flight);
-@@ -489,6 +562,10 @@
-             return self.cwnd.min(self.recovery_window);
-         }
+@@ -491,6 +564,10 @@
          self.cwnd
-+    }
-+
-+    fn pacing_rate(&self) -> Option<u64> {
-+        (self.pacing_rate != 0).then_some(self.pacing_rate)
      }
  
++    fn pacing_rate(&self) -> Option<u64> {
++        (self.pacing_rate != 0).then_some(self.pacing_rate)
++    }
++
      fn metrics(&self) -> ControllerMetrics {
+         ControllerMetrics {
+             congestion_window: self.window(),
 @@ -647,5 +724,331 @@
  // Do not allow initial congestion window to be greater than 200 packets.
  const K_MAX_INITIAL_CONGESTION_WINDOW: u64 = 200;
@@ -1121,7 +1123,7 @@
  use std::any::Any;
  use std::sync::Arc;
  
-@@ -15,9 +15,43 @@
+@@ -15,10 +15,44 @@
  
  /// Common interface for different congestion controllers
  pub trait Controller: Send + Sync {
@@ -1132,7 +1134,7 @@
 +    /// packets coalesced into the same datagram or GSO transmit.
      #[allow(unused_variables)]
      fn on_sent(&mut self, now: Instant, bytes: u64, last_packet_number: u64) {}
-+
+ 
 +    /// Record a sent packet with flight state, returning an opaque delivery token.
 +    ///
 +    /// The token is returned unchanged in `on_ack_with_token`. The default
@@ -1163,23 +1165,24 @@
 +    ) {
 +        self.on_ack(now, sent, bytes, app_limited, rtt);
 +    }
- 
++
      /// Packet deliveries were confirmed
      ///
-@@ -33,6 +67,13 @@
-         rtt: &RttEstimator,
+     /// `app_limited` indicates whether the connection was blocked on outgoing
+@@ -34,6 +68,13 @@
      ) {
      }
-+
+ 
 +    /// A fresh, raw RTT sample was measured for this ACK batch.
 +    ///
 +    /// Called before `on_end_acks`; inferred acknowledgements produce no sample.
 +    /// The duration includes peer ACK delay, like the path's minimum RTT.
 +    #[allow(unused_variables)]
 +    fn on_rtt_sample(&mut self, now: Instant, rtt: Duration, app_limited: bool) {}
- 
++
      /// Packets are acked in batches, all with the same `now` argument. This indicates one of those batches has completed.
      #[allow(unused_variables)]
+     fn on_end_acks(
 @@ -64,6 +105,12 @@
  
      /// Number of ack-eliciting bytes that may be in flight
@@ -1238,7 +1241,7 @@
  
              // Can we append more data into the current buffer?
              // It is not safe to assume that `buf.len()` is the end of the data,
-@@ -604,29 +614,45 @@
+@@ -604,30 +614,46 @@
  
                      let bytes_to_send = segment_size as u64 + untracked_bytes;
                      if self.path.in_flight.bytes + bytes_to_send >= self.path.congestion.window() {
@@ -1290,12 +1293,13 @@
 +                        } else {
 +                            break;
 +                        }
-+                    }
+                     }
 +                    if ack_only {
 +                        ack_eliciting = false;
-                     }
++                    }
                  }
  
+                 // Finish current packet
 @@ -847,7 +873,7 @@
  
              // Send an off-path PATH_RESPONSE. Prioritized over on-path data to ensure that path
@@ -1340,7 +1344,24 @@
  
              self.config.qlog_sink.emit_recovery_metrics(
                  self.pto_count,
-@@ -1495,13 +1529,6 @@
+@@ -1429,6 +1463,16 @@
+         }
+     }
+ 
++    /// Changes [`TransportConfig::stream_receive_window()`] for open and new
++    /// streams. The peer learns a larger window from the next
++    /// MAX_STREAM_DATA, which a read sends once it frees an eighth of the
++    /// window. Credit already sent is never withdrawn: under a smaller window
++    /// a stream grants nothing new until its reader catches up, and a new
++    /// stream starts from the handshake value.
++    pub fn set_stream_receive_window(&mut self, window: VarInt) {
++        self.streams.set_stream_receive_window(window.into());
++    }
++
+     fn on_ack_received(
+         &mut self,
+         now: Instant,
+@@ -1495,13 +1539,6 @@
              }
          }
  
@@ -1354,7 +1375,7 @@
          if new_largest && ack_eliciting_acked {
              let ack_delay = if space != SpaceId::Data {
                  Duration::from_micros(0)
-@@ -1513,11 +1540,25 @@
+@@ -1513,12 +1550,26 @@
              };
              let rtt = now.saturating_duration_since(self.spaces[space].largest_acked_packet_sent);
              self.path.rtt.update(ack_delay, rtt);
@@ -1370,17 +1391,18 @@
                      Some((space, self.spaces[space].next_packet_number));
              }
          }
-+
+ 
 +        self.path.congestion.on_end_acks(
 +            now,
 +            self.path.in_flight.bytes,
 +            self.app_limited,
 +            self.spaces[space].largest_acked_packet,
 +        );
- 
++
          // Must be called before crypto/pto_count are clobbered
          self.detect_lost_packets(now, space, true);
-@@ -1582,12 +1623,13 @@
+ 
+@@ -1582,12 +1633,13 @@
          if info.ack_eliciting && self.path.challenge.is_none() {
              // Only pass ACKs to the congestion controller if we are not validating the current
              // path, so as to ignore any ACKs from older paths still coming in.
@@ -1395,7 +1417,7 @@
              );
          }
  
-@@ -1737,7 +1779,8 @@
+@@ -1737,7 +1789,8 @@
              self.stats.path.lost_bytes += size_of_lost_packets;
              trace!(
                  "packets lost: {:?}, bytes lost: {}",
@@ -1415,7 +1437,7 @@
      last_mtu: u16,
      tokens: u64,
      prev: Instant,
-@@ -27,10 +28,62 @@
+@@ -27,12 +28,64 @@
          Self {
              capacity,
              last_window: window,
@@ -1424,8 +1446,8 @@
              tokens: capacity,
              prev: now,
          }
-+    }
-+
+     }
+ 
 +    pub(super) fn delay_with_rate(
 +        &mut self,
 +        rtt: Duration,
@@ -1475,9 +1497,11 @@
 +        let delay = Duration::from_nanos(nanos.min(u128::from(u64::MAX)) as u64)
 +            .max(Duration::from_millis(1));
 +        Some(self.prev + delay)
-     }
- 
++    }
++
      /// Record that a packet has been transmitted.
+     pub(super) fn on_transmit(&mut self, packet_length: u16) {
+         self.tokens = self.tokens.saturating_sub(packet_length.into())
 @@ -144,6 +197,11 @@
  /// more applicable.
  const BURST_INTERVAL_NANOS: u128 = 2_000_000; // 2ms
@@ -1521,10 +1545,12 @@
      }
  
      #[test]
-@@ -306,3 +358,136 @@
+@@ -304,5 +356,138 @@
+             None
+         );
          assert_eq!(pacer.tokens, pacer.capacity);
-     }
- }
++    }
++}
 +
 +#[cfg(test)]
 +mod controller_pacing_tests {
@@ -1656,8 +1682,8 @@
 +            "rate plus bounded initial credit was exceeded"
 +        );
 +        assert!(p.capacity <= 256 * 1000);
-+    }
-+}
+     }
+ }
 --- a/src/connection/packet_builder.rs
 +++ b/src/connection/packet_builder.rs
 @@ -2,12 +2,12 @@
@@ -1745,6 +1771,209 @@
      /// [`PathData::generation`](super::PathData::generation) of the path on which this packet was sent
      pub(super) path_generation: u64,
      /// The time the packet was sent.
+--- a/src/connection/streams/mod.rs
++++ b/src/connection/streams/mod.rs
+@@ -138,7 +138,7 @@
+             hash_map::Entry::Occupied(s) => s,
+             hash_map::Entry::Vacant(_) => return Err(ClosedStream { _private: () }),
+         };
+-        let stream = get_or_insert_recv(self.state.stream_receive_window)(entry.get_mut());
++        let stream = get_or_insert_recv(self.state.initial_stream_receive_window)(entry.get_mut());
+ 
+         let (read_credits, stop_sending) = stream.stop()?;
+         if stop_sending.should_transmit() {
+--- a/src/connection/streams/recv.rs
++++ b/src/connection/streams/recv.rs
+@@ -110,7 +110,11 @@
+     /// `false` the new window should only be transmitted if a previous transmission
+     /// had failed.
+     pub(super) fn max_stream_data(&mut self, stream_receive_window: u64) -> (u64, ShouldTransmit) {
+-        let max_stream_data = self.assembler.bytes_read() + stream_receive_window;
++        // A window made smaller than when credit was last sent offers nothing
++        // new until the reader catches up, and a lost update is resent whole:
++        // credit already sent is never withdrawn.
++        let max_stream_data =
++            (self.assembler.bytes_read() + stream_receive_window).max(self.sent_max_stream_data);
+ 
+         // Only announce a window update if it's significant enough
+         // to make it worthwhile sending a MAX_STREAM_DATA frame.
+@@ -265,8 +269,9 @@
+             Entry::Vacant(_) => return Err(ReadableError::ClosedStream),
+         };
+ 
++        let initial_max_data = streams.initial_stream_receive_window;
+         let mut recv =
+-            match get_or_insert_recv(streams.stream_receive_window)(entry.get_mut()).stopped {
++            match get_or_insert_recv(initial_max_data)(entry.get_mut()).stopped {
+                 true => return Err(ReadableError::ClosedStream),
+                 false => entry.remove().unwrap().into_inner(), // this can't fail due to the previous get_or_insert_with
+             };
+--- a/src/connection/streams/state.rs
++++ b/src/connection/streams/state.rs
+@@ -129,6 +129,9 @@
+     pub(super) send_window: u64,
+     /// Configured upper bound for how much unacked data the peer can send us per stream
+     pub(super) stream_receive_window: u64,
++    /// The stream window of the handshake: the credit the peer holds on a
++    /// stream until the first `MAX_STREAM_DATA` for it
++    pub(super) initial_stream_receive_window: u64,
+ 
+     // Pertinent state from the TransportParameters supplied by the peer
+     initial_max_stream_data_uni: VarInt,
+@@ -177,6 +180,7 @@
+             unacked_data: 0,
+             send_window,
+             stream_receive_window: stream_receive_window.into(),
++            initial_stream_receive_window: stream_receive_window.into(),
+             initial_max_stream_data_uni: 0u32.into(),
+             initial_max_stream_data_bidi_local: 0u32.into(),
+             initial_max_stream_data_bidi_remote: 0u32.into(),
+@@ -263,7 +267,7 @@
+         let rs = match self
+             .recv
+             .get_mut(&id)
+-            .map(get_or_insert_recv(self.stream_receive_window))
++            .map(get_or_insert_recv(self.initial_stream_receive_window))
+         {
+             Some(rs) => rs,
+             None => {
+@@ -316,7 +320,7 @@
+         let rs = match self
+             .recv
+             .get_mut(&id)
+-            .map(get_or_insert_recv(self.stream_receive_window))
++            .map(get_or_insert_recv(self.initial_stream_receive_window))
+         {
+             Some(stream) => stream,
+             None => {
+@@ -863,6 +867,13 @@
+         self.send_window = send_window;
+     }
+ 
++    /// Sets the window each receive stream offers past the bytes it has read.
++    /// Credit already sent is kept: a smaller window grants nothing new until
++    /// the reader catches up with it.
++    pub(crate) fn set_stream_receive_window(&mut self, window: u64) {
++        self.stream_receive_window = window;
++    }
++
+     /// Set the receive_window and returns whether the receive_window has been
+     /// expanded or shrunk: true if expanded, false if shrunk.
+     pub(crate) fn set_receive_window(&mut self, receive_window: VarInt) -> bool {
+@@ -943,7 +954,7 @@
+     }
+ 
+     pub(super) fn stream_recv_freed(&mut self, id: StreamId, recv: StreamRecv) {
+-        self.free_recv.push(recv.free(self.stream_receive_window));
++        self.free_recv.push(recv.free(self.initial_stream_receive_window));
+         self.stream_freed(id, StreamHalf::Recv);
+     }
+ 
+@@ -1048,6 +1059,104 @@
+         assert!(should_transmit.0);
+         assert!(pending.max_stream_id[Dir::Uni as usize]);
+         assert_eq!(client.local_max_data - initial_max, MESSAGE_SIZE as u64);
++    }
++
++    #[test]
++    fn a_resized_stream_window_is_offered_from_the_next_read() {
++        const KIB: u64 = 1024;
++        const MIB: u64 = 1024 * KIB;
++        let mut client = StreamsState::new(
++            Side::Client,
++            128u32.into(),
++            128u32.into(),
++            MIB,
++            (16 * 1024 * 1024u32).into(),
++            (1024 * 1024u32).into(),
++        );
++        let id = StreamId::new(Side::Server, Dir::Uni, 0);
++        let mut pending = Retransmits::default();
++
++        // An eighth of the 1 MiB handshake window was not read yet.
++        assert_eq!(read_and_send_credit(&mut client, &mut pending, id, 0, 2048), None);
++        // A grown window is worth an update on the next read.
++        client.set_stream_receive_window(4 * MIB);
++        let granted = 4096 + 4 * MIB;
++        assert_eq!(
++            read_and_send_credit(&mut client, &mut pending, id, 2048, 2048),
++            Some(granted)
++        );
++
++        // A smaller window withdraws nothing: a lost update is resent whole,
++        // and nothing more is granted until the reader catches up.
++        client.set_stream_receive_window(64 * KIB);
++        pending.max_stream_data.insert(id);
++        assert_eq!(send_credit(&mut client, &mut pending), Some(granted));
++        let mut offset = 4096;
++        while offset < granted {
++            let credit = read_and_send_credit(&mut client, &mut pending, id, offset, 256 * 1024);
++            offset += 256 * KIB;
++            let expected = (offset + 64 * KIB >= granted + 8 * KIB).then_some(offset + 64 * KIB);
++            assert_eq!(credit, expected, "after reading {offset} bytes");
++        }
++        assert_eq!(offset, granted);
++
++        // A new stream still holds the handshake window's credit.
++        let next = StreamId::new(Side::Server, Dir::Uni, 1);
++        assert_eq!(
++            read_and_send_credit(&mut client, &mut pending, next, 0, 1024 * 1024),
++            Some(MIB + 64 * KIB)
++        );
++    }
++
++    /// Receives `len` bytes of `id` at `offset`, reads them, and returns the
++    /// `MAX_STREAM_DATA` offset the next packet carries, if any.
++    fn read_and_send_credit(
++        client: &mut StreamsState,
++        pending: &mut Retransmits,
++        id: StreamId,
++        offset: u64,
++        len: usize,
++    ) -> Option<u64> {
++        let _ = client
++            .received(
++                frame::Stream {
++                    id,
++                    offset,
++                    fin: false,
++                    data: Bytes::from(vec![0; len]),
++                },
++                len,
++            )
++            .unwrap();
++        let mut recv = RecvStream {
++            id,
++            state: client,
++            pending,
++        };
++        let mut chunks = recv.read(true).unwrap();
++        while let Ok(Some(_)) = chunks.next(usize::MAX) {}
++        let _ = chunks.finalize();
++        send_credit(client, pending)
++    }
++
++    fn send_credit(client: &mut StreamsState, pending: &mut Retransmits) -> Option<u64> {
++        let mut buf = Vec::new();
++        client.write_control_frames(
++            &mut buf,
++            pending,
++            &mut ThinRetransmits::default(),
++            &mut FrameStats::default(),
++            1200,
++        );
++        if buf.is_empty() {
++            return None;
++        }
++        frame::Iter::new(Bytes::from(buf))
++            .unwrap()
++            .find_map(|frame| match frame.unwrap() {
++                frame::Frame::MaxStreamData { offset, .. } => Some(offset),
++                _ => None,
++            })
+     }
+ 
+     #[test]
 --- a/src/tests/congestion_sent.rs
 +++ b/src/tests/congestion_sent.rs
 @@ -0,0 +1,381 @@
@@ -2157,9 +2386,9 @@
      let mut stop = pair.time;
      let end = pair.time + 5 * CID_TIMEOUT;
  
-+    use crate::cid_queue::CidQueue;
-     use crate::LOC_CID_COUNT;
--    use crate::cid_queue::CidQueue;
+-    use crate::LOC_CID_COUNT;
+     use crate::cid_queue::CidQueue;
++    use crate::LOC_CID_COUNT;
      let mut active_cid_num = CidQueue::LEN as u64 + 1;
      active_cid_num = active_cid_num.min(LOC_CID_COUNT);
      let mut left_bound = 0;
@@ -2167,9 +2396,9 @@
      assert!(!pair.server_conn_mut(server_ch).is_closed());
      assert_matches!(pair.client_conn_mut(client_ch).active_rem_cid_seq(), 1);
  
-+    use crate::cid_queue::CidQueue;
-     use crate::LOC_CID_COUNT;
--    use crate::cid_queue::CidQueue;
+-    use crate::LOC_CID_COUNT;
+     use crate::cid_queue::CidQueue;
++    use crate::LOC_CID_COUNT;
      let mut active_cid_num = CidQueue::LEN as u64;
      active_cid_num = active_cid_num.min(LOC_CID_COUNT);
  
@@ -2200,10 +2429,12 @@
              grease_quic_bit: endpoint_config.grease_quic_bit,
              min_ack_delay: Some(
                  VarInt::from_u64(u64::try_from(TIMER_GRANULARITY.as_micros()).unwrap()).unwrap(),
-@@ -727,6 +733,32 @@
-     use super::*;
+@@ -725,6 +731,32 @@
+     use rand::TryRng;
  
-     #[test]
+     use super::*;
++
++    #[test]
 +    fn advertised_datagram_cap_preserves_the_receive_queue_budget() {
 +        let mut config = TransportConfig::default();
 +        config.datagram_receive_buffer_size(Some(256 * 1024));
@@ -2228,8 +2459,6 @@
 +        config.datagram_receive_buffer_size(None);
 +        assert_eq!(advertised(&config), None);
 +    }
-+
-+    #[test]
+ 
+     #[test]
      fn coding() {
-         let mut buf = Vec::new();
-         let params = TransportParameters {

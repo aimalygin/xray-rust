@@ -14,6 +14,65 @@ This compares the **Rust client before and after migration against one common
 new Go server**. It does not compare the speed of old and new Go Xray clients.
 The historical three-engine reports and charts remain unchanged.
 
+## Erratum 2026-10-29: the "before" client is a mixed build
+
+The executable labeled "Rust before" (`6424ca70…`) is **not a clean build of
+`3ca380e`**. It was built in a target directory shared with the after build,
+and Cargo reused workspace crates compiled from the migration:
+
+- It contains `xray-config` diagnostics that exist only in `53756fe`, such as
+  "Hysteria supports legacy udpHop and disableChromeParrot=true only" and
+  "proxySettings and sockopt.dialerProxy cannot be combined", and none of
+  their `3ca380e` wording. It also embeds webpki-roots 1.0.10 with the emSign
+  roots, as the before lock requires.
+- Its archived build log recompiled only `quinn`, `webpki-roots`, `h3-quinn`,
+  `xray-transport`, `xray-wireguard`, `xray-core-rs` and `xray-cli`. The
+  migration's `xray-config` and `xray-utls` were reused.
+- Cargo's artifact hash for a workspace crate does not include the checkout's
+  absolute path, and freshness follows file mtimes. A checkout whose files look
+  older than existing artifacts reuses them. A controlled rebuild in a shared
+  directory reproduced this; it failed to compile only because the reused
+  `xray-utls` lacked a symbol the other revision needed.
+
+The tables below therefore compare a mixed client (before runtime crates with
+the migration's configuration parser and uTLS lists) with the after client.
+The binary hashes verified file identity, not source provenance. The summary,
+CSV and archive remain the unmodified record of what was measured. New
+campaigns must build with `scripts/build-isolated-release.py`, and the
+collector now rejects inputs without its provenance record.
+
+The flagged cases were re-measured on 2026-10-29 on the same host. That run
+used this campaign's frozen driver and server, plus clients rebuilt from
+`3ca380e` and `53756fe` in separate empty target directories. Identical-binary
+A/A pairs were interleaved with the A/B pairs, and peak memory is the exact
+lifetime peak physical footprint. These diagnostics are not part of the
+verified dataset:
+
+| Case | Metric | Published change | Clean A/B | A/A control |
+| --- | --- | ---: | ---: | ---: |
+| `hysteria2-tun-upload-8` | Memory | +12.43% (RSS) | −1.4% | 0.0% |
+| `hysteria2-tun-full-duplex-8` | Memory | +8.07% (RSS) | −2.4% | −3.7% |
+| `xhttp-h2-tun-full-duplex-8` | Throughput | −6.35% | +0.3% | −1.2% |
+| `wireguard-tun-download-1`, 256 MiB | Throughput | −2.98% | −1.1% | −0.6% |
+| `freedom-tun-full-duplex-8` | Throughput | −2.65% | −4.3% | +1.2% |
+
+Medians of eight pairs per design (six for WireGuard, whose original 16 MiB
+transfer lasts about 80 ms and varied by ±25%). The Freedom ranges overlap
+(A/B −8.7% to +12.8%, A/A −5.0% to +9.7%). Its TCP path is identical in both
+revisions, so the change is not attributed to the migration.
+
+With the published executables, the Hysteria2 memory difference did reproduce
+(+9.4% and +10.4% versus A/A +1.2% and +1.9%). It belonged to the mixed
+client, not to the migration. The p99 signals did not reproduce:
+`vmess-auto-socks-tcp-latency-1` measured −2.7% (A/A +1.2%), and
+`ss2022-chacha20-socks-tcp-latency-1` measured +5.1% (A/A +0.7%). Identical
+binaries spanned ±20% at p99. `xhttp-h2-socks-full-duplex-8` RSS measured
++1.1% against an A/A +8.7%. The roughly 2.7 ms TUN TCP echo latencies in this
+report were dominated by the driver's 1 ms polling sleeps, which the driver
+no longer uses. With the readiness-based driver, the same clean after client
+measured median/p99 75/266 µs (Hysteria2) and 86/321 µs (WireGuard), versus
+2,719/7,418 µs and 2,756/8,492 µs with this campaign's driver.
+
 ## Results
 
 Each change below is the median of five matched `after / before` ratios.
@@ -90,7 +149,7 @@ PNG exports: [SOCKS](socks-download-8.png), [TUN](tun-download-8.png),
 
 | Component | Source |
 | --- | --- |
-| Rust before | `3ca380e7e32d82cfff55f38698117dba8bef077b` |
+| Rust before | `3ca380e7e32d82cfff55f38698117dba8bef077b`; mixed build, see the erratum |
 | Rust after | `53756feea4868e77114f71688cb27b34b8e57ffb` |
 | Common Rust benchmark driver | `53756feea4868e77114f71688cb27b34b8e57ffb` |
 | Common Go Xray server | v26.10.21, `1b1647cd9ddf0abc34b981d4611fc03bcac1ca74` |

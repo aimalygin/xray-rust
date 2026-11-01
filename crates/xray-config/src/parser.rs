@@ -1200,8 +1200,10 @@ impl Parser<'_> {
             .pointer("/streamSettings/sockopt/dialerProxy")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty());
+        // Xray decodes JSON null into a nil *json.RawMessage, i.e. an absent field.
+        let proxy = outbound.get("proxySettings").filter(|v| !v.is_null());
         if let Some(tag) = dialer {
-            if outbound.get("proxySettings").is_some() {
+            if proxy.is_some() {
                 self.error(
                     format!("$.outbounds[{index}].proxySettings"),
                     "proxySettings and sockopt.dialerProxy cannot be combined",
@@ -1212,7 +1214,7 @@ impl Parser<'_> {
                 transport_layer: true,
             });
         }
-        let proxy = outbound.get("proxySettings")?;
+        let proxy = proxy?;
         let path = format!("$.outbounds[{index}].proxySettings");
         self.warning(&path, "legacy proxySettings: migrate tag to streamSettings.sockopt.dialerProxy; only transport-layer chaining is supported");
         if !proxy.is_object() {

@@ -16,6 +16,7 @@ use xray_routing::{Network, Target};
 
 use super::client::{random_padding, Shared};
 use super::{HysteriaClient, HysteriaError};
+use crate::stream::QUIC_SEND_WINDOW_SAMPLE_BYTES;
 use crate::TransportStream;
 
 const RESPONSE_HEADER_LIMIT: usize = 1 + 8 + MAX_MESSAGE_LENGTH + 8 + MAX_PADDING_LENGTH;
@@ -145,7 +146,7 @@ impl AsyncWrite for HysteriaTcpStream {
         let result = redact_io(AsyncWrite::poll_write(Pin::new(&mut this.send), cx, input));
         if let Poll::Ready(Ok(written)) = result {
             this.bytes_since_window_sample += written;
-            if this.bytes_since_window_sample >= 1024 * 1024 {
+            if this.bytes_since_window_sample >= QUIC_SEND_WINDOW_SAMPLE_BYTES {
                 this.bytes_since_window_sample = 0;
                 this._connection.grow_send_window();
             }
