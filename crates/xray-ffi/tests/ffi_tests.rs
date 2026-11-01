@@ -6,14 +6,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use xray_ffi::{
-    xray_core_cancel_outbound_probes, xray_core_clear_outbound_selector_override,
-    xray_core_close_connection, xray_core_config_warnings, xray_core_connection_snapshot_json,
-    xray_core_free, xray_core_load_config_json, xray_core_new,
-    xray_core_outbound_accounting_snapshot_json, xray_core_outbound_health_snapshot_json,
-    xray_core_outbound_selection_snapshot_json, xray_core_preflight_startup_probe,
-    xray_core_probe_outbound_url, xray_core_replace_routing_policy_json,
-    xray_core_routing_policy_snapshot_json, xray_core_set_dns_bootstrap_mode,
-    xray_core_set_file_logging, xray_core_set_geodata_search_dir,
+    xray_core_cancel_inflight_outbound_probes, xray_core_cancel_outbound_probes,
+    xray_core_clear_outbound_selector_override, xray_core_close_connection,
+    xray_core_config_warnings, xray_core_connection_snapshot_json, xray_core_free,
+    xray_core_load_config_json, xray_core_new, xray_core_outbound_accounting_snapshot_json,
+    xray_core_outbound_health_snapshot_json, xray_core_outbound_selection_snapshot_json,
+    xray_core_preflight_startup_probe, xray_core_probe_outbound_url,
+    xray_core_replace_routing_policy_json, xray_core_routing_policy_snapshot_json,
+    xray_core_set_dns_bootstrap_mode, xray_core_set_file_logging, xray_core_set_geodata_search_dir,
     xray_core_set_geodata_search_dir_exclusive, xray_core_set_outbound_selector_override,
     xray_core_set_socket_protect_callback, xray_core_set_startup_probe,
     xray_core_set_tun_collect_tcp_timings, xray_core_set_tun_fd, xray_core_set_tun_runtime_profile,
@@ -513,6 +513,86 @@ fn ffi_outbound_probe_cancellation_unblocks_shared_calls_before_stop() {
 }
 
 #[test]
+fn ffi_inflight_probe_cancellation_leaves_later_probes_enabled() {
+    let mut err = std::ptr::null_mut();
+    assert_eq!(
+        unsafe { xray_core_cancel_inflight_outbound_probes(std::ptr::null_mut(), &mut err) },
+        XrayStatus::NullArgument
+    );
+    assert_error(&mut err, XrayStatus::NullArgument, "core handle is null");
+    let unloaded = unsafe { xray_core_new(&mut err) };
+    assert_eq!(
+        unsafe { xray_core_cancel_inflight_outbound_probes(unloaded, &mut err) },
+        XrayStatus::Ok
+    );
+    unsafe { xray_core_free(unloaded) };
+
+    let core = started_freedom_core(&mut err);
+    // Idle cancellation must not disable later probes.
+    assert_eq!(
+        unsafe { xray_core_cancel_inflight_outbound_probes(core, &mut err) },
+        XrayStatus::Ok
+    );
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = CString::new(format!("http://{}/health", listener.local_addr().unwrap())).unwrap();
+    // Shared FFI calls use distinct error/output storage. Free only after join.
+    let address = core as usize;
+    let probe_url = url.clone();
+    let (done_tx, done_rx) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let mut probe_error = std::ptr::null_mut();
+        let result = probe_outbound(
+            address as *mut _,
+            &probe_url,
+            60_000,
+            None,
+            &mut probe_error,
+        );
+        assert_error(
+            &mut probe_error,
+            XrayStatus::RuntimeError,
+            "cancelled by the host",
+        );
+        done_tx.send(result).unwrap();
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (_peer, _) = loop {
+        match listener.accept() {
+            Ok(peer) => break peer,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline =>
+            {
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(error) => panic!("probe did not connect: {error}"),
+        }
+    };
+    assert_eq!(
+        unsafe { xray_core_cancel_inflight_outbound_probes(core, &mut err) },
+        XrayStatus::Ok
+    );
+    assert_eq!(
+        done_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
+        (XrayStatus::RuntimeError, NO_PROBE_OUTPUT)
+    );
+    worker.join().unwrap();
+
+    // The same handle keeps probing.
+    let server = spawn_startup_probe_server_once();
+    let url = CString::new(format!("http://{}/health", server.addr)).unwrap();
+    let (status, output) = probe_outbound(core, &url, 5_000, None, &mut err);
+    assert_eq!(status, XrayStatus::Ok, "{}", error_message(err));
+    assert_eq!(
+        output.failure_kind,
+        XrayOutboundProbeFailureKind::None as i32
+    );
+    server.wait();
+    assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
+    unsafe { xray_core_free(core) };
+}
+
+#[test]
 fn ffi_outbound_probe_rejects_invalid_arguments_with_redacted_errors() {
     let mut err = std::ptr::null_mut();
     let core = started_freedom_core(&mut err);
@@ -653,7 +733,8 @@ fn ffi_reports_exact_current_capabilities() {
         | xray_ffi::XRAY_FFI_CAPABILITY_TUN_ADMISSION
         | xray_ffi::XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT
         | xray_ffi::XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT
-        | xray_ffi::XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
+        | xray_ffi::XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT
+        | xray_ffi::XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
 
     assert_eq!(XRAY_FFI_CAPABILITIES, expected);
     assert_eq!(xray_ffi_capabilities(), expected);
@@ -1135,6 +1216,30 @@ fn ffi_connection_snapshot_close_and_accounting_control_live_socks_flow() {
     assert_eq!(connection["port"], echo_addr.port());
     let connection_id = connection["id"].as_u64().unwrap();
 
+    // The relay counts a chunk after forwarding it, so the echo can arrive
+    // just before the downlink counter moves.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let live = loop {
+        let accounting =
+            read_snapshot_json(core, xray_core_outbound_accounting_snapshot_json, &mut err);
+        if accounting["outbounds"][0]["activeDownlinkBytes"] == payload.len() {
+            break accounting;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "live accounting stayed at {accounting}"
+        );
+        thread::yield_now();
+    };
+    assert_eq!(live["revision"], snapshot["revision"]);
+    let direct = &live["outbounds"][0];
+    assert_eq!(direct["outboundTag"], "direct");
+    assert_eq!(direct["completedConnections"], 0);
+    assert_eq!(direct["uplinkBytes"], 0);
+    assert_eq!(direct["downlinkBytes"], 0);
+    assert_eq!(direct["activeUplinkBytes"], payload.len());
+    assert_eq!(direct["activeDownlinkBytes"], payload.len());
+
     assert_eq!(
         unsafe { xray_core_close_connection(core, connection_id, &mut err) },
         XrayStatus::Ok
@@ -1160,6 +1265,8 @@ fn ffi_connection_snapshot_close_and_accounting_control_live_socks_flow() {
     assert_eq!(direct["hostClosedConnections"], 1);
     assert_eq!(direct["uplinkBytes"], payload.len());
     assert_eq!(direct["downlinkBytes"], payload.len());
+    assert_eq!(direct["activeUplinkBytes"], 0);
+    assert_eq!(direct["activeDownlinkBytes"], 0);
 
     assert_eq!(unsafe { xray_core_stop(core, &mut err) }, XrayStatus::Ok);
     unsafe { xray_core_free(core) };

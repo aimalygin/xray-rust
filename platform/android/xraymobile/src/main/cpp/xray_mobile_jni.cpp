@@ -1353,6 +1353,18 @@ Java_org_xrayrust_mobile_XrayCore_nativeCancelOutboundProbes(
 } XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeCancelInflightOutboundProbes(
+    JNIEnv *env, jobject, jlong handle) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+  XrayError *error = nullptr;
+  XrayStatus status = xray_core_cancel_inflight_outbound_probes(native->core, &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStop(JNIEnv *env, jobject, jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
@@ -1502,7 +1514,7 @@ Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle
     return nullptr;
   }
 
-  jlong values[19] = {
+  jlong values[] = {
       static_cast<jlong>(stats.inbound_packets),
       static_cast<jlong>(stats.outbound_packets),
       static_cast<jlong>(stats.dropped_packets),
@@ -1522,12 +1534,16 @@ Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle
       static_cast<jlong>(stats.tcp443_first_byte_events),
       static_cast<jlong>(stats.tcp443_first_byte_duration_ms_total),
       static_cast<jlong>(stats.tcp443_first_byte_duration_ms_max),
+      static_cast<jlong>(stats.tcp_remote_written_bytes),
+      static_cast<jlong>(stats.tcp_remote_read_bytes),
   };
-  jlongArray array = env->NewLongArray(19);
+  constexpr jsize value_count = sizeof(values) / sizeof(values[0]);
+  static_assert(value_count == 21, "keep NATIVE_TUN_STATS_VALUE_COUNT in XrayCore.kt in sync");
+  jlongArray array = env->NewLongArray(value_count);
   if (array == nullptr) {
     return nullptr;
   }
-  env->SetLongArrayRegion(array, 0, 19, values);
+  env->SetLongArrayRegion(array, 0, value_count, values);
   return array;
 } XRAY_JNI_CATCH_RETURN(env, nullptr)
 

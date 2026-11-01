@@ -51,6 +51,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_rebind_hysteria",
         "xray_core_probe_outbound_url",
         "xray_core_cancel_outbound_probes",
+        "xray_core_cancel_inflight_outbound_probes",
         "XrayOutboundProbeFailureKind",
         "xray_core_start",
         "xray_core_stop",
@@ -100,6 +101,7 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT = 1 << 25"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT = 1 << 26"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL = 1 << 28"));
     // The Rust enum, the JNI result carrier and the Swift mapping all rely on
     // these discriminants staying stable within ABI major 1.
     for (name, value) in [
@@ -482,6 +484,10 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("OutboundProbe(1L shl 22)"));
     assert!(core.contains("fun probeOutboundUrl("));
     assert!(core.contains("requireCapability(XrayFfiCapability.OutboundProbe)"));
+    assert!(core.contains("OutboundProbeCancel(1L shl 28)"));
+    assert!(core.contains("fun cancelOutboundProbes()"));
+    assert!(core.contains("requireFeature(15, XrayFfiCapability.OutboundProbeCancel)"));
+    assert!(jni.contains("xray_core_cancel_inflight_outbound_probes(native->core, &error)"));
     assert!(core.contains("StartupProbePreflight(1L shl 25)"));
     assert!(core.contains("fun preflightStartupProbe()"));
     assert!(core.contains("requireFeature(12, XrayFfiCapability.StartupProbePreflight)"));
@@ -726,6 +732,14 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayAndroidDnsBootstrap.kt",
     ))
     .expect("read Android DNS bootstrap preparation");
+    let tun_interface =
+        fs::read_to_string(workspace_root().join(
+            "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayTunInterface.kt",
+        ))
+        .expect("read Android TUN interface contract");
+    assert!(tun_interface.contains("const val DNS_ANCHOR = \"198.18.0.1\""));
+    assert!(tun_interface.contains("const val MTU = 1_500"));
+    assert!(tun_interface.contains("if (dnsAnchor) addDnsServer(XrayTunInterface.DNS_ANCHOR)"));
 
     for token in [
         "InetAddress.getAllByName(domain)",
@@ -739,7 +753,7 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "is JSONArray",
         "JSONArray(values)",
         "resolveSystemBootstrapAddresses(identity)",
-        "198.18.0.1",
+        "XrayTunInterface.DNS_ANCHOR,",
         "getJSONArray(\"servers\")",
         "dnsServerBootstrapUpstreamDomain(rawServer)",
         "dnsUpstreamPort = upstream.port",
@@ -762,7 +776,8 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         "Android bootstrap must retain every usable system address"
     );
     assert!(service.contains("XrayDnsBootstrapMode.StaticOnly"));
-    assert!(service.contains("addDnsServer(XRAY_TUN_DNS_ANCHOR)"));
+    assert!(service.contains("addDnsServer(XrayTunInterface.DNS_ANCHOR)"));
+    assert!(service.contains(".applyXrayTunInterface(dnsAnchor = false)"));
 
     let start = service
         .find("open fun startXrayTunnel(")
@@ -772,7 +787,7 @@ fn android_reference_vpn_bootstraps_dns_before_establishing_the_tunnel() {
         .find("prepareAndroidVpnConfig(configJson)")
         .expect("reference VPN should prepare bootstrap mappings");
     let add_dns = start_body
-        .find("tunnelBuilder.addDnsServer(XRAY_TUN_DNS_ANCHOR)")
+        .find("tunnelBuilder.addDnsServer(XrayTunInterface.DNS_ANCHOR)")
         .expect("reference VPN should install the local DNS anchor");
     let establish = start_body
         .find("tunnelBuilder.establish()")
@@ -1280,6 +1295,7 @@ const EXPORTED_SYMBOLS: &[&str] = &[
     "xray_core_rebind_hysteria",
     "xray_core_probe_outbound_url",
     "xray_core_cancel_outbound_probes",
+    "xray_core_cancel_inflight_outbound_probes",
     "xray_core_start",
     "xray_core_stop",
     "xray_core_free",
@@ -1367,6 +1383,7 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
+  capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
   (void)capabilities;
   (void)xray_profile_import_json(packet, sizeof(packet), NULL, 0, &written, &error);
@@ -1427,6 +1444,7 @@ static void use_xray_ffi_api(void) {
     int32_t probe_failure_kind = XRAY_OUTBOUND_PROBE_FAILURE_NONE;
     uint16_t probe_http_status = 0;
     (void)xray_core_cancel_outbound_probes(handle, &error);
+    (void)xray_core_cancel_inflight_outbound_probes(handle, &error);
     (void)xray_core_probe_outbound_url(
         handle,
         "http://probe.test/health",

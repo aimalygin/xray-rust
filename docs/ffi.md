@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.14`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.15`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -24,6 +24,8 @@ Hysteria carrier rebind requires minor >=7 and `HYSTERIA2_OUTBOUND`.
 Hysteria stream limits require minor >=10 and `HYSTERIA_STREAM_LIMITS` (bit 23).
 TUN flow admission requires minor >=11 and `TUN_ADMISSION` (bit 24).
 The on-demand outbound probe requires minor >=9 and `OUTBOUND_PROBE`.
+Cancelling in-flight probes without the teardown latch requires minor >=15 and
+`OUTBOUND_PROBE_CANCEL` (bit 28).
 Startup-probe preflight requires minor >=12 and `STARTUP_PROBE_PREFLIGHT` (bit 25).
 
 An incompatible function signature, enum representation, ownership rule, or
@@ -293,6 +295,19 @@ Create a new handle and load its config to enable probes again. Raw C hosts must
 cancel, drain shared callers, then acquire exclusive access for stop/load/free;
 cancellation alone does not make lifecycle calls safe to overlap a probe.
 
+ABI 1.15 adds `XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL` (bit 28) and
+`xray_core_cancel_inflight_outbound_probes(handle, error)` for a host that
+abandons a probe while the core keeps running, for example when the user
+dismisses a health check. It cancels the probes already in flight on that core;
+each returns `RUNTIME_ERROR` with zero outputs, the error message
+`outbound probe cancelled by the host`, and no health failure. Later probes run
+normally, and a probe that starts concurrently with the call may complete. It
+is a nonblocking shared call, idempotent, and a no-op before config load or
+when nothing is in flight. It is not a teardown step: it does not set the
+latch above and does not cancel startup-probe preflights. Kotlin
+`cancelOutboundProbes()` and Swift `cancelOutboundProbes()` require minor 15
+and the capability.
+
 It is a shared call: it may overlap packet, statistics, snapshot, and other
 shared calls, including other probes, but not load/start/stop/free. Each
 in-flight call blocks its caller and holds at most one outbound connection, so
@@ -373,7 +388,7 @@ the owning host because per-connection display and close are the purpose of the
 surface; credentials and free-form transport errors are not included.
 
 The accounting document keeps cumulative totals after flows leave the active
-inventory:
+inventory and reports the bytes of flows that are still in it:
 
 ```json
 {
@@ -386,11 +401,36 @@ inventory:
       "completedConnections": 2,
       "hostClosedConnections": 1,
       "uplinkBytes": 64,
-      "downlinkBytes": 96
+      "downlinkBytes": 96,
+      "activeUplinkBytes": 4096,
+      "activeDownlinkBytes": 1048576
     }
   ]
 }
 ```
+
+Byte fields count relayed application payload between the inbound client and
+the target: uplink toward the target, downlink back. Transport framing,
+encryption and handshakes are not included. `uplinkBytes` and `downlinkBytes`
+count completed flows only; a flow adds its bytes once, when it leaves the
+inventory. `activeUplinkBytes` and `activeDownlinkBytes` count the bytes relayed
+so far by the opening and active flows routed to that outbound, read when the
+snapshot is taken. Both pairs are read under the registry lock that moves a
+completing flow's bytes from the active to the completed pair, so each byte is
+counted exactly once and `uplinkBytes + activeUplinkBytes` (likewise downlink)
+never decreases between snapshots. A host builds a per-outbound speed meter by
+polling the document and dividing the change of that sum by the interval.
+
+`revision` is shared with the connection document and advances when a flow
+opens, becomes active, is asked to close, or completes. Relayed bytes alone do
+not advance it, so two documents with the same revision can carry different
+active byte counts; a meter must not skip a poll because the revision is
+unchanged.
+
+Within schema version 1, documents may gain fields; consumers must ignore
+fields they do not know. The active byte fields were added this way, so a
+library that predates them omits them. The checked-in Swift and Kotlin models
+report them as `nil`/`null` in that case.
 
 `xray_core_close_connection` accepts a nonzero ID from a recent connection
 snapshot. It marks the host-close request before signalling cancellation, so a

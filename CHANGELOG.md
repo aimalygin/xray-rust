@@ -10,6 +10,51 @@ long-term supported release series.
 
 ## Unreleased
 
+- Mobile: cancel in-flight on-demand outbound probes without stopping the core
+  (ABI 1.15, `OUTBOUND_PROBE_CANCEL`, bit 28). The existing
+  `xray_core_cancel_outbound_probes` is a teardown latch: after it every later
+  probe on that core fails, so a host whose user dismissed a health check had
+  no way to abort it and probe again later. The new
+  `xray_core_cancel_inflight_outbound_probes`, Kotlin
+  `XrayCore.cancelOutboundProbes()` and Swift `XrayCore.cancelOutboundProbes()`
+  end only the probes already running; they return `RUNTIME_ERROR` with
+  `outbound probe cancelled by the host`, and later probes run normally.
+  Startup-probe preflights and the teardown latch keep their behaviour (#81).
+
+- Android: expose the live `tcpRemoteWrittenBytes` and `tcpRemoteReadBytes` TUN
+  counters that the C ABI and Swift adapter already report, and add
+  `XrayTunStats.uplinkBytes` / `downlinkBytes` (TCP plus UDP remote payload).
+  Hosts sampling `outboundAccountingSnapshot()` for a traffic meter only saw
+  bytes of closed connections. The new constructor parameters default to zero
+  and come last, so source callers keep compiling (#81).
+
+- Android: publish the TUN interface contract as `XrayTunInterface` (IPv4
+  `10.7.0.1/32`, IPv6 `fd00:7872::1/128`, DNS anchor `198.18.0.1`, MTU 1500)
+  and add `VpnService.Builder.applyXrayTunInterface(dnsAnchor)`, so hosts with
+  their own `VpnService` stop copying SDK internals. `XrayVpnService` uses the
+  same helper; the established interface is unchanged (#81).
+
+- Report live bytes in per-outbound accounting. The accounting snapshot added a
+  connection's payload bytes to `uplinkBytes`/`downlinkBytes` only when it
+  completed, so a host polling it as a traffic meter saw nothing during a long
+  download and then a jump at close. Each outbound now also carries
+  `activeUplinkBytes`/`activeDownlinkBytes`: the bytes relayed so far by its
+  opening and active connections, read under the same registry lock that moves
+  them into the completed totals, so the sum never decreases. The existing
+  fields keep their completed-only meaning, `revision` still advances only on
+  inventory changes, and schema version 1 gains the fields additively. Swift
+  and Kotlin expose them as optional values that are absent with an older
+  native library.
+
+- WireGuard resolves destinations with the caller's resolver when no
+  `remoteDNS` server is routable through the tunnel. A split `allowedIPs` that
+  excluded the configured servers (as in an imported wg-quick profile with
+  `DNS` outside `AllowedIPs`) made every domain destination fail with no route,
+  reported only as "all configured DNS servers are unavailable". A failed
+  tunnel query still never falls back to host DNS. The parser warns at
+  `remoteDNS` when no server is routable, and profile import accepts that
+  warning, since the profile is what the wg-quick file asked for.
+
 - Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
   uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2
   snapshot of the bare uTLS `hellorandomizednoalpn`, so plain TLS failed against
@@ -213,9 +258,11 @@ long-term supported release series.
   opening indefinitely; on SOCKS and TPROXY each such flow also held one of the
   64 shared pending-open permits, so a stalled upstream could block new UDP
   flows. The open now fails at the deadline and the next datagram retries.
-  Hysteria and WireGuard, previously capped only by a fixed 10 s client
-  deadline, follow the policy too; DNS upstream exchanges keep their attempt
-  deadlines. Xray-core sets the same deadline on its SOCKS client handshake.
+  Hysteria and WireGuard are bounded by the policy as well as by their fixed
+  10 s client deadline; DNS upstream exchanges keep their attempt deadlines.
+  Xray-core sets the same deadline on its SOCKS client handshake. A `handshake`
+  of 0 leaves UDP opens unbounded, as Xray-core's WireGuard client treats it,
+  instead of failing every open on its first poll.
 
 - Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
 - Restrict the REALITY `random` and `randomized` pools to the four profiles

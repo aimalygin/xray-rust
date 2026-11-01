@@ -178,11 +178,9 @@ fn finish(
     let config_json =
         Zeroizing::new(serde_json::to_string(root).map_err(|_| ImportError::Configuration)?);
     let parsed = crate::parse_xray_json(&config_json).map_err(|_| ImportError::Configuration)?;
-    if parsed
-        .diagnostics
-        .iter()
-        .any(|diagnostic| !is_reality_fingerprint_advisory(diagnostic))
-    {
+    if parsed.diagnostics.iter().any(|diagnostic| {
+        !is_reality_fingerprint_advisory(diagnostic) && !is_wireguard_dns_advisory(diagnostic)
+    }) {
         return Err(ImportError::Configuration);
     }
     Ok(ImportedProfile {
@@ -201,6 +199,16 @@ fn is_reality_fingerprint_advisory(diagnostic: &crate::Diagnostic) -> bool {
             .path
             .as_deref()
             .is_some_and(|path| path.ends_with(".realitySettings.fingerprint"))
+}
+/// The parser warns when a split WireGuard tunnel routes none of its
+/// `remoteDNS` servers, so domains resolve outside it. wg-quick sends DNS
+/// outside such a tunnel too, and the profile is exactly what the file asked for.
+fn is_wireguard_dns_advisory(diagnostic: &crate::Diagnostic) -> bool {
+    diagnostic.severity == crate::DiagnosticSeverity::Warning
+        && diagnostic
+            .path
+            .as_deref()
+            .is_some_and(|path| path.ends_with(".settings.remoteDNS"))
 }
 fn validate_name(name: &str) -> Result<(), ImportError> {
     if name.is_empty()

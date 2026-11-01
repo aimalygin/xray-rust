@@ -158,6 +158,9 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let outboundProbe = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_PROBE.rawValue)
     )
+    public static let outboundProbeCancel = Self(
+        rawValue: UInt64(XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL.rawValue)
+    )
     public static let tunAdmission = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_ADMISSION.rawValue))
     public static let hysteriaStreamLimits = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS.rawValue)
@@ -415,8 +418,13 @@ public struct XrayConnectionInfo: Codable, Equatable, Sendable {
     public let startedUnixMs: UInt64
 }
 
+/// Per-outbound accounting for the managed connections of this core.
 public struct XrayOutboundAccountingSnapshot: Codable, Equatable, Sendable {
     public let schemaVersion: Int
+    /// Shared with `XrayConnectionSnapshot`; advances when a connection opens, becomes
+    /// active, is asked to close or completes. Relayed bytes alone do not advance it, so
+    /// a traffic meter must read the byte counters on every poll instead of skipping
+    /// unchanged revisions.
     public let revision: UInt64
     public let outbounds: [XrayOutboundAccounting]
 
@@ -441,13 +449,30 @@ public struct XrayOutboundAccountingSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+/// Connection counts and relayed payload bytes for one outbound tag (`nil` for flows
+/// without one).
+///
+/// Bytes are application payload between the inbound client and the target: uplink
+/// toward the target, downlink back. Transport framing, encryption and handshakes are
+/// not counted.
 public struct XrayOutboundAccounting: Codable, Equatable, Sendable {
     public let outboundTag: String?
     public let openedConnections: UInt64
     public let completedConnections: UInt64
     public let hostClosedConnections: UInt64
+    /// Payload bytes of completed connections only; a connection adds its bytes once,
+    /// when it leaves the inventory.
     public let uplinkBytes: UInt64
+    /// Downlink counterpart of `uplinkBytes`.
     public let downlinkBytes: UInt64
+    /// Payload bytes relayed so far by the opening and active connections routed to
+    /// this outbound, read live when the snapshot is taken. A completing connection
+    /// moves its bytes into `uplinkBytes` under the same lock, so
+    /// `uplinkBytes + activeUplinkBytes` never decreases between snapshots. `nil` when
+    /// the loaded native library predates this field.
+    public let activeUplinkBytes: UInt64?
+    /// Downlink counterpart of `activeUplinkBytes`.
+    public let activeDownlinkBytes: UInt64?
 }
 
 /// Controls whether the core may use the platform resolver for bootstrap lookups.
@@ -1319,12 +1344,32 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
+    /// Cancels the `probeOutboundURL` calls already running on this core, for
+    /// example when the user dismisses a health check, and leaves later probes
+    /// and traffic untouched. Each cancelled call throws
+    /// `XrayCoreError.status` with `XRAY_STATUS_RUNTIME_ERROR`; a probe that
+    /// starts concurrently may still complete. Thread-safe and does not wait for
+    /// the probes, only behind a concurrent lifecycle call. Startup-probe
+    /// preflights are not affected; `stop` still cancels them. Requires ABI 1.15.
+    public func cancelOutboundProbes() throws {
+        let version = Self.ffiInfo.version
+        guard version.minor >= 15 else {
+            throw XrayCoreError.incompatibleFFIMinorVersion(required: 15, actual: version.minor)
+        }
+        try requireCapability(.outboundProbeCancel)
+        try withSharedHandle { handle in
+            var error: OpaquePointer?
+            try check(xray_core_cancel_inflight_outbound_probes(handle, &error), error: error)
+        }
+    }
+
     /// Sends one HTTP(S) GET through a leaf outbound of the running core and
     /// returns its latency or typed failure. A `nil` or empty `outboundTag`
     /// uses the default outbound; routing rules and selector overrides are
     /// bypassed, and health snapshots are not updated. Blocks the caller for at
-    /// most `timeoutMs` (1...60_000), so call it off the main thread; lifecycle
-    /// calls cancel probes before waiting for shared calls. Requires ABI 1.9.
+    /// most `timeoutMs` (1...60_000), so call it off the main thread.
+    /// `cancelOutboundProbes()` ends it early and keeps later probes working;
+    /// lifecycle calls cancel probes before waiting for shared calls. Requires ABI 1.9.
     public func probeOutboundURL(
         _ url: String,
         timeoutMs: UInt64 = 5_000,

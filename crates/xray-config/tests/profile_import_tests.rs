@@ -172,6 +172,14 @@ fn wireguard_keeps_multi_peer_psk_and_split_routes() {
         ])
     );
     assert_eq!(root["routing"]["rules"][0]["outboundTag"], "proxy");
+    // DNS outside AllowedIPs resolves outside the tunnel, as wg-quick sends it.
+    // The parser warns about that, and import still accepts the profile.
+    let parsed = xray_config::parse_xray_json(&root.to_string()).unwrap();
+    assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+    assert_eq!(
+        parsed.diagnostics[0].path.as_deref(),
+        Some("$.outbounds[1].settings.remoteDNS")
+    );
 }
 #[test]
 fn wireguard_repeated_lists_comments_crlf_and_case_are_supported() {

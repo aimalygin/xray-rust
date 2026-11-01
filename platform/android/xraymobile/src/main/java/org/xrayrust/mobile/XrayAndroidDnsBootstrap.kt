@@ -1218,16 +1218,15 @@ private const val MAX_BOOTSTRAP_ALIAS_DEPTH = 8
 private const val MAX_BLOCKED_DNS_LOOKUP_THREADS = 2
 private const val DNS_LOOKUP_THREAD_KEEP_ALIVE_SECONDS = 30L
 private const val EXACT_DNS_HOST_PREFIX = "full:"
-internal const val XRAY_TUN_DNS_ANCHOR = "198.18.0.1"
 private const val MAX_DNS_SERVERS = 8
 private const val DNS_FAMILY_IPV4 = 1
 private const val DNS_FAMILY_IPV6 = 2
 
 private val XRAY_TUN_OWNED_ADDRESSES = listOf(
-    XRAY_TUN_DNS_ANCHOR,
+    XrayTunInterface.DNS_ANCHOR,
     "198.18.0.2",
-    "10.7.0.1",
-    "fd00:7872::1",
+    XrayTunInterface.IPV4_ADDRESS,
+    XrayTunInterface.IPV6_ADDRESS,
 ).mapTo(linkedSetOf()) { address ->
     requireNotNull(canonicalIpAddress(address))
 }

@@ -108,13 +108,17 @@ pub enum OutboundProbeOutcome {
 }
 
 /// A host-requested outbound probe rejected before network activity or cancelled
-/// during teardown. Cancellation does not report an outbound health failure.
+/// by the host. Cancellation does not report an outbound health failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OutboundProbeError {
     #[error("core is not running")]
     NotRunning,
     #[error("outbound probe cancelled for core teardown")]
     Cancelled,
+    /// Cancelled by [`crate::Core::cancel_inflight_outbound_probes`]; later
+    /// probes on the same core run normally.
+    #[error("outbound probe cancelled by the host")]
+    CancelledInFlight,
     #[error("unsupported outbound probe URL")]
     UnsupportedUrl,
     #[error(

@@ -20,6 +20,7 @@ import org.xrayrust.mobile.XrayTunBackend
 import org.xrayrust.mobile.XrayTunRuntimeProfile
 import org.xrayrust.mobile.XrayTunStats
 import org.xrayrust.mobile.XrayVpnService
+import org.xrayrust.mobile.applyXrayTunInterface
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -298,10 +299,8 @@ class DeviceGateVpnService : XrayVpnService() {
         // Fail closed if this campaign's matching probe package is absent.
         return Builder()
             .setSession("xray-rust-device-probe")
-            .setMtu(1_500)
-            .addAddress("10.7.0.1", 32)
+            .applyXrayTunInterface(dnsAnchor = false)
             .addRoute("0.0.0.0", 0)
-            .addAddress("fd00:7872::1", 128)
             .addRoute("::", 0)
             .addAllowedApplication(packageName.replace("org.xrayrust.devicehost", "org.xrayrust.deviceprobe"))
     }

@@ -496,7 +496,7 @@ open class XrayVpnService : VpnService() {
             }
             val tunnelBuilder = buildTunnel()
             if (preparedConfig.usesLocalDnsAnchor) {
-                tunnelBuilder.addDnsServer(XRAY_TUN_DNS_ANCHOR)
+                tunnelBuilder.addDnsServer(XrayTunInterface.DNS_ANCHOR)
             }
             tunnel = tunnelBuilder.establish()
                 ?: error("failed to establish Android VPN tunnel")
@@ -651,10 +651,8 @@ open class XrayVpnService : VpnService() {
     protected open fun buildTunnel(): Builder {
         val builder = Builder()
             .setSession("xray-rust")
-            .setMtu(PACKET_BYTES)
-            .addAddress("10.7.0.1", 32)
+            .applyXrayTunInterface(dnsAnchor = false)
             .addRoute("0.0.0.0", 0)
-            .addAddress("fd00:7872::1", 128)
             .addRoute("::", 0)
         if (Build.VERSION.SDK_INT >= 29) {
             // A VPN of an app targeting API 29+ is metered by default, even on Wi-Fi.
@@ -844,7 +842,7 @@ open class XrayVpnService : VpnService() {
     }
 
     private companion object {
-        const val PACKET_BYTES = 1_500
+        const val PACKET_BYTES = XrayTunInterface.MTU
         const val MAX_PACKETS_PER_POLL = 64
         const val POLL_WAIT_MILLISECONDS = 250
         const val DNS_BOOTSTRAP_TIMEOUT_MILLISECONDS = 5_000L

@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use xray_config::{parse_xray_json, OutboundSettings, WireguardDomainStrategy};
+use xray_config::{parse_xray_json, DiagnosticSeverity, OutboundSettings, WireguardDomainStrategy};
 fn example() -> Value {
     serde_json::from_str(include_str!(
         "../../../tests/fixtures/configs/wireguard.json"
@@ -203,4 +203,50 @@ fn wireguard_multi_peer_order_keys_and_aggregate_prefix_budget() {
     }
     value["outbounds"][0]["settings"]["peers"] = json!([]);
     assert!(parse_xray_json(&value.to_string()).is_err());
+}
+
+#[test]
+fn wireguard_warns_when_no_remote_dns_server_is_routable_through_the_tunnel() {
+    let diagnostics = |address: Value, allowed_ips: Value, remote_dns: Option<Value>| {
+        let mut value = example();
+        let settings = &mut value["outbounds"][0]["settings"];
+        settings["address"] = address;
+        settings["peers"][0]["allowedIPs"] = allowed_ips;
+        if let Some(remote_dns) = remote_dns {
+            settings["remoteDNS"] = remote_dns;
+        }
+        parse_xray_json(&value.to_string()).unwrap().diagnostics
+    };
+    let both = json!(["10.44.0.2/32", "fd44::2/128"]);
+    let split = json!(["198.51.100.0/24", "2001:db8:a::/64"]);
+    // Covered by allowedIPs, but the device has no IPv6 address to send from.
+    let covered_v6 = json!(["2001:db8::/32"]);
+    for (address, allowed_ips, remote_dns) in [
+        (&both, &split, Some(json!(["192.0.2.53", "2001:db8::53"]))),
+        (&both, &split, None), // the default public resolvers
+        (
+            &json!(["10.44.0.2/32"]),
+            &covered_v6,
+            Some(json!(["2001:db8::53"])),
+        ),
+    ] {
+        let found = diagnostics(address.clone(), allowed_ips.clone(), remote_dns);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, DiagnosticSeverity::Warning);
+        assert_eq!(
+            found[0].path.as_deref(),
+            Some("$.outbounds[0].settings.remoteDNS")
+        );
+        assert!(found[0].message.contains("outside the tunnel"));
+    }
+    // One routable server is enough to keep DNS in the tunnel.
+    let one_covered = json!(["198.51.100.0/24", "192.0.2.53/32"]);
+    let found = diagnostics(
+        both.clone(),
+        one_covered,
+        Some(json!(["192.0.2.53", "2001:db8::53"])),
+    );
+    assert!(found.is_empty(), "{found:?}");
+    let found = diagnostics(both, json!(["0.0.0.0/0", "::/0"]), None);
+    assert!(found.is_empty(), "{found:?}");
 }
