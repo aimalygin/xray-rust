@@ -83,11 +83,23 @@ def run_capture(arguments: list[str], root: pathlib.Path) -> str:
     return completed.stdout
 
 
+SHARE_LINK = re.compile(
+    r"\b(vless|vmess|trojan|ss|socks5?|hysteria2|hy2)://\S+", re.IGNORECASE
+)
+# Proxy URLs carry credentials in userinfo; plain probe URLs stay readable.
+CREDENTIAL_URL = re.compile(r"\b(https?)://[^\s/@]+@\S+", re.IGNORECASE)
+
+
 def redact(line: str, secrets: list[str]) -> str:
     redacted = line
     for secret in sorted((value for value in secrets if value), key=len, reverse=True):
         redacted = redacted.replace(secret, "<redacted>")
-    redacted = re.sub(r"vless://\S+", "<redacted-vless-url>", redacted, flags=re.IGNORECASE)
+    redacted = SHARE_LINK.sub(
+        lambda match: f"<redacted-{match.group(1).lower()}-url>", redacted
+    )
+    redacted = CREDENTIAL_URL.sub(
+        lambda match: f"<redacted-{match.group(1).lower()}-url>", redacted
+    )
     return redacted
 
 

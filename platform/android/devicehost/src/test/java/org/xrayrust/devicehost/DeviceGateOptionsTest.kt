@@ -34,6 +34,11 @@ class DeviceGateOptionsTest {
             "vmess" to XrayProfileFormat.Vmess,
             "hysteria2" to XrayProfileFormat.Hysteria2,
             "hy2" to XrayProfileFormat.Hysteria2,
+            "socks" to XrayProfileFormat.Socks,
+            "socks5" to XrayProfileFormat.Socks,
+            "SOCKS5" to XrayProfileFormat.Socks,
+            "http" to XrayProfileFormat.Http,
+            "https" to XrayProfileFormat.Http,
         )) {
             assertEquals(format, DeviceGateOptions.profileFormat("$scheme://example"))
         }

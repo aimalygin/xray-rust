@@ -111,8 +111,10 @@ def reserve_port(bind, used):
 
 
 def write_fixtures(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    if kwargs.get("protocol") == "v09" and kwargs.get("port") is None:
+        return write_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     if kwargs.get("protocol") != "v08" or kwargs.get("port") is not None:
-        raise ValueError("Android fixture requires --protocol v08 without --port")
+        raise ValueError("Android fixture requires --protocol v08 or v09 without --port")
     original_write(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     server = json.loads((root / "server.json").read_text())
     envelope = json.loads((root / "v07-probe.json").read_text())
@@ -146,15 +148,53 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
 
 
+# The base fixture's case uses aes-256-gcm; cover the other classic AEAD methods.
+V09_AEAD_VARIANTS = ("aes-128-gcm", "chacha20-poly1305", "xchacha20-poly1305")
+
+
+def write_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """SOCKS, HTTP plain/TLS and every classic Shadowsocks AEAD method.
+
+    caseId is the scenario-prefixed label (``http-tls``,
+    ``shadowsocks-aead-chacha20-poly1305``); ``udp: false`` marks HTTP, whose
+    UDP probes are fail-closed negative controls.
+    """
+    original_write(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+    server = json.loads((root / "server.json").read_text())
+    envelope = json.loads((root / "v07-probe.json").read_text())
+    used = {x["port"] for x in server["inbounds"]}
+    index = next(i for i, case in enumerate(envelope["cases"])
+                 if case["label"].startswith("shadowsocks-aead:"))
+    for method in V09_AEAD_VARIANTS:
+        inbound = copy.deepcopy(server["inbounds"][index])
+        case = copy.deepcopy(envelope["cases"][index])
+        config = json.loads(case["configJSON"])
+        settings = config["outbounds"][0]["settings"]
+        port = reserve_port(bind, used)
+        password = secrets.token_urlsafe(24)
+        inbound["port"] = settings["port"] = port
+        settings.update(method=method, password=password)
+        inbound["settings"].update(method=method, password=password)
+        case.update(label=f"shadowsocks-aead:{method}", configJSON=json.dumps(config),
+                    text=fixture.sip002(method, password, bind, port))
+        envelope["cases"].append(case)
+        server["inbounds"].append(inbound)
+    for case in envelope["cases"]:
+        case["caseId"] = case["label"].replace(":", "-")
+    (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
+    (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
+
+
 def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwargs):
     if kwargs.get("port") is not None:
         raise ValueError("regression suites require dynamically allocated fixture ports")
-    if suite == "legacy":
+    if suite in ("legacy", "legacy-v09"):
         spec = importlib.util.spec_from_file_location(
             "android_legacy_fixture", ROOT / "scripts/run-v08-apple-acceptance-fixture.py")
         legacy = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(legacy)
-        legacy.write_legacy(root, bind, tcp_port, udp_port, dns_port, **kwargs)
+        writer = legacy.write_legacy if suite == "legacy" else legacy.write_legacy_v09
+        writer(root, bind, tcp_port, udp_port, dns_port, **kwargs)
     else:
         original_write(root, bind, tcp_port, udp_port, dns_port, **{**kwargs, "protocol": "both"})
     envelope = json.loads((root / "v07-probe.json").read_text())
@@ -165,7 +205,7 @@ def write_regression(root, bind, tcp_port, udp_port, dns_port, *, suite, **kwarg
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--suite", choices=("v08", "legacy", "v07"), default="v08")
+    parser.add_argument("--suite", choices=("v08", "v09", "legacy", "legacy-v09", "v07"), default="v08")
     parser.add_argument("--udp-delay-seconds", type=int, choices=(0, 3), default=0,
                         help="delay a nonce-matched reply to test cancellation during UDP receive")
     args, remaining = parser.parse_known_args()
@@ -173,6 +213,6 @@ if __name__ == "__main__":
     fixture.Echo = Oracle
     Oracle.delay_seconds = args.udp_delay_seconds
     fixture.tcp_echo = http_probe
-    fixture.write_fixtures = (write_fixtures if args.suite == "v08" else
+    fixture.write_fixtures = (write_fixtures if args.suite in ("v08", "v09") else
                               lambda *a, **kw: write_regression(*a, suite=args.suite, **kw))
     fixture.main()

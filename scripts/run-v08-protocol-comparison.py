@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Compare three frozen full clients on seven v0.8 protocol/cipher profiles.
+"""Compare three frozen full clients on the v0.8 or v0.9 protocol profiles.
 
 Common SOCKS ingress and Xray server; no TUN route changes. Compile beforehand.
 Fresh clients, a fresh common server/key set per case/repeat, rotating order.
 All failures, raw byte checks, startup CPU and cleanup results are retained.
+``--suite v09`` measures SOCKS (password auth), HTTP CONNECT (Basic auth,
+plain and TLS) and classic Shadowsocks AEAD; HTTP has no UDP case.
 """
 import argparse
 import base64
@@ -41,15 +43,34 @@ PROFILES = {"trojan-tls": ("trojan", None),
             "vmess-aes128": ("vmess", "aes-128-gcm"),
             "vmess-chacha20": ("vmess", "chacha20-poly1305"),
             "vmess-auto": ("vmess", "auto")}
+V09_PROFILES = {"socks-auth": ("socks", None),
+                "http-basic": ("http", None),
+                "http-basic-tls": ("http", "tls"),
+                "ss-aes128gcm": ("shadowsocks", "aes-128-gcm"),
+                "ss-aes256gcm": ("shadowsocks", "aes-256-gcm"),
+                "ss-chacha20": ("shadowsocks", "chacha20-poly1305"),
+                "ss-xchacha20": ("shadowsocks", "xchacha20-poly1305")}
+SUITES = {"v08": PROFILES, "v09": V09_PROFILES}
+ALL_PROFILES = {**PROFILES, **V09_PROFILES}
+# Release-evidence measurement id prefix -> the profiles it summarizes.
+MEASUREMENT_GROUPS = {
+    "v08": {"trojan": ["trojan-tls"],
+            "shadowsocks2022": ["ss2022-aes128", "ss2022-aes256", "ss2022-chacha20"],
+            "vmess": ["vmess-aes128", "vmess-chacha20", "vmess-auto"]},
+    "v09": {"socks": ["socks-auth"], "http": ["http-basic", "http-basic-tls"],
+            "shadowsocks-aead": ["ss-aes128gcm", "ss-aes256gcm", "ss-chacha20", "ss-xchacha20"]},
+}
 
 
 def cases(profiles, smoke=False):
+    # HTTP CONNECT carries no UDP, in Xray-core as here.
     return [{"id": f"{name}-socks-{traffic}-{count}", "profile": name, "path": "socks",
              "traffic": traffic, "connections": count,
              "payload_size": 1200 if traffic == "udp" else 1024 if traffic == "tcp-latency" else 65536,
              "iterations": (10 if smoke else 1000) if traffic in ("tcp-latency", "udp") else (4 if smoke else 4096)}
             for name in profiles for count in (1, 8)
-            for traffic in ("upload", "download", "full-duplex", "tcp-latency", "udp")]
+            for traffic in ("upload", "download", "full-duplex", "tcp-latency", "udp")
+            if not (traffic == "udp" and ALL_PROFILES[name][0] == "http")]
 
 
 def select_cases(available, requested):
@@ -61,8 +82,22 @@ def select_cases(available, requested):
             if requested is None or case["id"] in requested]
 
 
+def tls(directory, stream, server_stream):
+    """Chrome-shaped TLS pinned to a fresh loopback certificate (Trojan, HTTPS)."""
+    cert, key = directory / "tls.crt", directory / "tls.key"
+    subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+                    "-days", "1", "-subj", "/CN=v08-benchmark.test", "-keyout", str(key),
+                    "-out", str(cert)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
+    import hashlib
+    stream.update(security="tls", tlsSettings={"serverName": "v08-benchmark.test",
+        "fingerprint": "chrome", "alpn": ["http/1.1"], "pinnedPeerCertSha256": hashlib.sha256(der).hexdigest()})
+    server_stream.update(security="tls", tlsSettings={"alpn": ["http/1.1"],
+        "certificates": [{"certificateFile": str(cert), "keyFile": str(key)}]})
+
+
 def configs(profile, directory, port):
-    protocol, method = PROFILES[profile]
+    protocol, method = ALL_PROFILES[profile]
     settings = {"address": "127.0.0.1", "port": port}
     stream = {"network": "raw"}
     server_stream = {"network": "raw"}
@@ -70,16 +105,19 @@ def configs(profile, directory, port):
         password = secrets.token_urlsafe(32)
         settings["password"] = password
         server_settings = {"clients": [{"password": password}]}
-        cert, key = directory / "tls.crt", directory / "tls.key"
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                        "-days", "1", "-subj", "/CN=v08-benchmark.test", "-keyout", str(key),
-                        "-out", str(cert)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
-        import hashlib
-        stream.update(security="tls", tlsSettings={"serverName": "v08-benchmark.test",
-            "fingerprint": "chrome", "alpn": ["http/1.1"], "pinnedPeerCertSha256": hashlib.sha256(der).hexdigest()})
-        server_stream.update(security="tls", tlsSettings={"alpn": ["http/1.1"],
-            "certificates": [{"certificateFile": str(cert), "keyFile": str(key)}]})
+        tls(directory, stream, server_stream)
+    elif protocol in ("socks", "http"):
+        user, password = "bench-" + secrets.token_hex(6), secrets.token_urlsafe(32)
+        settings.update({"user": user, "pass": password})
+        server_settings = {"accounts": [{"user": user, "pass": password}]}
+        if protocol == "socks":
+            server_settings.update(auth="password", udp=True, ip="127.0.0.1")
+        elif method == "tls":
+            tls(directory, stream, server_stream)
+    elif protocol == "shadowsocks" and not method.startswith("2022-"):
+        password = secrets.token_urlsafe(24)
+        settings.update(method=method, password=password)
+        server_settings = {"method": method, "password": password, "network": "tcp,udp"}
     elif protocol == "shadowsocks":
         password = base64.b64encode(secrets.token_bytes(16 if method.endswith("aes-128-gcm") else 32)).decode()
         settings.update(method=method, password=password)
@@ -164,13 +202,16 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--inputs", type=Path, required=True, help="verified source/build identities and frozen paths")
     p.add_argument("--output", type=Path, required=True)
-    p.add_argument("--profile", choices=list(PROFILES), action="append")
+    p.add_argument("--suite", choices=list(SUITES), default="v08")
+    p.add_argument("--profile", choices=list(ALL_PROFILES), action="append")
     p.add_argument("--case-id", action="append", help="select whole cases, preserving their original order indexes")
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--smoke", action="store_true")
     a = p.parse_args()
     if not 3 <= a.repeats <= 20 or (a.profile and len(set(a.profile)) != len(a.profile)):
         raise ValueError("3..20 repetitions and unique profiles required")
+    if a.profile and not set(a.profile) <= set(SUITES[a.suite]):
+        raise ValueError(f"profiles outside the {a.suite} suite")
     for variable in ("GOMAXPROCS", "TOKIO_WORKER_THREADS", "GOMEMLIMIT", "GOGC"):
         os.environ.pop(variable, None)
     os.umask(0o077)
@@ -179,7 +220,7 @@ def main():
     for name, path in paths.items():
         if bench.sha(path) != inputs[name]["sha256"]:
             raise ValueError("binary changed: " + name)
-    if inputs["xray"]["commit"] != bench.REFERENCE or inputs["singbox"]["commit"] != "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778":
+    if inputs["xray"]["commit"] != device.REFERENCE or inputs["singbox"]["commit"] != "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778":
         raise ValueError("reference source pin changed")
     device.verify_reference(paths["xray"])
     if followup.inventory(paths.values()) or ambient()["compiler_load_detected"]:
@@ -192,7 +233,7 @@ def main():
         target = out / (mode + "-client")
         shutil.copyfile(launcher, target)
         target.chmod(0o700)
-        bench.save(Path(str(target) + ".json"), {"mode": mode,
+        bench.save(Path(str(target) + ".json"), {"mode": mode, "suite": a.suite,
                    "binaries": {k: str(paths[k]) for k in ("xray", "singbox")}})
         launchers[mode] = target
     files = [*paths.values(), a.inputs.resolve(), Path(__file__).resolve(), launcher,
@@ -200,9 +241,9 @@ def main():
     hashes = {str(f): bench.sha(f) for f in files}
     patch = bench.command(["git", "diff", "--binary", "HEAD"], ROOT)
     (out / "source.patch").write_text(patch + "\n")
-    indexed_cases = select_cases(cases(a.profile or PROFILES, a.smoke), a.case_id)
+    indexed_cases = select_cases(cases(a.profile or SUITES[a.suite], a.smoke), a.case_id)
     selected = [case for _, case in indexed_cases]
-    manifest = {"schema_version": 1, "suite": "v08", "smoke": a.smoke, "diagnostic": False,
+    manifest = {"schema_version": 1, "suite": a.suite, "smoke": a.smoke, "diagnostic": False,
         "repeats": 1 if a.smoke else a.repeats, "cases": selected, "warmup": True,
         "versions": {k: {"binary": str(paths[k]), "engine_sha256": inputs[k]["sha256"]} for k in ("candidate", "xray", "singbox")},
         "binary_builds": inputs, "file_hashes": hashes, "reference_commit": bench.REFERENCE,
@@ -212,7 +253,11 @@ def main():
         "fixture_policy": "fresh common Xray server and keys per case/repeat; fresh clients in rotating order",
         "worker_policy": "stock defaults; inherited Go/Tokio worker and GC overrides cleared",
         "bulk_setup": "one verified client preface byte before server READY; excluded from payload count and transfer window for all clients",
-        "scope": "SOCKS TCP/UDP; no TUN comparison, transport extensions, Mux, AEAD-2017 or physical-device claims",
+        "scope": ("SOCKS TCP/UDP; no TUN comparison, transport extensions, Mux, AEAD-2017 or physical-device claims"
+                  if a.suite == "v08" else
+                  "SOCKS ingress; SOCKS/HTTP(S)/Shadowsocks AEAD-2017 outbounds; HTTP without UDP; "
+                  "no TUN comparison, Mux or physical-device claims"),
+        "measurement_groups": MEASUREMENT_GROUPS[a.suite],
         "started_unix": time.time(), "runs": []}
     bench.save(out / "manifest.json", manifest)
     for index, case in indexed_cases:

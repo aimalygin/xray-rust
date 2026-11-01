@@ -26,9 +26,12 @@ internal object DeviceGateOptions {
         return when (text.substring(0, schemeEnd).lowercase(Locale.ROOT)) {
             "vless" -> null
             "trojan" -> XrayProfileFormat.Trojan
+            // Covers both Shadowsocks families, classic AEAD included.
             "ss" -> XrayProfileFormat.Shadowsocks2022
             "vmess" -> XrayProfileFormat.Vmess
             "hysteria2", "hy2" -> XrayProfileFormat.Hysteria2
+            "socks", "socks5" -> XrayProfileFormat.Socks
+            "http", "https" -> XrayProfileFormat.Http
             else -> throw IllegalArgumentException("unsupported test profile format")
         }
     }
