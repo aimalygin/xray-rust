@@ -304,6 +304,232 @@
       "udpWire": "222222222222222222222222222222222222222222222222be6ec7af53418136ea48f9568f7962f0d4a3ce40ad645ba5699f024533cb8316e46bd05d7bf70442e2deed42af07f5180513091fdcce1cf4b18f752f3446d8c43f7f49300ab8"
     }
   ],
+  "shadowsocksAead": {
+    "cases": [
+      {
+        "address": "example.test",
+        "cipher": "AES_128_GCM",
+        "key": "139335d86571976d0e0c22dd8ccef2da",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "da852ef58bde7f1e1fa5b22e25c1a04d669cbd195441a861b8d958e87bb62a34",
+        "method": "aes-128-gcm",
+        "nextRecord": "90115baaba3bf58e63c1921086f67f09be3b8962e39db25dbe39077fb56cb4acce46eba862911529854c7568bcbe",
+        "password": "synthetic-ss-aead-password",
+        "port": 443,
+        "request": "10101010101010101010101010101010b96952fd37baccfc0d935922dab26d88de5dc2a4132468eddd619608e02be4ad060e52025c178b06b90210e6bbeb07eacbf3",
+        "response": "10101010101010101010101010101010b977a149bc58577179289ed6fcf282cbd2f5b2cd042a6cf28d7d925ff821f6bd7f288db7407fae37939f4bfe9844916c901d3a1d14505176fedabb8dc52346dd132b358d889976cfa1082ea4b6b69af36892747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 16,
+        "udpMaskedReply": "10101010101010101010101010101010a8b99de1e5b29d8ef0ef1f8601733c6c0d4d3b690b9db2871a4e918a",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "10101010101010101010101010101010ba75f89b8cdfd890f0b1079ab72a6a2768c89a8142ec29ff348f91c00a828d8698b1d2d11fd2a19ed84fd0"
+      },
+      {
+        "address": "example.test",
+        "cipher": "AES_128_GCM",
+        "key": "d76043b95f38391a651e82548cbe89cb",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "3e36296a6fc2e05f266ef9ef2b308e77fdfeb88ee275b09bfae04b32a5f11908",
+        "method": "aes-128-gcm",
+        "nextRecord": "3a15c9dd672284b209341d3e44a06fdb35467bce1417542ed020e6c0b02c1d29a2b8b3e38b23701c14ce286ad5f9",
+        "password": "пароль-🔑:with:colons",
+        "port": 443,
+        "request": "1111111111111111111111111111111141df3ede76ed80c5ee1a35c967746880f40c13cc670ebdf655ff4027904b93c99283c1b0e2a0a0b69d692db63f30a710044b",
+        "response": "1111111111111111111111111111111141c112b71cdac6741d581beaef5605bc471163a57000b9e905e34470884181d9d2365072c76e980bfaddfc975cd545483a19654df66b5252c24aa47feb4ba8962b4bd16315167089b616aaa75758068e5613747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 16,
+        "udpMaskedReply": "11111111111111111111111111111111500fe61b33ebee401333bc11c2260c8e49add1fb76f4316ef12d25db",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "1111111111111111111111111111111142c383615a86ab5e136da40dc8c22f714fa6f8c2b2897ac004868de2e35be91ac9bf92ca6651c6985af0a6"
+      },
+      {
+        "address": "example.test",
+        "cipher": "AES_256_GCM",
+        "key": "139335d86571976d0e0c22dd8ccef2da8f4b508917cfadef760907893c147348",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "342b902dc185b77c4bec4148a94a8f93cb22620585a683570b95ef0003574bd3",
+        "method": "aes-256-gcm",
+        "nextRecord": "58ae99c5a6c631191797db7703575fc7773cebac686f7a87482a7c88a9e7820b3139f55ee585902cdb7d746d68af",
+        "password": "synthetic-ss-aead-password",
+        "port": 443,
+        "request": "12121212121212121212121212121212121212121212121212121212121212123c9741365da510ef106d3386f68e087ba9e1edf6cdacdb3a6e54d90f3e31e7fac0f3bb24a85e3a313c23051281f0441e4db9",
+        "response": "12121212121212121212121212121212121212121212121212121212121212123c89e4c4cc0e2e1fdea1e2dc22a59328634a9d9fdaa2df253e48dd58263bf5ea3a4786528a3348f186879f0d0bc8447d58a20fa4ac8282869145040621ec51e6f37862341476ac478ed829d561f8918f3ce4747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 32,
+        "udpMaskedReply": "12121212121212121212121212121212121212121212121212121212121212122d476a53d95af462d6a55babaea8f645205fbca58c8b98d5b90c3929",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "12121212121212121212121212121212121212121212121212121212121212123f8b0f29b037b17cd6fb43b7532823da75a658a3db4b8e4621dc971a5c4a929b4d54bf7dbafb3a2fbb05ff"
+      },
+      {
+        "address": "example.test",
+        "cipher": "AES_256_GCM",
+        "key": "d76043b95f38391a651e82548cbe89cb1213d4bdd5e1c94ed6553908a87821f1",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "18fc6fcfac9f6d998a8190d033bc0b2ec2fd0e642e013f8d6a7d7a34c813b948",
+        "method": "aes-256-gcm",
+        "nextRecord": "96618cb5f5dd7523e4d88698f0f5279a300b5fc93bae2b9c259f4ef8acabf17a4b31b9073c85224f2849995ced64",
+        "password": "пароль-🔑:with:colons",
+        "port": 443,
+        "request": "13131313131313131313131313131313131313131313131313131313131313135bf85030fe7692666cf5fa8e82a96a2abb2fa139553709729e85a2f1bc3eed38738ef3206e9d7d0a265c706b144ca8293b3c",
+        "response": "13131313131313131313131313131313131313131313131313131313131313135be6d55384ee334313bf170e71f83d01c707d15042390d6dce99a6a6a434ff28e24f847a2eb88038fd35484e5fff9e4c966db1de91879f3482f64198912a518bfd4eabbfd10c0083d1a11759555971e79b4b747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 32,
+        "udpMaskedReply": "13131313131313131313131313131313131313131313131313131313131313134a285fece3b8b9d312547ebb4016e2acc0c734c0b65133b3d79cae8d",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "131313131313131313131313131313131313131313131313131313131313131358e43a968ad5fccd120a66a78ca8914e9fd09e7da1d17e3b4996e9ec1621e1f1715b6b9920f0e06eb95c0e"
+      },
+      {
+        "address": "example.test",
+        "cipher": "CHACHA20_POLY1305",
+        "key": "139335d86571976d0e0c22dd8ccef2da8f4b508917cfadef760907893c147348",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "69bd58b26895a2550ab56cc120ae9982bf07a94ed058b9e6c747345f111bce61",
+        "method": "chacha20-poly1305",
+        "nextRecord": "09623158c46fa3b5671936009ad81517dcc185b2e08a6fdaf8598961783a75ffa1c60c1e635f3212915e2de6a8ec",
+        "password": "synthetic-ss-aead-password",
+        "port": 443,
+        "request": "1414141414141414141414141414141414141414141414141414141414141414c4574716b69944fedf9931c733e275430536781f617f3a84528c656fda95664cb38dce00caaae4677b5348a7263399482a55",
+        "response": "1414141414141414141414141414141414141414141414141414141414141414c449456f8e49a389f217a5f6ea5b06e1e99e087676713e9b02906138c29f745cc24ef5ac2af2670f1e098ffade052640096e712673478a10f574c0296f093c01165d9e3c45a1af3f540e9646812710069219747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 32,
+        "udpMaskedReply": "1414141414141414141414141414141414141414141414141414141414141414d5874fc2dc251d603eec916af5627f183790c35ab9b6e7976102197c",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "1414141414141414141414141414141414141414141414141414141414141414c74b2ab8b548587e3eb2897672007c4f7adfd877c17f64207a48f965651d89e334b37aac61e9808206ee00"
+      },
+      {
+        "address": "example.test",
+        "cipher": "CHACHA20_POLY1305",
+        "key": "d76043b95f38391a651e82548cbe89cb1213d4bdd5e1c94ed6553908a87821f1",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "5ce9f9cbe3e546a45b94677f63c5f910eb7ed205e51a840ad77775300aacffed",
+        "method": "chacha20-poly1305",
+        "nextRecord": "e3db0cbfef0328e16592965ecb0bd64793f5135ebc0a72b2b1d47a422230ea5754d8f8fd45ced5f28ea8df01dc98",
+        "password": "пароль-🔑:with:colons",
+        "port": 443,
+        "request": "15151515151515151515151515151515151515151515151515151515151515150caf62a5f4e0a12e6957aa3694c049cbef84f9627f6a3845012a9696ac29462cc8c7c99867f33f52c8f708610df66ec0c4b1",
+        "response": "15151515151515151515151515151515151515151515151515151515151515150cb1b2b7ad3af112f581cc2fd42ce8c806bc890b68643c5a513692c1b423543c8bc0f5d126fd482c3dc152ec25385e50e3d718b5a1d0268bb795cb67f1a518a4ddc91c408d1f830f34537c2128a4e18a3b00747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 32,
+        "udpMaskedReply": "15151515151515151515151515151515151515151515151515151515151515151d7ff90483d353f536f268f3123e344cdac47efad0afb431cfe10160",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "15151515151515151515151515151515151515151515151515151515151515150fb39c7eeabe16eb36ac70efcf6581d6c8d12ad1b9f981103b6d2869dfaded6f46db304d4c4a6e588b3ced"
+      },
+      {
+        "address": "example.test",
+        "cipher": "XCHACHA20_POLY1305",
+        "key": "139335d86571976d0e0c22dd8ccef2da8f4b508917cfadef760907893c147348",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "f814bc308eec7f86dd11e5d0613043c920c8ddacf60ad5e40c08e427ab099fab",
+        "method": "xchacha20-poly1305",
+        "nextRecord": "5a8437cf55fd9a1499631fc119d991725f8b6d54568d12163ef63ce780fbad55de3f89c77242fb4470ad38aef692",
+        "password": "synthetic-ss-aead-password",
+        "port": 443,
+        "request": "1616161616161616161616161616161616161616161616161616161616161616ad5b78d1d6058974ba9a693facda8ae909eaaab8bdcbc496e644bc00d731264e409f7ccc0837fcca38d9a7dc6d807d5edf58",
+        "response": "1616161616161616161616161616161616161616161616161616161616161616ad4573706d5321495b311f7bfcba9fe930e8dad1aac5c089b658b857cf3b345e9b25360a42bb611578c09e8040ce6bdf5a880c660e72edd9e622bf6e76b9787a0ef34d194c510eb9cda1a841d05b167b069e747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 32,
+        "udpMaskedReply": "1616161616161616161616161616161616161616161616161616161616161616bc8b858e45d2bb167070fbcd5718cff29120bd80c08457d7f29986d7",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "1616161616161616161616161616161616161616161616161616161616161616ae47e0f42cbffe08702ee3d168aefe2ad5d734354dd289d444c392e288439ba8b22b99183fafafa5343204"
+      },
+      {
+        "address": "example.test",
+        "cipher": "XCHACHA20_POLY1305",
+        "key": "d76043b95f38391a651e82548cbe89cb1213d4bdd5e1c94ed6553908a87821f1",
+        "largeWriteLength": 20102,
+        "largeWriteSha256": "bcb4f9b2bad12776ba9b2420d57d15c50cf9664538f680d143d478cf17f9abda",
+        "method": "xchacha20-poly1305",
+        "nextRecord": "9717115ddb80573719ca0287fee968ded15ed7bbc9d525f55e3916d387ada3540e15f53132a7fd0f0f0e88633265",
+        "password": "пароль-🔑:with:colons",
+        "port": 443,
+        "request": "1717171717171717171717171717171717171717171717171717171717171717533d115b4e82068b10a52af007c9af9a4c82461f3de7dd5582d6d2887fdc15c771429441f34a3fc04f6f54ac7d9e8d3dcae1",
+        "response": "171717171717171717171717171717171717171717171717171717171717171753234adae608508047fa2d84ed0daf1fc22536762ae9d94ad2cad6df67d607d74b4671ae747e0bb74a5ddba7ec391d57971b0cd9f25c4753cd297d86a1a374940d8dc030856f0c35694376caf5bd6dc0fa97747261696c696e6720627974657320616674657220656e64206f662073747265616d",
+        "saltLength": 32,
+        "udpMaskedReply": "171717171717171717171717171717171717171717171717171717171717171742ed5a0bc39d007c6a55ab51db791159b2ebd3e52e21d29e7596be12",
+        "udpPayload": "7564702d7061796c6f6164",
+        "udpWire": "171717171717171717171717171717171717171717171717171717171717171750213f71aaf045626a0bb34d526932bdb60d2c85bb12b42ed7694f046669eec27d1de801e86ac9f880fdaf"
+      }
+    ],
+    "methods": [
+      {
+        "class": "AES_128_GCM",
+        "method": "aes-128-gcm"
+      },
+      {
+        "class": "AES_128_GCM",
+        "method": "AES-128-GCM"
+      },
+      {
+        "class": "AES_128_GCM",
+        "method": "aead_aes_128_gcm"
+      },
+      {
+        "class": "AES_256_GCM",
+        "method": "aes-256-gcm"
+      },
+      {
+        "class": "AES_256_GCM",
+        "method": "aead_aes_256_gcm"
+      },
+      {
+        "class": "CHACHA20_POLY1305",
+        "method": "chacha20-poly1305"
+      },
+      {
+        "class": "CHACHA20_POLY1305",
+        "method": "aead_chacha20_poly1305"
+      },
+      {
+        "class": "CHACHA20_POLY1305",
+        "method": "chacha20-ietf-poly1305"
+      },
+      {
+        "class": "CHACHA20_POLY1305",
+        "method": "ChaCha20-IETF-Poly1305"
+      },
+      {
+        "class": "XCHACHA20_POLY1305",
+        "method": "xchacha20-poly1305"
+      },
+      {
+        "class": "XCHACHA20_POLY1305",
+        "method": "aead_xchacha20_poly1305"
+      },
+      {
+        "class": "XCHACHA20_POLY1305",
+        "method": "xchacha20-ietf-poly1305"
+      },
+      {
+        "class": "rejected",
+        "method": "none"
+      },
+      {
+        "class": "rejected",
+        "method": "plain"
+      },
+      {
+        "class": "rejected",
+        "method": ""
+      },
+      {
+        "class": "rejected",
+        "method": "rc4-md5"
+      },
+      {
+        "class": "rejected",
+        "method": "aes-128-cfb"
+      },
+      {
+        "class": "rejected",
+        "method": "aes-192-gcm"
+      },
+      {
+        "class": "rejected",
+        "method": "chacha20-ietf"
+      },
+      {
+        "class": "shadowsocks2022",
+        "method": "2022-blake3-aes-128-gcm"
+      },
+      {
+        "class": "rejected",
+        "method": " aes-128-gcm"
+      }
+    ]
+  },
   "trojanRequests": [
     {
       "address": "192.0.2.1",

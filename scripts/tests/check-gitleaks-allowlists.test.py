@@ -393,6 +393,19 @@ class EvidenceAllowlists(unittest.TestCase):
             test_path: assignment.replace("command_key", "api_key"),
         }), {(name, "generic-api-key") for name in (test_path, "unreviewed.py")})
 
+    def test_ss_aead_oracle_master_key_exception_is_narrow(self):
+        path = "tests/fixtures/v08/protocol-primitives.json"
+        cases = json.loads((ROOT / path).read_text())["shadowsocksAead"]["cases"]
+        keys = sorted({case["key"] for case in cases})
+        self.assertEqual(len(keys), 4)
+        lines = "".join('        "key": "' + key + '",\n' for key in keys)
+        self.assertEqual(self.scan({path: lines}), set())
+        unreviewed = hashlib.sha256(b"unreviewed master key").hexdigest()
+        self.assertEqual(self.scan({
+            path: '        "key": "' + unreviewed + '",\n',
+            "unreviewed.json": lines,
+        }), {(name, "generic-api-key") for name in (path, "unreviewed.json")})
+
     def scan(self, files):
         binary = os.environ["GITLEAKS_BINARY"]
         with tempfile.TemporaryDirectory(prefix="xray-gitleaks-guards-") as name:

@@ -1867,6 +1867,33 @@
       }
     },
     {
+      "name": "shadowsocks-aead-flat",
+      "accepted": true,
+      "base": "shadowsocks-flat",
+      "set": {
+        "/outbounds/0/settings/method": "chacha20-ietf-poly1305",
+        "/outbounds/0/settings/password": "synthetic-ss-aead-password"
+      }
+    },
+    {
+      "name": "shadowsocks-aead-legacy",
+      "accepted": true,
+      "base": "shadowsocks-legacy",
+      "set": {
+        "/outbounds/0/settings/servers/0/method": "aes-256-gcm",
+        "/outbounds/0/settings/servers/0/password": "synthetic-ss-aead-password"
+      }
+    },
+    {
+      "name": "shadowsocks-none-method",
+      "accepted": false,
+      "errorPath": "$.outbounds[0].settings.method",
+      "base": "shadowsocks-flat",
+      "set": {
+        "/outbounds/0/settings/method": "none"
+      }
+    },
+    {
       "name": "vmess-flat",
       "accepted": true,
       "config": {

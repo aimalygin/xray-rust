@@ -104,94 +104,183 @@ async fn shadowsocks_runtime_carriers_socks_http_udp_accounting_and_close() {
         ("xhttp", "2022-blake3-aes-128-gcm", false),
     ];
     for (carrier, method, identity) in cases {
-        if !reference_supports("shadowsocks", carrier) {
-            continue;
+        carrier_case(carrier, method, identity).await;
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-shadowsocks2022-interop.sh"]
+async fn shadowsocks_runtime_aead_carriers_socks_http_udp_accounting_and_close() {
+    // Every Xray-core v26.10.21 AEAD cipher plus its aliases on the raw
+    // carrier, and one cipher over each stream carrier.
+    let cases = [
+        ("raw", "aes-128-gcm"),
+        ("raw", "aes-256-gcm"),
+        ("raw", "chacha20-poly1305"),
+        ("raw", "xchacha20-poly1305"),
+        ("raw", "chacha20-ietf-poly1305"),
+        ("raw", "AEAD_AES_128_GCM"),
+        ("ws", "aes-128-gcm"),
+        ("httpupgrade", "chacha20-ietf-poly1305"),
+        ("grpc", "aes-256-gcm"),
+        ("xhttp", "xchacha20-poly1305"),
+    ];
+    for (carrier, method) in cases {
+        carrier_case(carrier, method, false).await;
+    }
+}
+
+async fn carrier_case(carrier: &str, method: &str, identity: bool) {
+    if !reference_supports("shadowsocks", carrier) {
+        return;
+    }
+    eprintln!("Shadowsocks: {carrier}, {method}, identity={identity}");
+    let server = ReferenceServer::start_shadowsocks(carrier, method, identity).await;
+    timeout(DEADLINE, async {
+        let (tcp_addr, _tcp) = tcp_echo().await;
+        let (udp_addr, _udp) = udp_echo().await;
+        let (mut core, protector, bootstrap, _) = server.core();
+        core.start().await.unwrap();
+        let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+        let (mut tcp, _) = socks(proxy, 1, "localhost", tcp_addr.port()).await;
+        echo(&mut tcp, b"TCP through Trojan").await;
+        // Several records in each direction, beyond one 8 KiB read buffer.
+        let large: Vec<u8> = (0..100_000).map(|i| (i % 251) as u8).collect();
+        echo(&mut tcp, &large).await;
+        eprintln!("SOCKS TCP passed");
+        let mut http = TcpStream::connect(core.inbound_addr(Some("http-in")).unwrap())
+            .await
+            .unwrap();
+        http.write_all(
+            format!(
+                "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: localhost\r\n\r\n",
+                tcp_addr.port()
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+        let mut reply = Vec::new();
+        while !reply.ends_with(b"\r\n\r\n") {
+            reply.push(http.read_u8().await.unwrap());
+            assert!(reply.len() < 1024);
         }
-        eprintln!("SS2022: {carrier}, {method}, identity={identity}");
-        let server = ReferenceServer::start_shadowsocks(carrier, method, identity).await;
-        timeout(DEADLINE, async {
-            let (tcp_addr, _tcp) = tcp_echo().await;
-            let (udp_addr, _udp) = udp_echo().await;
-            let (mut core, protector, bootstrap, _) = server.core();
-            core.start().await.unwrap();
-            let proxy = core.inbound_addr(Some("socks-in")).unwrap();
-            let (mut tcp, _) = socks(proxy, 1, "localhost", tcp_addr.port()).await;
-            echo(&mut tcp, b"TCP through Trojan").await;
-            eprintln!("SOCKS TCP passed");
-            let mut http = TcpStream::connect(core.inbound_addr(Some("http-in")).unwrap())
-                .await
-                .unwrap();
-            http.write_all(
-                format!(
-                    "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: localhost\r\n\r\n",
-                    tcp_addr.port()
-                )
-                .as_bytes(),
+        assert!(reply.starts_with(b"HTTP/1.1 200"));
+        echo(&mut http, b"HTTP through Trojan").await;
+        eprintln!("HTTP CONNECT passed");
+        let (_control, relay) = socks(proxy, 3, "0.0.0.0", 0).await;
+        let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let target = Target::new(TargetAddr::Ip(udp_addr.ip()), udp_addr.port(), Network::Udp);
+        for size in [1, 4096, 8000] {
+            eprintln!("UDP {size}");
+            let payload = vec![0x5a; size];
+            udp.send_to(
+                &encode_socks5_udp_datagram(&target, &payload).unwrap(),
+                relay,
             )
             .await
             .unwrap();
-            let mut reply = Vec::new();
-            while !reply.ends_with(b"\r\n\r\n") {
-                reply.push(http.read_u8().await.unwrap());
-                assert!(reply.len() < 1024);
-            }
-            assert!(reply.starts_with(b"HTTP/1.1 200"));
-            echo(&mut http, b"HTTP through Trojan").await;
-            eprintln!("HTTP CONNECT passed");
-            let (_control, relay) = socks(proxy, 3, "0.0.0.0", 0).await;
-            let udp = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-            let target = Target::new(TargetAddr::Ip(udp_addr.ip()), udp_addr.port(), Network::Udp);
-            for size in [1, 4096, 8000] {
-                eprintln!("UDP {size}");
-                let payload = vec![0x5a; size];
-                udp.send_to(
-                    &encode_socks5_udp_datagram(&target, &payload).unwrap(),
-                    relay,
-                )
-                .await
+            let mut buffer = vec![0; 9000];
+            let n = udp.recv(&mut buffer).await.unwrap();
+            let packet = parse_socks5_udp_datagram(&buffer[..n]).unwrap();
+            assert_eq!(packet.target, target);
+            assert_eq!(packet.payload.as_ref(), payload);
+        }
+        assert!(protector.0.load(Ordering::SeqCst) > 0);
+        assert!(bootstrap.0.load(Ordering::SeqCst) > 0);
+        let snapshot = core.connection_snapshot();
+        assert_eq!(snapshot.connections.len(), 3);
+        assert!(snapshot
+            .connections
+            .iter()
+            .all(|c| c.outbound_tag.as_deref() == Some("proxy")));
+        let id = snapshot
+            .connections
+            .iter()
+            .find(|c| c.network == Network::Udp)
+            .unwrap()
+            .id;
+        core.close_connection(id).unwrap();
+        while core
+            .connection_snapshot()
+            .connections
+            .iter()
+            .any(|c| c.id == id)
+        {
+            tokio::task::yield_now().await;
+        }
+        echo(&mut tcp, b"TCP survives UDP close").await;
+        let accounting = core.outbound_accounting_snapshot();
+        let proxy = accounting
+            .outbounds
+            .iter()
+            .find(|c| c.outbound_tag.as_deref() == Some("proxy"))
+            .unwrap();
+        assert!(proxy.uplink_bytes >= 12097 && proxy.downlink_bytes >= 12097);
+        core.stop().await.unwrap();
+        assert!(core.connection_snapshot().connections.is_empty());
+        assert!(tcp.read_u8().await.is_err());
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-shadowsocks2022-interop.sh"]
+async fn shadowsocks_runtime_aead_native_udp_codec_round_trips_and_rejects_forgeries() {
+    use xray_proxy::shadowsocks::{Method, UdpSession};
+
+    for method in [
+        "aes-128-gcm",
+        "aes-256-gcm",
+        "chacha20-poly1305",
+        "xchacha20-poly1305",
+    ] {
+        eprintln!("Shadowsocks AEAD UDP codec: {method}");
+        let server = ReferenceServer::start_shadowsocks("raw", method, false).await;
+        timeout(DEADLINE, async {
+            let (origin, _echo) = udp_echo().await;
+            let target = Target::new(TargetAddr::Ip(origin.ip()), origin.port(), Network::Udp);
+            let profile = server.profile();
+            let password = profile["outbounds"][0]["settings"]["password"]
+                .as_str()
                 .unwrap();
-                let mut buffer = vec![0; 9000];
-                let n = udp.recv(&mut buffer).await.unwrap();
-                let packet = parse_socks5_udp_datagram(&buffer[..n]).unwrap();
-                assert_eq!(packet.target, target);
-                assert_eq!(packet.payload.as_ref(), payload);
+            let method = Method::new(method, password).unwrap();
+            let other = Method::new("aes-128-gcm", "unrelated-password").unwrap();
+            let mut session = UdpSession::new(&method).unwrap();
+            let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            // 8192 bytes is the pinned peer's receive buffer, framing included.
+            let salt = if method_salt_is_short(&profile) {
+                16
+            } else {
+                32
+            };
+            for size in [1, 1200, 8192 - salt - 7 - 16] {
+                let payload = vec![size as u8; size];
+                let request = session.encode(&target, &payload).unwrap();
+                assert!(request.len() <= 8192);
+                socket.send_to(&request, server.address).await.unwrap();
+                let mut response = vec![0; 9000];
+                let (length, source) = socket.recv_from(&mut response).await.unwrap();
+                assert_eq!(source, server.address);
+                response.truncate(length);
+                assert!(UdpSession::new(&other).unwrap().decode(&response).is_err());
+                let mut forged = response.clone();
+                *forged.last_mut().unwrap() ^= 1;
+                assert!(session.decode(&forged).is_err());
+                let (address, reply) = session.decode(&response).unwrap();
+                assert_eq!(address, target);
+                assert_eq!(reply, payload);
             }
-            assert!(protector.0.load(Ordering::SeqCst) > 0);
-            assert!(bootstrap.0.load(Ordering::SeqCst) > 0);
-            let snapshot = core.connection_snapshot();
-            assert_eq!(snapshot.connections.len(), 3);
-            assert!(snapshot
-                .connections
-                .iter()
-                .all(|c| c.outbound_tag.as_deref() == Some("proxy")));
-            let id = snapshot
-                .connections
-                .iter()
-                .find(|c| c.network == Network::Udp)
-                .unwrap()
-                .id;
-            core.close_connection(id).unwrap();
-            while core
-                .connection_snapshot()
-                .connections
-                .iter()
-                .any(|c| c.id == id)
-            {
-                tokio::task::yield_now().await;
-            }
-            echo(&mut tcp, b"TCP survives UDP close").await;
-            let accounting = core.outbound_accounting_snapshot();
-            let proxy = accounting
-                .outbounds
-                .iter()
-                .find(|c| c.outbound_tag.as_deref() == Some("proxy"))
-                .unwrap();
-            assert!(proxy.uplink_bytes >= 12097 && proxy.downlink_bytes >= 12097);
-            core.stop().await.unwrap();
-            assert!(core.connection_snapshot().connections.is_empty());
-            assert!(tcp.read_u8().await.is_err());
         })
         .await
         .unwrap();
     }
+}
+
+fn method_salt_is_short(profile: &serde_json::Value) -> bool {
+    profile["outbounds"][0]["settings"]["method"]
+        .as_str()
+        .unwrap()
+        .contains("128")
 }

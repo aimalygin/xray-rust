@@ -1,19 +1,22 @@
 //! Bounded Shadowsocks 2022 client codecs. Compatibility: sing-shadowsocks
-//! v0.2.7 locked by Xray-core v26.7.28; no AEAD-2017 or stream ciphers.
+//! v0.2.7 locked by Xray-core v26.7.28. Classic AEAD methods live in
+//! `crate::shadowsocks::aead2017`; stream ciphers are unsupported.
 mod crypto;
 mod stream;
 mod udp;
 pub use stream::ClientStream;
 pub use udp::UdpSession;
 
+use crate::shadowsocks::address::encode as encode_address;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use sha2::{Digest, Sha256};
 use std::{
     fmt, io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     time::{SystemTime, UNIX_EPOCH},
 };
-use xray_routing::{Network, Target, TargetAddr};
+#[cfg(test)]
+use xray_routing::TargetAddr;
+use xray_routing::{Network, Target};
 use zeroize::{Zeroize, Zeroizing};
 
 pub const MAX_KEYS: usize = 8;
@@ -117,34 +120,6 @@ fn check_time(timestamp: u64, now: u64) -> io::Result<()> {
         Ok(())
     }
 }
-fn encode_address(target: &Target) -> io::Result<Vec<u8>> {
-    if target.port == 0 {
-        return Err(invalid("Shadowsocks 2022 target port is zero"));
-    }
-    let mut bytes = Vec::with_capacity(259);
-    match &target.addr {
-        TargetAddr::Ip(IpAddr::V4(ip)) => {
-            bytes.push(1);
-            bytes.extend_from_slice(&ip.octets());
-        }
-        TargetAddr::Ip(IpAddr::V6(ip)) => {
-            bytes.push(4);
-            bytes.extend_from_slice(&ip.octets());
-        }
-        TargetAddr::Domain(domain) => {
-            if domain.is_empty()
-                || domain.len() > 255
-                || domain.chars().any(|c| c.is_whitespace() || c.is_control())
-            {
-                return Err(invalid("invalid Shadowsocks 2022 target domain"));
-            }
-            bytes.extend_from_slice(&[3, domain.len() as u8]);
-            bytes.extend_from_slice(domain.as_bytes());
-        }
-    }
-    bytes.extend_from_slice(&target.port.to_be_bytes());
-    Ok(bytes)
-}
 struct Cursor<'a>(&'a [u8]);
 impl<'a> Cursor<'a> {
     fn take(&mut self, n: usize) -> io::Result<&'a [u8]> {
@@ -165,23 +140,8 @@ impl<'a> Cursor<'a> {
         Ok(u64::from_be_bytes(self.take(8)?.try_into().unwrap()))
     }
     fn target(&mut self) -> io::Result<Target> {
-        let addr = match self.u8()? {
-            1 => TargetAddr::Ip(Ipv4Addr::from(<[u8; 4]>::try_from(self.take(4)?).unwrap()).into()),
-            4 => {
-                TargetAddr::Ip(Ipv6Addr::from(<[u8; 16]>::try_from(self.take(16)?).unwrap()).into())
-            }
-            3 => {
-                let n = self.u8()? as usize;
-                TargetAddr::Domain(
-                    std::str::from_utf8(self.take(n)?)
-                        .map_err(|_| invalid("invalid Shadowsocks 2022 domain"))?
-                        .to_owned(),
-                )
-            }
-            _ => return Err(invalid("invalid Shadowsocks 2022 address type")),
-        };
-        let target = Target::new(addr, self.u16()?, Network::Udp);
-        Method::validate_target(&target)?;
+        let (target, len) = crate::shadowsocks::address::decode(self.0)?;
+        self.0 = &self.0[len..];
         Ok(target)
     }
 }

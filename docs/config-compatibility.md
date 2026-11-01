@@ -224,7 +224,7 @@ resource bounds and remaining release gates. The active reference is Xray-core v
 | Outbound | Settings | Import |
 | --- | --- | --- |
 | `trojan` | Flat `address`, `port`, `password`, optional `level`; or exactly one entry in `servers` | `trojan://password@host:port` with supported stream/security parameters; TLS default |
-| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers` | SIP002 `ss://` plain or base64 userinfo, SS2022 only |
+| `shadowsocks` | Flat `address`, `port`, `method`, `password`, optional `level`; or exactly one entry in `servers` | SIP002 `ss://` base64url or percent-encoded plain userinfo, SS2022 and AEAD methods; no SIP003 plugins or legacy all-base64 form |
 | `vmess` | Flat `address`, `port`, `id`, optional `security`, `alterId`, `experiments`, `level`, `email`; or one `vnext` server with exactly one `users` entry | Common v2 base64 JSON and UUID-authority `vmess://` URI |
 
 Flat and legacy settings cannot be mixed. Trojan passwords are 1–4096 UTF-8
@@ -232,7 +232,25 @@ bytes, with no nonempty `flow`; public plaintext servers are rejected. SS2022
 supports `2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm` and
 `2022-blake3-chacha20-poly1305`. AES accepts up to eight colon-separated identity
 keys; ChaCha accepts one. The encoded key string is bounded by 8192 bytes.
-AEAD-2017 ciphers and SIP003 plugins are excluded.
+The classic AEAD ("AEAD-2017") methods use the same outbound, exactly as
+Xray-core v26.10.21 names them: `aes-128-gcm` (`aead_aes_128_gcm`),
+`aes-256-gcm` (`aead_aes_256_gcm`), `chacha20-poly1305`
+(`aead_chacha20_poly1305`, `chacha20-ietf-poly1305`) and `xchacha20-poly1305`
+(`aead_xchacha20_poly1305`, `xchacha20-ietf-poly1305`). Method names are
+case-insensitive for both families, as upstream lowercases them. AEAD
+passwords are any nonempty text, turned into a key with EVP_BytesToKey(MD5)
+and per-connection subkeys with HKDF-SHA1. Like the reference, `none`/`plain`
+and stream ciphers (`rc4-md5`, `aes-*-cfb`, `chacha20-ietf`, ...) are rejected
+with an error at `method`; SIP003 plugins are excluded.
+
+Classic AEAD streams send the salt and a record holding only the target
+address, then payload records of at most 8158 bytes, as Xray's writer does. The
+reader refuses records above the SIP004 0x3FFF limit (upstream's reader does not
+check it, but no conforming server sends them) and ends the stream at an empty
+record, as upstream does. Classic UDP packets carry a fresh salt each, so there
+is no session, response binding or replay window; replies are authenticated
+and the address type's high nibble is ignored, matching the reference client.
+Salts are not replay-filtered on the client, as upstream's client does not.
 
 VMess requires a UUID and `alterId` absent/zero. Body encryption is `auto`
 (default), `aes-128-gcm` or `chacha20-poly1305`; `none`, `zero`, CFB and legacy
@@ -245,7 +263,9 @@ is implied by these client additions.
 
 All three use the shared raw/WS/HTTPUpgrade/gRPC/XHTTP stream carrier and core
 routing, accounting, SOCKS/HTTP/TUN and DNS paths. SS2022 ordinary UDP uses a
-separate native UDP socket, independently of its TCP carrier. VMess ordinary
+separate native UDP socket, independently of its TCP carrier; classic AEAD
+does the same. Either family's datagram is limited to 8192 bytes including
+framing, the pinned peer's receive buffer. VMess ordinary
 UDP uses per-association XUDP except destinations on ports 53/443. Outer TLS
 verification cannot be disabled. Live tests cover REALITY over raw/gRPC/XHTTP,
 XHTTP H1/H2/H3 with independent downloads, and transport-layer chains among

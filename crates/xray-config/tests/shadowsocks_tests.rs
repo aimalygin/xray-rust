@@ -55,17 +55,85 @@ fn invalid_credentials_shapes_and_options_are_rejected_without_secrets() {
     }
 }
 
+fn error_paths(settings: Value) -> Vec<String> {
+    parse_xray_json(&profile(settings).to_string())
+        .unwrap_err()
+        .diagnostics
+        .into_iter()
+        .filter_map(|d| d.path)
+        .collect()
+}
+
 #[test]
-fn ss2022_only_methods_and_public_encrypted_transport() {
-    for method in ["aes-128-gcm", "chacha20-poly1305", "2022-unknown"] {
+fn methods_follow_xray_names_and_public_encrypted_transport() {
+    // Exactly the strings Xray-core v26.10.21 accepts, case-insensitively.
+    for method in [
+        "aes-128-gcm",
+        "AES-128-GCM",
+        "aead_aes_128_gcm",
+        "aes-256-gcm",
+        "aead_aes_256_gcm",
+        "chacha20-poly1305",
+        "aead_chacha20_poly1305",
+        "chacha20-ietf-poly1305",
+        "xchacha20-poly1305",
+        "aead_xchacha20_poly1305",
+        "xchacha20-ietf-poly1305",
+        "2022-BLAKE3-AES-128-GCM",
+    ] {
         let mut settings = server();
         settings["method"] = json!(method);
-        assert!(parse_xray_json(&profile(settings).to_string()).is_err());
+        let parsed = parse_xray_json(&profile(settings).to_string()).unwrap();
+        let OutboundSettings::Shadowsocks2022(settings) = &parsed.config.outbounds[0].settings
+        else {
+            panic!("Shadowsocks")
+        };
+        assert_eq!(settings.method, method);
     }
+    // No `none`/`plain`, stream ciphers or unknown 2022 methods (Xray rejects them).
+    for method in [
+        "none",
+        "plain",
+        "rc4-md5",
+        "aes-128-cfb",
+        "chacha20-ietf",
+        "2022-unknown",
+    ] {
+        let mut settings = server();
+        settings["method"] = json!(method);
+        assert_eq!(
+            error_paths(settings),
+            ["$.outbounds[0].settings.method"],
+            "{method}"
+        );
+    }
+    let mut settings = json!({"servers":[server()]});
+    settings["servers"][0]["method"] = json!("aes-128-gcm");
+    settings["servers"][0]["password"] = json!("");
+    assert_eq!(
+        error_paths(settings),
+        ["$.outbounds[0].settings.servers[0].password"]
+    );
     let mut value = profile(server());
     value["outbounds"][0]
         .as_object_mut()
         .unwrap()
         .remove("streamSettings");
     assert!(parse_xray_json(&value.to_string()).is_ok());
+}
+
+#[test]
+fn aead_passwords_are_free_text_redacted_and_mux_is_allowed() {
+    let password = "synthetic пароль:with:colons and spaces";
+    let mut settings = server();
+    settings["method"] = json!("chacha20-ietf-poly1305");
+    settings["password"] = json!(password);
+    let mut value = profile(settings);
+    value["outbounds"][0]["mux"] = json!({"enabled": true, "concurrency": 4});
+    let parsed = parse_xray_json(&value.to_string()).unwrap();
+    assert!(!format!("{:?}", parsed.config).contains("пароль"));
+    let OutboundSettings::Shadowsocks2022(settings) = &parsed.config.outbounds[0].settings else {
+        panic!("Shadowsocks")
+    };
+    assert_eq!(settings.password.as_str(), password);
 }

@@ -28,6 +28,9 @@ async fn reference(protocol: &str, carrier: &str) -> trojan_support::ReferenceSe
             )
             .await
         }
+        "shadowsocks-aead" => {
+            trojan_support::ReferenceServer::start_shadowsocks(carrier, "aes-128-gcm", false).await
+        }
         "vmess" => {
             trojan_support::ReferenceServer::start_vmess(carrier, "chacha20-poly1305", "").await
         }
@@ -185,13 +188,17 @@ async fn trojan_runtime_tun_dns_wire_and_managed_destination_lookup() {
 #[tokio::test]
 #[ignore = "requires pinned reference; use protocol interop scripts"]
 async fn shadowsocks_runtime_tun_tcp_udp_and_host_close() {
-    tun_tcp_udp_and_host_close(reference("shadowsocks", "raw").await, false).await;
+    for protocol in ["shadowsocks", "shadowsocks-aead"] {
+        tun_tcp_udp_and_host_close(reference(protocol, "raw").await, false).await;
+    }
 }
 
 #[tokio::test]
 #[ignore = "requires pinned reference; use protocol interop scripts"]
 async fn shadowsocks_runtime_tun_dns_wire_and_managed_destination_lookup() {
-    tun_dns_wire_and_managed_destination_lookup(reference("shadowsocks", "raw").await, false).await;
+    for protocol in ["shadowsocks", "shadowsocks-aead"] {
+        tun_dns_wire_and_managed_destination_lookup(reference(protocol, "raw").await, false).await;
+    }
 }
 
 #[tokio::test]
