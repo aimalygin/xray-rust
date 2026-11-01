@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="408" viewBox="0 0 880 408" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" style="font-variant-numeric: tabular-nums">
+<title id="t">Phone: peak RSS, TUN profile Mobile vs MobilePlus — lower is better</title>
+<desc id="d">Peak RSS of the devicehost process for TUN profiles Mobile and MobilePlus at 64 and 256 concurrent flows on a OnePlus 15, with TUN packet drops annotated. Values are in data/protocols-memory.csv.</desc>
+<rect x="0.5" y="0.5" width="879" height="407" rx="8" fill="#1a1a19" stroke="#ffffff" stroke-opacity="0.10"/>
+<text x="24.0" y="42.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Phone: peak RSS, TUN profile Mobile vs MobilePlus — lower is better</text>
+<text x="24.0" y="61.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">OnePlus 15 (SM8850), Android 17 · 2026-11-01 · loopback, CPU-bound · Go Xray v26.10.21 server on the phone · VLESS raw ·</text>
+<text x="24.0" y="80.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">median of 5 runs with min–max</text>
+<text x="24.0" y="99.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">N concurrent downloads through the TUN (64×16 MiB or 256×4 MiB), fresh process per run. Peak = VmHWM of the devicehost process,</text>
+<text x="24.0" y="118.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">which includes ~183 MiB of ART baseline.</text>
+<rect x="24" y="134" width="12" height="12" rx="2" fill="#3987e5"/>
+<text x="41.0" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">Mobile (256 active flows, 64 pending opens)</text>
+<rect x="308.03999999999996" y="134" width="12" height="12" rx="2" fill="#d95926"/>
+<text x="325.0" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">MobilePlus (384 / 96)</text>
+<text x="463.9" y="144.0" font-size="12" font-weight="600" fill="#d03b3b" text-anchor="start">⚠︎</text>
+<text x="480.9" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">TUN packet drops</text>
+<line x1="607.3" y1="140.0" x2="625.3" y2="140.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="607.3" y1="136.0" x2="607.3" y2="144.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="625.3" y1="136.0" x2="625.3" y2="144.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="631.3" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">min–max of runs</text>
+<text x="24.0" y="180.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Peak VmHWM during the test</text>
+<line x1="166.3" y1="188.0" x2="166.3" y2="288.0" stroke="#383835" stroke-width="1"/>
+<text x="166.3" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="215.3" y1="188.0" x2="215.3" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="215.3" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">50</text>
+<line x1="264.3" y1="188.0" x2="264.3" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="264.3" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">100</text>
+<line x1="313.3" y1="188.0" x2="313.3" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="313.3" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">150</text>
+<line x1="362.3" y1="188.0" x2="362.3" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="362.3" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">200</text>
+<line x1="411.3" y1="188.0" x2="411.3" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="411.3" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">250</text>
+<line x1="460.4" y1="188.0" x2="460.4" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="460.4" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">300</text>
+<line x1="509.4" y1="188.0" x2="509.4" y2="288.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="509.4" y="302.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">350</text>
+<line x1="345.7" y1="188.0" x2="345.7" y2="288.0" stroke="#898781" stroke-width="1"/>
+<text x="349.7" y="184.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="start">RSS before test ≈183 MiB</text>
+<text x="509.4" y="315.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">peak RSS, MiB</text>
+<g><title>Mobile, 64 concurrent downloads: peak VmHWM median 218.1 MiB (min 216.9 – max 218.8), RSS before 182.9 MiB, TUN drops 0–0, intact 5/5</title>
+<text x="156.3" y="206.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Mobile · 64 flows</text>
+<path d="M166.3,195.0H376.1A4,4 0 0 1 380.1,199.0V205.0A4,4 0 0 1 376.1,209.0H166.3Z" fill="#3987e5"/>
+<line x1="378.9" y1="202.0" x2="380.8" y2="202.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="378.9" y1="198.0" x2="378.9" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="380.8" y1="198.0" x2="380.8" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="378.9" y1="202.0" x2="380.8" y2="202.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="378.9" y1="198.0" x2="378.9" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="380.8" y1="198.0" x2="380.8" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="388.8" y="206.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">218.1 MiB</tspan></text>
+</g>
+<g><title>MobilePlus, 64 concurrent downloads: peak VmHWM median 217.0 MiB (min 215.6 – max 219.3), RSS before 183.1 MiB, TUN drops 0–0, intact 5/5</title>
+<text x="156.3" y="230.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">MobilePlus · 64 flows</text>
+<path d="M166.3,219.0H375.0A4,4 0 0 1 379.0,223.0V229.0A4,4 0 0 1 375.0,233.0H166.3Z" fill="#d95926"/>
+<line x1="377.6" y1="226.0" x2="381.3" y2="226.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="377.6" y1="222.0" x2="377.6" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="381.3" y1="222.0" x2="381.3" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="377.6" y1="226.0" x2="381.3" y2="226.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="377.6" y1="222.0" x2="377.6" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="381.3" y1="222.0" x2="381.3" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="389.3" y="230.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">217.0 MiB</tspan></text>
+</g>
+<g><title>Mobile, 256 concurrent downloads: peak VmHWM median 309.7 MiB (min 290.7 – max 310.6), RSS before 182.9 MiB, TUN drops 493,483–831,896, intact 4/5</title>
+<text x="156.3" y="254.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Mobile · 256 flows</text>
+<path d="M166.3,243.0H465.9A4,4 0 0 1 469.9,247.0V253.0A4,4 0 0 1 465.9,257.0H166.3Z" fill="#3987e5"/>
+<line x1="451.2" y1="250.0" x2="470.7" y2="250.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="451.2" y1="246.0" x2="451.2" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="470.7" y1="246.0" x2="470.7" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="451.2" y1="250.0" x2="470.7" y2="250.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="451.2" y1="246.0" x2="451.2" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="470.7" y1="246.0" x2="470.7" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="478.7" y="254.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">309.7 MiB</tspan><tspan fill="#d03b3b">  ⚠︎</tspan><tspan fill="#f0efec"> 0.49–0.83M TUN drops per run, 4/5 intact</tspan></text>
+</g>
+<g><title>MobilePlus, 256 concurrent downloads: peak VmHWM median 312.2 MiB (min 309.3 – max 314.2), RSS before 183.3 MiB, TUN drops 0–0, intact 5/5</title>
+<text x="156.3" y="278.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">MobilePlus · 256 flows</text>
+<path d="M166.3,267.0H468.3A4,4 0 0 1 472.3,271.0V277.0A4,4 0 0 1 468.3,281.0H166.3Z" fill="#d95926"/>
+<line x1="469.5" y1="274.0" x2="474.3" y2="274.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="469.5" y1="270.0" x2="469.5" y2="278.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="474.3" y1="270.0" x2="474.3" y2="278.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="469.5" y1="274.0" x2="474.3" y2="274.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="469.5" y1="270.0" x2="469.5" y2="278.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="474.3" y1="270.0" x2="474.3" y2="278.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="482.3" y="278.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">312.2 MiB</tspan></text>
+</g>
+<text x="24.0" y="334.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Source: data/mem (an earlier half-close run is invalid and not used). Mobile at 256 flows hits its flow budget: in one run 36 of</text>
+<text x="24.0" y="349.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">256 flows got 0 bytes.</text>
+<text x="24.0" y="364.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">xray-rust unreleased integration build 86c79d71 (upstream fbc0e49f + PRs #112 #115 #124 #126–#130) + devicehost bench patch. Values are in</text>
+<text x="24.0" y="379.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">data/*.csv.</text>
+</svg>

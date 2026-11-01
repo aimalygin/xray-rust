@@ -1,0 +1,434 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="768" viewBox="0 0 880 768" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" style="font-variant-numeric: tabular-nums">
+<title id="t">Phone: throughput by protocol — higher is better</title>
+<desc id="d">Small multiples of throughput, MiB/s per protocol for download and upload with 1 and 4 flows on a OnePlus 15. Values are in data/protocols-throughput.csv.</desc>
+<rect x="0.5" y="0.5" width="879" height="767" rx="8" fill="#1a1a19" stroke="#ffffff" stroke-opacity="0.10"/>
+<text x="24.0" y="42.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Phone: throughput by protocol — higher is better</text>
+<text x="24.0" y="61.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">OnePlus 15 (SM8850), Android 17 · 2026-11-01 · loopback, CPU-bound · Go Xray v26.10.21 server on the phone · xray-rust profile</text>
+<text x="24.0" y="80.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mobile, TUN MTU 1500 · median of 5 runs with min–max</text>
+<text x="24.0" y="99.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Label: median and change vs VLESS raw. VLESS + Mux (concurrency 8) download failed the payload check in 10/10 runs: the Mux</text>
+<text x="24.0" y="118.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">session aborts when the 8-frame child queue overflows (mux.rs).</text>
+<rect x="24" y="134" width="12" height="12" rx="2" fill="#898781"/>
+<text x="41.0" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">VLESS raw (baseline)</text>
+<rect x="188.28000000000003" y="134" width="12" height="12" rx="2" fill="#3987e5"/>
+<text x="205.3" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">protocol</text>
+<text x="276.2" y="144.0" font-size="12" font-weight="600" fill="#d03b3b" text-anchor="start">✕</text>
+<text x="293.2" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">no valid result (bug)</text>
+<line x1="428.3" y1="140.0" x2="446.3" y2="140.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="428.3" y1="136.0" x2="428.3" y2="144.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="446.3" y1="136.0" x2="446.3" y2="144.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="452.3" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">min–max of runs, bar = median</text>
+<text x="24.0" y="180.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Download · 1 flow</text>
+<line x1="158.2" y1="188.0" x2="158.2" y2="384.0" stroke="#383835" stroke-width="1"/>
+<text x="158.2" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="188.8" y1="188.0" x2="188.8" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="188.8" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">50</text>
+<line x1="219.5" y1="188.0" x2="219.5" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="219.5" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">100</text>
+<line x1="250.1" y1="188.0" x2="250.1" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="250.1" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">150</text>
+<line x1="280.8" y1="188.0" x2="280.8" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="280.8" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">200</text>
+<line x1="311.4" y1="188.0" x2="311.4" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="311.4" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">250</text>
+<line x1="342.1" y1="188.0" x2="342.1" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="342.1" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">300</text>
+<line x1="372.7" y1="188.0" x2="372.7" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="372.7" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">350</text>
+<text x="372.7" y="411.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">throughput, MiB/s</text>
+<g><title>VLESS raw download ×1: median 137 MiB/s (min 120 – max 138), n=5</title>
+<text x="148.2" y="206.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M158.2,195.0H238.3A4,4 0 0 1 242.3,199.0V205.0A4,4 0 0 1 238.3,209.0H158.2Z" fill="#898781"/>
+<line x1="231.5" y1="202.0" x2="242.9" y2="202.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="231.5" y1="198.0" x2="231.5" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="242.9" y1="198.0" x2="242.9" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="231.5" y1="202.0" x2="242.9" y2="202.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="231.5" y1="198.0" x2="231.5" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="242.9" y1="198.0" x2="242.9" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="250.9" y="206.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">137</tspan></text>
+</g>
+<g><title>REALITY + Vision download ×1: median 138 MiB/s (min 106 – max 139), n=5, +0% vs VLESS raw</title>
+<text x="148.2" y="230.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">REALITY + Vision</text>
+<path d="M158.2,219.0H238.5A4,4 0 0 1 242.5,223.0V229.0A4,4 0 0 1 238.5,233.0H158.2Z" fill="#3987e5"/>
+<line x1="223.0" y1="226.0" x2="243.5" y2="226.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="223.0" y1="222.0" x2="223.0" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="243.5" y1="222.0" x2="243.5" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="223.0" y1="226.0" x2="243.5" y2="226.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="223.0" y1="222.0" x2="223.0" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="243.5" y1="222.0" x2="243.5" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="251.5" y="230.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">138</tspan><tspan fill="#c3c2b7">  +0%</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up download ×1: median 147 MiB/s (min 129 – max 151), n=5, +7% vs VLESS raw</title>
+<text x="148.2" y="254.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M158.2,243.0H244.5A4,4 0 0 1 248.5,247.0V253.0A4,4 0 0 1 244.5,257.0H158.2Z" fill="#3987e5"/>
+<line x1="237.1" y1="250.0" x2="250.7" y2="250.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="237.1" y1="246.0" x2="237.1" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="250.7" y1="246.0" x2="250.7" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="237.1" y1="250.0" x2="250.7" y2="250.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="237.1" y1="246.0" x2="237.1" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="250.7" y1="246.0" x2="250.7" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="258.7" y="254.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">147</tspan><tspan fill="#c3c2b7">  +7%</tspan></text>
+</g>
+<g><title>SS aes-256-gcm download ×1: median 145 MiB/s (min 124 – max 146), n=5, +6% vs VLESS raw</title>
+<text x="148.2" y="278.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS aes-256-gcm</text>
+<path d="M158.2,267.0H243.1A4,4 0 0 1 247.1,271.0V277.0A4,4 0 0 1 243.1,281.0H158.2Z" fill="#3987e5"/>
+<line x1="234.2" y1="274.0" x2="247.9" y2="274.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="234.2" y1="270.0" x2="234.2" y2="278.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="247.9" y1="270.0" x2="247.9" y2="278.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="234.2" y1="274.0" x2="247.9" y2="274.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="234.2" y1="270.0" x2="234.2" y2="278.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="247.9" y1="270.0" x2="247.9" y2="278.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="255.9" y="278.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">145</tspan><tspan fill="#c3c2b7">  +6%</tspan></text>
+</g>
+<g><title>SS chacha20 download ×1: median 160 MiB/s (min 137 – max 162), n=5, +16% vs VLESS raw</title>
+<text x="148.2" y="302.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS chacha20</text>
+<path d="M158.2,291.0H252.1A4,4 0 0 1 256.1,295.0V301.0A4,4 0 0 1 252.1,305.0H158.2Z" fill="#3987e5"/>
+<line x1="241.9" y1="298.0" x2="257.2" y2="298.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="241.9" y1="294.0" x2="241.9" y2="302.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="257.2" y1="294.0" x2="257.2" y2="302.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="241.9" y1="298.0" x2="257.2" y2="298.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="241.9" y1="294.0" x2="241.9" y2="302.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="257.2" y1="294.0" x2="257.2" y2="302.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="265.2" y="302.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">160</tspan><tspan fill="#c3c2b7">  +16%</tspan></text>
+</g>
+<g><title>SS2022 download ×1: median 143 MiB/s (min 130 – max 146), n=5, +4% vs VLESS raw</title>
+<text x="148.2" y="326.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS2022</text>
+<path d="M158.2,315.0H241.7A4,4 0 0 1 245.7,319.0V325.0A4,4 0 0 1 241.7,329.0H158.2Z" fill="#3987e5"/>
+<line x1="237.8" y1="322.0" x2="247.6" y2="322.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="237.8" y1="318.0" x2="237.8" y2="326.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="247.6" y1="318.0" x2="247.6" y2="326.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="237.8" y1="322.0" x2="247.6" y2="322.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="237.8" y1="318.0" x2="237.8" y2="326.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="247.6" y1="318.0" x2="247.6" y2="326.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="255.6" y="326.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">143</tspan><tspan fill="#c3c2b7">  +4%</tspan></text>
+</g>
+<g><title>Trojan TLS download ×1: median 141 MiB/s (min 121 – max 144), n=5, +2% vs VLESS raw</title>
+<text x="148.2" y="350.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Trojan TLS</text>
+<path d="M158.2,339.0H240.3A4,4 0 0 1 244.3,343.0V349.0A4,4 0 0 1 240.3,353.0H158.2Z" fill="#3987e5"/>
+<line x1="232.5" y1="346.0" x2="246.3" y2="346.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="232.5" y1="342.0" x2="232.5" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="246.3" y1="342.0" x2="246.3" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="232.5" y1="346.0" x2="246.3" y2="346.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="232.5" y1="342.0" x2="232.5" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="246.3" y1="342.0" x2="246.3" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="254.3" y="350.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">141</tspan><tspan fill="#c3c2b7">  +2%</tspan></text>
+</g>
+<g><title>VLESS + Mux download ×1: every run failed the md5 check</title>
+<text x="148.2" y="374.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS + Mux</text>
+<text x="166.2" y="374.0" font-size="11" text-anchor="start"><tspan fill="#d03b3b">✕</tspan><tspan fill="#f0efec"> failed (bug): 0/5 runs intact</tspan></text>
+</g>
+<text x="460.0" y="180.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Download · 4 flows</text>
+<line x1="594.2" y1="188.0" x2="594.2" y2="384.0" stroke="#383835" stroke-width="1"/>
+<text x="594.2" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="624.8" y1="188.0" x2="624.8" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="624.8" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">50</text>
+<line x1="655.5" y1="188.0" x2="655.5" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="655.5" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">100</text>
+<line x1="686.1" y1="188.0" x2="686.1" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="686.1" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">150</text>
+<line x1="716.8" y1="188.0" x2="716.8" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="716.8" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">200</text>
+<line x1="747.4" y1="188.0" x2="747.4" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="747.4" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">250</text>
+<line x1="778.1" y1="188.0" x2="778.1" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="778.1" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">300</text>
+<line x1="808.7" y1="188.0" x2="808.7" y2="384.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="808.7" y="398.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">350</text>
+<text x="808.7" y="411.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">throughput, MiB/s</text>
+<g><title>VLESS raw download ×4: median 136 MiB/s (min 127 – max 152), n=5</title>
+<text x="584.2" y="206.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M594.2,195.0H673.8A4,4 0 0 1 677.8,199.0V205.0A4,4 0 0 1 673.8,209.0H594.2Z" fill="#898781"/>
+<line x1="671.8" y1="202.0" x2="687.2" y2="202.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="671.8" y1="198.0" x2="671.8" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="687.2" y1="198.0" x2="687.2" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="671.8" y1="202.0" x2="687.2" y2="202.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="671.8" y1="198.0" x2="671.8" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="687.2" y1="198.0" x2="687.2" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="695.2" y="206.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">136</tspan></text>
+</g>
+<g><title>REALITY + Vision download ×4: median 124 MiB/s (min 116 – max 146), n=5, −9% vs VLESS raw</title>
+<text x="584.2" y="230.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">REALITY + Vision</text>
+<path d="M594.2,219.0H666.4A4,4 0 0 1 670.4,223.0V229.0A4,4 0 0 1 666.4,233.0H594.2Z" fill="#3987e5"/>
+<line x1="665.3" y1="226.0" x2="683.9" y2="226.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="665.3" y1="222.0" x2="665.3" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="683.9" y1="222.0" x2="683.9" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="665.3" y1="226.0" x2="683.9" y2="226.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="665.3" y1="222.0" x2="665.3" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="683.9" y1="222.0" x2="683.9" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="691.9" y="230.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">124</tspan><tspan fill="#c3c2b7">  −9%</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up download ×4: median 126 MiB/s (min 116 – max 160), n=5, −7% vs VLESS raw</title>
+<text x="584.2" y="254.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M594.2,243.0H667.5A4,4 0 0 1 671.5,247.0V253.0A4,4 0 0 1 667.5,257.0H594.2Z" fill="#3987e5"/>
+<line x1="665.0" y1="250.0" x2="692.0" y2="250.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="665.0" y1="246.0" x2="665.0" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="692.0" y1="246.0" x2="692.0" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="665.0" y1="250.0" x2="692.0" y2="250.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="665.0" y1="246.0" x2="665.0" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="692.0" y1="246.0" x2="692.0" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="700.0" y="254.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">126</tspan><tspan fill="#c3c2b7">  −7%</tspan></text>
+</g>
+<g><title>SS aes-256-gcm download ×4: median 127 MiB/s (min 126 – max 152), n=5, −7% vs VLESS raw</title>
+<text x="584.2" y="278.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS aes-256-gcm</text>
+<path d="M594.2,267.0H668.3A4,4 0 0 1 672.3,271.0V277.0A4,4 0 0 1 668.3,281.0H594.2Z" fill="#3987e5"/>
+<line x1="671.7" y1="274.0" x2="687.5" y2="274.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="671.7" y1="270.0" x2="671.7" y2="278.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="687.5" y1="270.0" x2="687.5" y2="278.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="671.7" y1="274.0" x2="687.5" y2="274.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="671.7" y1="270.0" x2="671.7" y2="278.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="687.5" y1="270.0" x2="687.5" y2="278.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="695.5" y="278.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">127</tspan><tspan fill="#c3c2b7">  −7%</tspan></text>
+</g>
+<g><title>SS chacha20 download ×4: median 124 MiB/s (min 116 – max 149), n=5, −9% vs VLESS raw</title>
+<text x="584.2" y="302.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS chacha20</text>
+<path d="M594.2,291.0H666.5A4,4 0 0 1 670.5,295.0V301.0A4,4 0 0 1 666.5,305.0H594.2Z" fill="#3987e5"/>
+<line x1="665.2" y1="298.0" x2="685.2" y2="298.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="665.2" y1="294.0" x2="665.2" y2="302.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="685.2" y1="294.0" x2="685.2" y2="302.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="665.2" y1="298.0" x2="685.2" y2="298.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="665.2" y1="294.0" x2="665.2" y2="302.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="685.2" y1="294.0" x2="685.2" y2="302.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="693.2" y="302.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">124</tspan><tspan fill="#c3c2b7">  −9%</tspan></text>
+</g>
+<g><title>SS2022 download ×4: median 131 MiB/s (min 120 – max 151), n=5, −4% vs VLESS raw</title>
+<text x="584.2" y="326.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS2022</text>
+<path d="M594.2,315.0H670.4A4,4 0 0 1 674.4,319.0V325.0A4,4 0 0 1 670.4,329.0H594.2Z" fill="#3987e5"/>
+<line x1="667.6" y1="322.0" x2="686.7" y2="322.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="667.6" y1="318.0" x2="667.6" y2="326.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="686.7" y1="318.0" x2="686.7" y2="326.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="667.6" y1="322.0" x2="686.7" y2="322.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="667.6" y1="318.0" x2="667.6" y2="326.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="686.7" y1="318.0" x2="686.7" y2="326.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="694.7" y="326.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">131</tspan><tspan fill="#c3c2b7">  −4%</tspan></text>
+</g>
+<g><title>Trojan TLS download ×4: median 131 MiB/s (min 123 – max 149), n=5, −4% vs VLESS raw</title>
+<text x="584.2" y="350.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Trojan TLS</text>
+<path d="M594.2,339.0H670.6A4,4 0 0 1 674.6,343.0V349.0A4,4 0 0 1 670.6,353.0H594.2Z" fill="#3987e5"/>
+<line x1="669.7" y1="346.0" x2="685.5" y2="346.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="669.7" y1="342.0" x2="669.7" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="685.5" y1="342.0" x2="685.5" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="669.7" y1="346.0" x2="685.5" y2="346.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="669.7" y1="342.0" x2="669.7" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="685.5" y1="342.0" x2="685.5" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="693.5" y="350.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">131</tspan><tspan fill="#c3c2b7">  −4%</tspan></text>
+</g>
+<g><title>VLESS + Mux download ×4: every run failed the md5 check</title>
+<text x="584.2" y="374.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS + Mux</text>
+<text x="602.2" y="374.0" font-size="11" text-anchor="start"><tspan fill="#d03b3b">✕</tspan><tspan fill="#f0efec"> failed (bug): 0/5 runs intact</tspan></text>
+</g>
+<text x="24.0" y="444.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Upload · 1 flow</text>
+<line x1="158.2" y1="452.0" x2="158.2" y2="648.0" stroke="#383835" stroke-width="1"/>
+<text x="158.2" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="188.8" y1="452.0" x2="188.8" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="188.8" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">50</text>
+<line x1="219.5" y1="452.0" x2="219.5" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="219.5" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">100</text>
+<line x1="250.1" y1="452.0" x2="250.1" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="250.1" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">150</text>
+<line x1="280.8" y1="452.0" x2="280.8" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="280.8" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">200</text>
+<line x1="311.4" y1="452.0" x2="311.4" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="311.4" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">250</text>
+<line x1="342.1" y1="452.0" x2="342.1" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="342.1" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">300</text>
+<line x1="372.7" y1="452.0" x2="372.7" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="372.7" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">350</text>
+<text x="372.7" y="675.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">throughput, MiB/s</text>
+<g><title>VLESS raw upload ×1: median 189 MiB/s (min 187 – max 198), n=5</title>
+<text x="148.2" y="470.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M158.2,459.0H269.8A4,4 0 0 1 273.8,463.0V469.0A4,4 0 0 1 269.8,473.0H158.2Z" fill="#898781"/>
+<line x1="272.8" y1="466.0" x2="279.8" y2="466.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="272.8" y1="462.0" x2="272.8" y2="470.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="279.8" y1="462.0" x2="279.8" y2="470.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="272.8" y1="466.0" x2="279.8" y2="466.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="272.8" y1="462.0" x2="272.8" y2="470.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="279.8" y1="462.0" x2="279.8" y2="470.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="287.8" y="470.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">189</tspan></text>
+</g>
+<g><title>REALITY + Vision upload ×1: median 133 MiB/s (min 132 – max 193), n=5, −29% vs VLESS raw</title>
+<text x="148.2" y="494.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">REALITY + Vision</text>
+<path d="M158.2,483.0H235.7A4,4 0 0 1 239.7,487.0V493.0A4,4 0 0 1 235.7,497.0H158.2Z" fill="#3987e5"/>
+<line x1="239.0" y1="490.0" x2="276.3" y2="490.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="239.0" y1="486.0" x2="239.0" y2="494.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="276.3" y1="486.0" x2="276.3" y2="494.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="239.0" y1="490.0" x2="276.3" y2="490.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="239.0" y1="486.0" x2="239.0" y2="494.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="276.3" y1="486.0" x2="276.3" y2="494.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="284.3" y="494.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">133</tspan><tspan fill="#c3c2b7">  −29%</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up upload ×1: median 29.4 MiB/s (min 29.4 – max 29.5), n=5, −84% vs VLESS raw</title>
+<text x="148.2" y="518.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M158.2,507.0H172.2A4,4 0 0 1 176.2,511.0V517.0A4,4 0 0 1 172.2,521.0H158.2Z" fill="#3987e5"/>
+<line x1="176.2" y1="514.0" x2="176.2" y2="514.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="176.2" y1="510.0" x2="176.2" y2="518.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="176.2" y1="510.0" x2="176.2" y2="518.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="176.2" y1="514.0" x2="176.2" y2="514.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="176.2" y1="510.0" x2="176.2" y2="518.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="176.2" y1="510.0" x2="176.2" y2="518.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="184.2" y="518.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">29.4</tspan><tspan fill="#c3c2b7">  −84%</tspan></text>
+</g>
+<g><title>SS aes-256-gcm upload ×1: median 176 MiB/s (min 163 – max 189), n=5, −7% vs VLESS raw</title>
+<text x="148.2" y="542.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS aes-256-gcm</text>
+<path d="M158.2,531.0H261.8A4,4 0 0 1 265.8,535.0V541.0A4,4 0 0 1 261.8,545.0H158.2Z" fill="#3987e5"/>
+<line x1="258.3" y1="538.0" x2="274.1" y2="538.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="258.3" y1="534.0" x2="258.3" y2="542.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="274.1" y1="534.0" x2="274.1" y2="542.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="258.3" y1="538.0" x2="274.1" y2="538.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="258.3" y1="534.0" x2="258.3" y2="542.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="274.1" y1="534.0" x2="274.1" y2="542.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="282.1" y="542.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">176</tspan><tspan fill="#c3c2b7">  −7%</tspan></text>
+</g>
+<g><title>SS chacha20 upload ×1: median 143 MiB/s (min 130 – max 155), n=5, −24% vs VLESS raw</title>
+<text x="148.2" y="566.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS chacha20</text>
+<path d="M158.2,555.0H241.9A4,4 0 0 1 245.9,559.0V565.0A4,4 0 0 1 241.9,569.0H158.2Z" fill="#3987e5"/>
+<line x1="237.6" y1="562.0" x2="253.2" y2="562.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="237.6" y1="558.0" x2="237.6" y2="566.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="253.2" y1="558.0" x2="253.2" y2="566.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="237.6" y1="562.0" x2="253.2" y2="562.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="237.6" y1="558.0" x2="237.6" y2="566.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="253.2" y1="558.0" x2="253.2" y2="566.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="261.2" y="566.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">143</tspan><tspan fill="#c3c2b7">  −24%</tspan></text>
+</g>
+<g><title>SS2022 upload ×1: median 180 MiB/s (min 167 – max 210), n=5, −5% vs VLESS raw</title>
+<text x="148.2" y="590.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS2022</text>
+<path d="M158.2,579.0H264.2A4,4 0 0 1 268.2,583.0V589.0A4,4 0 0 1 264.2,593.0H158.2Z" fill="#3987e5"/>
+<line x1="260.2" y1="586.0" x2="286.8" y2="586.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="260.2" y1="582.0" x2="260.2" y2="590.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="286.8" y1="582.0" x2="286.8" y2="590.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="260.2" y1="586.0" x2="286.8" y2="586.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="260.2" y1="582.0" x2="260.2" y2="590.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="286.8" y1="582.0" x2="286.8" y2="590.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="294.8" y="590.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">180</tspan><tspan fill="#c3c2b7">  −5%</tspan></text>
+</g>
+<g><title>Trojan TLS upload ×1: median 174 MiB/s (min 154 – max 199), n=5, −8% vs VLESS raw</title>
+<text x="148.2" y="614.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Trojan TLS</text>
+<path d="M158.2,603.0H260.6A4,4 0 0 1 264.6,607.0V613.0A4,4 0 0 1 260.6,617.0H158.2Z" fill="#3987e5"/>
+<line x1="252.7" y1="610.0" x2="280.4" y2="610.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="252.7" y1="606.0" x2="252.7" y2="614.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="280.4" y1="606.0" x2="280.4" y2="614.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="252.7" y1="610.0" x2="280.4" y2="610.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="252.7" y1="606.0" x2="252.7" y2="614.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="280.4" y1="606.0" x2="280.4" y2="614.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="288.4" y="614.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">174</tspan><tspan fill="#c3c2b7">  −8%</tspan></text>
+</g>
+<g><title>VLESS + Mux upload ×1: median 216 MiB/s (min 186 – max 228), n=5, +15% vs VLESS raw</title>
+<text x="148.2" y="638.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS + Mux</text>
+<path d="M158.2,627.0H286.7A4,4 0 0 1 290.7,631.0V637.0A4,4 0 0 1 286.7,641.0H158.2Z" fill="#3987e5"/>
+<line x1="272.4" y1="634.0" x2="298.0" y2="634.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="272.4" y1="630.0" x2="272.4" y2="638.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="298.0" y1="630.0" x2="298.0" y2="638.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="272.4" y1="634.0" x2="298.0" y2="634.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="272.4" y1="630.0" x2="272.4" y2="638.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="298.0" y1="630.0" x2="298.0" y2="638.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="306.0" y="638.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">216</tspan><tspan fill="#c3c2b7">  +15%</tspan></text>
+</g>
+<text x="460.0" y="444.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Upload · 4 flows</text>
+<line x1="594.2" y1="452.0" x2="594.2" y2="648.0" stroke="#383835" stroke-width="1"/>
+<text x="594.2" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="624.8" y1="452.0" x2="624.8" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="624.8" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">50</text>
+<line x1="655.5" y1="452.0" x2="655.5" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="655.5" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">100</text>
+<line x1="686.1" y1="452.0" x2="686.1" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="686.1" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">150</text>
+<line x1="716.8" y1="452.0" x2="716.8" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="716.8" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">200</text>
+<line x1="747.4" y1="452.0" x2="747.4" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="747.4" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">250</text>
+<line x1="778.1" y1="452.0" x2="778.1" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="778.1" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">300</text>
+<line x1="808.7" y1="452.0" x2="808.7" y2="648.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="808.7" y="662.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">350</text>
+<text x="808.7" y="675.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">throughput, MiB/s</text>
+<g><title>VLESS raw upload ×4: median 264 MiB/s (min 260 – max 272), n=5</title>
+<text x="584.2" y="470.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M594.2,459.0H752.0A4,4 0 0 1 756.0,463.0V469.0A4,4 0 0 1 752.0,473.0H594.2Z" fill="#898781"/>
+<line x1="753.7" y1="466.0" x2="760.9" y2="466.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="753.7" y1="462.0" x2="753.7" y2="470.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="760.9" y1="462.0" x2="760.9" y2="470.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="753.7" y1="466.0" x2="760.9" y2="466.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="753.7" y1="462.0" x2="753.7" y2="470.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="760.9" y1="462.0" x2="760.9" y2="470.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="768.9" y="470.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">264</tspan></text>
+</g>
+<g><title>REALITY + Vision upload ×4: median 232 MiB/s (min 230 – max 244), n=5, −12% vs VLESS raw</title>
+<text x="584.2" y="494.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">REALITY + Vision</text>
+<path d="M594.2,483.0H732.6A4,4 0 0 1 736.6,487.0V493.0A4,4 0 0 1 732.6,497.0H594.2Z" fill="#3987e5"/>
+<line x1="734.9" y1="490.0" x2="744.0" y2="490.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="734.9" y1="486.0" x2="734.9" y2="494.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="744.0" y1="486.0" x2="744.0" y2="494.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="734.9" y1="490.0" x2="744.0" y2="490.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="734.9" y1="486.0" x2="734.9" y2="494.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="744.0" y1="486.0" x2="744.0" y2="494.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="752.0" y="494.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">232</tspan><tspan fill="#c3c2b7">  −12%</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up upload ×4: median 107 MiB/s (min 107 – max 108), n=5, −59% vs VLESS raw</title>
+<text x="584.2" y="518.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M594.2,507.0H656.0A4,4 0 0 1 660.0,511.0V517.0A4,4 0 0 1 656.0,521.0H594.2Z" fill="#3987e5"/>
+<line x1="659.9" y1="514.0" x2="660.1" y2="514.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="659.9" y1="510.0" x2="659.9" y2="518.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="660.1" y1="510.0" x2="660.1" y2="518.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="659.9" y1="514.0" x2="660.1" y2="514.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="659.9" y1="510.0" x2="659.9" y2="518.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="660.1" y1="510.0" x2="660.1" y2="518.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="668.1" y="518.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">107</tspan><tspan fill="#c3c2b7">  −59%</tspan></text>
+</g>
+<g><title>SS aes-256-gcm upload ×4: median 228 MiB/s (min 222 – max 235), n=5, −14% vs VLESS raw</title>
+<text x="584.2" y="542.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS aes-256-gcm</text>
+<path d="M594.2,531.0H730.0A4,4 0 0 1 734.0,535.0V541.0A4,4 0 0 1 730.0,545.0H594.2Z" fill="#3987e5"/>
+<line x1="730.1" y1="538.0" x2="738.3" y2="538.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="730.1" y1="534.0" x2="730.1" y2="542.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="738.3" y1="534.0" x2="738.3" y2="542.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="730.1" y1="538.0" x2="738.3" y2="538.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="730.1" y1="534.0" x2="730.1" y2="542.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="738.3" y1="534.0" x2="738.3" y2="542.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="746.3" y="542.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">228</tspan><tspan fill="#c3c2b7">  −14%</tspan></text>
+</g>
+<g><title>SS chacha20 upload ×4: median 212 MiB/s (min 210 – max 219), n=5, −20% vs VLESS raw</title>
+<text x="584.2" y="566.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS chacha20</text>
+<path d="M594.2,555.0H720.3A4,4 0 0 1 724.3,559.0V565.0A4,4 0 0 1 720.3,569.0H594.2Z" fill="#3987e5"/>
+<line x1="723.1" y1="562.0" x2="728.7" y2="562.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="723.1" y1="558.0" x2="723.1" y2="566.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="728.7" y1="558.0" x2="728.7" y2="566.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="723.1" y1="562.0" x2="728.7" y2="562.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="723.1" y1="558.0" x2="723.1" y2="566.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="728.7" y1="558.0" x2="728.7" y2="566.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="736.7" y="566.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">212</tspan><tspan fill="#c3c2b7">  −20%</tspan></text>
+</g>
+<g><title>SS2022 upload ×4: median 228 MiB/s (min 214 – max 255), n=5, −14% vs VLESS raw</title>
+<text x="584.2" y="590.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">SS2022</text>
+<path d="M594.2,579.0H730.0A4,4 0 0 1 734.0,583.0V589.0A4,4 0 0 1 730.0,593.0H594.2Z" fill="#3987e5"/>
+<line x1="725.5" y1="586.0" x2="750.4" y2="586.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="725.5" y1="582.0" x2="725.5" y2="590.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="750.4" y1="582.0" x2="750.4" y2="590.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="725.5" y1="586.0" x2="750.4" y2="586.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="725.5" y1="582.0" x2="725.5" y2="590.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="750.4" y1="582.0" x2="750.4" y2="590.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="758.4" y="590.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">228</tspan><tspan fill="#c3c2b7">  −14%</tspan></text>
+</g>
+<g><title>Trojan TLS upload ×4: median 237 MiB/s (min 229 – max 244), n=5, −10% vs VLESS raw</title>
+<text x="584.2" y="614.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">Trojan TLS</text>
+<path d="M594.2,603.0H735.6A4,4 0 0 1 739.6,607.0V613.0A4,4 0 0 1 735.6,617.0H594.2Z" fill="#3987e5"/>
+<line x1="734.5" y1="610.0" x2="743.8" y2="610.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="734.5" y1="606.0" x2="734.5" y2="614.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="743.8" y1="606.0" x2="743.8" y2="614.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="734.5" y1="610.0" x2="743.8" y2="610.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="734.5" y1="606.0" x2="734.5" y2="614.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="743.8" y1="606.0" x2="743.8" y2="614.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="751.8" y="614.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">237</tspan><tspan fill="#c3c2b7">  −10%</tspan></text>
+</g>
+<g><title>VLESS + Mux upload ×4: median 311 MiB/s (min 298 – max 325), n=5, +18% vs VLESS raw</title>
+<text x="584.2" y="638.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS + Mux</text>
+<path d="M594.2,627.0H780.9A4,4 0 0 1 784.9,631.0V637.0A4,4 0 0 1 780.9,641.0H594.2Z" fill="#3987e5"/>
+<line x1="777.2" y1="634.0" x2="793.4" y2="634.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="777.2" y1="630.0" x2="777.2" y2="638.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="793.4" y1="630.0" x2="793.4" y2="638.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="777.2" y1="634.0" x2="793.4" y2="634.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="777.2" y1="630.0" x2="777.2" y2="638.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="793.4" y1="630.0" x2="793.4" y2="638.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="801.4" y="638.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">311</tspan><tspan fill="#c3c2b7">  +18%</tspan></text>
+</g>
+<text x="24.0" y="694.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Source: data/main; devicehost VpnService (fd backend): adb-shell nc → tun0 → xray-rust → 127.0.0.1 Go Xray → loopback sink; fresh</text>
+<text x="24.0" y="709.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">process per config, round-robin. Host CPU = utime+stime of the devicehost process; Go server CPU excluded.</text>
+<text x="24.0" y="724.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">xray-rust unreleased integration build 86c79d71 (upstream fbc0e49f + PRs #112 #115 #124 #126–#130) + devicehost bench patch. Values are in</text>
+<text x="24.0" y="739.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">data/*.csv.</text>
+</svg>

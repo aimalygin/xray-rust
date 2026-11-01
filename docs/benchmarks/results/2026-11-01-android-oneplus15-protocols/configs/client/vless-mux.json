@@ -1,0 +1,6 @@
+{"log":{"loglevel":"warning"},
+ "inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{}}],
+ "outbounds":[{"tag":"proxy","protocol":"vless",
+   "settings":{"vnext":[{"address":"SERVER","port":10001,"users":[{"id":"<uuid>","encryption":"none"}]}]},
+   "streamSettings":{"network":"raw","security":"none"},
+   "mux":{"enabled":true,"concurrency":8}}]}

@@ -1,0 +1,5 @@
+profile,flows,runs,intact_runs,rss_before_mib,peak_vmhwm_mib,peak_min_mib,peak_max_mib,peak_minus_before_mib,mib_s_intact,host_cpu_ms_gib_intact,tun_drops_min,tun_drops_max
+Mobile,64,5,5,182.9,218.1,216.9,218.8,34.8,94.0,17700.0,0,0
+MobilePlus,64,5,5,183.1,217.0,215.6,219.3,33.4,92.5,17700.0,0,0
+Mobile,256,5,4,182.9,309.7,290.7,310.6,125.8,63.9,26320.0,493483,831896
+MobilePlus,256,5,5,183.3,312.2,309.3,314.2,129.0,60.8,35520.0,0,0

@@ -1,0 +1,6 @@
+{"log":{"loglevel":"warning"},
+ "inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{}}],
+ "outbounds":[{"tag":"proxy","protocol":"vless",
+   "settings":{"vnext":[{"address":"SERVER","port":10002,"users":[{"id":"<uuid>","encryption":"none","flow":"xtls-rprx-vision"}]}]},
+   "streamSettings":{"network":"raw","security":"reality",
+     "realitySettings":{"serverName":"www.apple.com","fingerprint":"chrome","publicKey":"<reality-public-key>","shortId":"e435b025","spiderX":"/"}}}]}

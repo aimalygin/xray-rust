@@ -1,0 +1,4 @@
+{"log":{"loglevel":"warning"},
+ "inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{}}],
+ "outbounds":[{"tag":"proxy","protocol":"shadowsocks",
+   "settings":{"servers":[{"address":"SERVER","port":10005,"method":"chacha20-ietf-poly1305","password":"<ss-password>"}]}}]}

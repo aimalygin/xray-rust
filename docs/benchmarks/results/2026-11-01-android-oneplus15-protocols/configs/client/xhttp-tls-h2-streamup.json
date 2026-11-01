@@ -1,0 +1,7 @@
+{"log":{"loglevel":"warning"},
+ "inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{}}],
+ "outbounds":[{"tag":"proxy","protocol":"vless",
+   "settings":{"vnext":[{"address":"SERVER","port":10003,"users":[{"id":"<uuid>","encryption":"none"}]}]},
+   "streamSettings":{"network":"xhttp","security":"tls",
+     "tlsSettings":{"serverName":"bench.test","fingerprint":"chrome","alpn":["h2"],"pinnedPeerCertSha256":"<bench.test-certificate-sha256>"},
+     "xhttpSettings":{"path":"/bench","mode":"stream-up"}}}]}

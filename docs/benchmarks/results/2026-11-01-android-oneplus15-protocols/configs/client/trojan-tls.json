@@ -1,0 +1,6 @@
+{"log":{"loglevel":"warning"},
+ "inbounds":[{"tag":"tun-in","protocol":"tun","listen":"127.0.0.1","port":0,"settings":{}}],
+ "outbounds":[{"tag":"proxy","protocol":"trojan",
+   "settings":{"servers":[{"address":"SERVER","port":10007,"password":"<trojan-password>"}]},
+   "streamSettings":{"network":"raw","security":"tls",
+     "tlsSettings":{"serverName":"bench.test","fingerprint":"chrome","alpn":["http/1.1"],"pinnedPeerCertSha256":"<bench.test-certificate-sha256>"}}}]}

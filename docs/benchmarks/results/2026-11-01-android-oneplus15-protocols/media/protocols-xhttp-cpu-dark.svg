@@ -1,0 +1,210 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="528" viewBox="0 0 880 528" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" style="font-variant-numeric: tabular-nums">
+<title id="t">Phone: XHTTP h2/TLS packet-up vs stream-up, host CPU per GiB — lower is better</title>
+<desc id="d">Small multiples of host CPU, ms/GiB per protocol for download and upload with 1 and 4 flows on a OnePlus 15. Values are in data/protocols-xhttp-cpu.csv.</desc>
+<rect x="0.5" y="0.5" width="879" height="527" rx="8" fill="#1a1a19" stroke="#ffffff" stroke-opacity="0.10"/>
+<text x="24.0" y="42.0" font-size="17" font-weight="600" fill="#f0efec" text-anchor="start">Phone: XHTTP h2/TLS packet-up vs stream-up, host CPU per GiB — lower is better</text>
+<text x="24.0" y="61.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">OnePlus 15 (SM8850), Android 17 · 2026-11-01 · loopback, CPU-bound · Go Xray v26.10.21 server on the phone · xray-rust profile</text>
+<text x="24.0" y="80.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">Mobile, TUN MTU 1500 · median of 3 runs with min–max</text>
+<text x="24.0" y="99.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">XHTTP mode auto = packet-up over TLS; packet-up upload is capped near 31.8 MiB/s per flow by scMaxEachPostBytes 1 MB /</text>
+<text x="24.0" y="118.0" font-size="12.5" font-weight="400" fill="#c3c2b7" text-anchor="start">scMinPostsIntervalMs 30. Label: median and change vs VLESS raw.</text>
+<rect x="24" y="134" width="12" height="12" rx="2" fill="#898781"/>
+<text x="41.0" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">VLESS raw (baseline)</text>
+<rect x="188.28000000000003" y="134" width="12" height="12" rx="2" fill="#3987e5"/>
+<text x="205.3" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">protocol</text>
+<line x1="276.2" y1="140.0" x2="294.2" y2="140.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="276.2" y1="136.0" x2="276.2" y2="144.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="294.2" y1="136.0" x2="294.2" y2="144.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="300.2" y="144.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="start">min–max of runs, bar = median</text>
+<text x="24.0" y="180.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Download · 1 flow</text>
+<line x1="160.3" y1="188.0" x2="160.3" y2="264.0" stroke="#383835" stroke-width="1"/>
+<text x="160.3" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="203.1" y1="188.0" x2="203.1" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="203.1" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">5K</text>
+<line x1="245.9" y1="188.0" x2="245.9" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="245.9" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">10K</text>
+<line x1="288.8" y1="188.0" x2="288.8" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="288.8" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">15K</text>
+<line x1="331.6" y1="188.0" x2="331.6" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="331.6" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">20K</text>
+<line x1="374.4" y1="188.0" x2="374.4" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="374.4" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">25K</text>
+<text x="374.4" y="291.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">host CPU, ms/GiB</text>
+<g><title>VLESS raw download ×1: median 7,280 ms/GiB (min 7,250 – max 7,340), n=3</title>
+<text x="150.3" y="206.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M160.3,195.0H218.7A4,4 0 0 1 222.7,199.0V205.0A4,4 0 0 1 218.7,209.0H160.3Z" fill="#898781"/>
+<line x1="222.4" y1="202.0" x2="223.2" y2="202.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="222.4" y1="198.0" x2="222.4" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="223.2" y1="198.0" x2="223.2" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="222.4" y1="202.0" x2="223.2" y2="202.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="222.4" y1="198.0" x2="222.4" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="223.2" y1="198.0" x2="223.2" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="231.2" y="206.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">7,280</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up download ×1: median 11,110 ms/GiB (min 10,980 – max 11,160), n=3, +53% vs VLESS raw</title>
+<text x="150.3" y="230.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M160.3,219.0H251.5A4,4 0 0 1 255.5,223.0V229.0A4,4 0 0 1 251.5,233.0H160.3Z" fill="#3987e5"/>
+<line x1="254.3" y1="226.0" x2="255.9" y2="226.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="254.3" y1="222.0" x2="254.3" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="255.9" y1="222.0" x2="255.9" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="254.3" y1="226.0" x2="255.9" y2="226.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="254.3" y1="222.0" x2="254.3" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="255.9" y1="222.0" x2="255.9" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="263.9" y="230.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">11,110</tspan><tspan fill="#c3c2b7">  +53%</tspan></text>
+</g>
+<g><title>XHTTP h2 stream-up download ×1: median 10,760 ms/GiB (min 10,700 – max 10,790), n=3, +48% vs VLESS raw</title>
+<text x="150.3" y="254.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 stream-up</text>
+<path d="M160.3,243.0H248.5A4,4 0 0 1 252.5,247.0V253.0A4,4 0 0 1 248.5,257.0H160.3Z" fill="#3987e5"/>
+<line x1="251.9" y1="250.0" x2="252.7" y2="250.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="251.9" y1="246.0" x2="251.9" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="252.7" y1="246.0" x2="252.7" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="251.9" y1="250.0" x2="252.7" y2="250.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="251.9" y1="246.0" x2="251.9" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="252.7" y1="246.0" x2="252.7" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="260.7" y="254.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">10,760</tspan><tspan fill="#c3c2b7">  +48%</tspan></text>
+</g>
+<text x="460.0" y="180.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Download · 4 flows</text>
+<line x1="596.3" y1="188.0" x2="596.3" y2="264.0" stroke="#383835" stroke-width="1"/>
+<text x="596.3" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="639.1" y1="188.0" x2="639.1" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="639.1" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">5K</text>
+<line x1="681.9" y1="188.0" x2="681.9" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="681.9" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">10K</text>
+<line x1="724.8" y1="188.0" x2="724.8" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="724.8" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">15K</text>
+<line x1="767.6" y1="188.0" x2="767.6" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="767.6" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">20K</text>
+<line x1="810.4" y1="188.0" x2="810.4" y2="264.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="810.4" y="278.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">25K</text>
+<text x="810.4" y="291.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">host CPU, ms/GiB</text>
+<g><title>VLESS raw download ×4: median 9,690 ms/GiB (min 9,580 – max 10,310), n=3</title>
+<text x="586.3" y="206.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M596.3,195.0H675.3A4,4 0 0 1 679.3,199.0V205.0A4,4 0 0 1 675.3,209.0H596.3Z" fill="#898781"/>
+<line x1="678.4" y1="202.0" x2="684.6" y2="202.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="678.4" y1="198.0" x2="678.4" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="684.6" y1="198.0" x2="684.6" y2="206.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="678.4" y1="202.0" x2="684.6" y2="202.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="678.4" y1="198.0" x2="678.4" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="684.6" y1="198.0" x2="684.6" y2="206.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="692.6" y="206.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">9,690</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up download ×4: median 14,470 ms/GiB (min 14,230 – max 15,010), n=3, +49% vs VLESS raw</title>
+<text x="586.3" y="230.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M596.3,219.0H716.2A4,4 0 0 1 720.2,223.0V229.0A4,4 0 0 1 716.2,233.0H596.3Z" fill="#3987e5"/>
+<line x1="718.2" y1="226.0" x2="724.8" y2="226.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="718.2" y1="222.0" x2="718.2" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="724.8" y1="222.0" x2="724.8" y2="230.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="718.2" y1="226.0" x2="724.8" y2="226.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="718.2" y1="222.0" x2="718.2" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="724.8" y1="222.0" x2="724.8" y2="230.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="732.8" y="230.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">14,470</tspan><tspan fill="#c3c2b7">  +49%</tspan></text>
+</g>
+<g><title>XHTTP h2 stream-up download ×4: median 14,770 ms/GiB (min 14,750 – max 14,830), n=3, +52% vs VLESS raw</title>
+<text x="586.3" y="254.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 stream-up</text>
+<path d="M596.3,243.0H718.8A4,4 0 0 1 722.8,247.0V253.0A4,4 0 0 1 718.8,257.0H596.3Z" fill="#3987e5"/>
+<line x1="722.6" y1="250.0" x2="723.3" y2="250.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="722.6" y1="246.0" x2="722.6" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="723.3" y1="246.0" x2="723.3" y2="254.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="722.6" y1="250.0" x2="723.3" y2="250.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="722.6" y1="246.0" x2="722.6" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="723.3" y1="246.0" x2="723.3" y2="254.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="731.3" y="254.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">14,770</tspan><tspan fill="#c3c2b7">  +52%</tspan></text>
+</g>
+<text x="24.0" y="324.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Upload · 1 flow</text>
+<line x1="160.3" y1="332.0" x2="160.3" y2="408.0" stroke="#383835" stroke-width="1"/>
+<text x="160.3" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="203.1" y1="332.0" x2="203.1" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="203.1" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">5K</text>
+<line x1="245.9" y1="332.0" x2="245.9" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="245.9" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">10K</text>
+<line x1="288.8" y1="332.0" x2="288.8" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="288.8" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">15K</text>
+<line x1="331.6" y1="332.0" x2="331.6" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="331.6" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">20K</text>
+<line x1="374.4" y1="332.0" x2="374.4" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="374.4" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">25K</text>
+<text x="374.4" y="435.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">host CPU, ms/GiB</text>
+<g><title>VLESS raw upload ×1: median 6,730 ms/GiB (min 6,700 – max 6,910), n=3</title>
+<text x="150.3" y="350.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M160.3,339.0H213.9A4,4 0 0 1 217.9,343.0V349.0A4,4 0 0 1 213.9,353.0H160.3Z" fill="#898781"/>
+<line x1="217.7" y1="346.0" x2="219.5" y2="346.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="217.7" y1="342.0" x2="217.7" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="219.5" y1="342.0" x2="219.5" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="217.7" y1="346.0" x2="219.5" y2="346.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="217.7" y1="342.0" x2="217.7" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="219.5" y1="342.0" x2="219.5" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="227.5" y="350.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">6,730</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up upload ×1: median 20,400 ms/GiB (min 20,330 – max 20,400), n=3, +203% vs VLESS raw</title>
+<text x="150.3" y="374.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M160.3,363.0H331.0A4,4 0 0 1 335.0,367.0V373.0A4,4 0 0 1 331.0,377.0H160.3Z" fill="#3987e5"/>
+<line x1="334.4" y1="370.0" x2="335.0" y2="370.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="334.4" y1="366.0" x2="334.4" y2="374.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="335.0" y1="366.0" x2="335.0" y2="374.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="334.4" y1="370.0" x2="335.0" y2="370.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="334.4" y1="366.0" x2="334.4" y2="374.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="335.0" y1="366.0" x2="335.0" y2="374.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="343.0" y="374.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">20,400</tspan><tspan fill="#c3c2b7">  +203%</tspan></text>
+</g>
+<g><title>XHTTP h2 stream-up upload ×1: median 10,040 ms/GiB (min 9,900 – max 10,050), n=3, +49% vs VLESS raw</title>
+<text x="150.3" y="398.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 stream-up</text>
+<path d="M160.3,387.0H242.3A4,4 0 0 1 246.3,391.0V397.0A4,4 0 0 1 242.3,401.0H160.3Z" fill="#3987e5"/>
+<line x1="245.1" y1="394.0" x2="246.4" y2="394.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="245.1" y1="390.0" x2="245.1" y2="398.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="246.4" y1="390.0" x2="246.4" y2="398.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="245.1" y1="394.0" x2="246.4" y2="394.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="245.1" y1="390.0" x2="245.1" y2="398.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="246.4" y1="390.0" x2="246.4" y2="398.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="254.4" y="398.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">10,040</tspan><tspan fill="#c3c2b7">  +49%</tspan></text>
+</g>
+<text x="460.0" y="324.0" font-size="13" font-weight="600" fill="#f0efec" text-anchor="start">Upload · 4 flows</text>
+<line x1="596.3" y1="332.0" x2="596.3" y2="408.0" stroke="#383835" stroke-width="1"/>
+<text x="596.3" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">0</text>
+<line x1="639.1" y1="332.0" x2="639.1" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="639.1" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">5K</text>
+<line x1="681.9" y1="332.0" x2="681.9" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="681.9" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">10K</text>
+<line x1="724.8" y1="332.0" x2="724.8" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="724.8" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">15K</text>
+<line x1="767.6" y1="332.0" x2="767.6" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="767.6" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">20K</text>
+<line x1="810.4" y1="332.0" x2="810.4" y2="408.0" stroke="#2c2c2a" stroke-width="1"/>
+<text x="810.4" y="422.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="middle">25K</text>
+<text x="810.4" y="435.0" font-size="10.5" font-weight="400" fill="#898781" text-anchor="end">host CPU, ms/GiB</text>
+<g><title>VLESS raw upload ×4: median 5,190 ms/GiB (min 5,080 – max 5,350), n=3</title>
+<text x="586.3" y="350.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">VLESS raw</text>
+<path d="M596.3,339.0H636.8A4,4 0 0 1 640.8,343.0V349.0A4,4 0 0 1 636.8,353.0H596.3Z" fill="#898781"/>
+<line x1="639.8" y1="346.0" x2="642.1" y2="346.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="639.8" y1="342.0" x2="639.8" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="642.1" y1="342.0" x2="642.1" y2="350.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="639.8" y1="346.0" x2="642.1" y2="346.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="639.8" y1="342.0" x2="639.8" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="642.1" y1="342.0" x2="642.1" y2="350.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="650.1" y="350.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">5,190</tspan></text>
+</g>
+<g><title>XHTTP h2 packet-up upload ×4: median 9,490 ms/GiB (min 9,300 – max 9,880), n=3, +83% vs VLESS raw</title>
+<text x="586.3" y="374.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 packet-up</text>
+<path d="M596.3,363.0H673.6A4,4 0 0 1 677.6,367.0V373.0A4,4 0 0 1 673.6,377.0H596.3Z" fill="#3987e5"/>
+<line x1="676.0" y1="370.0" x2="680.9" y2="370.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="676.0" y1="366.0" x2="676.0" y2="374.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="680.9" y1="366.0" x2="680.9" y2="374.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="676.0" y1="370.0" x2="680.9" y2="370.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="676.0" y1="366.0" x2="676.0" y2="374.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="680.9" y1="366.0" x2="680.9" y2="374.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="688.9" y="374.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">9,490</tspan><tspan fill="#c3c2b7">  +83%</tspan></text>
+</g>
+<g><title>XHTTP h2 stream-up upload ×4: median 7,840 ms/GiB (min 7,760 – max 7,860), n=3, +51% vs VLESS raw</title>
+<text x="586.3" y="398.0" font-size="12" font-weight="400" fill="#c3c2b7" text-anchor="end">XHTTP h2 stream-up</text>
+<path d="M596.3,387.0H659.5A4,4 0 0 1 663.5,391.0V397.0A4,4 0 0 1 659.5,401.0H596.3Z" fill="#3987e5"/>
+<line x1="662.8" y1="394.0" x2="663.6" y2="394.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="662.8" y1="390.0" x2="662.8" y2="398.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="663.6" y1="390.0" x2="663.6" y2="398.0" stroke="#1a1a19" stroke-width="4" stroke-linecap="round"/>
+<line x1="662.8" y1="394.0" x2="663.6" y2="394.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="662.8" y1="390.0" x2="662.8" y2="398.0" stroke="#f0efec" stroke-width="1.25"/>
+<line x1="663.6" y1="390.0" x2="663.6" y2="398.0" stroke="#f0efec" stroke-width="1.25"/>
+<text x="671.6" y="398.0" font-size="11" text-anchor="start"><tspan fill="#c3c2b7">7,840</tspan><tspan fill="#c3c2b7">  +51%</tspan></text>
+</g>
+<text x="24.0" y="454.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">Source: data/xhttp; devicehost VpnService (fd backend): adb-shell nc → tun0 → xray-rust → 127.0.0.1 Go Xray → loopback sink; fresh</text>
+<text x="24.0" y="469.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">process per config, round-robin. Host CPU = utime+stime of the devicehost process; Go server CPU excluded.</text>
+<text x="24.0" y="484.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">xray-rust unreleased integration build 86c79d71 (upstream fbc0e49f + PRs #112 #115 #124 #126–#130) + devicehost bench patch. Values are in</text>
+<text x="24.0" y="499.0" font-size="11" font-weight="400" fill="#898781" text-anchor="start">data/*.csv.</text>
+</svg>

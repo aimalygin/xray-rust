@@ -387,6 +387,17 @@ HTTP and one strict UDP round trip. This remains a short dirty-worktree
 diagnostic: it does not satisfy the six-hour, packet-loss, network-transition,
 or long-lived H3 release scenarios.
 
+A 2026-11-01 benchmark on a OnePlus 15 (Android 17) drove `devicehost` from
+`adb shell` with a test-only patch that limits the VPN to the shell UID and
+a TEST-NET route. It compares protocol CPU per GiB, throughput and peak RSS
+against Xray-core v26.10.21 on the phone's loopback
+([report](benchmarks/results/2026-11-01-android-oneplus15-protocols/README.md)).
+It measured an unreleased integration build and is not release evidence. It
+found the Mux download reset, with a fix proposed in
+[#138](https://github.com/aimalygin/xray-rust/pull/138), TUN drops with the
+`Mobile` profile at 256 concurrent flows, and the packet-up upload ceiling of
+XHTTP over TLS.
+
 The Apple reference app includes an opt-in physical-device runner that keeps
 all probe endpoints in the generated test-only `.xctestrun`, drives HTTPS and
 DNS-over-UDP traffic from the device, samples provider

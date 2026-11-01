@@ -1,0 +1,600 @@
+rep=1 cfg=vless-mux pid=23628 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=195192 rsskb=191372 t0=1793536325.371780580 t1=1793536335.401310680 temperature:301
+rep=1 cfg=vless-mux pid=23628 flow0 md5=80c9f3c4c44cd6012caacc6e829ab935  -
+rep=1 cfg=vless-mux pid=23628 result mode=dl flows=1 bytes=0 ticks=2 srvticks=0 srvconns=1 hwmkb=195192 rsskb=192564 t0=1793536335.585537503 t1=1793536336.629005784 temperature:301
+rep=1 cfg=vless-mux pid=23628 flow2 md5=18747fcb2508eeec79415b32f63f3654  -
+rep=1 cfg=vless-mux pid=23628 flow0 md5=55f41c694994ad16af502a973b394321  -
+rep=1 cfg=vless-mux pid=23628 flow3 md5=90aeded9922cf8946ea7858635493724  -
+rep=1 cfg=vless-mux pid=23628 flow1 md5=6ed12ed3e04821cb6091199c66a4980d  -
+rep=1 cfg=vless-mux pid=23628 result mode=dl flows=4 bytes=0 ticks=2 srvticks=3 srvconns=1 hwmkb=195192 rsskb=193812 t0=1793536338.832641512 t1=1793536339.898494324 temperature:301
+rep=1 cfg=vless-mux pid=23628 flow0 srvcount=1073741860
+rep=1 cfg=vless-mux pid=23628 result mode=ul flows=1 bytes=1073741824 ticks=776 srvticks=528 srvconns=1 hwmkb=207684 rsskb=207684 t0=1793536342.083010209 t1=1793536346.573426978 temperature:301
+rep=1 cfg=vless-mux pid=23628 flow0 srvcount=268435492
+rep=1 cfg=vless-mux pid=23628 flow2 srvcount=268435492
+rep=1 cfg=vless-mux pid=23628 flow1 srvcount=268435492
+rep=1 cfg=vless-mux pid=23628 flow3 srvcount=268435492
+rep=1 cfg=vless-mux pid=23628 result mode=ul flows=4 bytes=268435456 ticks=541 srvticks=383 srvconns=1 hwmkb=210824 rsskb=210824 t0=1793536348.779782654 t1=1793536352.006687809 temperature:301
+rep=1 cfg=reality-vision pid=25328 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=195192 rsskb=191028 t0=1793536364.550133950 t1=1793536374.580149728 temperature:301
+rep=1 cfg=reality-vision pid=25328 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=reality-vision pid=25328 result mode=dl flows=1 bytes=0 ticks=871 srvticks=205 srvconns=1 hwmkb=200604 rsskb=200604 t0=1793536374.782883269 t1=1793536384.458200766 temperature:301
+rep=1 cfg=reality-vision pid=25328 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=reality-vision pid=25328 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=reality-vision pid=25328 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=reality-vision pid=25328 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=reality-vision pid=25328 result mode=dl flows=4 bytes=0 ticks=782 srvticks=153 srvconns=4 hwmkb=200668 rsskb=198924 t0=1793536386.642133369 t1=1793536393.640625971 temperature:302
+rep=1 cfg=reality-vision pid=25328 flow0 srvcount=1073741860
+rep=1 cfg=reality-vision pid=25328 result mode=ul flows=1 bytes=1073741824 ticks=671 srvticks=185 srvconns=1 hwmkb=207880 rsskb=205380 t0=1793536395.846858991 t1=1793536401.159132634 temperature:302
+rep=1 cfg=reality-vision pid=25328 flow2 srvcount=268435492
+rep=1 cfg=reality-vision pid=25328 flow3 srvcount=268435492
+rep=1 cfg=reality-vision pid=25328 flow1 srvcount=268435492
+rep=1 cfg=reality-vision pid=25328 flow0 srvcount=268435492
+rep=1 cfg=reality-vision pid=25328 result mode=ul flows=4 bytes=268435456 ticks=530 srvticks=329 srvconns=4 hwmkb=212260 rsskb=209920 t0=1793536403.346725186 t1=1793536407.739144142 temperature:302
+rep=1 cfg=xhttp-tls-h2 pid=27639 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194488 rsskb=190200 t0=1793536420.228879398 t1=1793536430.256453040 temperature:302
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=xhttp-tls-h2 pid=27639 result mode=dl flows=1 bytes=0 ticks=1095 srvticks=631 srvconns=1 hwmkb=207060 rsskb=207060 t0=1793536430.449077363 t1=1793536438.405021422 temperature:302
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=27639 result mode=dl flows=4 bytes=0 ticks=988 srvticks=480 srvconns=3 hwmkb=216040 rsskb=206200 t0=1793536440.605296109 t1=1793536447.022312513 temperature:303
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow0 srvcount=1073741860
+rep=1 cfg=xhttp-tls-h2 pid=27639 result mode=ul flows=1 bytes=1073741824 ticks=2035 srvticks=2138 srvconns=3 hwmkb=216432 rsskb=208168 t0=1793536449.208281158 t1=1793536483.930997551 temperature:304
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow0 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow1 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow2 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=27639 flow3 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=27639 result mode=ul flows=4 bytes=268435456 ticks=990 srvticks=852 srvconns=3 hwmkb=242984 rsskb=221284 t0=1793536486.134686665 t1=1793536495.690075463 temperature:304
+rep=1 cfg=ss-aes256gcm pid=30053 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194176 rsskb=190112 t0=1793536508.275536812 t1=1793536518.303729673 temperature:305
+rep=1 cfg=ss-aes256gcm pid=30053 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=ss-aes256gcm pid=30053 result mode=dl flows=1 bytes=0 ticks=870 srvticks=257 srvconns=1 hwmkb=196356 rsskb=196356 t0=1793536518.506018006 t1=1793536526.765635399 temperature:305
+rep=1 cfg=ss-aes256gcm pid=30053 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-aes256gcm pid=30053 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-aes256gcm pid=30053 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-aes256gcm pid=30053 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-aes256gcm pid=30053 result mode=dl flows=4 bytes=0 ticks=790 srvticks=181 srvconns=4 hwmkb=198044 rsskb=198044 t0=1793536528.974242638 t1=1793536535.703755500 temperature:305
+rep=1 cfg=ss-aes256gcm pid=30053 flow0 srvcount=1073741860
+rep=1 cfg=ss-aes256gcm pid=30053 result mode=ul flows=1 bytes=1073741824 ticks=617 srvticks=482 srvconns=1 hwmkb=206528 rsskb=206528 t0=1793536537.906419822 t1=1793536543.321978674 temperature:305
+rep=1 cfg=ss-aes256gcm pid=30053 flow2 srvcount=268435492
+rep=1 cfg=ss-aes256gcm pid=30053 flow0 srvcount=268435492
+rep=1 cfg=ss-aes256gcm pid=30053 flow3 srvcount=268435492
+rep=1 cfg=ss-aes256gcm pid=30053 flow1 srvcount=268435492
+rep=1 cfg=ss-aes256gcm pid=30053 result mode=ul flows=4 bytes=268435456 ticks=586 srvticks=431 srvconns=4 hwmkb=207564 rsskb=204668 t0=1793536545.531325236 t1=1793536549.886473046 temperature:305
+rep=1 cfg=ss-chacha20 pid=545 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194384 rsskb=190320 t0=1793536562.494607677 t1=1793536572.524677882 temperature:306
+rep=1 cfg=ss-chacha20 pid=545 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=ss-chacha20 pid=545 result mode=dl flows=1 bytes=0 ticks=850 srvticks=442 srvconns=1 hwmkb=197620 rsskb=197620 t0=1793536572.707294809 t1=1793536580.206785014 temperature:306
+rep=1 cfg=ss-chacha20 pid=545 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-chacha20 pid=545 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-chacha20 pid=545 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-chacha20 pid=545 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss-chacha20 pid=545 result mode=dl flows=4 bytes=0 ticks=859 srvticks=355 srvconns=4 hwmkb=198512 rsskb=195720 t0=1793536582.427977565 t1=1793536589.321869125 temperature:306
+rep=1 cfg=ss-chacha20 pid=545 flow0 srvcount=1073741860
+rep=1 cfg=ss-chacha20 pid=545 result mode=ul flows=1 bytes=1073741824 ticks=633 srvticks=574 srvconns=1 hwmkb=205916 rsskb=205916 t0=1793536591.526199906 t1=1793536598.504613236 temperature:306
+rep=1 cfg=ss-chacha20 pid=545 flow3 srvcount=268435492
+rep=1 cfg=ss-chacha20 pid=545 flow0 srvcount=268435492
+rep=1 cfg=ss-chacha20 pid=545 flow2 srvcount=268435492
+rep=1 cfg=ss-chacha20 pid=545 flow1 srvcount=268435492
+rep=1 cfg=ss-chacha20 pid=545 result mode=ul flows=4 bytes=268435456 ticks=666 srvticks=566 srvconns=4 hwmkb=207772 rsskb=205256 t0=1793536600.729135944 t1=1793536605.514220213 temperature:306
+rep=1 cfg=ss2022-aes256 pid=4532 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=194076 rsskb=190368 t0=1793536618.137863697 t1=1793536628.168957444 temperature:306
+rep=1 cfg=ss2022-aes256 pid=4532 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=ss2022-aes256 pid=4532 result mode=dl flows=1 bytes=0 ticks=837 srvticks=229 srvconns=1 hwmkb=196812 rsskb=196812 t0=1793536628.357939579 t1=1793536636.238517128 temperature:308
+rep=1 cfg=ss2022-aes256 pid=4532 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss2022-aes256 pid=4532 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss2022-aes256 pid=4532 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss2022-aes256 pid=4532 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=ss2022-aes256 pid=4532 result mode=dl flows=4 bytes=0 ticks=787 srvticks=174 srvconns=4 hwmkb=199136 rsskb=199136 t0=1793536638.464521658 t1=1793536645.248894729 temperature:308
+rep=1 cfg=ss2022-aes256 pid=4532 flow0 srvcount=1073741860
+rep=1 cfg=ss2022-aes256 pid=4532 result mode=ul flows=1 bytes=1073741824 ticks=583 srvticks=478 srvconns=1 hwmkb=206376 rsskb=206376 t0=1793536647.467558947 t1=1793536652.346140664 temperature:308
+rep=1 cfg=ss2022-aes256 pid=4532 flow0 srvcount=268435492
+rep=1 cfg=ss2022-aes256 pid=4532 flow2 srvcount=268435492
+rep=1 cfg=ss2022-aes256 pid=4532 flow1 srvcount=268435492
+rep=1 cfg=ss2022-aes256 pid=4532 flow3 srvcount=268435492
+rep=1 cfg=ss2022-aes256 pid=4532 result mode=ul flows=4 bytes=268435456 ticks=578 srvticks=438 srvconns=4 hwmkb=209632 rsskb=208000 t0=1793536654.572681913 t1=1793536658.590246963 temperature:308
+rep=1 cfg=trojan-tls pid=8608 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=194144 rsskb=190388 t0=1793536671.188494302 t1=1793536681.216480496 temperature:308
+rep=1 cfg=trojan-tls pid=8608 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=trojan-tls pid=8608 result mode=dl flows=1 bytes=0 ticks=863 srvticks=257 srvconns=1 hwmkb=198400 rsskb=198400 t0=1793536681.429198048 t1=1793536689.871348826 temperature:308
+rep=1 cfg=trojan-tls pid=8608 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=trojan-tls pid=8608 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=trojan-tls pid=8608 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=trojan-tls pid=8608 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=trojan-tls pid=8608 result mode=dl flows=4 bytes=0 ticks=785 srvticks=179 srvconns=4 hwmkb=200192 rsskb=199036 t0=1793536692.065275180 t1=1793536698.935267312 temperature:310
+rep=1 cfg=trojan-tls pid=8608 flow0 srvcount=1073741860
+rep=1 cfg=trojan-tls pid=8608 result mode=ul flows=1 bytes=1073741824 ticks=650 srvticks=484 srvconns=1 hwmkb=206864 rsskb=206864 t0=1793536701.145416218 t1=1793536706.282589028 temperature:310
+rep=1 cfg=trojan-tls pid=8608 flow2 srvcount=268435492
+rep=1 cfg=trojan-tls pid=8608 flow1 srvcount=268435492
+rep=1 cfg=trojan-tls pid=8608 flow0 srvcount=268435492
+rep=1 cfg=trojan-tls pid=8608 flow3 srvcount=268435492
+rep=1 cfg=trojan-tls pid=8608 result mode=ul flows=4 bytes=268435456 ticks=518 srvticks=399 srvconns=4 hwmkb=210520 rsskb=207736 t0=1793536708.482212257 t1=1793536712.677010328 temperature:310
+rep=1 cfg=vless-raw pid=10756 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194736 rsskb=190476 t0=1793536725.247014177 t1=1793536735.275076257 temperature:310
+rep=1 cfg=vless-raw pid=10756 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=vless-raw pid=10756 result mode=dl flows=1 bytes=0 ticks=812 srvticks=100 srvconns=1 hwmkb=195852 rsskb=195852 t0=1793536735.468705684 t1=1793536744.024548754 temperature:310
+rep=1 cfg=vless-raw pid=10756 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=10756 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=10756 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=10756 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=10756 result mode=dl flows=4 bytes=0 ticks=728 srvticks=85 srvconns=4 hwmkb=197968 rsskb=197968 t0=1793536746.215369794 t1=1793536752.959583490 temperature:312
+rep=1 cfg=vless-raw pid=10756 flow0 srvcount=1073741860
+rep=1 cfg=vless-raw pid=10756 result mode=ul flows=1 bytes=1073741824 ticks=655 srvticks=251 srvconns=1 hwmkb=204200 rsskb=203428 t0=1793536755.184122083 t1=1793536760.615479737 temperature:312
+rep=1 cfg=vless-raw pid=10756 flow2 srvcount=268435492
+rep=1 cfg=vless-raw pid=10756 flow1 srvcount=268435492
+rep=1 cfg=vless-raw pid=10756 flow3 srvcount=268435492
+rep=1 cfg=vless-raw pid=10756 flow0 srvcount=268435492
+rep=1 cfg=vless-raw pid=10756 result mode=ul flows=4 bytes=268435456 ticks=488 srvticks=249 srvconns=4 hwmkb=208380 rsskb=205100 t0=1793536762.826860361 t1=1793536766.591450099 temperature:312
+rep=2 cfg=reality-vision pid=13272 result mode=idle flows=0 bytes=10 ticks=7 srvticks=0 srvconns=0 hwmkb=194080 rsskb=190236 t0=1793536779.194247021 t1=1793536789.226820299 temperature:312
+rep=2 cfg=reality-vision pid=13272 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=reality-vision pid=13272 result mode=dl flows=1 bytes=0 ticks=877 srvticks=205 srvconns=1 hwmkb=199436 rsskb=199436 t0=1793536789.419357695 t1=1793536798.032937535 temperature:312
+rep=2 cfg=reality-vision pid=13272 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=reality-vision pid=13272 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=reality-vision pid=13272 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=reality-vision pid=13272 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=reality-vision pid=13272 result mode=dl flows=4 bytes=0 ticks=772 srvticks=153 srvconns=4 hwmkb=200960 rsskb=200928 t0=1793536800.248977691 t1=1793536807.309486282 temperature:312
+rep=2 cfg=reality-vision pid=13272 flow0 srvcount=1073741860
+rep=2 cfg=reality-vision pid=13272 result mode=ul flows=1 bytes=1073741824 ticks=686 srvticks=194 srvconns=1 hwmkb=207864 rsskb=207864 t0=1793536809.509083572 t1=1793536814.882775706 temperature:314
+rep=2 cfg=reality-vision pid=13272 flow1 srvcount=268435492
+rep=2 cfg=reality-vision pid=13272 flow2 srvcount=268435492
+rep=2 cfg=reality-vision pid=13272 flow0 srvcount=268435492
+rep=2 cfg=reality-vision pid=13272 flow3 srvcount=268435492
+rep=2 cfg=reality-vision pid=13272 result mode=ul flows=4 bytes=268435456 ticks=537 srvticks=330 srvconns=4 hwmkb=211972 rsskb=208372 t0=1793536817.109581069 t1=1793536821.300136953 temperature:314
+rep=2 cfg=xhttp-tls-h2 pid=15067 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=195204 rsskb=190924 t0=1793536833.863895074 t1=1793536843.888730382 temperature:314
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=xhttp-tls-h2 pid=15067 result mode=dl flows=1 bytes=0 ticks=1216 srvticks=593 srvconns=1 hwmkb=204004 rsskb=200980 t0=1793536844.070240382 t1=1793536851.195463817 temperature:314
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=15067 result mode=dl flows=4 bytes=0 ticks=1326 srvticks=555 srvconns=3 hwmkb=214096 rsskb=207664 t0=1793536853.418998295 t1=1793536861.502612355 temperature:314
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow0 srvcount=1073741860
+rep=2 cfg=xhttp-tls-h2 pid=15067 result mode=ul flows=1 bytes=1073741824 ticks=2017 srvticks=2111 srvconns=3 hwmkb=217900 rsskb=213208 t0=1793536863.719130739 t1=1793536898.553015986 temperature:314
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow1 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow0 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow3 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=15067 flow2 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=15067 result mode=ul flows=4 bytes=268435456 ticks=962 srvticks=852 srvconns=3 hwmkb=240100 rsskb=217460 t0=1793536900.755855308 t1=1793536910.272312232 temperature:316
+rep=2 cfg=ss-aes256gcm pid=17284 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=195192 rsskb=191396 t0=1793536922.872871342 t1=1793536932.903734254 temperature:316
+rep=2 cfg=ss-aes256gcm pid=17284 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=ss-aes256gcm pid=17284 result mode=dl flows=1 bytes=0 ticks=770 srvticks=190 srvconns=1 hwmkb=198788 rsskb=198788 t0=1793536933.102798786 t1=1793536940.107505606 temperature:317
+rep=2 cfg=ss-aes256gcm pid=17284 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-aes256gcm pid=17284 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-aes256gcm pid=17284 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-aes256gcm pid=17284 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-aes256gcm pid=17284 result mode=dl flows=4 bytes=0 ticks=1061 srvticks=184 srvconns=4 hwmkb=198604 rsskb=196232 t0=1793536942.323231334 t1=1793536950.419586956 temperature:317
+rep=2 cfg=ss-aes256gcm pid=17284 flow0 srvcount=1073741860
+rep=2 cfg=ss-aes256gcm pid=17284 result mode=ul flows=1 bytes=1073741824 ticks=800 srvticks=617 srvconns=1 hwmkb=205024 rsskb=205024 t0=1793536952.649226903 t1=1793536958.917442057 temperature:317
+rep=2 cfg=ss-aes256gcm pid=17284 flow1 srvcount=268435492
+rep=2 cfg=ss-aes256gcm pid=17284 flow2 srvcount=268435492
+rep=2 cfg=ss-aes256gcm pid=17284 flow3 srvcount=268435492
+rep=2 cfg=ss-aes256gcm pid=17284 flow0 srvcount=268435492
+rep=2 cfg=ss-aes256gcm pid=17284 result mode=ul flows=4 bytes=268435456 ticks=716 srvticks=525 srvconns=4 hwmkb=209676 rsskb=207388 t0=1793536961.134051171 t1=1793536965.751849607 temperature:317
+rep=2 cfg=ss-chacha20 pid=19385 result mode=idle flows=0 bytes=10 ticks=7 srvticks=0 srvconns=0 hwmkb=195204 rsskb=191528 t0=1793536978.356433664 t1=1793536988.382133348 temperature:317
+rep=2 cfg=ss-chacha20 pid=19385 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=ss-chacha20 pid=19385 result mode=dl flows=1 bytes=0 ticks=816 srvticks=356 srvconns=1 hwmkb=197140 rsskb=197140 t0=1793536988.574744650 t1=1793536994.981799595 temperature:318
+rep=2 cfg=ss-chacha20 pid=19385 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-chacha20 pid=19385 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-chacha20 pid=19385 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-chacha20 pid=19385 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss-chacha20 pid=19385 result mode=dl flows=4 bytes=0 ticks=1156 srvticks=372 srvconns=4 hwmkb=198588 rsskb=197964 t0=1793536997.189946470 t1=1793537005.607238393 temperature:318
+rep=2 cfg=ss-chacha20 pid=19385 flow0 srvcount=1073741860
+rep=2 cfg=ss-chacha20 pid=19385 result mode=ul flows=1 bytes=1073741824 ticks=671 srvticks=609 srvconns=1 hwmkb=208700 rsskb=208700 t0=1793537007.801069278 t1=1793537014.407911619 temperature:318
+rep=2 cfg=ss-chacha20 pid=19385 flow2 srvcount=268435492
+rep=2 cfg=ss-chacha20 pid=19385 flow1 srvcount=268435492
+rep=2 cfg=ss-chacha20 pid=19385 flow3 srvcount=268435492
+rep=2 cfg=ss-chacha20 pid=19385 flow0 srvcount=268435492
+rep=2 cfg=ss-chacha20 pid=19385 result mode=ul flows=4 bytes=268435456 ticks=794 srvticks=655 srvconns=4 hwmkb=209956 rsskb=209544 t0=1793537016.611346045 t1=1793537021.436802398 temperature:318
+rep=2 cfg=ss2022-aes256 pid=21783 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194844 rsskb=190740 t0=1793537034.027625518 t1=1793537044.054140098 temperature:318
+rep=2 cfg=ss2022-aes256 pid=21783 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=ss2022-aes256 pid=21783 result mode=dl flows=1 bytes=0 ticks=771 srvticks=184 srvconns=1 hwmkb=196312 rsskb=196312 t0=1793537044.258264420 t1=1793537051.451295563 temperature:318
+rep=2 cfg=ss2022-aes256 pid=21783 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss2022-aes256 pid=21783 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss2022-aes256 pid=21783 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss2022-aes256 pid=21783 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=ss2022-aes256 pid=21783 result mode=dl flows=4 bytes=0 ticks=999 srvticks=176 srvconns=4 hwmkb=198188 rsskb=198188 t0=1793537053.662497490 t1=1793537061.397447330 temperature:320
+rep=2 cfg=ss2022-aes256 pid=21783 flow0 srvcount=1073741860
+rep=2 cfg=ss2022-aes256 pid=21783 result mode=ul flows=1 bytes=1073741824 ticks=673 srvticks=547 srvconns=1 hwmkb=205352 rsskb=205352 t0=1793537063.607452330 t1=1793537069.757125921 temperature:320
+rep=2 cfg=ss2022-aes256 pid=21783 flow1 srvcount=268435492
+rep=2 cfg=ss2022-aes256 pid=21783 flow0 srvcount=268435492
+rep=2 cfg=ss2022-aes256 pid=21783 flow2 srvcount=268435492
+rep=2 cfg=ss2022-aes256 pid=21783 flow3 srvcount=268435492
+rep=2 cfg=ss2022-aes256 pid=21783 result mode=ul flows=4 bytes=268435456 ticks=700 srvticks=515 srvconns=4 hwmkb=208020 rsskb=208020 t0=1793537071.963840920 t1=1793537076.744637012 temperature:320
+rep=2 cfg=trojan-tls pid=24468 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194676 rsskb=191124 t0=1793537089.306654455 t1=1793537099.334661431 temperature:320
+rep=2 cfg=trojan-tls pid=24468 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=trojan-tls pid=24468 result mode=dl flows=1 bytes=0 ticks=764 srvticks=180 srvconns=1 hwmkb=199484 rsskb=199236 t0=1793537099.540126066 t1=1793537106.664191584 temperature:320
+rep=2 cfg=trojan-tls pid=24468 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=trojan-tls pid=24468 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=trojan-tls pid=24468 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=trojan-tls pid=24468 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=trojan-tls pid=24468 result mode=dl flows=4 bytes=0 ticks=1009 srvticks=174 srvconns=4 hwmkb=199848 rsskb=198796 t0=1793537108.890574239 t1=1793537116.696195070 temperature:322
+rep=2 cfg=trojan-tls pid=24468 flow0 srvcount=1073741860
+rep=2 cfg=trojan-tls pid=24468 result mode=ul flows=1 bytes=1073741824 ticks=907 srvticks=662 srvconns=1 hwmkb=207984 rsskb=207984 t0=1793537118.909042100 t1=1793537125.552417879 temperature:322
+rep=2 cfg=trojan-tls pid=24468 flow1 srvcount=268435492
+rep=2 cfg=trojan-tls pid=24468 flow0 srvcount=268435492
+rep=2 cfg=trojan-tls pid=24468 flow3 srvcount=268435492
+rep=2 cfg=trojan-tls pid=24468 flow2 srvcount=268435492
+rep=2 cfg=trojan-tls pid=24468 result mode=ul flows=4 bytes=268435456 ticks=627 srvticks=468 srvconns=4 hwmkb=212280 rsskb=210208 t0=1793537127.774881576 t1=1793537132.090461887 temperature:322
+rep=2 cfg=vless-raw pid=27202 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194896 rsskb=190880 t0=1793537144.637571934 t1=1793537154.667755732 temperature:322
+rep=2 cfg=vless-raw pid=27202 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=vless-raw pid=27202 result mode=dl flows=1 bytes=0 ticks=721 srvticks=75 srvconns=1 hwmkb=198604 rsskb=197444 t0=1793537154.870825941 t1=1793537162.327562240 temperature:322
+rep=2 cfg=vless-raw pid=27202 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=27202 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=27202 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=27202 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=27202 result mode=dl flows=4 bytes=0 ticks=928 srvticks=81 srvconns=4 hwmkb=198604 rsskb=196944 t0=1793537164.542996979 t1=1793537172.060829892 temperature:322
+rep=2 cfg=vless-raw pid=27202 flow0 srvcount=1073741860
+rep=2 cfg=vless-raw pid=27202 result mode=ul flows=1 bytes=1073741824 ticks=670 srvticks=256 srvconns=1 hwmkb=205700 rsskb=205624 t0=1793537174.295662548 t1=1793537179.770387754 temperature:324
+rep=2 cfg=vless-raw pid=27202 flow1 srvcount=268435492
+rep=2 cfg=vless-raw pid=27202 flow3 srvcount=268435492
+rep=2 cfg=vless-raw pid=27202 flow2 srvcount=268435492
+rep=2 cfg=vless-raw pid=27202 flow0 srvcount=268435492
+rep=2 cfg=vless-raw pid=27202 result mode=ul flows=4 bytes=268435456 ticks=499 srvticks=258 srvconns=4 hwmkb=208144 rsskb=206456 t0=1793537182.005089368 t1=1793537185.884743273 temperature:324
+rep=2 cfg=vless-mux pid=29241 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194976 rsskb=190144 t0=1793537198.457067851 t1=1793537208.488144306 temperature:324
+rep=2 cfg=vless-mux pid=29241 flow0 md5=748a65fcf915abcdddf5b80a38350b42  -
+rep=2 cfg=vless-mux pid=29241 result mode=dl flows=1 bytes=0 ticks=3 srvticks=1 srvconns=1 hwmkb=194976 rsskb=191760 t0=1793537208.679698681 t1=1793537209.727586284 temperature:324
+rep=2 cfg=vless-mux pid=29241 flow2 md5=80c9f3c4c44cd6012caacc6e829ab935  -
+rep=2 cfg=vless-mux pid=29241 flow1 md5=05430dbcb8f5c55e9bd3534e07f8a5e8  -
+rep=2 cfg=vless-mux pid=29241 flow0 md5=54d6d2cbb40624911703d54152bdfce8  -
+rep=2 cfg=vless-mux pid=29241 flow3 md5=c57a7b026cf5da8a441b48cb3a1e466c  -
+rep=2 cfg=vless-mux pid=29241 result mode=dl flows=4 bytes=0 ticks=3 srvticks=1 srvconns=1 hwmkb=194976 rsskb=192956 t0=1793537211.940629461 t1=1793537213.006521804 temperature:324
+rep=2 cfg=vless-mux pid=29241 flow0 srvcount=1073741860
+rep=2 cfg=vless-mux pid=29241 result mode=ul flows=1 bytes=1073741824 ticks=777 srvticks=535 srvconns=1 hwmkb=203648 rsskb=203648 t0=1793537215.187028522 t1=1793537219.923405343 temperature:324
+rep=2 cfg=vless-mux pid=29241 flow2 srvcount=268435492
+rep=2 cfg=vless-mux pid=29241 flow1 srvcount=268435492
+rep=2 cfg=vless-mux pid=29241 flow3 srvcount=268435492
+rep=2 cfg=vless-mux pid=29241 flow0 srvcount=268435492
+rep=2 cfg=vless-mux pid=29241 result mode=ul flows=4 bytes=268435456 ticks=478 srvticks=354 srvconns=1 hwmkb=209120 rsskb=209120 t0=1793537222.145984873 t1=1793537225.296391487 temperature:324
+rep=3 cfg=xhttp-tls-h2 pid=30430 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193784 rsskb=190364 t0=1793537237.893363617 t1=1793537247.919146218 temperature:325
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=xhttp-tls-h2 pid=30430 result mode=dl flows=1 bytes=0 ticks=1175 srvticks=567 srvconns=1 hwmkb=203444 rsskb=203092 t0=1793537248.090040384 t1=1793537254.955264236 temperature:325
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=30430 result mode=dl flows=4 bytes=0 ticks=1337 srvticks=553 srvconns=3 hwmkb=212464 rsskb=206408 t0=1793537257.171118402 t1=1793537265.285374024 temperature:325
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow0 srvcount=1073741860
+rep=3 cfg=xhttp-tls-h2 pid=30430 result mode=ul flows=1 bytes=1073741824 ticks=2023 srvticks=2139 srvconns=3 hwmkb=215796 rsskb=214764 t0=1793537267.503264804 t1=1793537302.247977812 temperature:325
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow1 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow0 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow2 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=30430 flow3 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=30430 result mode=ul flows=4 bytes=268435456 ticks=970 srvticks=922 srvconns=3 hwmkb=244964 rsskb=230492 t0=1793537304.443713488 t1=1793537313.980921349 temperature:325
+rep=3 cfg=ss-aes256gcm pid=2141 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193076 rsskb=189784 t0=1793537326.516519104 t1=1793537336.540961809 temperature:325
+rep=3 cfg=ss-aes256gcm pid=2141 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=ss-aes256gcm pid=2141 result mode=dl flows=1 bytes=0 ticks=767 srvticks=187 srvconns=1 hwmkb=195596 rsskb=194860 t0=1793537336.724280350 t1=1793537343.720909098 temperature:325
+rep=3 cfg=ss-aes256gcm pid=2141 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-aes256gcm pid=2141 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-aes256gcm pid=2141 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-aes256gcm pid=2141 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-aes256gcm pid=2141 result mode=dl flows=4 bytes=0 ticks=1045 srvticks=184 srvconns=4 hwmkb=196968 rsskb=194900 t0=1793537345.934545347 t1=1793537353.846515500 temperature:325
+rep=3 cfg=ss-aes256gcm pid=2141 flow0 srvcount=1073741860
+rep=3 cfg=ss-aes256gcm pid=2141 result mode=ul flows=1 bytes=1073741824 ticks=684 srvticks=536 srvconns=1 hwmkb=207012 rsskb=207012 t0=1793537356.024707687 t1=1793537362.129619247 temperature:326
+rep=3 cfg=ss-aes256gcm pid=2141 flow0 srvcount=268435492
+rep=3 cfg=ss-aes256gcm pid=2141 flow1 srvcount=268435492
+rep=3 cfg=ss-aes256gcm pid=2141 flow3 srvcount=268435492
+rep=3 cfg=ss-aes256gcm pid=2141 flow2 srvcount=268435492
+rep=3 cfg=ss-aes256gcm pid=2141 result mode=ul flows=4 bytes=268435456 ticks=753 srvticks=551 srvconns=4 hwmkb=208708 rsskb=205064 t0=1793537364.344793673 t1=1793537368.901854817 temperature:327
+rep=3 cfg=ss-chacha20 pid=6882 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194104 rsskb=189840 t0=1793537381.420641115 t1=1793537391.446719809 temperature:327
+rep=3 cfg=ss-chacha20 pid=6882 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=ss-chacha20 pid=6882 result mode=dl flows=1 bytes=0 ticks=805 srvticks=349 srvconns=1 hwmkb=197184 rsskb=197184 t0=1793537391.644072517 t1=1793537397.983759806 temperature:327
+rep=3 cfg=ss-chacha20 pid=6882 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-chacha20 pid=6882 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-chacha20 pid=6882 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-chacha20 pid=6882 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss-chacha20 pid=6882 result mode=dl flows=4 bytes=0 ticks=1136 srvticks=373 srvconns=4 hwmkb=196716 rsskb=196256 t0=1793537400.188909597 t1=1793537408.416530740 temperature:327
+rep=3 cfg=ss-chacha20 pid=6882 flow0 srvcount=1073741860
+rep=3 cfg=ss-chacha20 pid=6882 result mode=ul flows=1 bytes=1073741824 ticks=696 srvticks=625 srvconns=1 hwmkb=204716 rsskb=200948 t0=1793537410.626231676 t1=1793537417.780700892 temperature:327
+rep=3 cfg=ss-chacha20 pid=6882 flow2 srvcount=268435492
+rep=3 cfg=ss-chacha20 pid=6882 flow0 srvcount=268435492
+rep=3 cfg=ss-chacha20 pid=6882 flow3 srvcount=268435492
+rep=3 cfg=ss-chacha20 pid=6882 flow1 srvcount=268435492
+rep=3 cfg=ss-chacha20 pid=6882 result mode=ul flows=4 bytes=268435456 ticks=782 srvticks=644 srvconns=4 hwmkb=208052 rsskb=208052 t0=1793537419.982604694 t1=1793537424.648588442 temperature:327
+rep=3 cfg=ss2022-aes256 pid=9781 result mode=idle flows=0 bytes=10 ticks=7 srvticks=0 srvconns=0 hwmkb=193764 rsskb=190212 t0=1793537437.170281041 t1=1793537447.201105725 temperature:328
+rep=3 cfg=ss2022-aes256 pid=9781 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=ss2022-aes256 pid=9781 result mode=dl flows=1 bytes=0 ticks=769 srvticks=178 srvconns=1 hwmkb=195908 rsskb=195908 t0=1793537447.394284110 t1=1793537454.409829576 temperature:328
+rep=3 cfg=ss2022-aes256 pid=9781 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss2022-aes256 pid=9781 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss2022-aes256 pid=9781 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss2022-aes256 pid=9781 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=ss2022-aes256 pid=9781 result mode=dl flows=4 bytes=0 ticks=1032 srvticks=172 srvconns=4 hwmkb=196960 rsskb=196268 t0=1793537456.608280669 t1=1793537464.524584468 temperature:328
+rep=3 cfg=ss2022-aes256 pid=9781 flow0 srvcount=1073741860
+rep=3 cfg=ss2022-aes256 pid=9781 result mode=ul flows=1 bytes=1073741824 ticks=644 srvticks=513 srvconns=1 hwmkb=206364 rsskb=206364 t0=1793537466.705948426 t1=1793537472.594898059 temperature:328
+rep=3 cfg=ss2022-aes256 pid=9781 flow1 srvcount=268435492
+rep=3 cfg=ss2022-aes256 pid=9781 flow0 srvcount=268435492
+rep=3 cfg=ss2022-aes256 pid=9781 flow2 srvcount=268435492
+rep=3 cfg=ss2022-aes256 pid=9781 flow3 srvcount=268435492
+rep=3 cfg=ss2022-aes256 pid=9781 result mode=ul flows=4 bytes=268435456 ticks=598 srvticks=444 srvconns=4 hwmkb=207096 rsskb=205888 t0=1793537474.800999985 t1=1793537479.254522952 temperature:328
+rep=3 cfg=trojan-tls pid=12478 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193600 rsskb=189548 t0=1793537491.777448208 t1=1793537501.805959506 temperature:328
+rep=3 cfg=trojan-tls pid=12478 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=trojan-tls pid=12478 result mode=dl flows=1 bytes=0 ticks=780 srvticks=183 srvconns=1 hwmkb=198040 rsskb=196912 t0=1793537501.995235964 t1=1793537509.247456587 temperature:328
+rep=3 cfg=trojan-tls pid=12478 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=trojan-tls pid=12478 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=trojan-tls pid=12478 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=trojan-tls pid=12478 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=trojan-tls pid=12478 result mode=dl flows=4 bytes=0 ticks=1022 srvticks=176 srvconns=4 hwmkb=199852 rsskb=196740 t0=1793537511.433915336 t1=1793537519.297907677 temperature:328
+rep=3 cfg=trojan-tls pid=12478 flow0 srvcount=1073741860
+rep=3 cfg=trojan-tls pid=12478 result mode=ul flows=1 bytes=1073741824 ticks=772 srvticks=576 srvconns=1 hwmkb=206868 rsskb=206868 t0=1793537521.500409655 t1=1793537527.403214549 temperature:328
+rep=3 cfg=trojan-tls pid=12478 flow0 srvcount=268435492
+rep=3 cfg=trojan-tls pid=12478 flow1 srvcount=268435492
+rep=3 cfg=trojan-tls pid=12478 flow2 srvcount=268435492
+rep=3 cfg=trojan-tls pid=12478 flow3 srvcount=268435492
+rep=3 cfg=trojan-tls pid=12478 result mode=ul flows=4 bytes=268435456 ticks=617 srvticks=456 srvconns=4 hwmkb=210312 rsskb=207540 t0=1793537529.590482933 t1=1793537534.062700171 temperature:329
+rep=3 cfg=vless-raw pid=14448 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=193204 rsskb=189080 t0=1793537546.596514020 t1=1793537556.624718860 temperature:330
+rep=3 cfg=vless-raw pid=14448 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=vless-raw pid=14448 result mode=dl flows=1 bytes=0 ticks=713 srvticks=79 srvconns=1 hwmkb=195896 rsskb=195896 t0=1793537556.818914433 t1=1793537564.276730784 temperature:330
+rep=3 cfg=vless-raw pid=14448 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=14448 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=14448 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=14448 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=14448 result mode=dl flows=4 bytes=0 ticks=918 srvticks=79 srvconns=4 hwmkb=195628 rsskb=194796 t0=1793537566.484305940 t1=1793537573.931309791 temperature:330
+rep=3 cfg=vless-raw pid=14448 flow0 srvcount=1073741860
+rep=3 cfg=vless-raw pid=14448 result mode=ul flows=1 bytes=1073741824 ticks=667 srvticks=254 srvconns=1 hwmkb=202984 rsskb=202168 t0=1793537576.147445572 t1=1793537581.577341038 temperature:330
+rep=3 cfg=vless-raw pid=14448 flow0 srvcount=268435492
+rep=3 cfg=vless-raw pid=14448 flow2 srvcount=268435492
+rep=3 cfg=vless-raw pid=14448 flow1 srvcount=268435492
+rep=3 cfg=vless-raw pid=14448 flow3 srvcount=268435492
+rep=3 cfg=vless-raw pid=14448 result mode=ul flows=4 bytes=268435456 ticks=499 srvticks=254 srvconns=4 hwmkb=206160 rsskb=204956 t0=1793537583.773091506 t1=1793537587.642817494 temperature:330
+rep=3 cfg=vless-mux pid=16259 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193308 rsskb=189392 t0=1793537600.171023375 t1=1793537610.196710350 temperature:330
+rep=3 cfg=vless-mux pid=16259 flow0 md5=e39b27f23c278185793fb8dd04f437cc  -
+rep=3 cfg=vless-mux pid=16259 result mode=dl flows=1 bytes=0 ticks=6 srvticks=2 srvconns=1 hwmkb=193308 rsskb=190804 t0=1793537610.369317902 t1=1793537611.414985454 temperature:330
+rep=3 cfg=vless-mux pid=16259 flow3 md5=80c9f3c4c44cd6012caacc6e829ab935  -
+rep=3 cfg=vless-mux pid=16259 flow2 md5=35fb26791f50e723d713f04d11c2dc7a  -
+rep=3 cfg=vless-mux pid=16259 flow1 md5=59f4da818790f854a59e5868d136cba3  -
+rep=3 cfg=vless-mux pid=16259 flow0 md5=fc0418afeba826a80d97eef93ea74430  -
+rep=3 cfg=vless-mux pid=16259 result mode=dl flows=4 bytes=0 ticks=4 srvticks=2 srvconns=1 hwmkb=193308 rsskb=191760 t0=1793537613.616629099 t1=1793537614.683791182 temperature:330
+rep=3 cfg=vless-mux pid=16259 flow0 srvcount=1073741860
+rep=3 cfg=vless-mux pid=16259 result mode=ul flows=1 bytes=1073741824 ticks=905 srvticks=624 srvconns=1 hwmkb=202364 rsskb=202364 t0=1793537616.878129046 t1=1793537622.245202012 temperature:330
+rep=3 cfg=vless-mux pid=16259 flow0 srvcount=268435492
+rep=3 cfg=vless-mux pid=16259 flow1 srvcount=268435492
+rep=3 cfg=vless-mux pid=16259 flow2 srvcount=268435492
+rep=3 cfg=vless-mux pid=16259 flow3 srvcount=268435492
+rep=3 cfg=vless-mux pid=16259 result mode=ul flows=4 bytes=268435456 ticks=535 srvticks=401 srvconns=1 hwmkb=208948 rsskb=208948 t0=1793537624.444332689 t1=1793537627.735246594 temperature:330
+rep=3 cfg=reality-vision pid=17035 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193452 rsskb=189576 t0=1793537640.283796953 t1=1793537650.313553564 temperature:330
+rep=3 cfg=reality-vision pid=17035 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=reality-vision pid=17035 result mode=dl flows=1 bytes=0 ticks=774 srvticks=151 srvconns=1 hwmkb=198200 rsskb=198200 t0=1793537650.490955335 t1=1793537657.860978093 temperature:331
+rep=3 cfg=reality-vision pid=17035 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=reality-vision pid=17035 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=reality-vision pid=17035 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=reality-vision pid=17035 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=reality-vision pid=17035 result mode=dl flows=4 bytes=0 ticks=1033 srvticks=151 srvconns=4 hwmkb=199764 rsskb=198488 t0=1793537660.085630123 t1=1793537668.320945589 temperature:331
+rep=3 cfg=reality-vision pid=17035 flow0 srvcount=1073741860
+rep=3 cfg=reality-vision pid=17035 result mode=ul flows=1 bytes=1073741824 ticks=1059 srvticks=403 srvconns=1 hwmkb=203900 rsskb=201004 t0=1793537670.525402359 t1=1793537678.225078814 temperature:332
+rep=3 cfg=reality-vision pid=17035 flow2 srvcount=268435492
+rep=3 cfg=reality-vision pid=17035 flow1 srvcount=268435492
+rep=3 cfg=reality-vision pid=17035 flow3 srvcount=268435492
+rep=3 cfg=reality-vision pid=17035 flow0 srvcount=268435492
+rep=3 cfg=reality-vision pid=17035 result mode=ul flows=4 bytes=268435456 ticks=578 srvticks=349 srvconns=4 hwmkb=210884 rsskb=206836 t0=1793537680.420668761 t1=1793537684.869773343 temperature:332
+rep=4 cfg=ss-aes256gcm pid=18893 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=193092 rsskb=189076 t0=1793537697.394599952 t1=1793537707.418211719 temperature:332
+rep=4 cfg=ss-aes256gcm pid=18893 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=ss-aes256gcm pid=18893 result mode=dl flows=1 bytes=0 ticks=771 srvticks=185 srvconns=1 hwmkb=195088 rsskb=195088 t0=1793537707.619908959 t1=1793537714.677036717 temperature:332
+rep=4 cfg=ss-aes256gcm pid=18893 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-aes256gcm pid=18893 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-aes256gcm pid=18893 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-aes256gcm pid=18893 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-aes256gcm pid=18893 result mode=dl flows=4 bytes=0 ticks=1052 srvticks=189 srvconns=4 hwmkb=196512 rsskb=196236 t0=1793537716.870067393 t1=1793537724.902794890 temperature:332
+rep=4 cfg=ss-aes256gcm pid=18893 flow0 srvcount=1073741860
+rep=4 cfg=ss-aes256gcm pid=18893 result mode=ul flows=1 bytes=1073741824 ticks=652 srvticks=497 srvconns=1 hwmkb=203096 rsskb=203096 t0=1793537727.116425462 t1=1793537732.565562699 temperature:332
+rep=4 cfg=ss-aes256gcm pid=18893 flow1 srvcount=268435492
+rep=4 cfg=ss-aes256gcm pid=18893 flow3 srvcount=268435492
+rep=4 cfg=ss-aes256gcm pid=18893 flow0 srvcount=268435492
+rep=4 cfg=ss-aes256gcm pid=18893 flow2 srvcount=268435492
+rep=4 cfg=ss-aes256gcm pid=18893 result mode=ul flows=4 bytes=268435456 ticks=698 srvticks=500 srvconns=4 hwmkb=207392 rsskb=204052 t0=1793537734.761866240 t1=1793537739.193455301 temperature:333
+rep=4 cfg=ss-chacha20 pid=21041 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193572 rsskb=189480 t0=1793537751.709034515 t1=1793537761.736131282 temperature:333
+rep=4 cfg=ss-chacha20 pid=21041 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=ss-chacha20 pid=21041 result mode=dl flows=1 bytes=0 ticks=812 srvticks=349 srvconns=1 hwmkb=195560 rsskb=195560 t0=1793537761.918053678 t1=1793537768.324624196 temperature:333
+rep=4 cfg=ss-chacha20 pid=21041 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-chacha20 pid=21041 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-chacha20 pid=21041 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-chacha20 pid=21041 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss-chacha20 pid=21041 result mode=dl flows=4 bytes=0 ticks=1112 srvticks=369 srvconns=4 hwmkb=197800 rsskb=193296 t0=1793537770.544576904 t1=1793537778.690018463 temperature:333
+rep=4 cfg=ss-chacha20 pid=21041 flow0 srvcount=1073741860
+rep=4 cfg=ss-chacha20 pid=21041 result mode=ul flows=1 bytes=1073741824 ticks=700 srvticks=640 srvconns=1 hwmkb=204552 rsskb=204552 t0=1793537780.884764764 t1=1793537788.719807418 temperature:333
+rep=4 cfg=ss-chacha20 pid=21041 flow2 srvcount=268435492
+rep=4 cfg=ss-chacha20 pid=21041 flow0 srvcount=268435492
+rep=4 cfg=ss-chacha20 pid=21041 flow3 srvcount=268435492
+rep=4 cfg=ss-chacha20 pid=21041 flow1 srvcount=268435492
+rep=4 cfg=ss-chacha20 pid=21041 result mode=ul flows=4 bytes=268435456 ticks=738 srvticks=619 srvconns=4 hwmkb=208596 rsskb=206372 t0=1793537790.913874656 t1=1793537795.751936321 temperature:333
+rep=4 cfg=ss2022-aes256 pid=23654 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193552 rsskb=189584 t0=1793537808.309974962 t1=1793537818.341109906 temperature:333
+rep=4 cfg=ss2022-aes256 pid=23654 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=ss2022-aes256 pid=23654 result mode=dl flows=1 bytes=0 ticks=779 srvticks=178 srvconns=1 hwmkb=196308 rsskb=196308 t0=1793537818.539223708 t1=1793537825.713511466 temperature:333
+rep=4 cfg=ss2022-aes256 pid=23654 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss2022-aes256 pid=23654 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss2022-aes256 pid=23654 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss2022-aes256 pid=23654 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=ss2022-aes256 pid=23654 result mode=dl flows=4 bytes=0 ticks=1017 srvticks=175 srvconns=4 hwmkb=196828 rsskb=195956 t0=1793537827.933084330 t1=1793537835.755696150 temperature:334
+rep=4 cfg=ss2022-aes256 pid=23654 flow0 srvcount=1073741860
+rep=4 cfg=ss2022-aes256 pid=23654 result mode=ul flows=1 bytes=1073741824 ticks=672 srvticks=532 srvconns=1 hwmkb=205756 rsskb=205756 t0=1793537837.969043076 t1=1793537843.672737240 temperature:334
+rep=4 cfg=ss2022-aes256 pid=23654 flow2 srvcount=268435492
+rep=4 cfg=ss2022-aes256 pid=23654 flow3 srvcount=268435492
+rep=4 cfg=ss2022-aes256 pid=23654 flow1 srvcount=268435492
+rep=4 cfg=ss2022-aes256 pid=23654 flow0 srvcount=268435492
+rep=4 cfg=ss2022-aes256 pid=23654 result mode=ul flows=4 bytes=268435456 ticks=596 srvticks=448 srvconns=4 hwmkb=208048 rsskb=206356 t0=1793537845.841328490 t1=1793537850.466280884 temperature:334
+rep=4 cfg=trojan-tls pid=26453 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=192548 rsskb=189108 t0=1793537863.061899420 t1=1793537873.092761240 temperature:334
+rep=4 cfg=trojan-tls pid=26453 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=trojan-tls pid=26453 result mode=dl flows=1 bytes=0 ticks=771 srvticks=176 srvconns=1 hwmkb=198168 rsskb=198168 t0=1793537873.278975979 t1=1793537880.585395664 temperature:334
+rep=4 cfg=trojan-tls pid=26453 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=trojan-tls pid=26453 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=trojan-tls pid=26453 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=trojan-tls pid=26453 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=trojan-tls pid=26453 result mode=dl flows=4 bytes=0 ticks=987 srvticks=174 srvconns=4 hwmkb=198108 rsskb=195964 t0=1793537882.817036080 t1=1793537890.536171598 temperature:334
+rep=4 cfg=trojan-tls pid=26453 flow0 srvcount=1073741860
+rep=4 cfg=trojan-tls pid=26453 result mode=ul flows=1 bytes=1073741824 ticks=695 srvticks=525 srvconns=1 hwmkb=204872 rsskb=203364 t0=1793537892.742279253 t1=1793537898.373501282 temperature:335
+rep=4 cfg=trojan-tls pid=26453 flow1 srvcount=268435492
+rep=4 cfg=trojan-tls pid=26453 flow0 srvcount=268435492
+rep=4 cfg=trojan-tls pid=26453 flow2 srvcount=268435492
+rep=4 cfg=trojan-tls pid=26453 flow3 srvcount=268435492
+rep=4 cfg=trojan-tls pid=26453 result mode=ul flows=4 bytes=268435456 ticks=531 srvticks=407 srvconns=4 hwmkb=209044 rsskb=206416 t0=1793537900.583362375 t1=1793537904.782240186 temperature:335
+rep=4 cfg=vless-raw pid=28492 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=192980 rsskb=189036 t0=1793537917.366602212 t1=1793537927.394914448 temperature:336
+rep=4 cfg=vless-raw pid=28492 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=vless-raw pid=28492 result mode=dl flows=1 bytes=0 ticks=713 srvticks=78 srvconns=1 hwmkb=194748 rsskb=194748 t0=1793537927.594125385 t1=1793537935.005567206 temperature:336
+rep=4 cfg=vless-raw pid=28492 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=vless-raw pid=28492 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=vless-raw pid=28492 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=vless-raw pid=28492 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=vless-raw pid=28492 result mode=dl flows=4 bytes=0 ticks=938 srvticks=79 srvconns=4 hwmkb=195436 rsskb=194616 t0=1793537937.227742413 t1=1793537944.734086994 temperature:336
+rep=4 cfg=vless-raw pid=28492 flow0 srvcount=1073741860
+rep=4 cfg=vless-raw pid=28492 result mode=ul flows=1 bytes=1073741824 ticks=660 srvticks=252 srvconns=1 hwmkb=202276 rsskb=201576 t0=1793537946.945032826 t1=1793537952.290096991 temperature:336
+rep=4 cfg=vless-raw pid=28492 flow0 srvcount=268435492
+rep=4 cfg=vless-raw pid=28492 flow1 srvcount=268435492
+rep=4 cfg=vless-raw pid=28492 flow2 srvcount=268435492
+rep=4 cfg=vless-raw pid=28492 flow3 srvcount=268435492
+rep=4 cfg=vless-raw pid=28492 result mode=ul flows=4 bytes=268435456 ticks=488 srvticks=254 srvconns=4 hwmkb=206088 rsskb=203732 t0=1793537954.509325531 t1=1793537958.396911467 temperature:336
+rep=4 cfg=vless-mux pid=31166 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193468 rsskb=189288 t0=1793537971.004468390 t1=1793537981.031644011 temperature:336
+rep=4 cfg=vless-mux pid=31166 flow0 md5=7a16b0308c6cf5e627a8f44a986a60d2  -
+rep=4 cfg=vless-mux pid=31166 result mode=dl flows=1 bytes=0 ticks=2 srvticks=0 srvconns=1 hwmkb=193468 rsskb=190284 t0=1793537981.226078594 t1=1793537982.269648073 temperature:336
+rep=4 cfg=vless-mux pid=31166 flow1 md5=80c9f3c4c44cd6012caacc6e829ab935  -
+rep=4 cfg=vless-mux pid=31166 flow3 md5=1aca77e2188f52a62674fe8a873bdaba  -
+rep=4 cfg=vless-mux pid=31166 flow2 md5=c732877313b5d1f756829298c582e151  -
+rep=4 cfg=vless-mux pid=31166 flow0 md5=b661cf85f961d4f55f2a6f63d87ab1f0  -
+rep=4 cfg=vless-mux pid=31166 result mode=dl flows=4 bytes=0 ticks=4 srvticks=2 srvconns=1 hwmkb=193468 rsskb=191648 t0=1793537984.469551562 t1=1793537985.533042915 temperature:336
+rep=4 cfg=vless-mux pid=31166 flow0 srvcount=1073741860
+rep=4 cfg=vless-mux pid=31166 result mode=ul flows=1 bytes=1073741824 ticks=773 srvticks=535 srvconns=1 hwmkb=201616 rsskb=201632 t0=1793537987.725054269 t1=1793537992.331970100 temperature:336
+rep=4 cfg=vless-mux pid=31166 flow0 srvcount=268435492
+rep=4 cfg=vless-mux pid=31166 flow2 srvcount=268435492
+rep=4 cfg=vless-mux pid=31166 flow3 srvcount=268435492
+rep=4 cfg=vless-mux pid=31166 flow1 srvcount=268435492
+rep=4 cfg=vless-mux pid=31166 result mode=ul flows=4 bytes=268435456 ticks=480 srvticks=385 srvconns=1 hwmkb=208400 rsskb=208400 t0=1793537994.559871454 t1=1793537997.869034161 temperature:336
+rep=4 cfg=reality-vision pid=32678 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193504 rsskb=189240 t0=1793538010.467267281 t1=1793538020.497516600 temperature:336
+rep=4 cfg=reality-vision pid=32678 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=reality-vision pid=32678 result mode=dl flows=1 bytes=0 ticks=780 srvticks=158 srvconns=1 hwmkb=199140 rsskb=199140 t0=1793538020.692358319 t1=1793538028.050886128 temperature:336
+rep=4 cfg=reality-vision pid=32678 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=reality-vision pid=32678 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=reality-vision pid=32678 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=reality-vision pid=32678 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=reality-vision pid=32678 result mode=dl flows=4 bytes=0 ticks=1058 srvticks=149 srvconns=4 hwmkb=200160 rsskb=199648 t0=1793538030.262461440 t1=1793538038.624890864 temperature:336
+rep=4 cfg=reality-vision pid=32678 flow0 srvcount=1073741860
+rep=4 cfg=reality-vision pid=32678 result mode=ul flows=1 bytes=1073741824 ticks=1054 srvticks=405 srvconns=1 hwmkb=205284 rsskb=202520 t0=1793538040.818440238 t1=1793538048.586681693 temperature:337
+rep=4 cfg=reality-vision pid=32678 flow0 srvcount=268435492
+rep=4 cfg=reality-vision pid=32678 flow1 srvcount=268435492
+rep=4 cfg=reality-vision pid=32678 flow2 srvcount=268435492
+rep=4 cfg=reality-vision pid=32678 flow3 srvcount=268435492
+rep=4 cfg=reality-vision pid=32678 result mode=ul flows=4 bytes=268435456 ticks=622 srvticks=360 srvconns=4 hwmkb=210776 rsskb=207404 t0=1793538050.800924818 t1=1793538055.260646378 temperature:337
+rep=4 cfg=xhttp-tls-h2 pid=4431 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=193456 rsskb=189580 t0=1793538067.868506009 t1=1793538077.901114755 temperature:337
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=4 cfg=xhttp-tls-h2 pid=4431 result mode=dl flows=1 bytes=0 ticks=1072 srvticks=552 srvconns=1 hwmkb=204160 rsskb=204160 t0=1793538078.118605901 t1=1793538085.065128502 temperature:337
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=4 cfg=xhttp-tls-h2 pid=4431 result mode=dl flows=4 bytes=0 ticks=1439 srvticks=567 srvconns=3 hwmkb=212756 rsskb=202520 t0=1793538087.291040533 t1=1793538096.152915998 temperature:337
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow0 srvcount=1073741860
+rep=4 cfg=xhttp-tls-h2 pid=4431 result mode=ul flows=1 bytes=1073741824 ticks=2020 srvticks=2135 srvconns=3 hwmkb=215652 rsskb=213984 t0=1793538098.372856414 t1=1793538133.165930515 temperature:337
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow2 srvcount=268435492
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow1 srvcount=268435492
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow0 srvcount=268435492
+rep=4 cfg=xhttp-tls-h2 pid=4431 flow3 srvcount=268435492
+rep=4 cfg=xhttp-tls-h2 pid=4431 result mode=ul flows=4 bytes=268435456 ticks=917 srvticks=902 srvconns=3 hwmkb=242284 rsskb=231400 t0=1793538135.380462754 t1=1793538144.919303532 temperature:337
+rep=5 cfg=ss-chacha20 pid=9361 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193164 rsskb=189680 t0=1793538157.500665610 t1=1793538167.528384617 temperature:337
+rep=5 cfg=ss-chacha20 pid=9361 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=ss-chacha20 pid=9361 result mode=dl flows=1 bytes=0 ticks=818 srvticks=356 srvconns=1 hwmkb=195712 rsskb=195712 t0=1793538167.729276856 t1=1793538174.632218104 temperature:338
+rep=5 cfg=ss-chacha20 pid=9361 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-chacha20 pid=9361 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-chacha20 pid=9361 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-chacha20 pid=9361 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-chacha20 pid=9361 result mode=dl flows=4 bytes=0 ticks=1206 srvticks=374 srvconns=4 hwmkb=197384 rsskb=196996 t0=1793538176.828975915 t1=1793538185.660253412 temperature:338
+rep=5 cfg=ss-chacha20 pid=9361 flow0 srvcount=1073741860
+rep=5 cfg=ss-chacha20 pid=9361 result mode=ul flows=1 bytes=1073741824 ticks=711 srvticks=656 srvconns=1 hwmkb=205916 rsskb=205368 t0=1793538187.874111536 t1=1793538195.774910283 temperature:338
+rep=5 cfg=ss-chacha20 pid=9361 flow1 srvcount=268435492
+rep=5 cfg=ss-chacha20 pid=9361 flow3 srvcount=268435492
+rep=5 cfg=ss-chacha20 pid=9361 flow2 srvcount=268435492
+rep=5 cfg=ss-chacha20 pid=9361 flow0 srvcount=268435492
+rep=5 cfg=ss-chacha20 pid=9361 result mode=ul flows=4 bytes=268435456 ticks=854 srvticks=656 srvconns=4 hwmkb=207536 rsskb=205976 t0=1793538198.017940959 t1=1793538202.887509655 temperature:338
+rep=5 cfg=ss2022-aes256 pid=12139 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=193436 rsskb=189524 t0=1793538215.349060119 t1=1793538225.383847824 temperature:338
+rep=5 cfg=ss2022-aes256 pid=12139 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=ss2022-aes256 pid=12139 result mode=dl flows=1 bytes=0 ticks=767 srvticks=177 srvconns=1 hwmkb=195732 rsskb=195300 t0=1793538225.564972043 t1=1793538232.595846363 temperature:338
+rep=5 cfg=ss2022-aes256 pid=12139 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss2022-aes256 pid=12139 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss2022-aes256 pid=12139 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss2022-aes256 pid=12139 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss2022-aes256 pid=12139 result mode=dl flows=4 bytes=0 ticks=1119 srvticks=174 srvconns=4 hwmkb=197080 rsskb=196512 t0=1793538234.782677091 t1=1793538243.329667036 temperature:338
+rep=5 cfg=ss2022-aes256 pid=12139 flow0 srvcount=1073741860
+rep=5 cfg=ss2022-aes256 pid=12139 result mode=ul flows=1 bytes=1073741824 ticks=747 srvticks=583 srvconns=1 hwmkb=204500 rsskb=204500 t0=1793538245.514341202 t1=1793538251.093429533 temperature:338
+rep=5 cfg=ss2022-aes256 pid=12139 flow0 srvcount=268435492
+rep=5 cfg=ss2022-aes256 pid=12139 flow1 srvcount=268435492
+rep=5 cfg=ss2022-aes256 pid=12139 flow2 srvcount=268435492
+rep=5 cfg=ss2022-aes256 pid=12139 flow3 srvcount=268435492
+rep=5 cfg=ss2022-aes256 pid=12139 result mode=ul flows=4 bytes=268435456 ticks=733 srvticks=499 srvconns=4 hwmkb=208108 rsskb=205208 t0=1793538253.289606928 t1=1793538257.780301405 temperature:338
+rep=5 cfg=trojan-tls pid=14161 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=193280 rsskb=189212 t0=1793538270.270528432 t1=1793538280.296272334 temperature:338
+rep=5 cfg=trojan-tls pid=14161 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=trojan-tls pid=14161 result mode=dl flows=1 bytes=0 ticks=772 srvticks=188 srvconns=1 hwmkb=200164 rsskb=200164 t0=1793538280.497031709 t1=1793538287.783461133 temperature:338
+rep=5 cfg=trojan-tls pid=14161 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=trojan-tls pid=14161 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=trojan-tls pid=14161 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=trojan-tls pid=14161 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=trojan-tls pid=14161 result mode=dl flows=4 bytes=0 ticks=1075 srvticks=174 srvconns=4 hwmkb=199536 rsskb=198168 t0=1793538289.977020716 t1=1793538298.290286390 temperature:339
+rep=5 cfg=trojan-tls pid=14161 flow0 srvcount=1073741860
+rep=5 cfg=trojan-tls pid=14161 result mode=ul flows=1 bytes=1073741824 ticks=783 srvticks=581 srvconns=1 hwmkb=205516 rsskb=205304 t0=1793538300.497289410 t1=1793538306.397245710 temperature:339
+rep=5 cfg=trojan-tls pid=14161 flow3 srvcount=268435492
+rep=5 cfg=trojan-tls pid=14161 flow1 srvcount=268435492
+rep=5 cfg=trojan-tls pid=14161 flow2 srvcount=268435492
+rep=5 cfg=trojan-tls pid=14161 flow0 srvcount=268435492
+rep=5 cfg=trojan-tls pid=14161 result mode=ul flows=4 bytes=268435456 ticks=697 srvticks=505 srvconns=4 hwmkb=210636 rsskb=206836 t0=1793538308.594275969 t1=1793538312.995909561 temperature:339
+rep=5 cfg=vless-raw pid=16100 result mode=idle flows=0 bytes=10 ticks=7 srvticks=0 srvconns=0 hwmkb=194852 rsskb=190440 t0=1793538325.542469713 t1=1793538335.574175751 temperature:339
+rep=5 cfg=vless-raw pid=16100 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=vless-raw pid=16100 result mode=dl flows=1 bytes=0 ticks=733 srvticks=83 srvconns=1 hwmkb=197460 rsskb=197460 t0=1793538335.779883094 t1=1793538343.328026112 temperature:339
+rep=5 cfg=vless-raw pid=16100 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=vless-raw pid=16100 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=vless-raw pid=16100 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=vless-raw pid=16100 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=vless-raw pid=16100 result mode=dl flows=4 bytes=0 ticks=1006 srvticks=79 srvconns=4 hwmkb=197192 rsskb=196988 t0=1793538345.514286736 t1=1793538353.603961265 temperature:340
+rep=5 cfg=vless-raw pid=16100 flow0 srvcount=1073741860
+rep=5 cfg=vless-raw pid=16100 result mode=ul flows=1 bytes=1073741824 ticks=652 srvticks=249 srvconns=1 hwmkb=204172 rsskb=203692 t0=1793538355.824498087 t1=1793538360.984378553 temperature:340
+rep=5 cfg=vless-raw pid=16100 flow0 srvcount=268435492
+rep=5 cfg=vless-raw pid=16100 flow1 srvcount=268435492
+rep=5 cfg=vless-raw pid=16100 flow3 srvcount=268435492
+rep=5 cfg=vless-raw pid=16100 flow2 srvcount=268435492
+rep=5 cfg=vless-raw pid=16100 result mode=ul flows=4 bytes=268435456 ticks=539 srvticks=268 srvconns=4 hwmkb=210072 rsskb=205148 t0=1793538363.185928969 t1=1793538367.121429697 temperature:340
+rep=5 cfg=vless-mux pid=17848 result mode=idle flows=0 bytes=10 ticks=7 srvticks=0 srvconns=0 hwmkb=195820 rsskb=191752 t0=1793538379.668290161 t1=1793538389.696466199 temperature:340
+rep=5 cfg=vless-mux pid=17848 flow0 md5=e496bc77e35d5caaec928dbd68ade996  -
+rep=5 cfg=vless-mux pid=17848 result mode=dl flows=1 bytes=0 ticks=3 srvticks=1 srvconns=1 hwmkb=195820 rsskb=193032 t0=1793538389.871100574 t1=1793538390.918896094 temperature:340
+rep=5 cfg=vless-mux pid=17848 flow1 md5=790742fa73920dbf2f7bcb8a171243a8  -
+rep=5 cfg=vless-mux pid=17848 flow2 md5=63eb8cdb8871e1fd24ff711aca7f9f55  -
+rep=5 cfg=vless-mux pid=17848 flow3 md5=05e5a05f373c3da1ae7488a7c2338d37  -
+rep=5 cfg=vless-mux pid=17848 flow0 md5=4756355ac0e07e41ec79da230c41c0ac  -
+rep=5 cfg=vless-mux pid=17848 result mode=dl flows=4 bytes=0 ticks=3 srvticks=2 srvconns=1 hwmkb=195820 rsskb=194236 t0=1793538393.105918020 t1=1793538394.152324687 temperature:340
+rep=5 cfg=vless-mux pid=17848 flow0 srvcount=1073741860
+rep=5 cfg=vless-mux pid=17848 result mode=ul flows=1 bytes=1073741824 ticks=792 srvticks=551 srvconns=1 hwmkb=207092 rsskb=207092 t0=1793538396.341532290 t1=1793538401.835588330 temperature:340
+rep=5 cfg=vless-mux pid=17848 flow3 srvcount=268435492
+rep=5 cfg=vless-mux pid=17848 flow0 srvcount=268435492
+rep=5 cfg=vless-mux pid=17848 flow2 srvcount=268435492
+rep=5 cfg=vless-mux pid=17848 flow1 srvcount=268435492
+rep=5 cfg=vless-mux pid=17848 result mode=ul flows=4 bytes=268435456 ticks=679 srvticks=409 srvconns=1 hwmkb=212828 rsskb=212828 t0=1793538404.056110672 t1=1793538407.486616296 temperature:340
+rep=5 cfg=reality-vision pid=18636 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=195672 rsskb=191640 t0=1793538419.999478375 t1=1793538430.029859256 temperature:340
+rep=5 cfg=reality-vision pid=18636 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=reality-vision pid=18636 result mode=dl flows=1 bytes=0 ticks=782 srvticks=152 srvconns=1 hwmkb=202108 rsskb=202108 t0=1793538430.212633267 t1=1793538437.655477066 temperature:340
+rep=5 cfg=reality-vision pid=18636 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=reality-vision pid=18636 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=reality-vision pid=18636 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=reality-vision pid=18636 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=reality-vision pid=18636 result mode=dl flows=4 bytes=0 ticks=1094 srvticks=149 srvconns=4 hwmkb=201484 rsskb=201344 t0=1793538439.853562534 t1=1793538448.681867947 temperature:340
+rep=5 cfg=reality-vision pid=18636 flow0 srvcount=1073741860
+rep=5 cfg=reality-vision pid=18636 result mode=ul flows=1 bytes=1073741824 ticks=1021 srvticks=418 srvconns=1 hwmkb=206800 rsskb=204480 t0=1793538450.882945238 t1=1793538458.633182110 temperature:340
+rep=5 cfg=reality-vision pid=18636 flow3 srvcount=268435492
+rep=5 cfg=reality-vision pid=18636 flow0 srvcount=268435492
+rep=5 cfg=reality-vision pid=18636 flow2 srvcount=268435492
+rep=5 cfg=reality-vision pid=18636 flow1 srvcount=268435492
+rep=5 cfg=reality-vision pid=18636 result mode=ul flows=4 bytes=268435456 ticks=628 srvticks=352 srvconns=4 hwmkb=212760 rsskb=210600 t0=1793538460.833771536 t1=1793538465.241712107 temperature:340
+rep=5 cfg=xhttp-tls-h2 pid=20754 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=196216 rsskb=192400 t0=1793538477.705840749 t1=1793538487.727839859 temperature:341
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=xhttp-tls-h2 pid=20754 result mode=dl flows=1 bytes=0 ticks=1104 srvticks=565 srvconns=1 hwmkb=208232 rsskb=206996 t0=1793538487.923042932 t1=1793538494.707386680 temperature:341
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=xhttp-tls-h2 pid=20754 result mode=dl flows=4 bytes=0 ticks=1455 srvticks=584 srvconns=3 hwmkb=216676 rsskb=210028 t0=1793538496.906621262 t1=1793538505.728164384 temperature:341
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow0 srvcount=1073741860
+rep=5 cfg=xhttp-tls-h2 pid=20754 result mode=ul flows=1 bytes=1073741824 ticks=2027 srvticks=2128 srvconns=3 hwmkb=221404 rsskb=215180 t0=1793538507.941261935 t1=1793538542.731458588 temperature:341
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow2 srvcount=268435492
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow0 srvcount=268435492
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow1 srvcount=268435492
+rep=5 cfg=xhttp-tls-h2 pid=20754 flow3 srvcount=268435492
+rep=5 cfg=xhttp-tls-h2 pid=20754 result mode=ul flows=4 bytes=268435456 ticks=985 srvticks=852 srvconns=3 hwmkb=243416 rsskb=214488 t0=1793538544.935932442 t1=1793538554.480205667 temperature:341
+rep=5 cfg=ss-aes256gcm pid=24091 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=196608 rsskb=192368 t0=1793538566.990295298 t1=1793538577.019966596 temperature:341
+rep=5 cfg=ss-aes256gcm pid=24091 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=5 cfg=ss-aes256gcm pid=24091 result mode=dl flows=1 bytes=0 ticks=794 srvticks=205 srvconns=1 hwmkb=199060 rsskb=199060 t0=1793538577.201870086 t1=1793538584.638302687 temperature:341
+rep=5 cfg=ss-aes256gcm pid=24091 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-aes256gcm pid=24091 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-aes256gcm pid=24091 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-aes256gcm pid=24091 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=5 cfg=ss-aes256gcm pid=24091 result mode=dl flows=4 bytes=0 ticks=1046 srvticks=190 srvconns=4 hwmkb=199204 rsskb=195496 t0=1793538586.868186540 t1=1793538594.959945495 temperature:341
+rep=5 cfg=ss-aes256gcm pid=24091 flow0 srvcount=1073741860
+rep=5 cfg=ss-aes256gcm pid=24091 result mode=ul flows=1 bytes=1073741824 ticks=768 srvticks=587 srvconns=1 hwmkb=207292 rsskb=207292 t0=1793538597.158601276 t1=1793538602.989477680 temperature:342
+rep=5 cfg=ss-aes256gcm pid=24091 flow1 srvcount=268435492
+rep=5 cfg=ss-aes256gcm pid=24091 flow2 srvcount=268435492
+rep=5 cfg=ss-aes256gcm pid=24091 flow0 srvcount=268435492
+rep=5 cfg=ss-aes256gcm pid=24091 flow3 srvcount=268435492
+rep=5 cfg=ss-aes256gcm pid=24091 result mode=ul flows=4 bytes=268435456 ticks=756 srvticks=535 srvconns=4 hwmkb=210796 rsskb=208224 t0=1793538605.178676012 t1=1793538609.667544240 temperature:342
