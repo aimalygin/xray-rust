@@ -1,5 +1,9 @@
-//! Shared bounded Mux.Cool session ownership. A slow child is reset rather
-//! than blocking the parent's reader or siblings. No application-data replay.
+//! Shared bounded Mux.Cool session ownership. No application-data replay.
+//!
+//! Downlink back-pressure follows Xray-core's client worker: a child whose
+//! receive queue is full pauses the parent's reader until the child drains or
+//! goes away, instead of resetting the child. Like Xray-core, a stalled child
+//! therefore delays its siblings' downlink frames (head-of-line blocking).
 use super::*;
 use bytes::Bytes;
 use std::{
@@ -15,6 +19,9 @@ use xray_proxy::mux::{self as wire, Frame, Status};
 
 const MAX_PARENTS: usize = 4;
 const MAX_CHILDREN_EVER: u16 = 128;
+/// Frames buffered per child and direction (at most 64 KiB of payload). Xray-core
+/// bounds the same downlink by its per-connection buffer policy: 4 KiB on arm64,
+/// 512 KiB on amd64 (`features/policy/policy.go`).
 const CHILD_QUEUE: usize = 8;
 const IDLE: Duration = Duration::from_secs(30);
 
@@ -256,7 +263,12 @@ impl std::fmt::Debug for Parent {
 #[derive(Debug)]
 struct Shared {
     state: Mutex<State>,
+    /// Wakes the writer: new frames, closing or dropped children.
     changed: Notify,
+    /// Wakes a reader paused on a full child: the child drained, ended or
+    /// went away. The reader is the only waiter, so `notify_one` keeps a
+    /// permit for a wake that precedes its wait.
+    drained: Notify,
 }
 #[derive(Debug, Default)]
 struct State {
@@ -293,6 +305,7 @@ impl Parent {
         let shared = Arc::new(Shared {
             state: Mutex::new(State::default()),
             changed: Notify::new(),
+            drained: Notify::new(),
         });
         let driver = shared.clone();
         let task = tokio::spawn(async move {
@@ -392,6 +405,7 @@ impl Shared {
             wake(&mut entry.write_waker);
         }
         self.changed.notify_waiters();
+        self.drained.notify_one();
     }
 }
 #[derive(Debug)]
@@ -415,6 +429,7 @@ impl Drop for Token {
         }
         drop(state);
         shared.changed.notify_one();
+        shared.drained.notify_one();
     }
 }
 #[derive(Debug)]
@@ -440,7 +455,8 @@ impl AsyncRead for Child {
         if out.remaining() == 0 {
             return Poll::Ready(Ok(()));
         }
-        let mut state = lock(&this.token.parent.shared.state);
+        let shared = &this.token.parent.shared;
+        let mut state = lock(&shared.state);
         let entry = state.children.get_mut(&this.token.id).ok_or_else(closed)?;
         if entry.failed {
             return Poll::Ready(Err(closed()));
@@ -457,6 +473,8 @@ impl AsyncRead for Child {
             this.source = packet.source.clone();
             if packet.bytes.is_empty() {
                 entry.rx.pop_front();
+                drop(state);
+                shared.drained.notify_one();
             }
             return Poll::Ready(Ok(()));
         }
@@ -560,7 +578,7 @@ async fn write_loop(
             if state.closed {
                 return Err(closed());
             }
-            // Dropped/overloaded children get control priority. Remaining
+            // Dropped children get control priority. Remaining
             // children get one frame per round-robin visit.
             let priority = state
                 .children
@@ -630,6 +648,8 @@ async fn write_loop(
             if status == Status::End {
                 e.ended = true;
                 e.read_eof = true;
+                // A reader paused on this child now discards its frames.
+                shared.drained.notify_one();
             }
             wake(&mut e.write_waker);
             wake(&mut e.read_waker);
@@ -639,6 +659,45 @@ async fn write_loop(
         }
     }
 }
+/// Applies one downlink frame. `Ok(false)` leaves it unconsumed: its child's
+/// receive queue is full.
+fn deliver(shared: &Shared, frame: Frame<'_>) -> io::Result<bool> {
+    let mut state = lock(&shared.state);
+    if frame.session_id > state.next && frame.status != Status::KeepAlive {
+        return Err(closed());
+    }
+    let Some(e) = state.children.get_mut(&frame.session_id) else {
+        return Ok(true);
+    };
+    match frame.status {
+        Status::Keep if !e.dropped && !e.failed && !e.read_eof => {
+            if let Some(payload) = frame.payload.filter(|p| !p.is_empty()) {
+                if e.rx.len() >= CHILD_QUEUE {
+                    return Ok(false);
+                }
+                e.rx.push_back(Packet {
+                    source: frame.target,
+                    bytes: Bytes::copy_from_slice(payload),
+                });
+            }
+        }
+        Status::End => {
+            e.read_eof = true;
+            e.ended = true;
+            e.tx.clear();
+            if frame.error || e.sent != e.accepted {
+                e.failed = true;
+            }
+        }
+        _ => {}
+    }
+    wake(&mut e.read_waker);
+    wake(&mut e.write_waker);
+    if e.dropped && e.ended {
+        state.children.remove(&frame.session_id);
+    }
+    Ok(true)
+}
 async fn read_loop(
     shared: Arc<Shared>,
     mut stream: tokio::io::ReadHalf<BoxedTransportStream>,
@@ -646,45 +705,14 @@ async fn read_loop(
     let mut bytes = Vec::new();
     loop {
         if let Some((frame, n)) = wire::decode(&bytes)? {
-            let mut state = lock(&shared.state);
-            if frame.session_id > state.next && frame.status != Status::KeepAlive {
-                return Err(closed());
+            if !deliver(&shared, frame)? {
+                // Xray-core blocks its Mux reader on the session pipe
+                // (`handleStatusKeep`). Keep the frame buffered and stop
+                // reading the parent until this child drains, ends or is
+                // dropped, then decode the frame again.
+                shared.drained.notified().await;
+                continue;
             }
-            if let Some(e) = state.children.get_mut(&frame.session_id) {
-                match frame.status {
-                    Status::Keep if !e.dropped && !e.failed && !e.read_eof => {
-                        if let Some(payload) = frame.payload.filter(|p| !p.is_empty()) {
-                            if e.rx.len() >= CHILD_QUEUE {
-                                e.failed = true;
-                                e.closing = true;
-                                e.tx.clear();
-                                e.rx.clear();
-                                shared.changed.notify_one();
-                            } else {
-                                e.rx.push_back(Packet {
-                                    source: frame.target,
-                                    bytes: Bytes::copy_from_slice(payload),
-                                });
-                            }
-                        }
-                    }
-                    Status::End => {
-                        e.read_eof = true;
-                        e.ended = true;
-                        e.tx.clear();
-                        if frame.error || e.sent != e.accepted {
-                            e.failed = true;
-                        }
-                    }
-                    _ => {}
-                }
-                wake(&mut e.read_waker);
-                wake(&mut e.write_waker);
-                if e.dropped && e.ended {
-                    state.children.remove(&frame.session_id);
-                }
-            }
-            drop(state);
             bytes.drain(..n);
         } else {
             let capacity = wire::MAX_FRAME - bytes.len();
@@ -853,65 +881,206 @@ mod tests {
         assert!(lock(&pool.parents).is_empty());
     }
 
-    #[tokio::test]
-    async fn mux_blocked_child_is_reset_without_blocking_siblings_or_control_frames() {
-        timeout(Duration::from_secs(2), async {
+    fn keep(id: u16, payload: &[u8]) -> Vec<u8> {
+        wire::encode(&Frame {
+            session_id: id,
+            status: Status::Keep,
+            error: false,
+            target: None,
+            global_id: None,
+            payload: Some(payload),
+        })
+        .unwrap()
+    }
+    fn end(id: u16) -> Vec<u8> {
+        wire::encode(&Frame {
+            session_id: id,
+            status: Status::End,
+            error: false,
+            target: None,
+            global_id: None,
+            payload: None,
+        })
+        .unwrap()
+    }
+    fn queued(child: &Child) -> Option<usize> {
+        let state = lock(&child.token.parent.shared.state);
+        let entry = state.children.get(&child.token.id)?;
+        assert!(!entry.failed, "a full queue must not fail the child");
+        Some(entry.rx.len())
+    }
+    async fn wait_for_end(peer: &mut DuplexStream, id: u16) {
+        let mut received = Vec::new();
+        loop {
+            let mut chunk = [0; 512];
+            let n = peer.read(&mut chunk).await.unwrap();
+            assert_ne!(n, 0, "parent closed before END");
+            received.extend_from_slice(&chunk[..n]);
+            while let Some((frame, n)) = wire::decode(&received).unwrap() {
+                if frame.status == Status::End && frame.session_id == id {
+                    return;
+                }
+                received.drain(..n);
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn mux_slow_child_backpressures_parent_and_delivers_multi_mib_intact() {
+        use sha2::{Digest, Sha256};
+        const LEN: usize = 4 * 1024 * 1024;
+        let pool = Pool::new(2);
+        let target = destination(RoutingNetwork::Tcp);
+        let (stream, peer) = pair();
+        let mut slow = pool.open(&target, async { Ok(stream) }).await.unwrap();
+        let mut sibling = pool.open(&target, unused()).await.unwrap();
+        slow.flush().await.unwrap();
+        sibling.flush().await.unwrap();
+        let (slow_id, sibling_id) = (slow.token.id, sibling.token.id);
+        let mut seed = 0x6d75_7866_u32;
+        let payload: Vec<u8> = (0..LEN)
+            .map(|_| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (seed >> 24) as u8
+            })
+            .collect();
+        let expected = Sha256::digest(&payload);
+        let (mut peer_read, mut peer_write) = tokio::io::split(peer);
+        let _drain = tokio::spawn(async move {
+            let mut sink = Vec::new();
+            let _ = peer_read.read_to_end(&mut sink).await;
+        });
+        let producer = tokio::spawn(async move {
+            let mut chunks = payload.chunks(wire::MAX_PAYLOAD);
+            for chunk in chunks.by_ref().take(CHILD_QUEUE + 2) {
+                peer_write.write_all(&keep(slow_id, chunk)).await.unwrap();
+            }
+            // Queued behind the stalled child, as in Xray-core.
+            peer_write
+                .write_all(&keep(sibling_id, b"alive"))
+                .await
+                .unwrap();
+            for chunk in chunks {
+                peer_write.write_all(&keep(slow_id, chunk)).await.unwrap();
+            }
+            peer_write.write_all(&end(slow_id)).await.unwrap();
+            peer_write
+        });
+        // The consumer stalls: the old runtime reset the child here.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(queued(&slow), Some(CHILD_QUEUE));
+        let mut alive = [0; 5];
+        assert!(
+            timeout(Duration::from_secs(1), sibling.read_exact(&mut alive))
+                .await
+                .is_err()
+        );
+        let sibling_read = async {
+            sibling.read_exact(&mut alive).await.unwrap();
+            assert_eq!(&alive, b"alive");
+        };
+        let slow_read = async {
+            let mut digest = Sha256::new();
+            let (mut total, mut chunk) = (0, vec![0; 1000]);
+            loop {
+                let n = slow.read(&mut chunk).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                digest.update(&chunk[..n]);
+                total += n;
+                assert!(queued(&slow).unwrap() <= CHILD_QUEUE);
+                if total % (64 * 1024) < n {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
+            assert_eq!(total, LEN);
+            assert_eq!(digest.finalize(), expected);
+        };
+        timeout(Duration::from_secs(30), async {
+            tokio::join!(sibling_read, slow_read);
+        })
+        .await
+        .unwrap();
+        let _peer_write = producer.await.unwrap();
+        assert!(!format!("{pool:?}").contains("example.test"));
+        pool.close();
+        pool.join().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn mux_stalled_child_release_and_parent_close_do_not_deadlock() {
+        timeout(Duration::from_secs(10), async {
             let pool = Pool::new(2);
             let target = destination(RoutingNetwork::Tcp);
             let (stream, mut peer) = pair();
-            let mut slow = pool.open(&target, async { Ok(stream) }).await.unwrap();
-            let mut fast = pool.open(&target, unused()).await.unwrap();
-            slow.flush().await.unwrap();
-            fast.flush().await.unwrap();
-            for _ in 0..=CHILD_QUEUE {
-                peer.write_all(
-                    &wire::encode(&Frame {
-                        session_id: slow.token.id,
-                        status: Status::Keep,
-                        error: false,
-                        target: None,
-                        global_id: None,
-                        payload: Some(&[0x55; 8192]),
-                    })
-                    .unwrap(),
-                )
+            let mut stalled = pool.open(&target, async { Ok(stream) }).await.unwrap();
+            let mut sibling = pool.open(&target, unused()).await.unwrap();
+            stalled.flush().await.unwrap();
+            sibling.flush().await.unwrap();
+            let stalled_id = stalled.token.id;
+            for _ in 0..CHILD_QUEUE + 4 {
+                peer.write_all(&keep(stalled_id, &[0x55; 8192]))
+                    .await
+                    .unwrap();
+            }
+            peer.write_all(&keep(sibling.token.id, b"alive"))
                 .await
                 .unwrap();
-            }
-            peer.write_all(
-                &wire::encode(&Frame {
-                    session_id: fast.token.id,
-                    status: Status::Keep,
-                    error: false,
-                    target: None,
-                    global_id: None,
-                    payload: Some(b"alive"),
-                })
-                .unwrap(),
-            )
-            .await
-            .unwrap();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert_eq!(queued(&stalled), Some(CHILD_QUEUE));
+            // Releasing the stalled child lets the reader discard its frames
+            // and reach the sibling, and the peer learns the child ended.
+            drop(stalled);
             let mut response = [0; 5];
-            fast.read_exact(&mut response).await.unwrap();
+            sibling.read_exact(&mut response).await.unwrap();
             assert_eq!(&response, b"alive");
-            assert!(slow.read_u8().await.is_err());
-            let mut received = Vec::new();
-            loop {
-                let mut chunk = [0; 512];
-                let n = peer.read(&mut chunk).await.unwrap();
-                received.extend_from_slice(&chunk[..n]);
-                let mut ended = false;
-                while let Some((frame, n)) = wire::decode(&received).unwrap() {
-                    ended |= frame.status == Status::End
-                        && frame.session_id == slow.token.id
-                        && frame.error;
-                    received.drain(..n);
-                }
-                if ended {
-                    break;
-                }
+            wait_for_end(&mut peer, stalled_id).await;
+
+            // A child that is never read again cannot hold parent shutdown.
+            let mut stalled = pool.open(&target, unused()).await.unwrap();
+            stalled.flush().await.unwrap();
+            for _ in 0..CHILD_QUEUE + 4 {
+                peer.write_all(&keep(stalled.token.id, &[0x55; 8192]))
+                    .await
+                    .unwrap();
             }
-            assert!(!format!("{pool:?}").contains("example.test"));
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert_eq!(queued(&stalled), Some(CHILD_QUEUE));
+            pool.close();
+            pool.join().await;
+            assert!(stalled.read_u8().await.is_err());
+            assert!(sibling.read_u8().await.is_err());
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn mux_stalled_datagram_child_keeps_every_datagram_and_boundary() {
+        timeout(Duration::from_secs(10), async {
+            let pool = Pool::new(2);
+            let target = destination(RoutingNetwork::Udp);
+            let (stream, mut peer) = pair();
+            let mut child = pool
+                .open_datagram(&target, [7; 8], async { Ok(stream) })
+                .await
+                .unwrap();
+            let datagrams: Vec<Vec<u8>> = (0..CHILD_QUEUE + 4)
+                .map(|i| vec![i as u8; 100 + i * 600])
+                .collect();
+            for datagram in &datagrams {
+                peer.write_all(&keep(child.token.id, datagram))
+                    .await
+                    .unwrap();
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            assert_eq!(queued(&child), Some(CHILD_QUEUE));
+            let mut bytes = vec![0; wire::MAX_PAYLOAD];
+            for datagram in &datagrams {
+                let n = child.read(&mut bytes).await.unwrap();
+                assert_eq!(&bytes[..n], datagram.as_slice());
+            }
             pool.close();
             pool.join().await;
         })

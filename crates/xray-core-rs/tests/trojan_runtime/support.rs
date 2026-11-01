@@ -14,6 +14,8 @@ use xray_core_rs::Core;
 use xray_transport::{TlsConnector, TransportDialer};
 pub const PASSWORD: &str = "synthetic-local-trojan-test-password";
 pub const DEADLINE: Duration = Duration::from_secs(20);
+/// Far longer than sing-box takes from flushing its 101 to the hijack.
+const HTTPUPGRADE_ROUND_TRIP: Duration = Duration::from_millis(10);
 
 pub fn independent_reference() -> bool {
     match std::env::var("XRAY_CLIENT_PROTOCOL_REFERENCE").as_deref() {
@@ -49,6 +51,8 @@ pub struct ReferenceServer {
     pub stream: Value,
     protocol: &'static str,
     settings: Value,
+    /// The delaying hop in front of an independent HTTPUpgrade reference.
+    latency: Option<common::Task>,
 }
 impl ReferenceServer {
     pub async fn start(network: &str) -> Self {
@@ -99,6 +103,17 @@ impl ReferenceServer {
         std::fs::write(directory.join("key.pem"), identity.key_pem).unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
+        // sing-box's HTTPUpgrade server flushes its 101 before it hijacks the
+        // connection and drops the hijacked reader, so the first byte a client
+        // sends in that gap is lost. Over a network the 101 and the client's
+        // reply are a round trip apart; give loopback that round trip rather
+        // than patch the pinned reference.
+        let (client_address, latency) = if independent && network == "httpupgrade" {
+            let (relay, task) = latency_relay(address, HTTPUPGRADE_ROUND_TRIP).await;
+            (relay, Some(task))
+        } else {
+            (address, None)
+        };
         let mut stream = json!({"network":network,"security":"tls","tlsSettings":{"serverName":"localhost","alpn":[if matches!(network,"grpc"|"xhttp") {"h2"} else {"http/1.1"}]}});
         match network {
             "ws" => stream["wsSettings"] = json!({"path":"/trojan"}),
@@ -133,14 +148,14 @@ impl ReferenceServer {
             let server_flow = flow.trim_end_matches("-udp443");
             (
                 "vless",
-                json!({"vnext":[{"address":"bootstrap.example","port":address.port(),"users":[{"id":id,"flow":flow,"encryption":encryption}]}]}),
+                json!({"vnext":[{"address":"bootstrap.example","port":client_address.port(),"users":[{"id":id,"flow":flow,"encryption":encryption}]}]}),
                 json!({"clients":[{"id":id,"flow":server_flow}],"decryption":decryption}),
             )
         } else if let Some((cipher, experiments)) = vmess {
             let id = "00112233-4455-6677-8899-aabbccddeeff";
             (
                 "vmess",
-                json!({"address":"bootstrap.example","port":address.port(),"id":id,"security":cipher,"experiments":experiments}),
+                json!({"address":"bootstrap.example","port":client_address.port(),"id":id,"security":cipher,"experiments":experiments}),
                 json!({"clients":[{"id":id}]}),
             )
         } else if let Some((method, identity)) = shadowsocks {
@@ -165,13 +180,13 @@ impl ReferenceServer {
             }
             (
                 "shadowsocks",
-                json!({"address":"bootstrap.example","port":address.port(),"method":method,"password":password}),
+                json!({"address":"bootstrap.example","port":client_address.port(),"method":method,"password":password}),
                 server,
             )
         } else {
             (
                 "trojan",
-                json!({"address":"bootstrap.example","port":address.port(),"password":PASSWORD}),
+                json!({"address":"bootstrap.example","port":client_address.port(),"password":PASSWORD}),
                 json!({"clients":[{"password":PASSWORD}]}),
             )
         };
@@ -247,11 +262,12 @@ impl ReferenceServer {
         let mut server = Self {
             child,
             directory,
-            address,
+            address: client_address,
             connector,
             stream,
             protocol,
             settings,
+            latency,
         };
         server.wait_ready().await;
         server
@@ -322,6 +338,59 @@ impl ReferenceServer {
             dialer,
         )
     }
+}
+/// A loopback hop to `upstream` that delivers what the server writes `delay`
+/// late, as a network round trip would; the client's bytes pass at once.
+async fn latency_relay(upstream: SocketAddr, delay: Duration) -> (SocketAddr, common::Task) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = common::Task(tokio::spawn(async move {
+        let mut connections = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let (client, _) = accepted.unwrap();
+                    connections.spawn(async move {
+                        let Ok(server) = tokio::net::TcpStream::connect(upstream).await else {
+                            return;
+                        };
+                        let _ = client.set_nodelay(true);
+                        let _ = server.set_nodelay(true);
+                        let (mut client_read, mut client_write) = client.into_split();
+                        let (mut server_read, mut server_write) = server.into_split();
+                        // Stamped on arrival, so latency does not add up per chunk.
+                        let (due, mut delayed) = tokio::sync::mpsc::unbounded_channel();
+                        let downlink = async move {
+                            let mut buffer = vec![0; 16 * 1024];
+                            while let Ok(n @ 1..) = server_read.read(&mut buffer).await {
+                                let at = tokio::time::Instant::now() + delay;
+                                if due.send((at, buffer[..n].to_vec())).is_err() {
+                                    break;
+                                }
+                            }
+                        };
+                        let delivery = async move {
+                            while let Some((at, bytes)) = delayed.recv().await {
+                                tokio::time::sleep_until(at).await;
+                                if client_write.write_all(&bytes).await.is_err() {
+                                    return;
+                                }
+                            }
+                            let _ = client_write.shutdown().await;
+                        };
+                        let uplink = async move {
+                            let _ = tokio::io::copy(&mut client_read, &mut server_write).await;
+                            let _ = server_write.shutdown().await;
+                        };
+                        tokio::join!(downlink, delivery, uplink);
+                    });
+                },
+                _ = connections.join_next(), if !connections.is_empty() => {}
+            }
+        }
+    }));
+    (address, task)
 }
 /// The first (X25519) decryption/encryption pair printed by `xray vlessenc`.
 fn vless_encryption_pair() -> (String, String) {

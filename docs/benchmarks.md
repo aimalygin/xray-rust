@@ -210,6 +210,17 @@ Do not commit to the repository while a `compare` runs: each run records the
 workspace revision and state, and a summary refuses runs whose provenance
 differs ("cannot summarize mixed benchmark provenance").
 
+## Android device protocol comparison, 2026-11-01
+
+The [2026-11-01 OnePlus 15 group](benchmarks/results/2026-11-01-android-oneplus15-protocols/README.md)
+measures host CPU per GiB, throughput and peak RSS of eight client
+configurations through the Android TUN, against Xray-core v26.10.21 on the
+same phone's loopback. It uses `devicehost` with a test-only patch and its own
+adb scripts, not this harness, and an unreleased integration build: `main`
+`fbc0e49f` with eight open pull requests. VLESS + Mux downloads failed in all
+ten runs; the shared Mux runtime resets a child whose queue overflows
+([#138](https://github.com/aimalygin/xray-rust/pull/138)).
+
 ## Historical RC4 publication
 
 The immutable RC4 evidence is the

@@ -1,0 +1,31 @@
+{
+  "log": {"loglevel": "warning", "access": "/data/local/tmp/protob/access.log"},
+  "inbounds": [
+    {"tag": "vless-raw", "listen": "127.0.0.1", "port": 10001, "protocol": "vless",
+     "settings": {"clients": [{"id": "<uuid>"}], "decryption": "none"},
+     "streamSettings": {"network": "raw", "security": "none"}},
+    {"tag": "vless-reality-vision", "listen": "127.0.0.1", "port": 10002, "protocol": "vless",
+     "settings": {"clients": [{"id": "<uuid>", "flow": "xtls-rprx-vision"}], "decryption": "none"},
+     "streamSettings": {"network": "raw", "security": "reality",
+       "realitySettings": {"show": false, "target": "23.210.17.55:443", "serverNames": ["www.apple.com"],
+         "privateKey": "<reality-private-key>", "shortIds": ["e435b025"]}}},
+    {"tag": "vless-xhttp-tls", "listen": "127.0.0.1", "port": 10003, "protocol": "vless",
+     "settings": {"clients": [{"id": "<uuid>"}], "decryption": "none"},
+     "streamSettings": {"network": "xhttp", "security": "tls",
+       "tlsSettings": {"alpn": ["h2"], "certificates": [{"certificateFile": "/data/local/tmp/protob/bench.crt", "keyFile": "/data/local/tmp/protob/bench.key"}]},
+       "xhttpSettings": {"path": "/bench", "mode": "auto"}}},
+    {"tag": "ss-aes-256-gcm", "listen": "127.0.0.1", "port": 10004, "protocol": "shadowsocks",
+     "settings": {"method": "aes-256-gcm", "password": "<ss-password>", "network": "tcp"}},
+    {"tag": "ss-chacha20", "listen": "127.0.0.1", "port": 10005, "protocol": "shadowsocks",
+     "settings": {"method": "chacha20-ietf-poly1305", "password": "<ss-password>", "network": "tcp"}},
+    {"tag": "ss2022-aes", "listen": "127.0.0.1", "port": 10006, "protocol": "shadowsocks",
+     "settings": {"method": "2022-blake3-aes-256-gcm", "password": "<ss2022-base64-key>", "network": "tcp"}},
+    {"tag": "trojan-tls", "listen": "127.0.0.1", "port": 10007, "protocol": "trojan",
+     "settings": {"clients": [{"password": "<trojan-password>"}]},
+     "streamSettings": {"network": "raw", "security": "tls",
+       "tlsSettings": {"alpn": ["http/1.1"], "certificates": [{"certificateFile": "/data/local/tmp/protob/bench.crt", "keyFile": "/data/local/tmp/protob/bench.key"}]}}}
+  ],
+  "outbounds": [
+    {"tag": "to-loopback", "protocol": "freedom", "settings": {"redirect": "127.0.0.1:0", "finalRules": [{"action": "allow", "ip": ["127.0.0.1/32"]}]}}
+  ]
+}

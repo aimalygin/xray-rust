@@ -10,6 +10,25 @@ long-term supported release series.
 
 ## Unreleased
 
+- Mux (Trojan, Shadowsocks 2022, VMess): a child that reads slower than the
+  server sends no longer loses its session. When a child's receive queue was
+  full, the shared runtime reset it, so bulk downloads through a slow local
+  consumer such as the TUN stack ended after a few hundred KiB while the server
+  logged `read/write on closed pipe`. The parent's reader now waits for that
+  child to drain, end or be dropped, as Xray-core's Mux client blocks on the
+  session pipe. Queues stay bounded; like Xray-core, a stalled child delays its
+  siblings' downloads on the same parent until it drains or closes.
+
+- TUN TCP acknowledges client data after handing it to the outbound, so the
+  ACK advertises the drained receive window. The stack ran smoltcp's ingress
+  and egress in one `Interface::poll` and read the sockets only afterwards:
+  the ACK for a full-window burst offered what was left of the 32 KiB window,
+  and the reopened window followed on a later loop turn, up to 1 ms later
+  (tokio timer resolution). Kernel TCP senders (Android `VpnService`, Linux
+  tun, Darwin utun) do not send a partial segment into a window below one MSS,
+  so a window-limited upload stalled on every burst. In an emulation of such a
+  sender, a single upload through a 1500-byte TUN rose from 94 to 636 MiB/s.
+
 - Add classic Shadowsocks AEAD client support (`aes-128-gcm`, `aes-256-gcm`,
   `chacha20-poly1305`, `xchacha20-poly1305` and Xray's aliases such as
   `chacha20-ietf-poly1305`) to the `shadowsocks` outbound, its TCP and native

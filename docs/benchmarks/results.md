@@ -8,6 +8,9 @@
 > [2026-08-31 Xray-core v26.7.28 result group](results/2026-08-31-v26.7.28/README.md).
 > The historical files below are intentionally preserved rather than
 > overwritten or relabelled.
+> Protocol costs through the TUN on a physical Android phone are in the
+> [2026-11-01 OnePlus 15 result group](results/2026-11-01-android-oneplus15-protocols/README.md),
+> measured on an unreleased integration build.
 
 Synthetic localhost comparison of `xray-rust`, Xray-core, and sing-box using
 the process-level [benchmark harness](../benchmarks.md). Each engine runs as

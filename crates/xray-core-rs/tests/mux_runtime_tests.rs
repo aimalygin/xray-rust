@@ -290,3 +290,103 @@ async fn mux_runtime_vless_vision_and_encryption_follow_the_pinned_inbound() {
         .unwrap();
     }
 }
+
+/// Deterministic, non-repeating bytes so reordered or duplicated frames change
+/// the digest.
+fn bulk_payload(len: usize, seed: u64) -> Vec<u8> {
+    let mut state = seed | 1;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state as u8
+        })
+        .collect()
+}
+
+#[tokio::test]
+#[ignore = "requires pinned Xray; run scripts/check-mux-interop.sh"]
+async fn mux_runtime_slow_reader_backpressures_bulk_download_without_reset() {
+    use sha2::{Digest, Sha256};
+    use std::{sync::Arc, time::Duration};
+    use tokio::{io::AsyncWriteExt, net::TcpListener};
+    const LEN: usize = 16 * 1024 * 1024;
+    let payload = Arc::new(bulk_payload(LEN, 0x6d75_7866));
+    let expected = Sha256::digest(payload.as_slice());
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let bulk_port = listener.local_addr().unwrap().port();
+    let server_payload = payload.clone();
+    let _bulk = hysteria_support::Task(tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let payload = server_payload.clone();
+            tokio::spawn(async move {
+                if socket.write_all(&payload).await.is_ok() {
+                    let _ = socket.shutdown().await;
+                }
+            });
+        }
+    }));
+    for protocol in ["trojan", "shadowsocks", "vmess"] {
+        eprintln!("Mux slow reader {protocol}");
+        let server = match protocol {
+            "trojan" => ReferenceServer::start("raw").await,
+            "shadowsocks" => {
+                ReferenceServer::start_shadowsocks("raw", "2022-blake3-aes-128-gcm", false).await
+            }
+            _ => ReferenceServer::start_vmess("raw", "aes-128-gcm", "").await,
+        };
+        timeout(DEADLINE, async {
+            let (tcp_addr, _tcp) = tcp_echo().await;
+            let (_, protector, bootstrap, dialer) = server.core();
+            let mut profile = server.profile();
+            profile["outbounds"][0]["mux"] = serde_json::json!({"enabled":true,"concurrency":8});
+            let config = xray_config::parse_xray_json(&profile.to_string())
+                .unwrap()
+                .config;
+            let mut core = Core::with_runtime_dependencies(config, bootstrap, dialer).unwrap();
+            core.start().await.unwrap();
+            let proxy = core.inbound_addr(Some("socks-in")).unwrap();
+            let (mut sibling, _) = socks(proxy, 1, "localhost", tcp_addr.port()).await;
+            echo(&mut sibling, b"sibling before bulk").await;
+            let (mut slow, _) = socks(proxy, 1, "localhost", bulk_port).await;
+            let (mut fast, _) = socks(proxy, 1, "localhost", bulk_port).await;
+            let slow = async {
+                // Stall long enough for the server to fill every buffer up to
+                // the child queue, then keep reading slower than it sends.
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                let mut digest = Sha256::new();
+                let (mut total, mut chunk) = (0, vec![0; 16 * 1024]);
+                loop {
+                    let n = match slow.read(&mut chunk).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => n,
+                    };
+                    digest.update(&chunk[..n]);
+                    total += n;
+                    if total % (256 * 1024) < n {
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                }
+                (total, digest.finalize())
+            };
+            let fast = async {
+                let mut bytes = Vec::with_capacity(LEN);
+                let _ = fast.read_to_end(&mut bytes).await;
+                (bytes.len(), Sha256::digest(&bytes))
+            };
+            let (slow, fast) = tokio::join!(slow, fast);
+            assert_eq!(slow.0, LEN, "slow child was cut short");
+            assert_eq!(slow.1, expected);
+            assert_eq!(fast.0, LEN, "fast sibling was cut short");
+            assert_eq!(fast.1, expected);
+            echo(&mut sibling, b"sibling after bulk").await;
+            // Every child shared one Mux parent.
+            assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+            core.stop().await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
+}
