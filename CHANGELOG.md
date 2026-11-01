@@ -51,7 +51,9 @@ long-term supported release series.
   excluded the configured servers (as in an imported wg-quick profile with
   `DNS` outside `AllowedIPs`) made every domain destination fail with no route,
   reported only as "all configured DNS servers are unavailable". A failed
-  tunnel query still never falls back to host DNS.
+  tunnel query still never falls back to host DNS. The parser warns at
+  `remoteDNS` when no server is routable, and profile import accepts that
+  warning, since the profile is what the wg-quick file asked for.
 
 - Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
   uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2

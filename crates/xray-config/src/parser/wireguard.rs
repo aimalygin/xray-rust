@@ -146,6 +146,13 @@ impl Parser<'_> {
             } else {
                 remote_dns
             };
+            if !remote_dns
+                .iter()
+                .any(|ip| tunnel_routes(&peers, &addresses, *ip))
+            {
+                self.warning(format!("{path}.remoteDNS"),
+                    "no remoteDNS server is routable through the tunnel (covered by a peer's allowedIPs, with a local address of its family); destination domains resolve with the caller's DNS outside the tunnel");
+            }
             if settings.get("domainStrategy").is_some() {
                 self.warning(format!("{path}.domainStrategy"),
                     "legacy WireGuard domainStrategy is retained only for address-family selection; destination DNS now uses remoteDNS through the tunnel");
@@ -178,6 +185,17 @@ impl Parser<'_> {
         }
         parsed
     }
+}
+/// The runtime's test for sending DNS through the tunnel: a peer covers the
+/// server and the device has a local address of its family.
+fn tunnel_routes(peers: &[WireguardPeerSettings], addresses: &[IpAddr], ip: IpAddr) -> bool {
+    addresses
+        .iter()
+        .any(|local| local.is_ipv4() == ip.is_ipv4())
+        && peers
+            .iter()
+            .flat_map(|peer| &peer.allowed_ips)
+            .any(|prefix| prefix.contains(ip))
 }
 fn optional_u16(value: Option<&Value>, fallback: u16) -> Option<u16> {
     value.map_or(Some(fallback), |v| u16::try_from(v.as_u64()?).ok())

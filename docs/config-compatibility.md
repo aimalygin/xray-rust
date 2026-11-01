@@ -76,10 +76,11 @@ tunnel query never falls back to host DNS. Only when no `remoteDNS` server is
 routable through the tunnel (covered by a peer's `allowedIPs`, with a local
 `address` of its family) are destinations resolved by the caller's resolver
 instead, as wg-quick sends DNS outside a split tunnel; otherwise every domain
-would fail with no route. The device owns a 256-entry single-flight cache: answer
-TTL is capped at 300 seconds, negatives last 30 seconds, and stale answers are
-never returned. Closing the outbound cancels pending queries. Its peer endpoint
-continues to use the separate bootstrap resolver and protected outer socket.
+would fail with no route. The parser warns at `remoteDNS` when this applies. The
+device owns a 256-entry single-flight cache: answer TTL is capped at 300
+seconds, negatives last 30 seconds, and stale answers are never returned.
+Closing the outbound cancels pending queries. Its peer endpoint continues to use
+the separate bootstrap resolver and protected outer socket.
 
 Legacy `domainStrategy` emits a warning and controls address-family selection
 only. `allowedIPs` still bounds DNS-server and destination routing. WireGuard
