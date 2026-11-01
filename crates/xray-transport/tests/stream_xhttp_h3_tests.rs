@@ -952,9 +952,10 @@ const BUDGET_DOWNLOADS: usize = 16;
 #[derive(Clone, Copy, PartialEq)]
 enum BudgetReader {
     /// Takes each 64 KiB as it arrives, and its server writes the next 64 KiB
-    /// only once the reader has it, so the reader finds its stream empty
-    /// however slow the host is. A server paced at 32 KiB per 2 ms outran
-    /// readers on a loaded CI runner, and the budget rightly held them.
+    /// only once the reader has it, so the stream empties between pieces
+    /// however slow the host is. On Linux, GRO can hand a whole piece to the
+    /// response task at once, which then finds the stream empty only while it
+    /// waits for the next piece.
     KeepsUp,
     /// Pauses 25 ms after each 64 KiB: 42 MB/s for all sixteen, well below
     /// what even a debug build receives, so data waits in each stream.
