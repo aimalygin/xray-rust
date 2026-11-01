@@ -7,6 +7,7 @@ use std::{
 use async_trait::async_trait;
 use thiserror::Error;
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use xray_config::{
     CoreConfig, DnsHostTarget, DnsIpFilter, DnsQueryStrategy as ConfigDnsQueryStrategy,
@@ -464,6 +465,7 @@ pub struct Core {
     state: CoreState,
     shutdown: Shutdown,
     probe_shutdown: Shutdown,
+    probe_generation: watch::Sender<u64>,
     startup_probe_shutdown: Shutdown,
     tun: Arc<TunEndpoint>,
     runtime: Option<RuntimeState>,
@@ -777,6 +779,7 @@ impl Core {
             state: CoreState::Created,
             shutdown,
             probe_shutdown: Shutdown::new(),
+            probe_generation: watch::Sender::new(0),
             startup_probe_shutdown: Shutdown::new(),
             tun,
             runtime: None,
@@ -912,6 +915,19 @@ impl Core {
         }
     }
 
+    /// Cancels the on-demand probes already running on this core and leaves later
+    /// probes enabled.
+    ///
+    /// Each cancelled probe returns [`OutboundProbeError::CancelledInFlight`]
+    /// without a health failure; a probe that starts concurrently with this
+    /// call may run to completion. Unlike [`Self::cancel_outbound_probes`], this
+    /// is not a teardown latch and does not touch startup-probe preflights.
+    /// Nonblocking and callable from any thread that may run shared calls.
+    pub fn cancel_inflight_outbound_probes(&self) {
+        self.probe_generation
+            .send_modify(|generation| *generation = generation.wrapping_add(1));
+    }
+
     /// Runs the configured startup probe without binding listeners or starting TUN.
     ///
     /// Only a newly created core accepts this call. It retains the original
@@ -987,6 +1003,8 @@ impl Core {
         };
         startup_probe::validate_outbound_probe(&options, self.outbound_graph())?;
         let mut cancellation = self.probe_shutdown.subscribe();
+        let mut generation = self.probe_generation.subscribe();
+        let started_generation = *generation.borrow_and_update();
 
         let probe_url = startup_probe::diagnostic_probe_url(&options.url);
         let timeout_ms = options.timeout.as_millis();
@@ -1009,6 +1027,9 @@ impl Core {
                     }
                 }
             } => return Err(OutboundProbeError::Cancelled),
+            _ = generation.wait_for(|current| *current != started_generation) => {
+                return Err(OutboundProbeError::CancelledInFlight)
+            }
             result = startup_probe::run_outbound_url_probe(
                 self.outbound_router.as_ref(),
                 options,

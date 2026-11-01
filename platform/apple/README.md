@@ -82,8 +82,8 @@ owns input, profile storage and the existing DNS bootstrap/startup path.
   snapshots, packet batching/pump, stats/events, connection inventory, close
   and per-outbound accounting (completed totals plus live bytes of active
   flows, see [connection management](../../docs/ffi.md#connection-management)),
-  startup probe, blocking on-demand outbound probe (ABI 1.9), and optional
-  Darwin-utun fd discovery.
+  startup probe, blocking on-demand outbound probe (ABI 1.9) with in-flight
+  cancellation (ABI 1.15), and optional Darwin-utun fd discovery.
 - `XrayAppleShared`: profile/config models, secure config storage, sanitized
   logging, and app-to-extension message keys.
 - `XrayAppleClient`: SwiftUI profile editor and `NETunnelProviderManager`

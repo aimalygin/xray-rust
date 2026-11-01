@@ -30,7 +30,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 14;
+pub const XRAY_FFI_ABI_MINOR: u32 = 15;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -61,6 +61,7 @@ pub const XRAY_FFI_CAPABILITY_TUN_ADMISSION: u64 = 1 << 24;
 pub const XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT: u64 = 1 << 25;
 pub const XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT: u64 = 1 << 26;
 pub const XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT: u64 = 1 << 27;
+pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL: u64 = 1 << 28;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -89,7 +90,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_TUN_ADMISSION
     | XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT
     | XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT
-    | XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
+    | XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT
+    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1652,6 +1654,41 @@ pub unsafe extern "C" fn xray_core_cancel_outbound_probes(
     }
 }
 
+/// Cancels the on-demand probes already running on this core and leaves later
+/// probes enabled (ABI 1.15, `OUTBOUND_PROBE_CANCEL`). Each cancelled
+/// `xray_core_probe_outbound_url` call returns `RUNTIME_ERROR` with zero
+/// outputs and no health failure; a probe that starts concurrently may run to
+/// completion. Nonblocking, idempotent, and a no-op when no config is loaded or
+/// nothing is in flight. Unlike `xray_core_cancel_outbound_probes`, this is
+/// not a teardown step: it leaves startup-probe preflights and the teardown
+/// latch untouched.
+///
+/// # Safety
+///
+/// `handle` must be null or a live core handle. This is a shared call: it may
+/// overlap probes and other shared calls, but not lifecycle/free. If `error`
+/// is non-null it must point to an initialized, library-owned error pointer
+/// or null, exclusively accessible by this call.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_cancel_inflight_outbound_probes(
+    handle: *mut XrayCoreHandle,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let handle = match shared_handle(handle, error) {
+                Ok(handle) => handle,
+                Err(status) => return status,
+            };
+            if let Some(core) = handle.core.as_ref() {
+                core.cancel_inflight_outbound_probes();
+            }
+            XrayStatus::Ok
+        })
+    }
+}
+
 /// Sends one HTTP(S) GET through a leaf outbound of a running core and
 /// reports its latency or typed failure (ABI 1.9, `OUTBOUND_PROBE`).
 ///
@@ -1775,9 +1812,9 @@ unsafe fn xray_core_probe_outbound_url_inner(
         }
         Err(source) => {
             let status = match source {
-                OutboundProbeError::NotRunning | OutboundProbeError::Cancelled => {
-                    XrayStatus::RuntimeError
-                }
+                OutboundProbeError::NotRunning
+                | OutboundProbeError::Cancelled
+                | OutboundProbeError::CancelledInFlight => XrayStatus::RuntimeError,
                 OutboundProbeError::UnsupportedUrl
                 | OutboundProbeError::InvalidTimeout
                 | OutboundProbeError::UnknownOutbound

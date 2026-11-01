@@ -982,6 +982,112 @@ async fn outbound_probe_cancellation_drains_all_probes_and_rejects_late_dials() 
 }
 
 #[tokio::test]
+async fn outbound_probe_inflight_cancellation_leaves_later_probes_enabled() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut core = outbound_probe_core(addr);
+    // Nothing is in flight before start, so this must not disable later probes.
+    core.cancel_inflight_outbound_probes();
+    core.start().await.unwrap();
+    let health_before = core.outbound_health_snapshot();
+    let options = outbound_probe(probe_url(addr), MAX_OUTBOUND_PROBE_TIMEOUT, None);
+    let probes = async {
+        tokio::join!(
+            core.probe_outbound_url(options.clone()),
+            core.probe_outbound_url(options.clone()),
+        )
+    };
+    let cancel = async {
+        let (_first, _) = listener.accept().await.unwrap();
+        let (_second, _) = listener.accept().await.unwrap();
+        core.cancel_inflight_outbound_probes();
+        // Keep both peers open until the cancelled futures return.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let ((first, second), ()) = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(probes, cancel)
+    })
+    .await
+    .expect("60-second probes must promptly return on in-flight cancellation");
+    assert_eq!(first, Err(OutboundProbeError::CancelledInFlight));
+    assert_eq!(second, Err(OutboundProbeError::CancelledInFlight));
+
+    let respond = async {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = vec![0; 512];
+        let read = stream.read(&mut request).await.unwrap();
+        assert!(String::from_utf8_lossy(&request[..read]).starts_with("GET /health HTTP/1.1\r\n"));
+        stream
+            .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+            .await
+            .unwrap();
+    };
+    let (later, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(
+            core.probe_outbound_url(outbound_probe(
+                probe_url(addr),
+                Duration::from_secs(5),
+                None
+            )),
+            respond,
+        )
+    })
+    .await
+    .expect("a probe started after in-flight cancellation must run");
+    assert!(matches!(later, Ok(OutboundProbeOutcome::Reachable { .. })));
+    assert_eq!(core.outbound_health_snapshot(), health_before);
+
+    // The teardown latch still wins over a later probe.
+    core.cancel_outbound_probes();
+    assert_eq!(
+        core.probe_outbound_url(options).await,
+        Err(OutboundProbeError::Cancelled)
+    );
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn inflight_probe_cancellation_does_not_cancel_startup_preflight() {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut core = Core::new(config_with_outbounds(
+        vec![freedom("direct")],
+        Some("direct"),
+    ))
+    .unwrap()
+    .with_startup_probe(StartupProbeOptions {
+        url: format!("http://{addr}/health"),
+        timeout: Duration::from_secs(60),
+        outbound_tag: None,
+    });
+    let probe = {
+        let preflight = core.preflight_startup_probe();
+        tokio::pin!(preflight);
+        let _stream = tokio::select! {
+            _ = &mut preflight => panic!("preflight finished before reaching the server"),
+            accepted = tokio::time::timeout(Duration::from_secs(2), listener.accept()) => {
+                accepted.unwrap().unwrap()
+            }
+        };
+        core.cancel_inflight_outbound_probes();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut preflight)
+                .await
+                .is_err(),
+            "in-flight probe cancellation must not end a startup preflight"
+        );
+        // Only the teardown latch ends a pending preflight.
+        core.cancel_outbound_probes();
+        tokio::time::timeout(Duration::from_secs(2), preflight)
+            .await
+            .expect("teardown cancellation must end the preflight")
+    };
+    assert!(matches!(probe, Err(CoreError::StartupProbeCancelled)));
+    assert_eq!(core.state(), CoreState::Created);
+    core.stop().await.unwrap();
+}
+
+#[tokio::test]
 async fn outbound_probe_reports_missing_default_outbound() {
     let mut config = config_with_outbounds(Vec::new(), None);
     config.default_outbound_tag = None;

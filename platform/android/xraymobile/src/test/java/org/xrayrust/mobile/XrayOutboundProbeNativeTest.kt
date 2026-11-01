@@ -133,6 +133,76 @@ class XrayOutboundProbeNativeTest {
         }
     }
 
+    @Test
+    fun cancelOutboundProbesEndsInFlightProbesAndKeepsLaterOnes() {
+        enabled()
+        assertTrue(XrayCore.ffiInfo().supports(XrayFfiCapability.OutboundProbeCancel))
+        XrayCore.create(SOCKS_FREEDOM_CONFIG).use { core ->
+            core.start()
+            // Idle cancellation must not disable later probes.
+            core.cancelOutboundProbes()
+            ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { stalled ->
+                stalled.soTimeout = 5_000
+                val accepted = CountDownLatch(1)
+                val releaseServer = CountDownLatch(1)
+                val serverWorker = Thread {
+                    runCatching {
+                        stalled.accept().use {
+                            accepted.countDown()
+                            releaseServer.await(10, TimeUnit.SECONDS)
+                        }
+                    }
+                }
+                serverWorker.start()
+                val probeError = AtomicReference<Throwable?>()
+                val finished = CountDownLatch(1)
+                val probeWorker = Thread {
+                    try {
+                        core.probeOutboundUrl("http://127.0.0.1:${stalled.localPort}/", 60_000)
+                    } catch (error: Throwable) {
+                        probeError.set(error)
+                    } finally {
+                        finished.countDown()
+                    }
+                }
+                probeWorker.start()
+                try {
+                    assertTrue("probe must connect", accepted.await(5, TimeUnit.SECONDS))
+                    core.cancelOutboundProbes()
+                    assertTrue("cancellation must not wait for the timeout", finished.await(2, TimeUnit.SECONDS))
+                    val error = probeError.get()
+                    assertTrue("expected cancellation, got $error", error is XrayCoreException)
+                    assertEquals(XRAY_STATUS_RUNTIME_ERROR, (error as XrayCoreException).code)
+                } finally {
+                    releaseServer.countDown()
+                    serverWorker.join(5_000)
+                    probeWorker.join(5_000)
+                }
+            }
+            ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { server ->
+                val worker = Thread {
+                    runCatching {
+                        server.accept().use { socket ->
+                            val reader = socket.getInputStream().bufferedReader(Charsets.US_ASCII)
+                            while (reader.readLine()?.isNotEmpty() == true) {
+                                // Drain the request headers.
+                            }
+                            socket.getOutputStream().write(
+                                "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+                                    .toByteArray(Charsets.US_ASCII),
+                            )
+                        }
+                    }
+                }
+                worker.start()
+                val result = core.probeOutboundUrl("http://127.0.0.1:${server.localPort}/", 5_000)
+                worker.join(5_000)
+                assertTrue("later probe must run, got $result", result.isReachable)
+            }
+            core.stop()
+        }
+    }
+
     private companion object {
         const val XRAY_STATUS_RUNTIME_ERROR = 5
         const val XRAY_STATUS_INVALID_ARGUMENT = 9
