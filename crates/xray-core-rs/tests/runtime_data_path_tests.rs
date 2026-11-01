@@ -12325,6 +12325,49 @@ async fn wireguard_runtime_tun_dns_wire_and_managed_destination_lookup() {
     }).await.unwrap();
 }
 
+#[tokio::test]
+#[ignore = "requires pinned reference; use check-wireguard-runtime.sh or check-native-wireguard-interop.sh"]
+async fn wireguard_runtime_split_tunnel_resolves_with_caller_dns_when_remote_dns_is_outside() {
+    timeout(wireguard_support::DEADLINE, async {
+        let server = wireguard_support::ReferenceServer::start().await;
+        let (echo_address, _tcp) = wireguard_support::tcp_echo().await;
+        let (_, protector, _, dialer) = wireguard_support::core(&server);
+        let mut json = wireguard_support::profile(server.address);
+        // wg-quick split tunnel: only the echo host is routed, DNS = 192.0.2.53 is not.
+        json["outbounds"][0]["settings"]["peers"][0]["allowedIPs"] =
+            serde_json::json!([format!("{}/32", wireguard_support::INNER_IP)]);
+        json["outbounds"][0]["settings"]["address"] = serde_json::json!(["10.44.0.2"]);
+        json["outbounds"][0]["settings"]["remoteDNS"] = serde_json::json!(["192.0.2.53"]);
+        json["dns"] = serde_json::json!({"queryStrategy":"UseIPv4", "hosts":{
+            "bootstrap.example":"127.0.0.1",
+            "split-wireguard.example":wireguard_support::INNER_IP.to_string()
+        }});
+        let config = parse_xray_json(&json.to_string()).unwrap().config;
+        let mut core = Core::with_transport_dialer_and_tun_options(
+            config,
+            dialer,
+            TunRuntimeOptions {
+                dns_bootstrap: DnsBootstrapMode::StaticOnly,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        core.start().await.unwrap();
+        let (mut tcp, _) = wireguard_support::socks(
+            core.inbound_addr(Some("socks-in")).unwrap(),
+            1,
+            "split-wireguard.example",
+            echo_address.port(),
+        )
+        .await;
+        wireguard_support::echo(&mut tcp, b"split tunnel caller dns").await;
+        assert_eq!(protector.0.load(Ordering::SeqCst), 1);
+        core.stop().await.unwrap();
+    })
+    .await
+    .unwrap();
+}
+
 #[path = "trojan_runtime/tun_tests.rs"]
 mod trojan_tun_tests;
 

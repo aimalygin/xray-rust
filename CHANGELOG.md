@@ -10,6 +10,13 @@ long-term supported release series.
 
 ## Unreleased
 
+- WireGuard resolves destinations with the caller's resolver when no
+  `remoteDNS` server is routable through the tunnel. A split `allowedIPs` that
+  excluded the configured servers (as in an imported wg-quick profile with
+  `DNS` outside `AllowedIPs`) made every domain destination fail with no route,
+  reported only as "all configured DNS servers are unavailable". A failed
+  tunnel query still never falls back to host DNS.
+
 - Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
   uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2
   snapshot of the bare uTLS `hellorandomizednoalpn`, so plain TLS failed against
