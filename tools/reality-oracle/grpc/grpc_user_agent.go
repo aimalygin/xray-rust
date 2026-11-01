@@ -73,6 +73,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -255,7 +256,9 @@ func captureOneUserAgent(ctx context.Context, probe userAgentCase) (userAgentVer
 	if err != nil {
 		return verdict, fmt.Errorf("open the tunnel: %w", err)
 	}
-	if err := stream.Send(&encoding.Hunk{Data: userAgentProbePayload}); err != nil {
+	// A server that resets the stream before the hunk is written ends Send
+	// with io.EOF, and grpc-go then reports the reset itself through Recv below.
+	if err := stream.Send(&encoding.Hunk{Data: userAgentProbePayload}); err != nil && !errors.Is(err, io.EOF) {
 		return verdict, fmt.Errorf("send the probe hunk: %w", err)
 	}
 	if err := stream.CloseSend(); err != nil {
