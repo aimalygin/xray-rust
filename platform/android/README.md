@@ -519,7 +519,8 @@ AEAD with `aes-128-gcm`, `aes-256-gcm`, `chacha20-poly1305` and
 such as `socks-password`, `http-tls` or `shadowsocks-aead-chacha20-poly1305`.
 HTTP CONNECT has no UDP relay: its cases carry `"udp": false`, resolve DNS over
 TCP through the proxy, and every UDP probe must go unanswered, a fail-closed
-negative control rather than UDP coverage. The envelope's `invalidImports` are
+negative control rather than UDP coverage, which the v0.9 profile names
+`ipv4-udp-refused` and `ipv6-udp-refused`. The envelope's `invalidImports` are
 malformed links holding a non-secret marker for the redaction controls.
 `scripts/run-v09-android-device-matrix.py` drives both apps through an
 envelope on both backends and honours these expectations; see

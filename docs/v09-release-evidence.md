@@ -9,7 +9,9 @@ The contract is the schema-4 `v09` profile in `scripts/check-v09-release-evidenc
 decisions of 2026-11-01 recorded in `docs/v090-release.md` on that branch:
 
 - SOCKS, HTTP and classic Shadowsocks AEAD (`shadowsocks-aead`) take all twelve
-  transitions on Apple and both TUN backends on Android.
+  transitions on Apple and both TUN backends on Android. For HTTP, which has no
+  UDP relay, `ipv4-udp-refused` and `ipv6-udp-refused` replace `ipv4-udp` and
+  `ipv6-udp` (decided on 2026-11-01, below).
 - Android `wifi-cellular-wifi` and `lock-wake` are not tested, decided again
   for 0.9. Known limitations must say so.
 - `profile-import` needs `socks-link`, `http-link`, `shadowsocks-aead-link` and
@@ -25,21 +27,21 @@ unchanged from v0.8. This change does not touch them; the 0.8.1 campaign's
 [device-results/2026-10-18-v081-candidate](device-results/2026-10-18-v081-candidate/README.md)
 show how they were collected.
 
-## Open owner decision: UDP over HTTP
+## HTTP UDP: refusal as a negative control
 
 Xray's `http` outbound is HTTP/1.1 `CONNECT`. It has no UDP relay, here or in
-Xray-core, so `ipv4-udp` and `ipv6-udp` cannot pass as UDP traffic for the
-`http` scenario or for `http-file-descriptor` / `http-packet-pump`. The
-fixtures mark the HTTP cases `"udp": false`, and both harnesses then require
-the opposite: every UDP probe to the synthetic echo goes unanswered. That is a
-fail-closed negative control (events `udp-refused` on Apple, `udp: refused` on
-Android), not UDP coverage.
+Xray-core. The owner decided on 2026-11-01 that HTTP proves refusal instead:
+for `http`, `http-file-descriptor` and `http-packet-pump` the profile requires
+`ipv4-udp-refused` and `ipv6-udp-refused` in place of `ipv4-udp` and
+`ipv6-udp`. SOCKS and `shadowsocks-aead` still require real UDP echoes.
 
-Recommendation: before assembly, change the profile so `http` requires
-explicitly named negative controls (for example `ipv4-udp-refused` and
-`ipv6-udp-refused`) instead of `ipv4-udp` and `ipv6-udp`. Recording refusals
-under the UDP transition ids would read as UDP coverage. The alternative is to
-keep the ids and state in known limitations what they mean for HTTP.
+The fixtures mark the HTTP cases `"udp": false`, and both harnesses then
+require every UDP probe to the synthetic echo to go unanswered. The events
+carry the transition ids: Apple `udp-refused` rows have `transition`
+`ipv4-udp-refused` or `ipv6-udp-refused` (echo rows `udp` have `ipv4-udp` or
+`ipv6-udp`), and Android `traffic` events list theirs under `transitions`.
+This is a fail-closed negative control, not UDP coverage; known limitations
+should say that HTTP carries no UDP.
 
 HTTP DNS resolves over `tcp://` through the proxy, as the HTTP link importer
 configures it, so `routed-dns` for HTTP is DNS over TCP.
@@ -107,7 +109,8 @@ are those whose label starts with `socks`, `http` or `shadowsocks-aead`.
 | Transition | Run | Events |
 | --- | --- | --- |
 | `ipv4-tcp`, `ipv6-tcp` | `--mode smoke` (LAN) | `tcp` to `198.51.100.7` / `2001:db8::7`, 64 KiB echo |
-| `ipv4-udp`, `ipv6-udp` | smoke | `udp` echo; HTTP: `udp-refused` (see the open decision) |
+| `ipv4-udp`, `ipv6-udp` | smoke | `udp` echo, `transition` `ipv4-udp` / `ipv6-udp` |
+| HTTP: `ipv4-udp-refused`, `ipv6-udp-refused` | smoke | `udp-refused`, no datagram answered |
 | `domain-destination` | smoke | `tcp` to the probe name, resolved through the tunnel |
 | `routed-dns` | smoke | `dns-anchor`: an A query to `198.18.0.1` answered through the proxy |
 | `start-stop` | smoke, three cycles; `--mode lifecycle` | `connected`/`disconnected`, `rapid-restart` |
@@ -121,14 +124,14 @@ Runs, per protocol unless noted:
 
 1. LAN, with the Mac's LAN address as `--bind`: `--protocol v09` with
    `--mode smoke`, `lifecycle` and `resources`.
-2. Ciphers: `run-v08-apple-acceptance-fixture.py --suite ciphers-v09`, smoke.
-3. WAN: on a public host, one run each for `--protocol socks`, `http`, `https`
+1. Ciphers: `run-v08-apple-acceptance-fixture.py --suite ciphers-v09`, smoke.
+2. WAN: on a public host, one run each for `--protocol socks`, `http`, `https`
    and `shadowsocks-aead` with `--bind <public IPv4> --port <open TCP+UDP port>
    --mode transitions`. Cellular cannot reach a LAN fixture. The 0.8.1 runs
    used a bounded `systemd-run` unit; see `ios-wan-manual.py`. SOCKS UDP
    crosses carrier NAT here for the first time; Xray-core's SOCKS inbound
    answers each datagram's observed source, not the port the client declares.
-4. Legacy: `run-v08-apple-acceptance-fixture.py --suite legacy-v09`, smoke.
+3. Legacy: `run-v08-apple-acceptance-fixture.py --suite legacy-v09`, smoke.
    REALITY's decoy handshake reaches `www.google.com:443`.
 
 `profile-import`: `socks-link`, `http-link` and `shadowsocks-aead-link` are the
@@ -151,15 +154,17 @@ ANDROID_SERIAL=<serial> python3 scripts/run-v09-android-device-matrix.py --fixtu
 For every case on both backends it imports the link, then the core JSON,
 connects, drives IPv4, IPv6 and domain traffic, closes connections and
 recovers, and rapid-stops and restarts. HTTP cases must see three refused UDP
-probes and no answered one per step. With `invalidImports` it then runs the
-malformed-link controls: the import fails, the stored profile ciphertext is
-unchanged, the pending plaintext is removed and the marker is absent from the
-host's log. Events go to `events.jsonl`.
+probes and no answered one per step. Each `traffic` event lists the profile
+transition ids it evidences, such as `ipv4-tcp` and `ipv4-udp-refused`. With
+`invalidImports` it then runs the malformed-link controls: the import fails,
+the stored profile ciphertext is unchanged, the pending plaintext is removed
+and the marker is absent from the host's log. Events go to `events.jsonl`.
 
 | Transition | Source |
 | --- | --- |
 | `ipv4-tcp`, `ipv6-tcp`, `domain-destination` | `traffic` events, HTTP 204 from the fixture |
-| `ipv4-udp`, `ipv6-udp` | `traffic` events, nonce-checked DNS-shaped UDP; HTTP: `udp: refused` |
+| `ipv4-udp`, `ipv6-udp` | `traffic` events, nonce-checked DNS-shaped UDP |
+| HTTP: `ipv4-udp-refused`, `ipv6-udp-refused` | `traffic` events with `udp: refused`: three unanswered probes, none answered |
 | `routed-dns` | the `domain` target, resolved through the VPN's DNS |
 | `start-stop`, `reconnect` | `running`, `cancel-start-recovery` after `rapid-stop` |
 | `cancel-active-flow` | separate run as in 0.8.1 `android-cancellation`: `/v08-hold/N` for TCP, `--udp-delay-seconds 3` for UDP (not HTTP) |
@@ -187,18 +192,17 @@ SOCKS and TUN runs for the same protocols.
 
 ## Remaining for the owner
 
-1. Decide the HTTP UDP transitions (above) and, if changed, amend the profile
-   in #148 before assembly.
-2. Fix the candidate commit, build the Debug harnesses from it (Apple locally,
+1. Fix the candidate commit, build the Debug harnesses from it (Apple locally,
    Android in CI) and record their hashes.
-3. Apple, iPhone: the LAN, cipher, WAN and legacy runs above, preserving every
+2. Apple, iPhone: the LAN, cipher, WAN and legacy runs above, preserving every
    failed attempt.
-4. Android, Samsung: `v09` and `legacy-v09` matrices on both backends, plus the
+3. Android, Samsung: `v09` and `legacy-v09` matrices on both backends, plus the
    cancellation and resource runs; Wi-Fi/cellular and lock/wake stay not
    tested.
-5. Shared scenarios, as in 0.8.1.
-6. Performance: five clean repeats of the `v09` comparison and of the existing
+4. Shared scenarios, as in 0.8.1.
+5. Performance: five clean repeats of the `v09` comparison and of the existing
    measurements on the candidate, in a quiet window.
-7. Map the results into a schema-4 archive, as the 0.8.1 `assemble-evidence.py`
-   did, with known limitations covering Android network/lock and HTTP UDP, and
-   validate it with `check-v09-release-evidence.py` and `v09-release-evidence.yml`.
+6. Map the results into a schema-4 archive, as the 0.8.1 `assemble-evidence.py`
+   did, with HTTP's refusals under `ipv4-udp-refused` and `ipv6-udp-refused`
+   and known limitations covering Android network/lock and HTTP's missing UDP.
+   Validate it with `check-v09-release-evidence.py` and `v09-release-evidence.yml`.

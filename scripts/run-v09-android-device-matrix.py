@@ -7,7 +7,9 @@ each case and both TUN backends: share-link import (except WireGuard), core
 JSON import, connect, IPv4/IPv6/domain traffic, close-connections recovery,
 rapid start/stop and restart recovery. Cases with ``udp: false`` (HTTP CONNECT)
 must see every UDP probe fail and none pass: a fail-closed negative control,
-recorded as ``udp: refused``, never as UDP coverage. After the matrix, each of
+recorded as ``udp: refused`` under the transition ids ``ipv4-udp-refused`` and
+``ipv6-udp-refused`` that the v0.9 profile requires for HTTP, never as UDP
+coverage. Each traffic event lists the transitions it evidences. After the matrix, each of
 the envelope's ``invalidImports`` must be rejected with the stored profile
 ciphertext unchanged, the plaintext removed and the marker absent from the
 host's log (the 0.8 controls script, generalized).
@@ -29,6 +31,13 @@ import xml.etree.ElementTree as ET
 
 BACKENDS = ("file-descriptor", "packet-pump")
 TARGETS = {"ipv4": "198.51.100.7", "ipv6": "2001:db8::7"}
+
+
+def traffic_transitions(target, udp_expected):
+    """v0.9 profile transition ids one probe step evidences."""
+    if target == "domain":
+        return ["domain-destination", "routed-dns"]
+    return [f"{target}-tcp", f"{target}-udp" + ("" if udp_expected else "-refused")]
 
 
 class Device:
@@ -176,6 +185,7 @@ def run_case(device, envelope, case, backend):
     device.emit("running", **identity, status=device.start(backend))
     for target in ("ipv4", "ipv6", "domain"):
         device.emit("traffic", **identity, target=target, udp=udp,
+                    transitions=traffic_transitions(target, udp_expected),
                     status=device.traffic(envelope, target, udp_expected))
     device.command(device.host, "close-connections")
     device.emit("close-recovery", **identity, udp=udp, status=device.traffic(envelope, "ipv4", udp_expected, 2))

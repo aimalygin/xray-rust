@@ -496,6 +496,8 @@ private final class ProtocolDeviceProbe: ObservableObject {
         for (host, count) in [("198.51.100.7", 1392), ("2001:db8::7", 1372)] {
             let payload = Data((0..<count).map { UInt8($0 % 251) })
             let started = ProcessInfo.processInfo.systemUptime
+            // Evidence transition ids; the v0.9 profile names HTTP's refusals.
+            let family = host.contains(":") ? "ipv6" : "ipv4"
             if !udpExpected {
                 // Negative control: the outbound has no UDP relay, so an echo
                 // would mean the datagram bypassed it. Silence or an error is
@@ -510,7 +512,8 @@ private final class ProtocolDeviceProbe: ObservableObject {
                     throw error
                 } catch {
                     let detail = error as NSError
-                    emit(["event": "udp-refused", "host": host, "result": "passed", "domain": detail.domain,
+                    emit(["event": "udp-refused", "host": host, "transition": "\(family)-udp-refused",
+                          "result": "passed", "domain": detail.domain,
                           "code": detail.code, "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
                 }
                 continue
@@ -528,6 +531,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             }
             guard reply == payload else { throw Failure.mismatch }
             emit(["event": "udp", "host": host, "bytes": count, "result": "passed",
+                  "transition": "\(family)-udp",
                   "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
         }
         let id = UInt16.random(in: 1...UInt16.max)

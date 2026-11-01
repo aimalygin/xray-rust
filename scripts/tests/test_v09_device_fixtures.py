@@ -382,6 +382,13 @@ class AndroidDriverTests(unittest.TestCase):
         self.assertEqual(controls, [("socks", True), ("http", True), ("shadowsocks-aead", True)])
         http = [e for e in events if e["kind"] == "traffic" and e["case"] == "http-plain"]
         self.assertTrue(http and all(int(e["status"]["udp-failed"]) >= 3 for e in http))
+        # The v0.9 profile's ids: HTTP proves refusal, SOCKS proves real UDP.
+        ids = lambda case: {t for e in events if e["kind"] == "traffic" and e["case"] == case
+                            for t in e["transitions"]}
+        self.assertEqual(ids("http-plain"), {"ipv4-tcp", "ipv6-tcp", "ipv4-udp-refused", "ipv6-udp-refused",
+                                             "domain-destination", "routed-dns"})
+        self.assertEqual(ids("socks-password"), {"ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp",
+                                                 "domain-destination", "routed-dns"})
         # Links, configs and credentials only travel through stdin.
         arguments = json.dumps(state["argv"])
         for case in envelope["cases"]:
