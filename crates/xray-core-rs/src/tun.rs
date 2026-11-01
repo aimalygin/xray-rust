@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant as StdInstant;
 
 use bytes::{Bytes, BytesMut};
-use smoltcp::iface::{Config as InterfaceConfig, Interface, SocketHandle, SocketSet};
+use smoltcp::iface::{
+    Config as InterfaceConfig, Interface, PollIngressSingleResult, PollResult, SocketHandle,
+    SocketSet,
+};
 use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::socket::tcp;
 use smoltcp::time::Instant;
@@ -1286,7 +1289,15 @@ fn drive_tun_tcp_stack(
         drain_tcp_remote_data_to_sockets(iface, device, sockets, tcp_flows, flow_budget_state);
     }
 
-    iface.poll(Instant::now(), device, sockets);
+    // Split `Interface::poll` around the socket reads. Egress builds the ACKs
+    // for the segments ingress just accepted; built before the reads, they
+    // advertise the receive window still holding that data. A kernel sender
+    // does not put a partial segment into a window below one MSS, so it would
+    // wait for the window update of a later turn, which tokio's millisecond
+    // timer delays by up to 1 ms for every full-window burst.
+    let now = Instant::now();
+    iface.poll_maintenance(now);
+    while iface.poll_ingress_single(now, device, sockets) != PollIngressSingleResult::None {}
     open_ready_tcp_flows(
         sockets,
         tcp_listeners,
@@ -1296,6 +1307,7 @@ fn drive_tun_tcp_stack(
         bridge_tasks,
     );
     read_socket_data_to_remote(tun, sockets, tcp_flows, flow_budget_state);
+    while iface.poll_egress(now, device, sockets) != PollResult::None {}
     cleanup_closed_tcp_flows(sockets, tcp_flows, flow_budget_state);
 }
 
