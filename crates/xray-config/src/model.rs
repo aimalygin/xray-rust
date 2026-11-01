@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{IpAddr, SocketAddr},
     time::Duration,
 };
 
@@ -9,7 +9,7 @@ use std::fmt;
 use uuid::Uuid;
 use xray_routing::{
     domain_matcher::domain_matches_suffix, Cidr, DomainMatcherSetBuilder, DomainMatcherSetError,
-    DomainRegexError,
+    DomainRegexError, PRIVATE_NETWORKS,
 };
 pub use xray_routing::{
     DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcher, DomainMatcherSet, DomainNameMode,
@@ -1419,14 +1419,13 @@ impl TargetAddr {
     /// Whether Xray-core exempts this server address from its outbound
     /// transport-security requirement.
     ///
-    /// This intentionally uses Xray's broader private/reserved/test set, not
-    /// the routing-oriented `geoip:private` set ([`xray_routing::PRIVATE_NETWORKS`]). Xray normalizes one
-    /// trailing domain dot and domain case before applying these rules.
+    /// IP addresses use Xray's private/reserved/test set
+    /// ([`xray_routing::PRIVATE_NETWORKS`], also the routing `geoip:private`
+    /// set). Xray normalizes one trailing domain dot and domain case before
+    /// applying the domain rules.
     pub fn is_xray_plaintext_server_exempt(&self) -> bool {
         match self {
-            Self::Ip(ip) => XRAY_PLAINTEXT_SERVER_CIDRS
-                .iter()
-                .any(|cidr| cidr.matches(ip)),
+            Self::Ip(ip) => PRIVATE_NETWORKS.iter().any(|cidr| cidr.contains(*ip)),
             Self::Domain(domain) => xray_plaintext_server_domain_matches(domain),
         }
     }
@@ -1468,62 +1467,10 @@ fn xray_dotless_domain_matches(domain: &str) -> bool {
         && bytes[bytes.len() - 1].is_ascii_alphanumeric()
 }
 
-const XRAY_PLAINTEXT_SERVER_CIDRS: [IpCidr; 18] = [
-    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8)),
-    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)), 8)),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(100, 64, 0, 0)),
-        10,
-    )),
-    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 0)), 8)),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(169, 254, 0, 0)),
-        16,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(172, 16, 0, 0)),
-        12,
-    )),
-    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 0, 0, 0)), 24)),
-    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(192, 0, 2, 0)), 24)),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(192, 88, 99, 0)),
-        24,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(192, 168, 0, 0)),
-        16,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(198, 18, 0, 0)),
-        15,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(198, 51, 100, 0)),
-        24,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V4(Ipv4Addr::new(203, 0, 113, 0)),
-        24,
-    )),
-    IpCidr(Cidr::new_const(IpAddr::V4(Ipv4Addr::new(224, 0, 0, 0)), 3)),
-    IpCidr(Cidr::new_const(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 127)),
-    IpCidr(Cidr::new_const(
-        IpAddr::V6(Ipv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0)),
-        7,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 0)),
-        10,
-    )),
-    IpCidr(Cidr::new_const(
-        IpAddr::V6(Ipv6Addr::new(0xff00, 0, 0, 0, 0, 0, 0, 0)),
-        8,
-    )),
-];
-
 #[cfg(test)]
 mod tests {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
     use super::*;
 
     #[derive(Clone, Copy)]
@@ -1733,14 +1680,14 @@ mod tests {
     #[test]
     fn ip_matcher_set_private_and_its_inverse() {
         let private_set = set(vec![private()]);
-        assert_eq!(private_set.range_count(), 9);
+        assert_eq!(private_set.range_count(), PRIVATE_NETWORKS.len());
         assert!(private_set.matches(v4(10, 1, 2, 3)));
         assert!(private_set.matches(mapped(192, 168, 1, 1)));
         assert!(private_set.matches(v6([0xfe80, 0, 0, 0, 0, 0, 0, 1])));
         assert!(!private_set.matches(v4(8, 8, 8, 8)));
 
         let public = set(vec![not(private())]);
-        assert_eq!(public.range_count(), 9);
+        assert_eq!(public.range_count(), PRIVATE_NETWORKS.len());
         assert!(public.matches(v4(8, 8, 8, 8)));
         assert!(public.matches(v6([0x2001, 0xdb8, 0, 0, 0, 0, 0, 1])));
         assert!(!public.matches(v4(10, 0, 0, 1)));

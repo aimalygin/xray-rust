@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"strings"
+	"time"
 
 	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/net"
@@ -88,9 +89,32 @@ func ss2022Fixtures() []map[string]any {
 				offset := chains * 16
 				copy(wire[offset:], fixedTimestamp(cipher, rawHeader[4:16], wire[offset:], 1))
 			}
+
+			// The server reply to that client session, encoded by Xray's own
+			// server codec. A distinct random stream keeps the server session id
+			// apart from the client's, which a client rejects as reflected.
+			crand.Reader = bytes.NewReader(bytes.Repeat([]byte{0x33}, 4096))
+			userPSK := psks[len(psks)-1]
+			server, err := ss.NewUDPServerCodec(m, userPSK, time.Minute)
+			must(err)
+			responsePayload := []byte("udp-response")
+			response, err := server.EncodeServerPacket(session.ClientSessionID(), net.UDPDestination(net.ParseAddress("2001:db8::8"), 53), responsePayload)
+			must(err)
+			if m.IsChaCha {
+				cipher, err := m.NewUDPCipher(userPSK)
+				must(err)
+				copy(response[24:], fixedTimestamp(cipher, response[:24], response[24:], 17))
+			} else {
+				var rawHeader [16]byte
+				binary.BigEndian.PutUint64(rawHeader[:8], server.GetSession(session.ClientSessionID()).ServerSessionID)
+				cipher, err := m.NewAEAD(ss.DeriveSessionSubKey(userPSK, rawHeader[:8], m.KeySaltLength))
+				must(err)
+				copy(response[16:], fixedTimestamp(cipher, rawHeader[4:16], response[16:], 1))
+			}
 			cases = append(cases, map[string]any{"method": method, "password": password, "timestamp": 1700000000, "address": "example.test", "port": 443,
 				"salt": hex.EncodeToString(salt), "payload": hex.EncodeToString(payload), "request": hex.EncodeToString(request), "nextRecord": hex.EncodeToString(tcp.Bytes()),
-				"udpSessionId": session.ClientSessionID(), "udpNonce": nonce, "udpPayload": hex.EncodeToString(udpPayload), "udpWire": hex.EncodeToString(wire)})
+				"udpSessionId": session.ClientSessionID(), "udpNonce": nonce, "udpPayload": hex.EncodeToString(udpPayload), "udpWire": hex.EncodeToString(wire),
+				"udpResponsePayload": hex.EncodeToString(responsePayload), "udpResponseWire": hex.EncodeToString(response)})
 		}
 	}
 	return cases

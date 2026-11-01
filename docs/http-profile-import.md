@@ -43,7 +43,9 @@ errors and profile debug descriptions are redacted.
   colons; reserved authority delimiters must be escaped. Base64 is **not**
   guessed: `Og==@` is the literal username `Og==` with an empty password.
   Legacy Base64 exports should be converted to explicit percent-encoded
-  `user:password@` before import.
+  `user:password@` before import. A portless authority without `@` or `.` that
+  decodes as Base64 to `…@host:port` is such an export and fails with
+  `Unsupported` instead of becoming a one-label host whose name would reach DNS.
 - Outer whitespace is trimmed. One terminal `/`, an empty `?`, and a
   percent-decoded display-name fragment are accepted. Missing/empty names
   default to `HTTP` or `HTTPS`; the shared `name` option can override them.

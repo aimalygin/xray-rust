@@ -7,26 +7,29 @@
 //! end cancels that exchange, while a shared reset handle keeps the reset
 //! scoped to that stream and returns reserved capacity to the connection.
 
-use std::future::poll_fn;
+use std::collections::VecDeque;
+use std::future::{poll_fn, Future};
 use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::task::{ready, Context, Poll};
+use std::task::{ready, Context, Poll, Waker};
 
 use bytes::Bytes;
+use futures_util::FutureExt;
 use h2::client::{self, ResponseFuture, SendRequest};
-use h2::{Ping, PingPong, Reason, RecvStream, SendStream};
+use h2::{FlowControl, Ping, PingPong, Reason, RecvStream, SendStream};
 use http::{HeaderMap, Method, Request, StatusCode};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, Instant};
 
-use crate::BoxedTransportStream;
+use crate::stream::h2_bdp::{BdpEstimator, BdpPings, BdpSampler};
+use crate::{BoxedTransportStream, MemoryClass};
 
 use super::config::{
-    h2_stream_receive_window, XhttpConfigError, DEFAULT_H2_STREAM_RECEIVE_WINDOW,
+    h2_stream_receive_window, XhttpConfig, XhttpConfigError, DEFAULT_H2_STREAM_RECEIVE_WINDOW,
     H2_CONNECTION_RECEIVE_WINDOW,
 };
 
@@ -41,6 +44,70 @@ const STREAM_WINDOW_SIZE: u32 = DEFAULT_H2_STREAM_RECEIVE_WINDOW;
 /// window for other traffic. Four can exhaust it until a consumer reads or cancels;
 /// this is not an RSS bound (TLS, framing and application buffers add to it).
 const CONNECTION_WINDOW_SIZE: u32 = H2_CONNECTION_RECEIVE_WINDOW;
+
+/// Stream credit goes back once a sixteenth of the opening window has been
+/// read, so the sender keeps at least 15/16 of it. h2 alone waits for half the
+/// remaining window, about 1.4 MB of a 4 MiB one, and at 113 ms that left our
+/// downloads 28% behind Go's (`docs/issue28-client-comparison.md`). Go's
+/// client returns credit every 4 KiB, x/net/http2's `inflowMinRefresh` and the
+/// floor here, but a WINDOW_UPDATE for every read cost a fast download 16% of
+/// its throughput.
+const STREAM_WINDOW_UPDATE_FRACTION: u32 = 16;
+const MIN_STREAM_WINDOW_UPDATE: u32 = 4 * 1024;
+
+/// The stream window a constrained host opens with: a quarter of Go's, so
+/// that eight stalled downloads pin 8 MiB rather than 32. A reader that keeps
+/// up grows it back to [`STREAM_WINDOW_SIZE`] within two round trips.
+const CONSTRAINED_STREAM_WINDOW_SIZE: u32 = 1024 * 1024;
+
+/// Go's client never pings to grow a window, and a CDN sees every PING, so
+/// sampling also stops once three samples in a row leave the window alone.
+const BDP_IDLE_SAMPLES: u32 = 3;
+
+/// The stream receive window an XHTTP H2 connection opens with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum H2ReceiveWindow {
+    /// Fixed credit per stream: Go's 4 MiB, or the configured value.
+    Fixed(u32),
+    /// Opens at `initial` and grows for a reader that keeps up, up to `max`.
+    Adaptive { initial: u32, max: u32 },
+}
+
+impl H2ReceiveWindow {
+    /// A configured window stays as configured. Otherwise a constrained host
+    /// opens at [`CONSTRAINED_STREAM_WINDOW_SIZE`] and grows to the default.
+    pub(crate) fn for_config(config: &XhttpConfig, class: MemoryClass) -> Self {
+        match class {
+            MemoryClass::Constrained if !config.h2_stream_receive_window_configured => {
+                Self::Adaptive {
+                    initial: CONSTRAINED_STREAM_WINDOW_SIZE.min(config.h2_stream_receive_window),
+                    max: config.h2_stream_receive_window,
+                }
+            }
+            _ => Self::Fixed(config.h2_stream_receive_window),
+        }
+    }
+
+    fn initial(self) -> u32 {
+        match self {
+            Self::Fixed(window)
+            | Self::Adaptive {
+                initial: window, ..
+            } => window,
+        }
+    }
+
+    /// The read credit a stream gathers before it goes back to the peer.
+    fn update_threshold(self) -> u32 {
+        (self.initial() / STREAM_WINDOW_UPDATE_FRACTION).max(MIN_STREAM_WINDOW_UPDATE)
+    }
+}
+
+/// x/net/http2's `initialMaxConcurrentStreams`: the streams Go's client assumes
+/// it may open before the server's SETTINGS arrive. Assuming one made the
+/// first upload of a packet-up flow dial a second connection, a whole TLS
+/// round trip, while the download held the only stream of a fresh one.
+const INITIAL_MAX_SEND_STREAMS: usize = 100;
 
 /// Bounds the copy made by one [`AsyncWrite::poll_write`] call.
 const MAX_UPLOAD_DATA_BYTES: usize = 16 * 1024;
@@ -96,6 +163,8 @@ impl H2Error {
 pub struct H2Client {
     send_request: SendRequest<Bytes>,
     driver: Arc<H2ConnectionDriver>,
+    /// Where responses count the DATA they read, for an adaptive window.
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 #[derive(Debug)]
@@ -207,6 +276,7 @@ impl H2Client {
                 shared,
                 response_is_bodyless,
                 cancel_on_drop: true,
+                bdp: self.bdp.clone(),
             },
         ))
     }
@@ -234,11 +304,22 @@ pub async fn connect_h2_with_keepalive(
 /// Opens H2 with fixed per-stream receive credit and optional keepalive.
 /// Invalid windows fail before any handshake; connection credit stays 16 MiB.
 pub async fn connect_h2_with_receive_window(
-    mut io: BoxedTransportStream,
+    io: BoxedTransportStream,
     read_idle: Option<Duration>,
     stream_receive_window: u32,
 ) -> Result<H2Client, H2Error> {
     let stream_receive_window = h2_stream_receive_window(Some(stream_receive_window))?;
+    connect_h2_with_window(io, read_idle, H2ReceiveWindow::Fixed(stream_receive_window)).await
+}
+
+/// Opens H2 with `window` and optional keepalive; connection credit stays
+/// 16 MiB. An adaptive window grows as grpc-go's BDP estimator grows one
+/// (see `crate::stream::h2_bdp`).
+pub async fn connect_h2_with_window(
+    mut io: BoxedTransportStream,
+    read_idle: Option<Duration>,
+    window: H2ReceiveWindow,
+) -> Result<H2Client, H2Error> {
     // XHTTP cannot use Vision direct mode, so retaining TLS record boundaries
     // after the stream has moved into h2 is pure overhead.
     io.release_record_alignment();
@@ -247,44 +328,84 @@ pub async fn connect_h2_with_receive_window(
     let (io, last_read) = WatchedIo::new(io, read_idle.is_some());
     let mut builder = client::Builder::new();
     builder
-        .initial_window_size(stream_receive_window)
+        .initial_window_size(window.initial())
         .initial_connection_window_size(CONNECTION_WINDOW_SIZE)
-        .initial_max_send_streams(1);
+        .stream_window_update_threshold(window.update_threshold())
+        .initial_max_send_streams(INITIAL_MAX_SEND_STREAMS);
     let (send_request, mut connection) = builder
         .handshake::<_, Bytes>(io)
         .await
         .map_err(|source| protocol_error("handshake failed", source))?;
 
     // `PingPong` is a single-take handle owned by `Connection`, so it must be
-    // extracted before the connection moves into its driver task.
-    let keepalive = read_idle.zip(last_read).and_then(|(read_idle, last_read)| {
-        connection.ping_pong().map(|ping_pong| H2Keepalive {
+    // extracted before the connection moves into its driver task. The
+    // keepalive and the BDP loop share it: h2 allows one user PING in flight.
+    let ping_pong = connection
+        .ping_pong()
+        .map(|ping_pong| Arc::new(tokio::sync::Mutex::new(ping_pong)));
+    let keepalive = read_idle.zip(last_read).zip(ping_pong.clone()).map(
+        |((read_idle, last_read), ping_pong)| H2Keepalive {
             ping_pong,
             read_idle,
             last_read,
-        })
-    });
+        },
+    );
+    let bdp = match window {
+        H2ReceiveWindow::Fixed(_) => None,
+        H2ReceiveWindow::Adaptive { initial, max } => ping_pong.map(|ping_pong| BdpPings {
+            sampler: Arc::default(),
+            ping_pong,
+            estimator: BdpEstimator::new(initial, max),
+            idle_limit: Some(BDP_IDLE_SAMPLES),
+        }),
+    };
+    let sampler = bdp.as_ref().map(|bdp| Arc::clone(&bdp.sampler));
 
     let driver = Arc::new(H2ConnectionDriver {
-        task: tokio::spawn(drive_connection(connection, keepalive)),
+        task: tokio::spawn(drive_connection(connection, keepalive, bdp)),
     });
     Ok(H2Client {
         send_request,
         driver,
+        bdp: sampler,
     })
 }
 
 async fn drive_connection(
-    connection: client::Connection<WatchedIo, Bytes>,
+    mut connection: client::Connection<WatchedIo, Bytes>,
     keepalive: Option<H2Keepalive>,
+    bdp: Option<BdpPings>,
 ) -> Result<(), h2::Error> {
-    let Some(keepalive) = keepalive else {
-        return connection.await;
+    let sampler = bdp.as_ref().map(|bdp| Arc::clone(&bdp.sampler));
+    let connection = poll_fn(move |cx| {
+        if let Some(sampler) = &sampler {
+            if let Some(window) = sampler.take_window(cx.waker()) {
+                // h2 refuses a SETTINGS while our previous one is
+                // unacknowledged. Reading its ACK polls this again.
+                if connection.set_initial_window_size(window).is_err() {
+                    sampler.defer_window(window);
+                }
+            }
+        }
+        Pin::new(&mut connection).poll(cx)
+    });
+    let keepalive = async move {
+        match keepalive {
+            Some(keepalive) => keepalive.run().await,
+            None => std::future::pending().await,
+        }
+    };
+    let bdp = async move {
+        match bdp {
+            Some(bdp) => bdp.run().await,
+            None => std::future::pending().await,
+        }
     };
 
     tokio::select! {
         outcome = connection => outcome,
-        () = keepalive.run() => Ok(()),
+        () = keepalive => Ok(()),
+        () = bdp => Ok(()),
     }
 }
 
@@ -381,13 +502,13 @@ impl AsyncWrite for WatchedIo {
 }
 
 struct H2Keepalive {
-    ping_pong: PingPong,
+    ping_pong: Arc<tokio::sync::Mutex<PingPong>>,
     read_idle: Duration,
     last_read: Arc<LastRead>,
 }
 
 impl H2Keepalive {
-    async fn run(mut self) {
+    async fn run(self) {
         let mut previous_read = self.last_read.at();
         loop {
             tokio::time::sleep_until(previous_read + self.read_idle).await;
@@ -398,7 +519,9 @@ impl H2Keepalive {
                 continue;
             }
 
-            let pong = tokio::time::timeout(PING_TIMEOUT, self.ping_pong.ping(Ping::opaque()));
+            let pong = tokio::time::timeout(PING_TIMEOUT, async {
+                self.ping_pong.lock().await.ping(Ping::opaque()).await
+            });
             if !matches!(pong.await, Ok(Ok(_))) {
                 return;
             }
@@ -679,6 +802,7 @@ pub struct H2PendingResponse {
     shared: Arc<SharedSend>,
     response_is_bodyless: bool,
     cancel_on_drop: bool,
+    bdp: Option<Arc<BdpSampler>>,
 }
 
 impl H2PendingResponse {
@@ -713,28 +837,20 @@ impl H2PendingResponse {
             // ordinary END_STREAM-on-HEADERS response it also records clean
             // EOF before a caller can drop the body without polling it.
             drop(recv);
-            return Ok(H2ResponseBody {
-                headers: parts.headers,
-                recv: None,
-                pending: Bytes::new(),
-                reading_trailers: false,
-                trailers: None,
-                eof: true,
-                failure: None,
-                shared: self.shared.clone(),
-            });
+            return Ok(H2ResponseBody::new(
+                parts.headers,
+                None,
+                self.shared.clone(),
+                None,
+            ));
         }
 
-        Ok(H2ResponseBody {
-            headers: parts.headers,
-            recv: Some(recv),
-            pending: Bytes::new(),
-            reading_trailers: false,
-            trailers: None,
-            eof: false,
-            failure: None,
-            shared: self.shared.clone(),
-        })
+        Ok(H2ResponseBody::new(
+            parts.headers,
+            Some(recv),
+            self.shared.clone(),
+            self.bdp.take(),
+        ))
     }
 }
 
@@ -754,16 +870,134 @@ impl Drop for H2PendingResponse {
 #[derive(Debug)]
 pub struct H2ResponseBody {
     headers: HeaderMap,
-    recv: Option<RecvStream>,
+    /// Absent for a response that ended with its HEADERS.
+    received: Option<Arc<Mutex<ReceivedBody>>>,
+    flow: Option<FlowControl>,
+    drain: Option<JoinHandle<()>>,
     pending: Bytes,
-    reading_trailers: bool,
     trailers: Option<HeaderMap>,
     eof: bool,
     failure: Option<String>,
     shared: Arc<SharedSend>,
+    bdp: Option<Arc<BdpSampler>>,
+}
+
+/// DATA received for one response and not yet read, filled by
+/// [`drain_response`].
+#[derive(Debug, Default)]
+struct ReceivedBody {
+    chunks: VecDeque<Bytes>,
+    end: Option<ReceivedEnd>,
+    reader: Option<Waker>,
+}
+
+#[derive(Debug)]
+enum ReceivedEnd {
+    Trailers(Option<HeaderMap>),
+    Failed(String),
+}
+
+fn lock_received(received: &Mutex<ReceivedBody>) -> MutexGuard<'_, ReceivedBody> {
+    received
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Moves response DATA out of h2 as it arrives.
+///
+/// h2 keeps every received frame as a slice of its shared read buffer, so
+/// frames queued behind a slow or paused reader pin roughly twice their size:
+/// eight stalled streams held about 60 MiB for 32 MiB of window. A frame that
+/// has to wait is therefore copied to an exact-size buffer; a frame the reader
+/// takes at once is passed through. Flow control is unchanged: credit returns
+/// to the peer only as the reader consumes bytes.
+async fn drain_response(mut recv: RecvStream, received: Arc<Mutex<ReceivedBody>>) {
+    let end = loop {
+        let Some(first) = recv.data().await else {
+            break match recv.trailers().await {
+                Ok(trailers) => ReceivedEnd::Trailers(trailers),
+                Err(source) => {
+                    ReceivedEnd::Failed(format!("HTTP/2 response trailers failed: {source}"))
+                }
+            };
+        };
+        let mut next = Some(first);
+        let mut failure = None;
+        let mut guard = lock_received(&received);
+        while let Some(data) = next.take() {
+            match data {
+                Ok(chunk) if chunk.is_empty() => {}
+                Ok(chunk) => {
+                    let chunk = if guard.chunks.is_empty() {
+                        chunk
+                    } else {
+                        Bytes::copy_from_slice(&chunk)
+                    };
+                    guard.chunks.push_back(chunk);
+                }
+                Err(source) => {
+                    failure = Some(format!("HTTP/2 response DATA failed: {source}"));
+                    break;
+                }
+            }
+            // Take frames that are already buffered without yielding, so the
+            // reader is woken once per burst. A Pending result here leaves a
+            // no-op waker that the next real poll replaces before it waits.
+            next = recv.data().now_or_never().flatten();
+        }
+        if let Some(reader) = guard.reader.take() {
+            reader.wake();
+        }
+        drop(guard);
+        if let Some(failure) = failure {
+            break ReceivedEnd::Failed(failure);
+        }
+    };
+    let mut guard = lock_received(&received);
+    guard.end = Some(end);
+    if let Some(reader) = guard.reader.take() {
+        reader.wake();
+    }
 }
 
 impl H2ResponseBody {
+    fn new(
+        headers: HeaderMap,
+        recv: Option<RecvStream>,
+        shared: Arc<SharedSend>,
+        bdp: Option<Arc<BdpSampler>>,
+    ) -> Self {
+        let Some(mut recv) = recv else {
+            return Self {
+                headers,
+                received: None,
+                flow: None,
+                drain: None,
+                pending: Bytes::new(),
+                trailers: None,
+                eof: true,
+                failure: None,
+                shared,
+                bdp,
+            };
+        };
+        let flow = recv.flow_control().clone();
+        let received = Arc::new(Mutex::new(ReceivedBody::default()));
+        let drain = tokio::spawn(drain_response(recv, Arc::clone(&received)));
+        Self {
+            headers,
+            received: Some(received),
+            flow: Some(flow),
+            drain: Some(drain),
+            pending: Bytes::new(),
+            trailers: None,
+            eof: false,
+            failure: None,
+            shared,
+            bdp,
+        }
+    }
+
     /// Response headers excluding the HTTP/2 pseudo-headers.
     pub fn headers(&self) -> &HeaderMap {
         &self.headers
@@ -786,6 +1020,11 @@ impl Drop for H2ResponseBody {
         if !self.eof {
             self.shared.cancel();
         }
+        // Dropping the receive stream with the flow-control handle returns
+        // any unread credit to the connection.
+        if let Some(drain) = self.drain.take() {
+            drain.abort();
+        }
     }
 }
 
@@ -806,72 +1045,66 @@ impl AsyncRead for H2ResponseBody {
             )));
         }
 
+        let mut copied = 0;
         loop {
             if !this.pending.is_empty() {
                 let take = this.pending.len().min(output.remaining());
-                let release = match this.recv.as_mut() {
-                    Some(recv) => recv.flow_control().release_capacity(take),
-                    None => {
-                        return Poll::Ready(Err(
-                            this.fail("HTTP/2 response body lost its receive stream".to_owned())
-                        ));
-                    }
-                };
-                if let Err(source) = release {
-                    return Poll::Ready(Err(
-                        this.fail(format!("HTTP/2 response flow control failed: {source}"))
-                    ));
-                }
-
                 output.put_slice(&this.pending[..take]);
                 this.pending = this.pending.slice(take..);
-                return Poll::Ready(Ok(()));
-            }
-
-            if this.reading_trailers {
-                let trailers = {
-                    let Some(recv) = this.recv.as_mut() else {
-                        return Poll::Ready(Err(
-                            this.fail("HTTP/2 response body lost its trailer stream".to_owned())
-                        ));
-                    };
-                    ready!(recv.poll_trailers(cx))
-                };
-                match trailers {
-                    Ok(trailers) => {
-                        this.trailers = trailers;
-                        this.recv = None;
-                        this.eof = true;
-                        return Poll::Ready(Ok(()));
-                    }
-                    Err(source) => {
-                        return Poll::Ready(Err(
-                            this.fail(format!("HTTP/2 response trailers failed: {source}"))
-                        ));
-                    }
+                copied += take;
+                if output.remaining() == 0 {
+                    break;
                 }
+                continue;
             }
-
-            let data = {
-                let Some(recv) = this.recv.as_mut() else {
+            let Some(received) = this.received.as_ref() else {
+                this.eof = true;
+                break;
+            };
+            let mut guard = lock_received(received);
+            if let Some(chunk) = guard.chunks.pop_front() {
+                drop(guard);
+                this.pending = chunk;
+                continue;
+            }
+            if copied > 0 {
+                break;
+            }
+            match guard.end.take() {
+                Some(ReceivedEnd::Trailers(trailers)) => {
+                    drop(guard);
+                    this.trailers = trailers;
+                    this.received = None;
+                    this.flow = None;
                     this.eof = true;
                     return Poll::Ready(Ok(()));
-                };
-                ready!(recv.poll_data(cx))
-            };
-            match data {
-                Some(Ok(chunk)) if chunk.is_empty() => continue,
-                Some(Ok(chunk)) => this.pending = chunk,
-                Some(Err(source)) => {
-                    return Poll::Ready(Err(
-                        this.fail(format!("HTTP/2 response DATA failed: {source}"))
-                    ));
+                }
+                Some(ReceivedEnd::Failed(message)) => {
+                    drop(guard);
+                    return Poll::Ready(Err(this.fail(message)));
                 }
                 None => {
-                    this.reading_trailers = true;
+                    guard.reader = Some(cx.waker().clone());
+                    return Poll::Pending;
                 }
             }
         }
+
+        if copied > 0 {
+            let release = match this.flow.as_mut() {
+                Some(flow) => flow.release_capacity(copied),
+                None => Ok(()),
+            };
+            if let Err(source) = release {
+                return Poll::Ready(Err(
+                    this.fail(format!("HTTP/2 response flow control failed: {source}"))
+                ));
+            }
+            if let Some(bdp) = &this.bdp {
+                bdp.record_data(copied);
+            }
+        }
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -888,4 +1121,47 @@ fn h2_io_error(context: &'static str, source: h2::Error) -> io::Error {
 
 fn state_io_error() -> io::Error {
     io::Error::other(H2Error::StatePoisoned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stream::XhttpConfigInput;
+
+    fn config(window: Option<u32>) -> XhttpConfig {
+        XhttpConfig::normalize(XhttpConfigInput {
+            h2_stream_receive_window: window,
+            ..XhttpConfigInput::default()
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn a_standard_host_keeps_gos_fixed_window() {
+        assert_eq!(
+            H2ReceiveWindow::for_config(&config(None), MemoryClass::Standard),
+            H2ReceiveWindow::Fixed(4 << 20)
+        );
+    }
+
+    #[test]
+    fn a_constrained_host_opens_smaller_and_grows_to_the_default() {
+        assert_eq!(
+            H2ReceiveWindow::for_config(&config(None), MemoryClass::Constrained),
+            H2ReceiveWindow::Adaptive {
+                initial: 1 << 20,
+                max: 4 << 20
+            }
+        );
+    }
+
+    #[test]
+    fn a_configured_window_stays_fixed_on_every_host() {
+        for class in [MemoryClass::Standard, MemoryClass::Constrained] {
+            assert_eq!(
+                H2ReceiveWindow::for_config(&config(Some(8 << 20)), class),
+                H2ReceiveWindow::Fixed(8 << 20)
+            );
+        }
+    }
 }

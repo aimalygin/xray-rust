@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Archive numeric evidence and controller provenance; verify 200 x 2 x 5 trials and render charts.
 
-collect --campaign DIR --accepted BLOCK [--accepted BLOCK ...] --report DIR
+collect --campaign DIR --accepted BLOCK [--accepted BLOCK ...]
+        --pin before=COMMIT --pin after=COMMIT --pin harness=COMMIT --label TEXT --report DIR
 verify --report DIR
 charts --report DIR    (matplotlib 3.10.8, numpy 2.3.5)
-No configs, generated credentials, application logs or unrelated process names
-are published. All attempts are indexed, including failed blocks and smoke.
+The pins and label are kept in the evidence index; a report without them is the
+2026-10-27 migration comparison. No configs, generated credentials, application
+logs or unrelated process names are published. All attempts are indexed,
+including failed blocks and smoke.
 """
 import argparse
 import copy
@@ -25,6 +28,13 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('migration', ROOT / 'scripts/run-migration-benchmarks.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
+
+PINNED = ('before', 'after', 'harness')
+# The 2026-10-27 migration report predates recorded pins and labels.
+LEGACY_PINS = {'before': '3ca380e7e32d82cfff55f38698117dba8bef077b',
+               'after': '53756feea4868e77114f71688cb27b34b8e57ffb',
+               'harness': '53756feea4868e77114f71688cb27b34b8e57ffb'}
+LEGACY_LABEL = 'migration'
 
 
 def digest(data):
@@ -74,6 +84,10 @@ def validate_trial(case, run, result, inputs):
         'transfer_seconds': result['transfer_seconds'], 'startup_seconds': result['client_startup_seconds'],
         'startup_cpu_millis': result['client_startup_cpu_millis'],
         'total_cpu_millis': result['client_cpu_total_millis']}
+    # Harnesses since 2026-10-29 also report the exact lifetime peak physical
+    # footprint (macOS). Older archives lack it, so their summaries are unchanged.
+    if result.get('peak_footprint_kib'):
+        values['footprint_mib'] = result['peak_footprint_kib'] / 1024
     for key, value in (result['latency_us'] or {}).items():
         values['latency_' + key + '_us'] = value
     for key, value in (result['ready_latency_us'] or {}).items():
@@ -97,18 +111,17 @@ def paired(before, after):
     return result
 
 
-def summarize(entries, accepted):
+def summarize(entries, accepted, pins):
     expected_cases = {case['id']: case for case in m.cases()}
     observed, groups, case_blocks, hosts, inputs, quality = set(), {}, {}, [], None, []
+    require(set(pins) == set(PINNED), 'pin exactly ' + ', '.join(PINNED))
     for block in accepted:
         manifest = json.loads(entries[block + '/manifest.json'])
         require(manifest['status'] == 'pass' and not manifest['smoke'] and manifest['repeats'] == 5, 'incomplete/non-publication block')
         if inputs is None:
             inputs = manifest['inputs']
-            pins = {'before': '3ca380e7e32d82cfff55f38698117dba8bef077b',
-                    'after': '53756feea4868e77114f71688cb27b34b8e57ffb',
-                    'harness': '53756feea4868e77114f71688cb27b34b8e57ffb', 'reference': m.REFERENCE}
-            require(all(inputs[k]['commit'] == pin for k, pin in pins.items()), 'wrong comparison source pin')
+            expected = {**pins, 'reference': m.REFERENCE}
+            require(all(inputs[k]['commit'] == pin for k, pin in expected.items()), 'wrong comparison source pin')
             require(inputs['before']['rustc'] == inputs['after']['rustc'] == inputs['harness']['rustc'], 'Rust compiler changed')
             for name in ('before', 'after', 'harness'):
                 require('--release' in inputs[name]['command'] and '--locked' in inputs[name]['command']
@@ -180,8 +193,9 @@ def validate_selection(attempts, accepted):
     require(passing == set(accepted), 'successful full blocks must all be accepted; no cherry-picking')
 
 
-def collect(campaign, accepted, report):
+def collect(campaign, accepted, report, pins, label):
     require(not report.exists(), 'report directory already exists')
+    require(label and label != LEGACY_LABEL, 'label the comparison')
     require(accepted and len(accepted) == len(set(accepted)), 'missing/duplicate accepted blocks')
     entries, attempts = {'build-inputs.json': (campaign / 'inputs.json').read_bytes()}, []
     for path in sorted(campaign.glob('*/manifest.json')):
@@ -200,7 +214,7 @@ def collect(campaign, accepted, report):
     for path in sorted((campaign / 'provenance').glob('*')):
         require(path.is_file(), 'unexpected provenance directory')
         entries['provenance/' + path.name] = path.read_bytes()
-    summary = summarize(entries, accepted)
+    summary = summarize(entries, accepted, pins)
     report.mkdir(parents=True)
     with (report / 'measurements.tar.gz').open('wb') as stream:
         with gzip.GzipFile(fileobj=stream, mode='wb', mtime=0, filename='') as zipped:
@@ -208,7 +222,7 @@ def collect(campaign, accepted, report):
                 for name, data in sorted(entries.items()):
                     info = tarfile.TarInfo(name); info.size = len(data); info.mode = 0o644
                     archive.addfile(info, io.BytesIO(data))
-    index = {'accepted_blocks': accepted, 'attempts': attempts,
+    index = {'accepted_blocks': accepted, 'attempts': attempts, 'pins': pins, 'label': label,
         'archive_sha256': digest((report / 'measurements.tar.gz').read_bytes()),
         'members_sha256': {name: digest(data) for name, data in entries.items()},
         'privacy': 'Numeric results, manifests and campaign-controller provenance; unrelated process names/PIDs removed from ambient samples; configs, private fixture keys and application logs remain local.'}
@@ -235,17 +249,22 @@ def csv_bytes(summary):
 def write_csv(report, summary):
     (report / 'results.csv').write_bytes(csv_bytes(summary))
 
-def charts(report, summary):
+def charts(report, summary, label):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import numpy as np
-    plt.rcParams.update({'font.family': 'DejaVu Sans', 'svg.fonttype': 'none', 'font.size': 9, 'svg.hashsalt': 'xray-rust-v26.10.21-migration'})
+    salt = 'xray-rust-v26.10.21-migration' if label == LEGACY_LABEL else 'xray-rust-' + report.name
+    plt.rcParams.update({'font.family': 'DejaVu Sans', 'svg.fonttype': 'none', 'font.size': 9, 'svg.hashsalt': salt})
     rows = {row['case']['id']: row for row in summary['rows']}
+    # The exact peak physical footprint where every trial has it; sampled RSS otherwise.
+    exact = all('footprint_mib' in row['versions'][v] for row in summary['rows'] for v in m.VERSIONS)
+    memory, memory_name = ('footprint_mib', 'Peak footprint') if exact else ('rss_mib', 'Sampled peak RSS')
+    span = f'xray-rust {summary["inputs"]["before"]["commit"][:7]} → {summary["inputs"]["after"]["commit"][:7]}'
     for path in ('socks', 'tun'):
         names = [p for p in m.PROFILES if f'{p}-{path}-download-8' in rows]
         fig, axes = plt.subplots(1, 3, figsize=(14, max(5, len(names) * .38)), layout='constrained')
-        for ax, (metric, title) in zip(axes, [('throughput_mib_s', 'Throughput · MiB/s ↑'), ('cpu_ms_per_gib', 'Client CPU · ms/GiB ↓'), ('rss_mib', 'Sampled peak RSS · MiB ↓')]):
+        for ax, (metric, title) in zip(axes, [('throughput_mib_s', 'Throughput · MiB/s ↑'), ('cpu_ms_per_gib', 'Client CPU · ms/GiB ↓'), (memory, memory_name + ' · MiB ↓')]):
             for i, (version, color) in enumerate([('before', '#64748b'), ('after', '#007f82')]):
                 values = [rows[f'{p}-{path}-download-8']['versions'][version][metric] for p in names]
                 med = np.array([v['median'] for v in values]); low = np.array([v['min'] for v in values]); high = np.array([v['max'] for v in values])
@@ -255,7 +274,7 @@ def charts(report, summary):
             ax.set_title(title, loc='left'); ax.grid(axis='x', alpha=.18); ax.set_axisbelow(True)
             ax.spines[['top', 'right']].set_visible(False); ax.set_xlim(left=0)
         fig.legend(*axes[0].get_legend_handles_labels(), frameon=False, ncol=2, loc='outside lower center')
-        fig.suptitle(f'xray-rust migration · {path.upper()} · 8-flow download\nApple M6 · five pairs · bars: medians; whiskers: min/max', fontsize=13)
+        fig.suptitle(f'xray-rust {label} · {path.upper()} · 8-flow download\n{summary["host"]["cpu"]} · five pairs · bars: medians; whiskers: min/max', fontsize=13)
         for suffix in ('svg', 'png'):
             fig.savefig(report / f'{path}-download-8.{suffix}', dpi=150, metadata={'Date': None} if suffix == 'svg' else None)
         plt.close(fig)
@@ -263,7 +282,8 @@ def charts(report, summary):
     names = [(p, path) for p in m.PROFILES for path in ('socks', 'tun') if f'{p}-{path}-upload-1' in rows]
     cols = [(kind, n) for n in (1, 8) for kind in m.BULK]
     fig, axes = plt.subplots(1, 3, figsize=(14, len(names) * .35 + 1.8), layout='constrained')
-    for ax, (metric, title, direction) in zip(axes, [('throughput_mib_s', 'Throughput change % · higher is better', 1), ('cpu_ms_per_gib', 'CPU cost change % · lower is better', -1), ('rss_mib', 'Peak RSS change % · lower is better', -1)]):
+    memory_change = 'Peak footprint change %' if exact else 'Peak RSS change %'
+    for ax, (metric, title, direction) in zip(axes, [('throughput_mib_s', 'Throughput change % · higher is better', 1), ('cpu_ms_per_gib', 'CPU cost change % · lower is better', -1), (memory, memory_change + ' · lower is better', -1)]):
         data = np.array([[100 * (rows[f'{p}-{path}-{kind}-{n}']['after_over_before'][metric]['median'] - 1)
                           if rows[f'{p}-{path}-{kind}-{n}']['after_over_before'][metric] else np.nan for kind, n in cols] for p, path in names])
         ax.imshow(direction * data, cmap='RdYlGn', vmin=-20, vmax=20, aspect='auto')
@@ -272,7 +292,7 @@ def charts(report, summary):
         ax.set_xticks(range(len(cols)), [f'{dict(upload="up", download="down", **{"full-duplex":"duplex"})[k]} {n}' for k, n in cols]); ax.xaxis.tick_top()
         ax.set_yticks(range(len(names)), [f'{p} · {path}' for p, path in names] if ax == axes[0] else [])
         ax.set_title(title, pad=25, fontsize=10)
-    fig.suptitle('xray-rust 3ca380e → 53756fe · all bulk cases · median of five paired after/before ratios\nColor saturates at ±20%; labels retain exact rounded change. Green = favorable.', fontsize=13)
+    fig.suptitle(f'{span} · all bulk cases · median of five paired after/before ratios\nColor saturates at ±20%; labels retain exact rounded change. Green = favorable.', fontsize=13)
     for suffix in ('svg', 'png'):
         fig.savefig(report / f'bulk-changes.{suffix}', dpi=150, metadata={'Date': None} if suffix == 'svg' else None)
     plt.close(fig)
@@ -291,7 +311,7 @@ def charts(report, summary):
         ax.set_xticks(range(len(cols)), [f'{"TCP" if k == "tcp-latency" else "UDP"} {n}' for k, n in cols]); ax.xaxis.tick_top()
         ax.set_yticks(range(len(names)), [f'{p} · {path}' for p, path in names] if ax == axes[0] else [])
         ax.set_title(quantile + ' latency change % · lower is better', pad=25, fontsize=10)
-    fig.suptitle('xray-rust 3ca380e → 53756fe · all echo cases · median of five paired after/before ratios\nGreen = lower latency; color saturates at ±20%. TUN TCP echo connections are sequential.', fontsize=12)
+    fig.suptitle(f'{span} · all echo cases · median of five paired after/before ratios\nGreen = lower latency; color saturates at ±20%. TUN TCP echo connections are sequential.', fontsize=12)
     for suffix in ('svg', 'png'):
         fig.savefig(report / f'latency-changes.{suffix}', dpi=150, metadata={'Date': None} if suffix == 'svg' else None)
     plt.close(fig)
@@ -302,19 +322,27 @@ def main():
     parser.add_argument('action', choices=('collect', 'verify', 'charts'))
     parser.add_argument('--campaign', type=Path)
     parser.add_argument('--accepted', action='append')
+    parser.add_argument('--pin', action='append', default=[], metavar='NAME=COMMIT',
+                        help='the commit each of before, after and harness must be built from')
+    parser.add_argument('--label', help='what the comparison is, e.g. "perf branch"; titles the download charts')
     parser.add_argument('--report', type=Path, required=True)
     args = parser.parse_args()
     if args.action == 'collect':
-        if not args.campaign or not args.accepted:
-            parser.error('collect requires --campaign and --accepted')
-        summary = collect(args.campaign, args.accepted, args.report)
+        if not args.campaign or not args.accepted or not args.label:
+            parser.error('collect requires --campaign, --accepted and --label')
+        pins = dict(pin.split('=', 1) for pin in args.pin)
+        if len(pins) != len(args.pin):
+            parser.error('duplicate --pin')
+        label = args.label
+        summary = collect(args.campaign, args.accepted, args.report, pins, label)
     else:
         entries, index = archive_entries(args.report)
-        summary = summarize(entries, index['accepted_blocks'])
+        label = index.get('label', LEGACY_LABEL)
+        summary = summarize(entries, index['accepted_blocks'], index.get('pins', LEGACY_PINS))
         require(encoded(summary) == (args.report / 'summary.json').read_bytes(), 'summary differs from evidence')
         require(csv_bytes(summary) == (args.report / 'results.csv').read_bytes(), 'CSV differs from evidence')
     if args.action == 'charts':
-        charts(args.report, summary)
+        charts(args.report, summary, label)
     print(f"Verified {summary['cases']} cases, {summary['trials']} trials, five pairs on one host")
 
 

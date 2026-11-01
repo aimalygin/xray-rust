@@ -144,7 +144,8 @@ split-routing behavior when presenting an imported config.
 ## Limits and secrets
 
 Source text is capped at 64 KiB; request/result JSON at 256 KiB each; display
-names at 1..128 UTF-8 bytes without control characters; Hysteria auth at 4096
+names at 1..128 UTF-8 bytes without control characters or bidi embeddings,
+overrides and isolates (U+202A..U+202E, U+2066..U+2069); Hysteria auth at 4096
 bytes and query entries at 16; WireGuard prefixes at 256 across all peers.
 Malformed Unicode, NULs, keys, ports, CIDRs and ambiguous input fail with static
 errors that never echo credentials. Kotlin rejects unpaired UTF-16 surrogates

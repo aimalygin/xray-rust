@@ -36,7 +36,7 @@ use xray_routing::Target;
 use super::super::http_headers::HeaderMap as XhttpHeaderMap;
 use super::config::{XhttpConfig, XhttpEndpoint, XhttpMode, XhttpRange};
 use super::h1::{start_chunked_request, start_fixed_request, H1Error, H1Request, H1ResponseBody};
-use super::h2::{connect_h2_with_receive_window, H2Client, H2Error, H2ResponseBody};
+use super::h2::{connect_h2_with_window, H2Client, H2Error, H2ReceiveWindow, H2ResponseBody};
 use super::h3::{
     connect_h3_candidates, H3Client, H3ConnectConfig, H3Error, H3QuicConfig, H3ResponseBody,
 };
@@ -377,7 +377,7 @@ impl XhttpTransport {
             .clamp(PACKET_RESPONSE_CAP_FALLBACK, MAX_H1_IDLE_UPLOAD_STREAMS);
         let xmux = Arc::new(XmuxManager::new(
             xmux_policy,
-            config.h2_stream_receive_window,
+            H2ReceiveWindow::for_config(&config, crate::memory_class()),
             idle_limit,
             Arc::clone(&rng),
             clock,
@@ -398,7 +398,7 @@ impl XhttpTransport {
         let rng = Arc::new(StdMutex::new(rng));
         self.xmux = Arc::new(XmuxManager::new(
             self.xmux.policy,
-            self.config.h2_stream_receive_window,
+            self.xmux.h2_window,
             self.xmux.h1_idle_limit,
             Arc::clone(&rng),
             Arc::clone(&self.xmux.clock),
@@ -412,7 +412,7 @@ impl XhttpTransport {
     pub fn with_clock(mut self, clock: XhttpClock) -> Result<Self, XhttpTransportError> {
         self.xmux = Arc::new(XmuxManager::new(
             self.xmux.policy,
-            self.config.h2_stream_receive_window,
+            self.xmux.h2_window,
             self.xmux.h1_idle_limit,
             Arc::clone(&self.rng),
             clock,
@@ -425,7 +425,7 @@ impl XhttpTransport {
     pub fn with_h2_idle_timeout(mut self, timeout: Duration) -> Result<Self, XhttpTransportError> {
         self.xmux = Arc::new(XmuxManager::new(
             self.xmux.policy,
-            self.config.h2_stream_receive_window,
+            self.xmux.h2_window,
             self.xmux.h1_idle_limit,
             Arc::clone(&self.rng),
             Arc::clone(&self.xmux.clock),
@@ -2425,7 +2425,7 @@ impl AsyncRead for DeferredReader {
 /// pool, bypassing limits such as the v26.7.28 default `maxConnections == 3`.
 struct XmuxManager {
     policy: XhttpXmuxPolicy,
-    h2_stream_receive_window: u32,
+    h2_window: H2ReceiveWindow,
     concurrency: i32,
     connections: i32,
     h1_idle_limit: usize,
@@ -2439,7 +2439,7 @@ struct XmuxManager {
 impl XmuxManager {
     fn new(
         policy: XhttpXmuxPolicy,
-        h2_stream_receive_window: u32,
+        h2_window: H2ReceiveWindow,
         h1_idle_limit: usize,
         rng: Arc<StdMutex<Box<dyn RngCore + Send>>>,
         clock: XhttpClock,
@@ -2475,7 +2475,7 @@ impl XmuxManager {
         };
         Ok(Self {
             policy,
-            h2_stream_receive_window,
+            h2_window,
             concurrency,
             connections,
             h1_idle_limit,
@@ -2574,7 +2574,7 @@ impl XmuxManager {
             h1_pool: H1Pool::new(self.h1_idle_limit),
             h2_pool: H2Pool::new(
                 self.h2_keep_alive_period,
-                self.h2_stream_receive_window,
+                self.h2_window,
                 Arc::clone(&self.clock),
                 self.h2_idle_timeout,
             ),
@@ -2722,7 +2722,7 @@ struct H2Pool {
     /// Propagated xmux read-idle/PING policy for every connection opened by
     /// this client slot.
     keep_alive_period: Option<Duration>,
-    stream_receive_window: u32,
+    window: H2ReceiveWindow,
     clock: XhttpClock,
     idle_timeout: Duration,
 }
@@ -2812,14 +2812,14 @@ impl Drop for ConnectionActivityLease {
 impl H2Pool {
     fn new(
         keep_alive_period: Option<Duration>,
-        stream_receive_window: u32,
+        window: H2ReceiveWindow,
         clock: XhttpClock,
         idle_timeout: Duration,
     ) -> Self {
         Self {
             state: Arc::new(AsyncMutex::new(H2PoolState::default())),
             keep_alive_period,
-            stream_receive_window,
+            window,
             clock,
             idle_timeout,
         }
@@ -2866,10 +2866,9 @@ impl H2Pool {
 
     async fn fresh_client(&self, dial: XhttpDial) -> Result<H2Checkout, XhttpTransportError> {
         let io = dial().await.map_err(XhttpTransportError::Dial)?;
-        let client =
-            connect_h2_with_receive_window(io, self.keep_alive_period, self.stream_receive_window)
-                .await
-                .map_err(XhttpTransportError::Http2)?;
+        let client = connect_h2_with_window(io, self.keep_alive_period, self.window)
+            .await
+            .map_err(XhttpTransportError::Http2)?;
         let lifecycle = Arc::new(ConnectionLifecycle::new(Arc::clone(&self.clock)));
         let activity = lifecycle.checkout();
         self.state.lock().await.connections.push(H2PoolConnection {
@@ -2888,11 +2887,11 @@ impl H2Pool {
         let state = Arc::clone(&self.state);
         let clock = Arc::clone(&self.clock);
         let keep_alive_period = self.keep_alive_period;
-        let stream_receive_window = self.stream_receive_window;
+        let window = self.window;
         tokio::spawn(async move {
             let result = async {
                 let io = dial().await.map_err(XhttpTransportError::Dial)?;
-                connect_h2_with_receive_window(io, keep_alive_period, stream_receive_window)
+                connect_h2_with_window(io, keep_alive_period, window)
                     .await
                     .map_err(XhttpTransportError::Http2)
             }
@@ -3500,7 +3499,7 @@ mod xmux_reservation_tests {
         };
         let manager = XmuxManager::new(
             policy,
-            super::super::config::DEFAULT_H2_STREAM_RECEIVE_WINDOW,
+            H2ReceiveWindow::Fixed(super::super::config::DEFAULT_H2_STREAM_RECEIVE_WINDOW),
             MAX_H1_IDLE_UPLOAD_STREAMS,
             rng,
             Arc::new(Instant::now),
