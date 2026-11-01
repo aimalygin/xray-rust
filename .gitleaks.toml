@@ -419,6 +419,21 @@ regexTarget = "line"
 regexes = ['''^\s*"commandKey"\s*:\s*"d34482dca079f1e8ad37ff8d08a382cf",?\s*$''']
 paths = ['''^tests/fixtures/v08/protocol-primitives\.json$''']
 
+# The pinned Go oracle derives these Shadowsocks AEAD master keys with
+# EVP_BytesToKey from two synthetic passwords in the same fixture.
+[[allowlists]]
+description = "Shadowsocks AEAD oracle master keys of the synthetic fixture passwords"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^139335d86571976d0e0c22dd8ccef2da$''',
+  '''^139335d86571976d0e0c22dd8ccef2da8f4b508917cfadef760907893c147348$''',
+  '''^d76043b95f38391a651e82548cbe89cb$''',
+  '''^d76043b95f38391a651e82548cbe89cb1213d4bdd5e1c94ed6553908a87821f1$''',
+]
+paths = ['''^tests/fixtures/v08/protocol-primitives\.json$''']
+
 [[allowlists]]
 description = "Deterministic uTLS fixture enum, not a credential"
 targetRules = ["generic-api-key"]
