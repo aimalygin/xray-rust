@@ -26,3 +26,11 @@ Connection-level updates, the server, and every caller that leaves the option
 unset keep upstream behavior. Unit tests in
 `proto/streams/flow_control.rs` cover the threshold, the doubling rule and the
 unchanged default.
+
+## Fuzzing build
+
+`lib.rs` allows `missing_docs` on the `cfg(fuzzing)` bridge module
+unconditionally; upstream allows it only with the `unstable` feature. Cargo caps
+the lints of registry crates, but this copy is a path dependency, so its
+`deny(missing_docs)` applies, and cargo-fuzz's `--cfg fuzzing` build failed on
+the undocumented bridge. Behavior is unchanged.

@@ -123,4 +123,12 @@ cargo test --locked --manifest-path "$temporary/h2-0.4.20/Cargo.toml" \
   --lib -- --skip hpack::test::fixture
 
 bash "$ROOT/scripts/check-wireguard-adapter-prototype.sh" --verify-vendor-only
+
+# Vendored crates are path dependencies, so Cargo enforces their own lint
+# levels instead of capping them as it does for registry crates. cargo-fuzz
+# builds them with `--cfg fuzzing`, which otherwise only the release-gate
+# fuzz job compiles.
+RUSTFLAGS="--cfg fuzzing" cargo check --locked \
+  --manifest-path "$ROOT/Cargo.toml" --target-dir "$temporary/fuzzing-target" \
+  -p blake3 -p gotatun -p h2 -p h3 -p h3-quinn -p quinn -p quinn-proto -p smoltcp
 echo "verified vendored sources against checksum-pinned archives"
