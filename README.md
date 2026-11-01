@@ -36,13 +36,15 @@ Thank you for your support!
 - **Rust core with bounded resources.** Flow budgets, bounded queues,
   timeouts and backpressure bound the TUN path and relays; config, wire-format
   and FFI lifecycle code has [fuzz targets](fuzz/README.md).
-- **Xray-compatible configs.** VLESS with REALITY, `xtls-rprx-vision` and
-  XHTTP, plus VMess AEAD, Trojan, Shadowsocks 2022, Hysteria 2 and WireGuard
-  clients. The parser accepts a [documented subset](docs/config-compatibility.md)
-  and rejects unsupported fields with their JSON path instead of guessing.
+- **Xray-compatible configs.** VLESS with REALITY, `xtls-rprx-vision`, XHTTP
+  and Mux, plus VMess AEAD, Trojan, Shadowsocks (2022 and classic AEAD),
+  Hysteria 2 and WireGuard clients. The parser accepts a
+  [documented subset](docs/config-compatibility.md) and rejects unsupported
+  fields with their JSON path instead of guessing.
 - **Built for mobile.** A stable [C ABI](docs/ffi.md) with Swift Package and
   Android AAR adapters, a reference `NEPacketTunnelProvider` and `VpnService`,
-  share-link import, and live connection inventory and diagnostics.
+  share-link import, live connection inventory and traffic counters, and
+  diagnostics.
 - **Measured against Xray-core.** Published, reproducible benchmarks: 4.6 MiB
   idle memory against 27.4 MiB for Xray-core, and 22.1 against 19.1 Gbps
   through VLESS + REALITY + Vision ([details](#benchmarks)).
@@ -64,10 +66,10 @@ lists the accepted values.
 
 | Outbound | Stream transports | TLS | REALITY | Vision | UDP | Mux / XUDP |
 | --- | --- | :---: | :---: | :---: | :---: | :---: |
-| **VLESS** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP (H1/H2/H3) | ✅ | ✅ RAW, gRPC, XHTTP | ✅ RAW¹ | ✅ | XUDP only² |
-| **VMess AEAD** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅ |
-| **Trojan** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅ |
-| **Shadowsocks 2022** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅ |
+| **VLESS** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP (H1/H2/H3) | ✅ | ✅ RAW, gRPC, XHTTP | ✅ RAW¹ | ✅ | ✅² |
+| **VMess AEAD** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅² |
+| **Trojan** | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅² |
+| **Shadowsocks** 2022, classic AEAD³ | RAW, WebSocket, HTTPUpgrade, gRPC, XHTTP | ✅ | ✅ RAW, gRPC, XHTTP | ➖ | ✅ | ✅² |
 | **Hysteria 2** | Own QUIC carrier, Salamander, port hopping | QUIC | ➖ | ➖ | ✅ | ➖ |
 | **WireGuard** | Own UDP carrier | ➖ | ➖ | ➖ | ✅ | ➖ |
 | **SOCKS5** | RAW | ✅ | ❌ | ➖ | ✅ | ❌ |
@@ -76,8 +78,11 @@ lists the accepted values.
 
 ✅ supported subset · ❌ not supported · ➖ not applicable.
 ¹ Direct mode over RAW with TLS or REALITY; on other transports Vision requires
-VLESS encryption, as in Xray. ² General VLESS Mux is not supported. Over XHTTP,
-Mux carries UDP children only.
+VLESS encryption, as in Xray. ² Over XHTTP, and for VLESS with
+`xtls-rprx-vision`, Mux carries UDP children only, as the pinned Xray-core
+server accepts only those there. ³ `aes-128-gcm`, `aes-256-gcm`,
+`chacha20-poly1305` and `xchacha20-poly1305`, with Xray's aliases; no stream
+ciphers or `none`.
 
 **Inbounds:** SOCKS5 (no-auth or RFC 1929 password, `CONNECT` and `UDP ASSOCIATE`),
 HTTP `CONNECT`, a TUN packet API or file descriptor with a userspace TCP/UDP
@@ -85,18 +90,19 @@ stack, and Linux TPROXY.
 **Routing and DNS:** Xray field rules with `geosite`/`geoip`, balancers with
 `observatory` health checks, DoT/DoH/DoQ, fake IP and hot-swappable routing
 policy. **Security extras:** uTLS-shaped ClientHellos, VLESS encryption
-(ML-KEM-768/X25519), ClientHello fragmentation and UDP noise.
+(ML-KEM-768/X25519), ClientHello fragmentation, UDP noise, and UDP port
+hopping for Hysteria 2 and XHTTP over HTTP/3.
 
 ### Not supported yet
 
 Mirrors the notable unsupported areas in [project status](docs/status.md#configuration-scope):
 
-- Shadowsocks AEAD-2017, legacy VMess authentication, and server-side proxy protocols;
-- generic HTTP/2, QUIC and KCP transports, and stream transports beyond RAW,
+- Shadowsocks stream ciphers and `none`, legacy VMess authentication, and server-side proxy protocols;
+- generic HTTP/2, QUIC and KCP transports, and stream transports beyond raw,
   WebSocket, HTTPUpgrade, gRPC and XHTTP;
-- general VLESS Mux, reverse proxy, observatory command/API services, regex
-  `leastLoad` costs, and outbound chaining outside the documented
-  transport-layer TCP subset;
+- reverse proxy, observatory command/API services, regex `leastLoad`
+  costs, and outbound chaining outside the documented transport-layer TCP
+  subset;
 - HTTP inbound authentication and HTTP transparent proxy mode;
 - full Xray DNS, policy/statistics, sniffing, and routing semantics.
 
@@ -110,7 +116,7 @@ Mirrors the notable unsupported areas in [project status](docs/status.md#configu
 | Security and flow | TLS and REALITY with uTLS-shaped ClientHellos, `xtls-rprx-vision`, VLESS UDP and XUDP paths, and bounded Mux.Cool/XUDP pooling for VLESS, Trojan, Shadowsocks (2022 and AEAD) and VMess | Only the documented config subset; REALITY rejects the 14 fingerprints that carry no X25519 key share and warns on those without the X25519MLKEM768 share v26.10.21 servers require, while plain TLS accepts all 61 |
 | Routing and DNS | Field rules with domain/IP/network/port matchers, `geosite`/`geoip`, atomic rule/geodata snapshot replacement, Xray `routing.balancers` plus bounded `observatory` URL health checks and `leastLoad`, cycle-free TCP outbound graph edges, Xray-style DNS server selection including routed `tls://` DoT, routed/local HTTP/2 DoH, and provider-local `quic+local://` DoQ, routed multi-address resolution, TTL-aware positive/negative cache with bounded stale-while-revalidate, `dns.hosts`, bounded fake IP, and DNS-outbound Direct/Drop/Return/Hijack policy | Full config and outbound/balancer topology replacement still requires a new core; no UDP/protocol-layer outbound chaining, `UseSystem` route probing, per-server cache policy, or full Xray DNS/routing parity |
 | Mobile | Swift Package/Xcode sample for iOS, tvOS, and macOS; Android library and `VpnService` adapter | Signing, entitlements, VPN consent, foreground policy, and release packaging remain host-app responsibilities |
-| Management | Development ABI 1.12 plus Swift/Kotlin expose protocol capability discovery, shared profile import and on-demand outbound probes alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, cumulative per-outbound accounting, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative, with live bytes of active flows reported separately; no persistent connection history |
+| Management | Development ABI 1.15 plus Swift/Kotlin expose protocol capability discovery, shared profile import, on-demand outbound probes and cancellation of probes in flight alongside routing-policy replacement/snapshots, typed SOCKS TCP/UDP, HTTP TCP, and TUN TCP/UDP connection inventory, addressable close, per-outbound accounting with live bytes of active flows, and equivalent typed TUN diagnostic queues | Policy updates affect new flows only; inventory is live and accounting is process-lifetime cumulative, with live bytes of active flows reported separately; no persistent connection history |
 
 The [0.8 implementation and acceptance record](docs/v08-implementation-plan.md)
 distinguishes passing host/CI checks from remaining physical-device gates, and
@@ -153,7 +159,7 @@ flowchart TB
         Inbounds["Inbounds<br/>SOCKS5 · HTTP · TUN (smoltcp)"]
         Routing["xray-routing<br/>rules, balancers"]
         DNS["DNS<br/>DoT · DoH · DoQ · fake IP"]
-        Outbounds["Outbounds · xray-proxy<br/>VLESS · VMess · Trojan · SS2022<br/>Hysteria 2 · WireGuard"]
+        Outbounds["Outbounds · xray-proxy<br/>VLESS · VMess · Trojan · Shadowsocks<br/>Hysteria 2 · WireGuard"]
         Transports["xray-transport<br/>TCP · TLS/uTLS · REALITY<br/>WS · gRPC · XHTTP · QUIC"]
         Inbounds --> Routing
         Routing --> DNS
@@ -419,7 +425,7 @@ crates/
 ├── xray-config            Xray JSON subset and geodata parser with path-aware diagnostics
 ├── xray-core-rs           lifecycle, inbounds, routing, outbound selection, DNS, TUN runtime
 ├── xray-ffi               stable C ABI with an embedded Tokio runtime
-├── xray-proxy             client protocol wire formats: SOCKS/HTTP, VLESS, VMess, Trojan, SS2022, Hysteria 2, WireGuard, Mux
+├── xray-proxy             client protocol wire formats: SOCKS/HTTP, VLESS, VMess, Trojan, Shadowsocks, Hysteria 2, WireGuard, Mux
 ├── xray-transport         TCP, TLS, REALITY, DNS, dialing and shaped ClientHellos
 ├── xray-routing           routing matchers and policy evaluation
 ├── xray-tun               bounded packet queues and TUN abstractions
