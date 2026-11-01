@@ -21,15 +21,25 @@ PROTOCOL_TRANSITIONS = {
     "routed-dns", "start-stop", "cancel-active-flow", "reconnect",
     "wifi-cellular-wifi", "lock-wake", "resource-recovery",
 }
+# HTTP CONNECT relays no UDP, here or in Xray-core. Owner decision on
+# 2026-11-01: HTTP shows each UDP probe refused, a negative control, instead of
+# claiming UDP transitions it cannot carry.
+HTTP_UDP_REFUSALS = {"ipv4-udp": "ipv4-udp-refused", "ipv6-udp": "ipv6-udp-refused"}
 # Owner decision on 2026-11-01 for v0.9, made again rather than inherited from
 # v0.8: these Android checks are not tested, not successful transitions.
 # Retain the omission in release known limitations.
 ANDROID_OWNER_SKIPPED_TRANSITIONS = {"wifi-cellular-wifi", "lock-wake"}
 ANDROID_PROTOCOL_SCENARIOS = {
-    f"{protocol}-{path}"
+    f"{protocol}-{path}": protocol
     for protocol in PROTOCOLS
     for path in ("file-descriptor", "packet-pump")
 }
+
+
+def protocol_transitions(protocol: str) -> set[str]:
+    if protocol == "http":
+        return {HTTP_UDP_REFUSALS.get(transition, transition) for transition in PROTOCOL_TRANSITIONS}
+    return PROTOCOL_TRANSITIONS
 SHARED_SCENARIOS = COMMON.REQUIRED_SCENARIOS | {"profile-import", "legacy-regression"}
 
 
@@ -52,14 +62,14 @@ class V09Policy(COMMON.EvidencePolicy):
     def scenarios(platform: str) -> set[str]:
         if platform == "apple":
             return SHARED_SCENARIOS | PROTOCOLS
-        return SHARED_SCENARIOS | ANDROID_PROTOCOL_SCENARIOS
+        return SHARED_SCENARIOS | set(ANDROID_PROTOCOL_SCENARIOS)
 
     @staticmethod
     def transitions(scenario: str) -> set[str]:
         if scenario in ANDROID_PROTOCOL_SCENARIOS:
-            return PROTOCOL_TRANSITIONS - ANDROID_OWNER_SKIPPED_TRANSITIONS
+            return protocol_transitions(ANDROID_PROTOCOL_SCENARIOS[scenario]) - ANDROID_OWNER_SKIPPED_TRANSITIONS
         if scenario in PROTOCOLS:
-            return PROTOCOL_TRANSITIONS
+            return protocol_transitions(scenario)
         if scenario == "profile-import":
             return {"socks-link", "http-link", "shadowsocks-aead-link", "invalid-input-redaction"}
         if scenario == "legacy-regression":

@@ -13,7 +13,8 @@ long-term supported release series.
 - Require versioned exact-candidate Apple/Android evidence for 0.9 publication.
   SOCKS, HTTP and classic Shadowsocks AEAD each need every device transition on
   Apple and both Android adapter paths, plus throughput, latency and memory
-  comparisons; their links join profile import, and Trojan, SS2022 and VMess
+  comparisons. HTTP relays no UDP, so it must show its UDP probes refused
+  rather than carried. Their links join profile import, and Trojan, SS2022 and VMess
   join the legacy regression. Android Wi-Fi/cellular and lock/wake remain not
   tested. v0.8 evidence does not satisfy the gate. See
   [0.9.0 release preparation](docs/v090-release.md).

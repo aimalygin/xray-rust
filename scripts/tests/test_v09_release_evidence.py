@@ -76,9 +76,7 @@ class V09ReleaseEvidenceTests(unittest.TestCase):
     def test_every_protocol_path_and_transition_is_required(self):
         for platform in ["apple", "android"]:
             for name in V09.POLICY.scenarios(platform) - V09.SHARED_SCENARIOS:
-                for transition in V09.PROTOCOL_TRANSITIONS:
-                    if platform == "android" and transition in {"wifi-cellular-wifi", "lock-wake"}:
-                        continue
+                for transition in V09.POLICY.transitions(name):
                     with self.subTest(platform=platform, scenario=name, transition=transition):
                         def omit(m, _):
                             device = next(d for d in m["devices"] if d["platform"] == platform)
@@ -99,15 +97,37 @@ class V09ReleaseEvidenceTests(unittest.TestCase):
             V09.POLICY.transitions("legacy-regression"),
         )
 
+    def test_http_proves_udp_refusal_and_the_others_carry_udp(self):
+        udp = {"ipv4-udp", "ipv6-udp"}
+        refused = {"ipv4-udp-refused", "ipv6-udp-refused"}
+        for platform in ["apple", "android"]:
+            for name in V09.POLICY.scenarios(platform) - V09.SHARED_SCENARIOS:
+                required = V09.POLICY.transitions(name)
+                if name.startswith("http"):
+                    self.assertTrue(refused <= required and udp.isdisjoint(required), name)
+                else:
+                    self.assertTrue(udp <= required and refused.isdisjoint(required), name)
+
+        def claim_udp(m, _):
+            for device in m["devices"]:
+                for scenario in device["scenarios"]:
+                    if scenario["id"].startswith("http"):
+                        scenario["transitions"] = sorted(
+                            (set(scenario["transitions"]) - refused) | udp
+                        )
+        self.reject(claim_udp, "transitions must include")
+
     def test_owner_skip_is_limited_to_android_network_and_lock(self):
         expected = {"wifi-cellular-wifi", "lock-wake"}
         self.assertEqual(V09.PROTOCOLS, {"socks", "http", "shadowsocks-aead"})
         for protocol in V09.PROTOCOLS:
-            self.assertEqual(V09.POLICY.transitions(protocol), V09.PROTOCOL_TRANSITIONS)
+            full = V09.protocol_transitions(protocol)
+            self.assertEqual(V09.POLICY.transitions(protocol), full)
+            self.assertTrue(expected <= full)
             for path in ["file-descriptor", "packet-pump"]:
                 self.assertEqual(
                     V09.POLICY.transitions(f"{protocol}-{path}"),
-                    V09.PROTOCOL_TRANSITIONS - expected,
+                    full - expected,
                 )
         manifest, _ = self.evidence()
         android = next(d for d in manifest["devices"] if d["platform"] == "android")

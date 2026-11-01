@@ -41,6 +41,11 @@ The owner decided on 2026-11-01:
   classic Shadowsocks AEAD (`shadowsocks-aead`) each pass all twelve
   transitions on Apple, including Wi-Fi/cellular and lock/wake, and both TUN
   backends on Android. Each needs throughput, latency and memory comparisons.
+- **HTTP proves UDP refusal.** HTTP `CONNECT` relays no UDP, here or in
+  Xray-core, so HTTP replaces `ipv4-udp` and `ipv6-udp` with the negative
+  controls `ipv4-udp-refused` and `ipv6-udp-refused`: every UDP probe through
+  the HTTP outbound must go unanswered. SOCKS and classic Shadowsocks carry real
+  UDP.
 - **Android Wi-Fi/cellular and lock/wake remain not tested.** This is a new
   decision for 0.9, not the v0.8 decision carried forward; release known
   limitations must state it. The physical check for the Android network-change
