@@ -2,8 +2,15 @@ use super::*;
 #[path = "support.rs"]
 mod trojan_support;
 
+/// A Vision account's Mux connection carries only UDP on the pinned server.
+fn vision(server: &trojan_support::ReferenceServer) -> bool {
+    server.profile()["outbounds"][0]["settings"]["vnext"][0]["users"][0]["flow"]
+        .as_str()
+        .is_some_and(|flow| !flow.is_empty())
+}
+
 fn mux_settings(server: &trojan_support::ReferenceServer) -> serde_json::Value {
-    if server.stream["network"] == "xhttp" {
+    if server.stream["network"] == "xhttp" || vision(server) {
         serde_json::json!({"enabled":true,"concurrency":-1,"xudpConcurrency":8})
     } else {
         serde_json::json!({"enabled":true})
@@ -23,6 +30,10 @@ async fn reference(protocol: &str, carrier: &str) -> trojan_support::ReferenceSe
         }
         "vmess" => {
             trojan_support::ReferenceServer::start_vmess(carrier, "chacha20-poly1305", "").await
+        }
+        "vless" => trojan_support::ReferenceServer::start_vless(carrier, "", false).await,
+        "vless-vision" => {
+            trojan_support::ReferenceServer::start_vless(carrier, "xtls-rprx-vision", false).await
         }
         _ => unreachable!(),
     }
@@ -81,7 +92,12 @@ async fn tun_tcp_udp_and_host_close(server: trojan_support::ReferenceServer, mux
             49154,
             &udp_payload,
         );
-        assert_eq!(protector.0.load(Ordering::SeqCst), if mux { 1 } else { 2 });
+        // Vision TCP stays native, so only its UDP flow joins a Mux parent.
+        let shared = mux && !vision(&server);
+        assert_eq!(
+            protector.0.load(Ordering::SeqCst),
+            if shared { 1 } else { 2 }
+        );
         // Each flow resolves the endpoint before asking the pool for a child.
         assert_eq!(bootstrap.0.load(Ordering::SeqCst), 2);
         let connections = core.connection_snapshot().connections;
@@ -193,8 +209,11 @@ async fn vmess_runtime_tun_dns_wire_and_managed_destination_lookup() {
 #[tokio::test]
 #[ignore = "requires pinned Xray; use check-mux-interop.sh"]
 async fn mux_runtime_tun_tcp_udp_and_host_close() {
-    for protocol in ["trojan", "shadowsocks", "vmess"] {
+    for protocol in ["vless", "vless-vision", "trojan", "shadowsocks", "vmess"] {
         for carrier in ["raw", "grpc", "xhttp"] {
+            if protocol == "vless-vision" && carrier != "raw" {
+                continue;
+            }
             eprintln!("Mux TUN {protocol}/{carrier}: tcp_udp_and_host_close");
             tun_tcp_udp_and_host_close(reference(protocol, carrier).await, true).await;
         }
@@ -204,8 +223,11 @@ async fn mux_runtime_tun_tcp_udp_and_host_close() {
 #[tokio::test]
 #[ignore = "requires pinned Xray; use check-mux-interop.sh"]
 async fn mux_runtime_tun_dns_wire_and_managed_destination_lookup() {
-    for protocol in ["trojan", "shadowsocks", "vmess"] {
+    for protocol in ["vless", "vless-vision", "trojan", "shadowsocks", "vmess"] {
         for carrier in ["raw", "grpc", "xhttp"] {
+            if protocol == "vless-vision" && carrier != "raw" {
+                continue;
+            }
             eprintln!("Mux TUN {protocol}/{carrier}: dns_wire_and_managed_destination_lookup");
             tun_dns_wire_and_managed_destination_lookup(reference(protocol, carrier).await, true)
                 .await;

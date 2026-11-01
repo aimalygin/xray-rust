@@ -10,6 +10,16 @@ long-term supported release series.
 
 ## Unreleased
 
+- Support `mux` on VLESS outbounds, matching Xray-core v26.10.21. VLESS joins
+  the bounded shared Mux/XUDP pools of Trojan, Shadowsocks 2022 and VMess on
+  raw, WebSocket, HTTPUpgrade, gRPC and XHTTP with TLS or REALITY, with VLESS
+  encryption too. UDP follows Xray's outbound handler: `xudpProxyUDP443`, then
+  the XUDP pool, then the TCP pool, then VLESS's own UDP command. Profiles that
+  enabled Mux on VLESS previously failed to parse. With `xtls-rprx-vision`, as
+  on XHTTP, `mux.concurrency` must be negative, because the Xray inbound drops
+  a Vision account's Mux connection on its first TCP child; XUDP pooling stays
+  available.
+
 - Mobile: cancel in-flight on-demand outbound probes without stopping the core
   (ABI 1.15, `OUTBOUND_PROBE_CANCEL`, bit 28). The existing
   `xray_core_cancel_outbound_probes` is a teardown latch: after it every later

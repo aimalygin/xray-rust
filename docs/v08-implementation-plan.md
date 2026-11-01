@@ -351,12 +351,14 @@ destination lookup. Wrong UUID and untrusted TLS fail. Ordinary VMess UDP uses
 standalone XUDP except ports 53/443, following the pinned cone-mode dispatch.
 The XUDP reader has a bounded persistent buffer and survives cancellation.
 
-Shared Mux is enabled through `mux` for Trojan, SS2022 and VMess. Positive
+Shared Mux is enabled through `mux` for VLESS, Trojan, SS2022 and VMess. Positive
 `concurrency` / `xudpConcurrency` is capped at 64; TCP zero defaults to 8,
 negative disables TCP; XUDP zero shares the TCP pool and negative selects the
 protocol's native UDP path. UDP/443 accepts `reject` (default), `allow`, `skip`.
-Disabled Mux remains inert but validates field types. General VLESS Mux is still
-unsupported; its pre-existing single-association XUDP remains available.
+Disabled Mux remains inert but validates field types. VLESS Mux sends the Mux
+command with the user's flow and encryption; Vision, like XHTTP, admits only
+`concurrency < 0` because the pinned inbound drops TCP children there. Flows no
+pool takes keep VLESS's pre-existing single-association XUDP.
 
 Each pool admits at most four parent connections, each with 128 lifetime child
 IDs and the configured simultaneous-child cap. A child queues at most eight
@@ -369,8 +371,8 @@ Core stop cancels and joins drivers. Parent failure does not replay child data.
 Keyed BLAKE3 association IDs are stable within a handler and separate across
 handlers; managed DNS uses zero rather than claiming a user-flow identity.
 
-A separate pinned-Xray test passes TCP and UDP for all three protocols with
-shared and separate UDP pools: six TCP flows use two protected parents at
+A separate pinned-Xray test passes TCP and UDP for all four protocols with
+shared and separate UDP pools (plus VLESS Vision and encryption cases): six TCP flows use two protected parents at
 concurrency four, UDP payloads through 8192 bytes round-trip, host closure leaves
 siblings alive, and core stop removes children. Unit tests cover pool capacity,
 blocked-child isolation/control delivery, cold-connect cancellation, idle expiry,
