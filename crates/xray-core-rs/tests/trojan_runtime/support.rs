@@ -23,6 +23,19 @@ pub fn independent_reference() -> bool {
     }
 }
 
+/// sing-box knows only the SIP004 names of the classic AEAD ciphers, while
+/// Xray also accepts aliases such as `chacha20-poly1305` for the same ones.
+fn sing_box_shadowsocks_method(method: &str) -> String {
+    match method.to_ascii_lowercase().as_str() {
+        "aead_aes_128_gcm" => "aes-128-gcm",
+        "aead_aes_256_gcm" => "aes-256-gcm",
+        "chacha20-poly1305" | "aead_chacha20_poly1305" => "chacha20-ietf-poly1305",
+        "xchacha20-poly1305" | "aead_xchacha20_poly1305" => "xchacha20-ietf-poly1305",
+        other => other,
+    }
+    .to_owned()
+}
+
 pub fn reference_supports(protocol: &str, network: &str) -> bool {
     !independent_reference()
         || (network != "xhttp" && (protocol != "shadowsocks" || network == "raw"))
@@ -188,7 +201,9 @@ impl ReferenceServer {
                     inbound["users"] = json!([{"name":"synthetic-user","uuid":settings["id"]}])
                 }
                 "shadowsocks" => {
-                    inbound["method"] = server_settings["method"].clone();
+                    inbound["method"] = json!(sing_box_shadowsocks_method(
+                        server_settings["method"].as_str().unwrap()
+                    ));
                     inbound["password"] = server_settings["password"].clone();
                     if let Some(users) = server_settings["clients"].as_array() {
                         inbound["users"] = json!(users
