@@ -768,6 +768,39 @@ mod tests {
     }
 
     #[test]
+    fn sniffs_rfc9001_v1_client_initial_and_rejects_corruption() {
+        // RFC 9001 Appendix A.2: the v1 counterpart, so the v1 salt, labels and
+        // header protection are checked against a published packet rather
+        // than one this module built itself.
+        let hex = include_str!("../../../tests/fixtures/quic/rfc9001-client-initial.hex");
+        let mut packet: Vec<u8> = hex
+            .split_whitespace()
+            .flat_map(|word| {
+                (0..word.len())
+                    .step_by(2)
+                    .map(move |i| u8::from_str_radix(&word[i..i + 2], 16).unwrap())
+            })
+            .collect();
+        assert_eq!(packet.len(), 1200);
+        assert_eq!(
+            sniff_quic_initial_sni(&packet).as_deref(),
+            Some("example.com")
+        );
+        packet.extend_from_slice(&[0; 64]);
+        assert_eq!(
+            sniff_quic_initial_sni(&packet).as_deref(),
+            Some("example.com")
+        );
+        packet[40] ^= 1;
+        assert!(sniff_quic_initial_sni(&packet).is_none());
+        packet[40] ^= 1;
+        packet[0] ^= 0x10; // v1 0-RTT is not an Initial
+        assert!(sniff_quic_initial_sni(&packet).is_none());
+        packet[0] ^= 0x10;
+        assert!(sniff_quic_initial_sni(&packet[..packet.len() - 65]).is_none());
+    }
+
+    #[test]
     fn rejects_malformed_quic_initial_sni() {
         let payload = [0xc0, 0, 0, 0, 1, 8, 1, 2, 3];
 

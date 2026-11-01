@@ -129,6 +129,9 @@ pub struct StreamsState {
     pub(super) send_window: u64,
     /// Configured upper bound for how much unacked data the peer can send us per stream
     pub(super) stream_receive_window: u64,
+    /// The stream window of the handshake: the credit the peer holds on a
+    /// stream until the first `MAX_STREAM_DATA` for it
+    pub(super) initial_stream_receive_window: u64,
 
     // Pertinent state from the TransportParameters supplied by the peer
     initial_max_stream_data_uni: VarInt,
@@ -177,6 +180,7 @@ impl StreamsState {
             unacked_data: 0,
             send_window,
             stream_receive_window: stream_receive_window.into(),
+            initial_stream_receive_window: stream_receive_window.into(),
             initial_max_stream_data_uni: 0u32.into(),
             initial_max_stream_data_bidi_local: 0u32.into(),
             initial_max_stream_data_bidi_remote: 0u32.into(),
@@ -263,7 +267,7 @@ impl StreamsState {
         let rs = match self
             .recv
             .get_mut(&id)
-            .map(get_or_insert_recv(self.stream_receive_window))
+            .map(get_or_insert_recv(self.initial_stream_receive_window))
         {
             Some(rs) => rs,
             None => {
@@ -316,7 +320,7 @@ impl StreamsState {
         let rs = match self
             .recv
             .get_mut(&id)
-            .map(get_or_insert_recv(self.stream_receive_window))
+            .map(get_or_insert_recv(self.initial_stream_receive_window))
         {
             Some(stream) => stream,
             None => {
@@ -863,6 +867,13 @@ impl StreamsState {
         self.send_window = send_window;
     }
 
+    /// Sets the window each receive stream offers past the bytes it has read.
+    /// Credit already sent is kept: a smaller window grants nothing new until
+    /// the reader catches up with it.
+    pub(crate) fn set_stream_receive_window(&mut self, window: u64) {
+        self.stream_receive_window = window;
+    }
+
     /// Set the receive_window and returns whether the receive_window has been
     /// expanded or shrunk: true if expanded, false if shrunk.
     pub(crate) fn set_receive_window(&mut self, receive_window: VarInt) -> bool {
@@ -943,7 +954,7 @@ impl StreamsState {
     }
 
     pub(super) fn stream_recv_freed(&mut self, id: StreamId, recv: StreamRecv) {
-        self.free_recv.push(recv.free(self.stream_receive_window));
+        self.free_recv.push(recv.free(self.initial_stream_receive_window));
         self.stream_freed(id, StreamHalf::Recv);
     }
 
@@ -1048,6 +1059,104 @@ mod tests {
         assert!(should_transmit.0);
         assert!(pending.max_stream_id[Dir::Uni as usize]);
         assert_eq!(client.local_max_data - initial_max, MESSAGE_SIZE as u64);
+    }
+
+    #[test]
+    fn a_resized_stream_window_is_offered_from_the_next_read() {
+        const KIB: u64 = 1024;
+        const MIB: u64 = 1024 * KIB;
+        let mut client = StreamsState::new(
+            Side::Client,
+            128u32.into(),
+            128u32.into(),
+            MIB,
+            (16 * 1024 * 1024u32).into(),
+            (1024 * 1024u32).into(),
+        );
+        let id = StreamId::new(Side::Server, Dir::Uni, 0);
+        let mut pending = Retransmits::default();
+
+        // An eighth of the 1 MiB handshake window was not read yet.
+        assert_eq!(read_and_send_credit(&mut client, &mut pending, id, 0, 2048), None);
+        // A grown window is worth an update on the next read.
+        client.set_stream_receive_window(4 * MIB);
+        let granted = 4096 + 4 * MIB;
+        assert_eq!(
+            read_and_send_credit(&mut client, &mut pending, id, 2048, 2048),
+            Some(granted)
+        );
+
+        // A smaller window withdraws nothing: a lost update is resent whole,
+        // and nothing more is granted until the reader catches up.
+        client.set_stream_receive_window(64 * KIB);
+        pending.max_stream_data.insert(id);
+        assert_eq!(send_credit(&mut client, &mut pending), Some(granted));
+        let mut offset = 4096;
+        while offset < granted {
+            let credit = read_and_send_credit(&mut client, &mut pending, id, offset, 256 * 1024);
+            offset += 256 * KIB;
+            let expected = (offset + 64 * KIB >= granted + 8 * KIB).then_some(offset + 64 * KIB);
+            assert_eq!(credit, expected, "after reading {offset} bytes");
+        }
+        assert_eq!(offset, granted);
+
+        // A new stream still holds the handshake window's credit.
+        let next = StreamId::new(Side::Server, Dir::Uni, 1);
+        assert_eq!(
+            read_and_send_credit(&mut client, &mut pending, next, 0, 1024 * 1024),
+            Some(MIB + 64 * KIB)
+        );
+    }
+
+    /// Receives `len` bytes of `id` at `offset`, reads them, and returns the
+    /// `MAX_STREAM_DATA` offset the next packet carries, if any.
+    fn read_and_send_credit(
+        client: &mut StreamsState,
+        pending: &mut Retransmits,
+        id: StreamId,
+        offset: u64,
+        len: usize,
+    ) -> Option<u64> {
+        let _ = client
+            .received(
+                frame::Stream {
+                    id,
+                    offset,
+                    fin: false,
+                    data: Bytes::from(vec![0; len]),
+                },
+                len,
+            )
+            .unwrap();
+        let mut recv = RecvStream {
+            id,
+            state: client,
+            pending,
+        };
+        let mut chunks = recv.read(true).unwrap();
+        while let Ok(Some(_)) = chunks.next(usize::MAX) {}
+        let _ = chunks.finalize();
+        send_credit(client, pending)
+    }
+
+    fn send_credit(client: &mut StreamsState, pending: &mut Retransmits) -> Option<u64> {
+        let mut buf = Vec::new();
+        client.write_control_frames(
+            &mut buf,
+            pending,
+            &mut ThinRetransmits::default(),
+            &mut FrameStats::default(),
+            1200,
+        );
+        if buf.is_empty() {
+            return None;
+        }
+        frame::Iter::new(Bytes::from(buf))
+            .unwrap()
+            .find_map(|frame| match frame.unwrap() {
+                frame::Frame::MaxStreamData { offset, .. } => Some(offset),
+                _ => None,
+            })
     }
 
     #[test]

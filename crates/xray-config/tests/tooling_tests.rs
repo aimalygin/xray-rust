@@ -41,6 +41,42 @@ fn published_contract_is_current_and_examples_are_accepted() {
 }
 
 #[test]
+fn shared_object_notes_name_only_fields_every_sharer_has() {
+    // A note copied onto unrelated objects (as once happened to five of them) names fields they
+    // lack. Only camelCase words are checked, so prose such as "rules" is not taken for a field.
+    let contract = configuration_contract();
+    let objects = contract["objects"].as_array().unwrap();
+    let field_names = |object: &Value| -> BTreeSet<String> {
+        object["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|field| field.as_str().unwrap().to_owned())
+            .collect()
+    };
+    let all_fields: BTreeSet<String> = objects.iter().flat_map(field_names).collect();
+    for object in objects {
+        let sharers = objects
+            .iter()
+            .filter(|other| other["notes"] == object["notes"])
+            .count();
+        if sharers < 2 {
+            continue;
+        }
+        let fields = field_names(object);
+        let notes = object["notes"].as_str().unwrap();
+        for word in notes.split(|c: char| !c.is_ascii_alphanumeric()) {
+            let camel_case = word.chars().skip(1).any(|c| c.is_ascii_uppercase());
+            assert!(
+                !camel_case || !all_fields.contains(word) || fields.contains(word),
+                "{} shares a note naming `{word}`, which it does not have",
+                object["id"]
+            );
+        }
+    }
+}
+
+#[test]
 fn canonical_and_rejection_fixtures_match_parser_and_tooling() {
     for case in fixtures::cases() {
         let name = case["name"].as_str().unwrap();

@@ -110,6 +110,21 @@ class EvidenceAllowlists(unittest.TestCase):
         self.assertEqual(self.scan(unreviewed),
                          {(path, "jfrog-identity-token") for path in unreviewed})
 
+    def test_2026_10_30_benchmark_script_digests_are_narrow(self):
+        paths = ("docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/scripts/stream_ab.py",
+                 "docs/benchmarks/results/2026-10-30-v26.10.21-three-engine/commands.sh")
+        reviewed = {path: (ROOT / path).read_text() for path in paths}
+        self.assertEqual(self.scan(reviewed), set())
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        self.assertEqual(self.scan({path: f"xray_core_sha256={other}\n" for path in paths}),
+                         {(path, "jfrog-identity-token") for path in paths})
+        digest = "b8c58f14180eb0cad5665fa2cefb7d10897eec945d007212a053fc1de2257ee8"
+        self.assertEqual(self.scan({"unreviewed.sh": f"xray_core_sha256={digest}\n"}),
+                         {("unreviewed.sh", "jfrog-identity-token")})
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertEqual(self.scan({path: json.dumps({"api_key": synthetic}) for path in paths}),
+                         {(path, "generic-api-key") for path in paths})
+
     def test_v08_final_device_digest_exceptions_are_narrow(self):
         base = "docs/device-results/2026-10-12-v08-candidate/"
         paths = (

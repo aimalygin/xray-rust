@@ -32,7 +32,11 @@ class XrayNetworkChangeStateTest {
             check(!closed) { "closed core" }; calls += "wireguard"; return wireGuard()
         }
     }
-    private class Fixture(waitForBlocked: Boolean = false, executor: Executor? = null) {
+    private class Fixture(
+        waitForBlocked: Boolean = false,
+        executor: Executor? = null,
+        seedOnAvailable: Boolean = false,
+    ) {
         val worker = Worker()
         val target = Target()
         val callbacks = mutableListOf<XrayNetworkEvents<String, Caps, Int>>()
@@ -46,6 +50,8 @@ class XrayNetworkChangeStateTest {
         var duringRegister: ((XrayNetworkEvents<String, Caps, Int>) -> Unit)? = null
         var policy: ((List<XrayNetworkObservation<String, Caps, Int>>, String?) -> String?)? = null
         var resultObserver: ((XrayNetworkRebindResult) -> Unit)? = null
+        val connected = mutableSetOf<String>()
+        val currentQueries = mutableListOf<String>()
         val state = XrayNetworkChangeState<String, Caps, Int>(
             executor ?: worker,
             register = { events ->
@@ -67,6 +73,11 @@ class XrayNetworkChangeStateTest {
             onResult = { results += it; resultObserver?.invoke(it) },
             onError = { errors += it },
             waitForBlockedCallback = waitForBlocked,
+            seedOnAvailable = seedOnAvailable,
+            currentObservation = { network ->
+                currentQueries += network
+                if (network in connected) XrayNetworkObservation(network, Caps(), 1) else null
+            },
         )
         val events get() = callbacks.last()
         fun start(target: Target = this.target) = state.start(target)
@@ -102,6 +113,62 @@ class XrayNetworkChangeStateTest {
     @Test fun firstDifferentCarrierIsMigrationWhenHostSuppliedActualInitialNetwork() {
         val f = Fixture(); f.state.start(f.target, "wifi"); f.migrate()
         assertEquals(2, f.target.calls.size)
+    }
+
+    @Test fun knownInitialCarrierIsKeptWhileAnotherNetworkReportsFirst() {
+        val f = Fixture(); f.connected += "wifi"; f.state.start(f.target, "wifi")
+        f.available("cellular"); f.worker.drain()
+        assertEquals(listOf("wifi"), f.applied); assertTrue(f.target.calls.isEmpty())
+        f.available("wifi"); f.worker.drain()
+        assertEquals(listOf("wifi", "wifi"), f.applied); assertTrue(f.target.calls.isEmpty())
+    }
+
+    @Test fun knownInitialCarrierIsQueriedOnlyUntilItsCallbacksArrive() {
+        val f = Fixture(waitForBlocked = true); f.connected += "wifi"; f.state.start(f.target, "wifi")
+        f.available("cellular"); f.events.blocked("cellular", false); f.worker.drain()
+        assertEquals(listOf("wifi"), f.currentQueries)
+        f.available("wifi"); f.events.blocked("wifi", false); f.worker.drain()
+        f.events.capabilities("cellular", Caps(revision = 1)); f.worker.drain()
+        assertEquals(listOf("wifi"), f.currentQueries)
+        assertEquals(listOf("wifi", "wifi", "wifi"), f.applied); assertTrue(f.target.calls.isEmpty())
+    }
+
+    @Test fun knownInitialCarrierGoneBeforeItReportsIsHandledAsLost() {
+        val f = Fixture(); f.state.start(f.target, "wifi")
+        f.available("cellular"); f.worker.drain()
+        assertEquals(listOf("cellular"), f.applied); assertEquals(2, f.target.calls.size)
+        f.events.capabilities("cellular", Caps(revision = 1)); f.worker.drain()
+        assertEquals(listOf("wifi"), f.currentQueries); assertEquals(2, f.target.calls.size)
+    }
+
+    @Test fun knownInitialCarrierLostBeforeItReportsIsNotQueried() {
+        val f = Fixture(); f.connected += "wifi"; f.state.start(f.target, "wifi")
+        f.events.lost("wifi"); f.available("cellular"); f.worker.drain()
+        assertTrue(f.currentQueries.isEmpty()); assertEquals(2, f.target.calls.size)
+    }
+
+    @Test fun preOreoAvailabilityReadsCurrentStateAndMigrates() {
+        val f = Fixture(seedOnAvailable = true); f.connected += listOf("wifi", "cellular"); f.start()
+        f.events.available("wifi"); f.worker.drain()
+        assertEquals(listOf("wifi"), f.applied); assertTrue(f.target.calls.isEmpty())
+        f.preference = "cellular"; f.events.available("cellular"); f.worker.drain()
+        assertEquals("cellular", f.applied.last()); assertEquals(2, f.target.calls.size)
+    }
+
+    @Test fun preOreoSeedYieldsToCallbackValuesAndSkipsGoneNetworks() {
+        val f = Fixture(seedOnAvailable = true); f.start()
+        f.events.available("wifi"); f.worker.drain(); assertTrue(f.applied.isEmpty())
+        f.connected += "cellular"; f.events.available("cellular")
+        f.events.capabilities("cellular", Caps(usable = false)); f.worker.drain()
+        assertEquals(listOf<String?>(null), f.applied)
+        f.events.capabilities("cellular", Caps()); f.worker.drain()
+        assertEquals(listOf(null, "cellular"), f.applied)
+    }
+
+    @Test fun availabilityAloneIsNotACandidateFromOreo() {
+        val f = Fixture(); f.connected += "wifi"; f.start()
+        f.events.available("wifi"); f.worker.drain()
+        assertTrue(f.applied.isEmpty()); assertTrue(f.currentQueries.isEmpty())
     }
 
     @Test fun knownInitialCarrierBlockedBeforeMetadataRecordsOfflineThenRecovery() {

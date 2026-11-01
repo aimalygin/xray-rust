@@ -94,6 +94,8 @@ class XrayNetworkChangeCoordinator(
         onResult = onResult,
         onError = onError,
         waitForBlockedCallback = Build.VERSION.SDK_INT >= 29,
+        seedOnAvailable = Build.VERSION.SDK_INT < 26,
+        currentObservation = { network -> connectivityManager.currentObservation(network) },
     )
 
     /**
@@ -121,4 +123,18 @@ private fun copyLinkProperties(source: LinkProperties): LinkProperties {
     } finally {
         parcel.recycle()
     }
+}
+
+/**
+ * Queried on the control worker, and from onAvailable only before API 26, where no metadata
+ * callbacks follow it; a stale answer there is replaced by the next change callback. The host
+ * manifest grants ACCESS_NETWORK_STATE.
+ */
+@Suppress("MissingPermission")
+private fun ConnectivityManager.currentObservation(
+    network: Network,
+): XrayNetworkObservation<Network, NetworkCapabilities, LinkProperties>? {
+    val capabilities = getNetworkCapabilities(network) ?: return null
+    val properties = getLinkProperties(network) ?: return null
+    return XrayNetworkObservation(network, capabilities, properties)
 }

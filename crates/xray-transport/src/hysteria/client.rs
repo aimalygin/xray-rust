@@ -1,7 +1,7 @@
 use std::fmt;
 use std::future::poll_fn;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 
 use crate::stream::{
     configure_quic_datagram_socket, connect_quic_transport_with_datagrams, H3ConnectConfig,
-    H3Error, H3QuicConfig,
+    H3Error, H3QuicConfig, QuicSendWindow, QUIC_INITIAL_SEND_WINDOW,
 };
 use crate::{TlsClientConfig, TlsConnector, TransportError};
 
@@ -26,9 +26,6 @@ use super::udp::Registry;
 const AUTH_HEADER_LIMIT: u64 = 8192;
 const MAX_AUTH_BYTES: usize = 4096;
 const QUIC_DATAGRAM_BUFFER: usize = 256 * 1024;
-// Bound queued and unacknowledged stream data independently of receive windows.
-const QUIC_STREAM_SEND_WINDOW: u64 = 2 * 1024 * 1024;
-const QUIC_STREAM_SEND_WINDOW_MAX: u64 = 10_000_000;
 // Match pinned Xray without shrinking Quinn's aggregate receive queue.
 const QUIC_DATAGRAM_FRAME_SIZE: u16 = 1200;
 
@@ -184,7 +181,7 @@ struct RebindRequest {
 
 pub(super) struct Shared {
     connection: Mutex<Option<Connection>>,
-    send_window: AtomicU64,
+    send_window: QuicSendWindow,
     endpoint: Mutex<Option<Endpoint>>,
     // Last h3 SendRequest drop closes its connection. Retain it after auth.
     auth_sender: Mutex<Option<AuthSender>>,
@@ -209,22 +206,9 @@ impl Shared {
     // Called only after another MiB has been written, never from an idle timer.
     // Keep local queues small, but allow high-BDP paths to use the previous cap.
     pub(super) fn grow_send_window(&self) {
-        if self.send_window.load(Ordering::Relaxed) == QUIC_STREAM_SEND_WINDOW_MAX {
-            return;
-        }
         let guard = self.connection.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(connection) = guard.as_ref() else {
-            return;
-        };
-        let stats = connection.stats();
-        let target = stats
-            .path
-            .cwnd
-            .saturating_mul(2)
-            .clamp(QUIC_STREAM_SEND_WINDOW, QUIC_STREAM_SEND_WINDOW_MAX);
-        if target > self.send_window.load(Ordering::Relaxed) {
-            connection.set_send_window(target);
-            self.send_window.store(target, Ordering::Relaxed);
+        if let Some(connection) = guard.as_ref() {
+            self.send_window.grow(connection);
         }
     }
 
@@ -427,7 +411,7 @@ impl HysteriaClient {
             }
             _ => HysteriaError::Connect,
         })?;
-        connection.set_send_window(QUIC_STREAM_SEND_WINDOW);
+        connection.set_send_window(QUIC_INITIAL_SEND_WINDOW);
         let mut pending = Connecting {
             endpoint: Some(endpoint),
             connection,
@@ -478,7 +462,7 @@ impl HysteriaClient {
         let rebind = Arc::new(RebindRequest::default());
         let shared = Arc::new(Shared {
             connection: Mutex::new(Some(pending.connection.clone())),
-            send_window: AtomicU64::new(QUIC_STREAM_SEND_WINDOW),
+            send_window: QuicSendWindow::new(),
             endpoint: Mutex::new(pending.endpoint.take()),
             auth_sender: Mutex::new(Some(sender)),
             h3_driver: pending.driver.take().expect("started H3 driver"),

@@ -3254,8 +3254,8 @@ const GRPC_SERVICE_NAME: &str = "interop grpc";
 /// pinned-certificate dialer cannot be used with it.
 ///
 /// Not *every* profile carries it: `helloandroid_11_okhttp`,
-/// `hello360_7_5` and `hellorandomizednoalpn` do not, nor do their aliases
-/// `android`, `360`, `hello360_auto` and `randomizednoalpn`. No gRPC TLS
+/// `hello360_7_5`, `hellorandomizednoalpn` and `randomizednoalpn` do not, nor
+/// do the aliases `android`, `360` and `hello360_auto`. No gRPC TLS
 /// inbound is reachable on those — for xray-core either, so it is parity
 /// rather than a gap. uTLS emits the parrot's own extension list and nothing
 /// else, and its `ALPNExtension` overwrites `NextProtos` rather than deferring
