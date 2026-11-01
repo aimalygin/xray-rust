@@ -20,6 +20,17 @@ SDKs for VPN apps on iOS, tvOS, macOS and Android.**
 The development compatibility reference is [Xray-core v26.10.21](docs/xray-core-v26.10.21-migration.md).
 Dated release and benchmark results retain their original references.
 
+## Support the project
+
+If you find this project useful, consider supporting its development with a donation:
+
+- **TON (TON network):** UQCIpU1qagwDltuqPUZh4EuI2zXvismk6esCCTWUVphj_o4y
+- **ETH (Ethereum network):** 0x96A9a65E188c439a95267a3dA6920884C530f57f
+- **BTC (Bitcoin network):** bc1qxxk42z2ty8wx702sk5cammwhchl95y39kf2wdc
+- **SOL (Solana network):** D4xFX2GwPniSetHZWn2XRTBaSM6m1k1wMtacr6TMVHQD
+
+Thank you for your support!
+
 ## Why xray-rust
 
 - **Rust core with bounded resources.** Flow budgets, bounded queues,
@@ -472,17 +483,6 @@ local interoperability against a pinned Xray-core checkout
 (`scripts/check-*-interop.sh`), fuzzing and live-node tests;
 [mobile testing](docs/mobile-testing.md) covers the SDKs and physical devices.
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
-
-## Support the project
-
-If you find this project useful, consider supporting its development with a donation:
-
-- **TON (TON network):** UQCIpU1qagwDltuqPUZh4EuI2zXvismk6esCCTWUVphj_o4y
-- **ETH (Ethereum network):** 0x96A9a65E188c439a95267a3dA6920884C530f57f
-- **BTC (Bitcoin network):** bc1qxxk42z2ty8wx702sk5cammwhchl95y39kf2wdc
-- **SOL (Solana network):** D4xFX2GwPniSetHZWn2XRTBaSM6m1k1wMtacr6TMVHQD
-
-Thank you for your support!
 
 ## License
 
