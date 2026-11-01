@@ -213,9 +213,11 @@ long-term supported release series.
   opening indefinitely; on SOCKS and TPROXY each such flow also held one of the
   64 shared pending-open permits, so a stalled upstream could block new UDP
   flows. The open now fails at the deadline and the next datagram retries.
-  Hysteria and WireGuard, previously capped only by a fixed 10 s client
-  deadline, follow the policy too; DNS upstream exchanges keep their attempt
-  deadlines. Xray-core sets the same deadline on its SOCKS client handshake.
+  Hysteria and WireGuard are bounded by the policy as well as by their fixed
+  10 s client deadline; DNS upstream exchanges keep their attempt deadlines.
+  Xray-core sets the same deadline on its SOCKS client handshake. A `handshake`
+  of 0 leaves UDP opens unbounded, as Xray-core's WireGuard client treats it,
+  instead of failing every open on its first poll.
 
 - Update the development compatibility reference to Xray-core v26.10.21 / Go 1.27.3.
 - Restrict the REALITY `random` and `randomized` pools to the four profiles

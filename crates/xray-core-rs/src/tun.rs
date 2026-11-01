@@ -5033,7 +5033,7 @@ async fn bridge_udp_vless_flow(
     let opened = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
-        result = tokio::time::timeout(
+        result = crate::outbound::datagram::within_handshake(
             open_timeout,
             open_vless_udp_stream_with_resolver_dialer_and_options(
                 &outbound,
@@ -5042,7 +5042,7 @@ async fn bridge_udp_vless_flow(
                 &context.transport_dialer,
                 options,
             ),
-        ) => result.unwrap_or_else(|_| Err(crate::outbound::datagram::open_timed_out())),
+        ) => result,
     };
     let (stream, framing) = match opened {
         Ok(opened) => opened,
