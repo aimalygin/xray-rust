@@ -27,7 +27,7 @@ pub(crate) fn tcp_outbound_label(outbound: &TcpOutbound) -> &'static str {
         TcpOutbound::Socks(_) => "socks",
         TcpOutbound::Http(_) => "http",
         TcpOutbound::Vmess(_) => "vmess",
-        TcpOutbound::Shadowsocks2022(_) => "shadowsocks-2022",
+        TcpOutbound::Shadowsocks2022(outbound) => outbound.label(),
         TcpOutbound::Hysteria(_) => "hysteria",
         TcpOutbound::Wireguard(_) => "wireguard",
         TcpOutbound::Chained { .. } => unreachable!("primary outbound is never a chain wrapper"),
@@ -41,7 +41,7 @@ pub(crate) fn udp_outbound_label(outbound: &UdpOutbound) -> &'static str {
         UdpOutbound::Trojan(_) => "trojan",
         UdpOutbound::Socks(_) => "socks",
         UdpOutbound::Vmess(_) => "vmess",
-        UdpOutbound::Shadowsocks2022(_) => "shadowsocks-2022",
+        UdpOutbound::Shadowsocks2022(outbound) => outbound.label(),
         UdpOutbound::Hysteria(_) => "hysteria",
         UdpOutbound::Wireguard(_) => "wireguard",
     }

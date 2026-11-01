@@ -1192,7 +1192,7 @@ impl Parser<'_> {
         ) {
             self.error(
                 format!("{mux_path}.enabled"),
-                "Mux requires VLESS, Trojan, Shadowsocks 2022 or VMess",
+                "Mux requires VLESS, Trojan, Shadowsocks or VMess",
             );
         }
         Some(crate::MuxSettings {

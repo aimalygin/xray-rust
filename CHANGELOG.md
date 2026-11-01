@@ -10,6 +10,19 @@ long-term supported release series.
 
 ## Unreleased
 
+- Add classic Shadowsocks AEAD client support (`aes-128-gcm`, `aes-256-gcm`,
+  `chacha20-poly1305`, `xchacha20-poly1305` and Xray's aliases such as
+  `chacha20-ietf-poly1305`) to the `shadowsocks` outbound, its TCP and native
+  UDP paths, Mux/XUDP and SIP002 `ss://` import. Real subscriptions still carry
+  these servers, which were previously rejected. Key derivation, framing,
+  chunk sizes and accepted method names follow Xray-core v26.10.21 and are
+  checked against vectors generated from it and live against its server;
+  `none` and stream ciphers stay rejected, as upstream. Method names are now
+  case-insensitive for both Shadowsocks families, as in Xray-core, and an
+  unsupported method is reported at `settings.method`. No ABI change: the
+  `shadowsocks2022` import format and capability bit cover both families, and
+  older libraries reject the new methods with a configuration error.
+
 - XHTTP over HTTP/3 (exact `h3` ALPN) now hops its UDP carrier, accepting the
   `finalmask.udp` udphop mask and the legacy `quicParams.udpHop`, as Xray-core
   does for any UDP transport. Previously the mask failed to parse and the

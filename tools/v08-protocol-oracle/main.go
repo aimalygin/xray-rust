@@ -110,6 +110,7 @@ func main() {
 		"vmess":           vmessFixtures(),
 		"mux":             muxFixtures(),
 		"shadowsocks2022": ss2022Fixtures(),
+		"shadowsocksAead": ssAeadFixtures(),
 		"trojanRequests":  requests, "trojanUdpPackets": packets, "trojanUdpLimits": limits,
 	}))
 }
