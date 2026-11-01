@@ -3,6 +3,8 @@ use super::*;
 use xray_transport::hysteria::{HysteriaError, HysteriaUdpSession};
 
 pub(crate) enum Session {
+    /// Only a pooled XUDP child: VLESS native UDP keeps its own relay.
+    VlessMux(super::mux::UdpSession),
     Trojan(trojan::UdpSession),
     Socks(socks::UdpSession),
     Vmess(vmess::UdpSession),
@@ -26,6 +28,11 @@ pub(crate) async fn open(
     global_id: [u8; 8],
 ) -> Result<Session, CoreError> {
     match outbound {
+        UdpOutbound::Vless(outbound) => Ok(Session::VlessMux(
+            outbound
+                .open_mux_udp(target, bootstrap, dialer, global_id)
+                .await?,
+        )),
         UdpOutbound::Trojan(outbound) => Ok(Session::Trojan(
             outbound
                 .open_udp(target, bootstrap, dialer, global_id)
@@ -70,14 +77,13 @@ pub(crate) async fn open_within_handshake(
     global_id: [u8; 8],
 ) -> Result<Session, CoreError> {
     let level = match outbound {
+        UdpOutbound::Vless(outbound) => outbound.user().level,
         UdpOutbound::Trojan(outbound) => outbound.level(),
         UdpOutbound::Socks(outbound) => outbound.level(),
         UdpOutbound::Vmess(outbound) => outbound.level(),
         UdpOutbound::Shadowsocks2022(outbound) => outbound.level(),
         UdpOutbound::Hysteria(_) | UdpOutbound::Wireguard(_) => 0,
-        UdpOutbound::Freedom | UdpOutbound::Vless(_) => {
-            return Err(CoreError::UnsupportedOutboundNetwork)
-        }
+        UdpOutbound::Freedom => return Err(CoreError::UnsupportedOutboundNetwork),
     };
     within_handshake(
         effective_policy_for_level(config, Some(level)).handshake,
@@ -105,6 +111,7 @@ pub(crate) fn open_timed_out() -> CoreError {
 impl Session {
     pub(crate) async fn send(&self, target: &Target, payload: &[u8]) -> Result<(), CoreError> {
         match self {
+            Self::VlessMux(session) => session.send(target, payload).await,
             Self::Trojan(session) => session.send(target, payload).await,
             Self::Socks(session) => session.send(target, payload).await,
             Self::Vmess(session) => session.send(target, payload).await,
@@ -120,6 +127,7 @@ impl Session {
     }
     pub(crate) async fn recv(&self) -> Result<Datagram, CoreError> {
         match self {
+            Self::VlessMux(session) => session.recv().await,
             Self::Trojan(session) => session.recv().await,
             Self::Socks(session) => session.recv().await,
             Self::Vmess(session) => session.recv().await,

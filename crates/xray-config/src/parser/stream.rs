@@ -44,8 +44,11 @@ impl Parser<'_> {
                 "REALITY only supports RAW, XHTTP and gRPC for now",
             );
         }
-        let mut quic_params = self.parse_quic_params(stream, stream_network, index);
-        if let Some(hop) = self.parse_udp_hop_mask(stream, stream_network, index) {
+        let is_quic = stream_network == StreamNetwork::Hysteria
+            || stream_network == StreamNetwork::Xhttp
+                && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
+        let mut quic_params = self.parse_quic_params(stream, stream_network, is_quic, index);
+        if let Some(hop) = self.parse_udp_hop_mask(stream, is_quic, index) {
             if stream
                 .and_then(|s| s.pointer("/finalmask/quicParams/udpHop"))
                 .is_some()
@@ -65,9 +68,6 @@ impl Parser<'_> {
         }
         self.validate_unconsumed_transport_settings(stream, stream_network, index);
         let transport = self.parse_stream_transport(stream, stream_network, index)?;
-        let is_quic = stream_network == StreamNetwork::Hysteria
-            || stream_network == StreamNetwork::Xhttp
-                && matches!(&security, StreamSecurity::Tls(tls) if tls.alpn == ["h3"]);
         let chrome_parrot =
             stream.and_then(|s| s.pointer("/finalmask/quicParams/disableChromeParrot"));
         if is_quic && chrome_parrot != Some(&Value::Bool(true)) {
@@ -527,6 +527,7 @@ impl Parser<'_> {
         &mut self,
         stream: Option<&Value>,
         network: StreamNetwork,
+        is_quic: bool,
         index: usize,
     ) -> Option<QuicParamsSettings> {
         let finalmask = stream?.get("finalmask")?;
@@ -638,7 +639,7 @@ impl Parser<'_> {
             );
         }
 
-        let udp_hop = self.parse_quic_udp_hop(quic, &quic_path)?;
+        let udp_hop = self.parse_quic_udp_hop(quic, &quic_path, is_quic)?;
         let init_stream_receive_window =
             self.quic_u64_at(quic, "initStreamReceiveWindow", &quic_path)?;
         let max_stream_receive_window =
@@ -741,6 +742,7 @@ impl Parser<'_> {
         &mut self,
         quic: &Value,
         quic_path: &str,
+        is_quic: bool,
     ) -> Option<QuicUdpHopSettings> {
         let Some(udp_hop) = quic.get("udpHop") else {
             return Some(QuicUdpHopSettings::default());
@@ -749,7 +751,13 @@ impl Parser<'_> {
             return Some(QuicUdpHopSettings::default());
         }
         let udp_hop_path = format!("{quic_path}.udpHop");
-        self.warning(&udp_hop_path, "legacy udpHop: migrate to finalmask.udp udphop with mode=intervalLocal,intervalRemote and remotePorts");
+        // Only QUIC carriers use quicParams; pointing others at the udphop
+        // mask, which they reject, would trade a no-op for a parse error.
+        if is_quic {
+            self.warning(&udp_hop_path, "legacy udpHop: migrate to finalmask.udp udphop with mode=intervalLocal,intervalRemote and remotePorts");
+        } else {
+            self.warning(&udp_hop_path, "legacy udpHop has no effect: UDP hopping applies only to Hysteria and XHTTP with exact h3 ALPN");
+        }
         self.parse_udp_hop_fields(udp_hop, &udp_hop_path, "ports")
     }
 

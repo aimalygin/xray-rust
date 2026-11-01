@@ -36,11 +36,15 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
 
 Both masks are optional. UDP-hop must be first; the supported mode changes the
 local socket and remote port together. Independent `intervalLocal`,
-`intervalRemote`, `perConnRemote`, nonempty `remoteIPs` and XHTTP H3 hopping are
-rejected. Ports preserve order and duplicate weights, with at most 65535
+`intervalRemote`, `perConnRemote` and nonempty `remoteIPs` are rejected. XHTTP
+with exact `h3` ALPN accepts the same UDP-hop mask (see the XHTTP H3 section).
+Ports preserve order and duplicate weights, with at most 65535
 expanded entries and at least one port. An omitted/zero interval defaults to
 30 seconds; other bounds must both be at least five seconds. The first packet
 already uses a randomly selected port; all ports must reach the same server.
+Each scheduled hop draws among the ports other than the current one, keeping
+duplicate weights, so every hop changes the path. Xray draws with
+replacement, so with two ports half of its hops keep the same port.
 The old `quicParams.udpHop` spelling remains accepted with a migration warning;
 combining both spellings fails. Profile import emits the new mask form.
 
@@ -255,8 +259,8 @@ Keeping the old cryptographic session does not provide seamless NAT rebinding.
 Server restart with unchanged keys is verified on an existing client session;
 forged, misbound and replayed replies remain rejected.
 
-`mux.enabled: true` activates bounded shared Mux for these three outbounds.
-TCP `concurrency` defaults to 8 (including zero), a negative value disables TCP
+`mux.enabled: true` activates bounded shared Mux for these three outbounds and
+for VLESS ([below](#vless-mux)). TCP `concurrency` defaults to 8 (including zero), a negative value disables TCP
 multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
 a separate UDP pool, and a negative value uses the native protocol UDP path.
 Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
@@ -270,6 +274,27 @@ The pinned Xray XHTTP inbound permits only UDP Mux children. XHTTP therefore
 requires `mux.concurrency: -1`; use positive `xudpConcurrency` for UDP pooling.
 Enabling TCP Mux on XHTTP is rejected before dialing, including configurations
 built through the Rust API. Ordinary TCP still uses XHTTP's own transport pool.
+
+<a id="vless-mux"></a>
+VLESS uses the same pools and limits. As in Xray-core's outbound handler, a
+parent is the VLESS Mux command to `v1.mux.cool:9527`, carrying the user's flow
+and VLESS encryption, over any supported carrier and security (raw,
+WebSocket, HTTPUpgrade, gRPC, XHTTP; none, TLS or REALITY). UDP follows the
+handler's order: `xudpProxyUDP443` first, then the XUDP pool, then the TCP
+pool; only a flow no pool takes uses the VLESS UDP command, and only that
+flow is subject to Vision's UDP/443 refusal. A pooled UDP/443 flow under
+`allow` therefore reaches the server even with `xtls-rprx-vision`, exactly as
+in Xray.
+
+The pinned VLESS inbound restricts a Vision account's Mux connection to UDP
+children and drops the whole connection on the first TCP child — the same
+rule its XHTTP inbound applies. Xray's client still sends TCP children there;
+xray-rust refuses the combination up front instead: with
+`xtls-rprx-vision` or `xtls-rprx-vision-udp443`, `mux.concurrency` must be
+negative (`$.outbounds[i].mux.concurrency` otherwise), and
+`xudpConcurrency` pools XUDP while every TCP stream keeps its own Vision
+connection. Without a flow, VLESS encryption pools both. Share links carry no
+Mux settings, so the importer is unchanged.
 
 The shared Rust importer, protocol capability discovery introduced in C ABI 1.8,
 Swift adapter and Kotlin adapter expose all three formats. Host applications still own secure
@@ -421,8 +446,8 @@ TCP transport to `raw` and XHTTP from `splithttp`; both pairs are accepted alias
 `tcpSettings.header.type` — equally `rawSettings.header.type` — may be absent,
 empty, or `none`. Generic HTTP/2, QUIC, KCP and other stream transports are not
 supported; HTTP/2 and QUIC v1 are available only as XHTTP's selected wire
-engines. General VLESS mux, `sendThrough`, multiple VLESS servers, and
-protocol-layer chaining remain unsupported. The supported chaining subset
+engines. VLESS supports the shared [Mux](#vless-mux); `sendThrough`, multiple
+VLESS servers, and protocol-layer chaining remain unsupported. The supported chaining subset
 uses `streamSettings.sockopt.dialerProxy` with a nonempty outbound tag:
 
 ```json
@@ -1032,8 +1057,14 @@ connection. Standard BBR is likewise a Quinn-BBR approximation with Xray's
 initial congestion window, not quic-go's exact controller. Distinct
 `maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
 the transport API, conservative/aggressive BBR profiles, Brutal and
-force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
-a socket. H3 rejects TCP masks and UDP masks other than the bounded noise mask; the opt-in TCP fragment
+force-Brutal, and `debug: true` fail closed before opening
+a socket. H3 accepts the UDP-hop mask, or the legacy `quicParams.udpHop`, with
+the Hysteria rules above: the first Initial already goes to a hop port, and
+each interval moves the connection to a fresh protected socket aimed at
+another port while QUIC migrates the path. The timer starts once the
+connection exists and stops with it; a failed hop keeps the current path until
+the next interval, as in Xray. Each pooled QUIC connection hops independently.
+H3 rejects TCP masks and UDP masks other than UDP-hop and the bounded noise mask; the opt-in TCP fragment
 and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively

@@ -893,7 +893,7 @@
         "xudpProxyUDP443"
       ],
       "id": "MUX",
-      "notes": "Enabled Mux supports Trojan, Shadowsocks 2022 and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool has four parents and 128 lifetime children per parent."
+      "notes": "Enabled Mux supports VLESS, Trojan, Shadowsocks 2022 and VMess. TCP concurrency 0 defaults to 8; negative disables TCP. XHTTP and VLESS Vision require negative TCP concurrency because the pinned server accepts only UDP children there. XUDP concurrency 0 shares TCP, negative uses native UDP. Positive concurrency is capped at 64. UDP/443: reject (default), allow, skip. Each pool has four parents and 128 lifetime children per parent."
     },
     {
       "context": "$.observatory",

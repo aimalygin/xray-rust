@@ -6,7 +6,7 @@ impl Parser<'_> {
     pub(super) fn parse_udp_hop_mask(
         &mut self,
         stream: Option<&Value>,
-        network: StreamNetwork,
+        is_quic: bool,
         index: usize,
     ) -> Option<QuicUdpHopSettings> {
         let masks = stream?.pointer("/finalmask/udp")?.as_array()?;
@@ -16,10 +16,11 @@ impl Parser<'_> {
                 .is_some_and(|t| t.eq_ignore_ascii_case("udphop"))
         })?;
         let path = format!("$.outbounds[{index}].streamSettings.finalmask.udp[{i}].settings");
-        if network != StreamNetwork::Hysteria || i != 0 {
+        // Xray applies UDP masks to any UDP dial; here the QUIC carriers hop.
+        if !is_quic || i != 0 {
             self.error(
                 &path,
-                "udphop requires Hysteria and must be the first UDP mask",
+                "udphop requires Hysteria or XHTTP with exact h3 ALPN and must be the first UDP mask",
             );
         }
         let settings = mask.get("settings").filter(|s| s.is_object());

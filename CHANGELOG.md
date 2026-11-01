@@ -10,6 +10,29 @@ long-term supported release series.
 
 ## Unreleased
 
+- XHTTP over HTTP/3 (exact `h3` ALPN) now hops its UDP carrier, accepting the
+  `finalmask.udp` udphop mask and the legacy `quicParams.udpHop`, as Xray-core
+  does for any UDP transport. Previously the mask failed to parse and the
+  legacy form failed when the transport was built. The first Initial already
+  uses a hop port; each interval moves the connection to a fresh protected
+  socket while QUIC migrates the path, the timer starts with the connection and
+  stops with it, and a failed hop keeps the current path. Scheduled hops, for
+  Hysteria as well, now always change the port: Xray draws with replacement,
+  so with two ports half of its hops stay put. `H3Error::UnsupportedUdpHop` is
+  replaced by `InvalidUdpHop` for out-of-range policies. The legacy `udpHop`
+  warning points only QUIC carriers at the mask and tells others it has no
+  effect.
+
+- Support `mux` on VLESS outbounds, matching Xray-core v26.10.21. VLESS joins
+  the bounded shared Mux/XUDP pools of Trojan, Shadowsocks 2022 and VMess on
+  raw, WebSocket, HTTPUpgrade, gRPC and XHTTP with TLS or REALITY, with VLESS
+  encryption too. UDP follows Xray's outbound handler: `xudpProxyUDP443`, then
+  the XUDP pool, then the TCP pool, then VLESS's own UDP command. Profiles that
+  enabled Mux on VLESS previously failed to parse. With `xtls-rprx-vision`, as
+  on XHTTP, `mux.concurrency` must be negative, because the Xray inbound drops
+  a Vision account's Mux connection on its first TCP child; XUDP pooling stays
+  available.
+
 - Mobile: cancel in-flight on-demand outbound probes without stopping the core
   (ABI 1.15, `OUTBOUND_PROBE_CANCEL`, bit 28). The existing
   `xray_core_cancel_outbound_probes` is a teardown latch: after it every later

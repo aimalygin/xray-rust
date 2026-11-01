@@ -1092,13 +1092,23 @@ impl Parser<'_> {
         }
 
         let mux = self.parse_mux(outbound, index, &settings);
-        if matches!(&stream.transport, StreamTransport::Xhttp(_))
-            && mux.as_ref().is_some_and(|mux| mux.concurrency >= 0)
-        {
-            self.error(
-                format!("$.outbounds[{index}].mux.concurrency"),
-                "XHTTP requires negative TCP Mux concurrency; use xudpConcurrency for UDP pooling",
-            );
+        // Xray's XHTTP inbound and its VLESS inbound for a Vision account both
+        // restrict a Mux.Cool connection to UDP children and break the whole
+        // connection on the first TCP child. Refuse the TCP pool up front.
+        if mux.as_ref().is_some_and(|mux| mux.concurrency >= 0) {
+            let vision = matches!(&settings, OutboundSettings::Vless(vless)
+                if vless.users.first().is_some_and(|user| user.flow.is_some()));
+            if matches!(&stream.transport, StreamTransport::Xhttp(_)) {
+                self.error(
+                    format!("$.outbounds[{index}].mux.concurrency"),
+                    "XHTTP requires negative TCP Mux concurrency; use xudpConcurrency for UDP pooling",
+                );
+            } else if vision {
+                self.error(
+                    format!("$.outbounds[{index}].mux.concurrency"),
+                    "VLESS Vision requires negative TCP Mux concurrency; use xudpConcurrency for UDP pooling",
+                );
+            }
         }
         Some(OutboundConfig {
             tag: self.string_at(outbound, "tag").map(ToOwned::to_owned),
@@ -1175,13 +1185,14 @@ impl Parser<'_> {
         }
         if !matches!(
             settings,
-            OutboundSettings::Trojan(_)
+            OutboundSettings::Vless(_)
+                | OutboundSettings::Trojan(_)
                 | OutboundSettings::Shadowsocks2022(_)
                 | OutboundSettings::Vmess(_)
         ) {
             self.error(
                 format!("{mux_path}.enabled"),
-                "Mux requires Trojan, Shadowsocks 2022 or VMess",
+                "Mux requires VLESS, Trojan, Shadowsocks 2022 or VMess",
             );
         }
         Some(crate::MuxSettings {
