@@ -178,9 +178,7 @@ fn finish(
     let config_json =
         Zeroizing::new(serde_json::to_string(root).map_err(|_| ImportError::Configuration)?);
     let parsed = crate::parse_xray_json(&config_json).map_err(|_| ImportError::Configuration)?;
-    if parsed.diagnostics.iter().any(|diagnostic| {
-        !is_reality_fingerprint_advisory(diagnostic) && !is_wireguard_dns_advisory(diagnostic)
-    }) {
+    if !parsed.diagnostics.iter().all(is_import_advisory) {
         return Err(ImportError::Configuration);
     }
     Ok(ImportedProfile {
@@ -189,6 +187,11 @@ fn finish(
         server_address,
         config_json,
     })
+}
+/// Whether an imported profile may carry this parser diagnostic. Import
+/// refuses a profile with any other diagnostic.
+pub fn is_import_advisory(diagnostic: &crate::Diagnostic) -> bool {
+    is_reality_fingerprint_advisory(diagnostic) || is_wireguard_dns_advisory(diagnostic)
 }
 /// The parser warns on a REALITY fingerprint that v26.10.21 servers refuse.
 /// That describes the server rather than the import: the profile is exactly
