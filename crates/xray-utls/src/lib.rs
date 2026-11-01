@@ -127,7 +127,6 @@ pub const XRAY_REALITY_MODERN_FINGERPRINTS: &[&str] = &[
 pub const XRAY_REALITY_INCAPABLE_FINGERPRINTS: &[&str] = &[
     "android",
     "360",
-    "randomizednoalpn",
     "hellorandomizedalpn",
     "hellorandomizednoalpn",
     "hellofirefox_55",
@@ -154,6 +153,7 @@ pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
     "qq",
     "random",
     "randomized",
+    "randomizednoalpn",
     "hellofirefox_120",
     "hellofirefox_148",
     "hellochrome_120",
@@ -200,14 +200,15 @@ pub const XRAY_REALITY_CAPABLE_FINGERPRINTS: &[&str] = &[
 /// v26.10.21 on refuse every other hello; older servers accept any
 /// REALITY-capable name, which is why the rest stay selectable. `random` and
 /// `randomized` belong here because REALITY draws them from
-/// [`XRAY_REALITY_MODERN_FINGERPRINTS`], and `hellorandomized` because its
-/// frozen snapshot leads with the hybrid share.
+/// [`XRAY_REALITY_MODERN_FINGERPRINTS`], and `randomizednoalpn` and
+/// `hellorandomized` because their frozen snapshots lead with the hybrid share.
 pub const XRAY_REALITY_HYBRID_FINGERPRINTS: &[&str] = &[
     "chrome",
     "firefox",
     "safari",
     "random",
     "randomized",
+    "randomizednoalpn",
     "hellofirefox_148",
     "hellochrome_131",
     "hellochrome_133",
@@ -444,6 +445,20 @@ mod tests {
             );
             assert!(!is_reality_fingerprint_hybrid(fingerprint), "{fingerprint}");
         }
+    }
+
+    /// Xray's `randomizednoalpn` preset forces TLS 1.3 with an X25519 first key
+    /// share, and its snapshot leads with X25519MLKEM768. The bare uTLS
+    /// `hellorandomizednoalpn` keeps the default weights and its TLS 1.2
+    /// snapshot.
+    #[test]
+    fn randomizednoalpn_preset_is_reality_capable_unlike_the_bare_utls_id() {
+        assert_eq!(
+            normalize_reality_supported_fingerprint("randomizednoalpn"),
+            Some("randomizednoalpn")
+        );
+        assert!(is_reality_fingerprint_hybrid("randomizednoalpn"));
+        assert!(!is_reality_fingerprint_supported("hellorandomizednoalpn"));
     }
 
     #[test]

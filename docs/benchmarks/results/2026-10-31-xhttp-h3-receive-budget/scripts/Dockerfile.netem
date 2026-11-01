@@ -1,0 +1,4 @@
+# The download-memory report's image plus iproute2, for tc netem on the
+# container's own loopback (run with --cap-add NET_ADMIN).
+FROM xray-h3-bench:mem
+RUN apt-get update && apt-get install -y --no-install-recommends iproute2 && rm -rf /var/lib/apt/lists/*

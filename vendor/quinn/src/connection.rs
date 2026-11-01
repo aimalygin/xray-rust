@@ -641,6 +641,13 @@ impl Connection {
         conn.wake();
     }
 
+    /// See [`proto::Connection::set_stream_receive_window()`]
+    pub fn set_stream_receive_window(&self, window: VarInt) {
+        let mut conn = self.0.state.lock("set_stream_receive_window");
+        conn.inner.set_stream_receive_window(window);
+        conn.wake();
+    }
+
     /// Modify the number of remotely initiated bidirectional streams that may be concurrently open
     ///
     /// No streams may be opened by the peer unless fewer than `count` are already open. Large

@@ -76,16 +76,34 @@ pub(crate) fn encode_frame(out: &mut Vec<u8>, opcode: u8, fin: bool, payload: &[
     }
 
     // A fresh key per frame. Reusing one would be a distinguishing signal.
+    // RFC 6455 asks for an unpredictable key from a strong entropy source:
+    // the thread-local ChaCha CSPRNG is seeded and reseeded from the OS, and
+    // avoids a getentropy system call for every 4 KiB frame.
     let mut key = [0u8; 4];
-    rand::rngs::OsRng.fill_bytes(&mut key);
+    rand::thread_rng().fill_bytes(&mut key);
     out.extend_from_slice(&key);
 
-    out.extend(
-        payload
-            .iter()
-            .enumerate()
-            .map(|(index, byte)| byte ^ key[index % 4]),
-    );
+    let start = out.len();
+    out.extend_from_slice(payload);
+    apply_mask(&mut out[start..], key);
+}
+
+/// XORs `payload` with the repeating 4-byte `key`, starting at key offset 0.
+///
+/// Eight bytes at a time: a word of the key repeated twice keeps the key
+/// phase, since eight is a multiple of four, and the compiler vectorizes it.
+fn apply_mask(payload: &mut [u8], key: [u8; 4]) {
+    let word = u64::from_ne_bytes([
+        key[0], key[1], key[2], key[3], key[0], key[1], key[2], key[3],
+    ]);
+    let mut words = payload.chunks_exact_mut(8);
+    for chunk in &mut words {
+        let value = u64::from_ne_bytes((&*chunk).try_into().expect("eight-byte chunk")) ^ word;
+        chunk.copy_from_slice(&value.to_ne_bytes());
+    }
+    for (index, byte) in words.into_remainder().iter_mut().enumerate() {
+        *byte ^= key[index % 4];
+    }
 }
 
 /// What one decoded frame asks the connection to do.
@@ -232,4 +250,64 @@ impl FrameDecoder {
 struct DecodedFrame {
     opcode: u8,
     payload: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bytewise_mask(payload: &[u8], key: [u8; 4]) -> Vec<u8> {
+        payload
+            .iter()
+            .enumerate()
+            .map(|(index, byte)| byte ^ key[index % 4])
+            .collect()
+    }
+
+    #[test]
+    fn word_masking_matches_the_rfc_bytewise_definition() {
+        let mut rng = rand::thread_rng();
+        let source: Vec<u8> = (0..MAX_FRAME_PAYLOAD + 13)
+            .map(|i| (i * 31 % 251) as u8)
+            .collect();
+        for len in (0..=40).chain([255, 4095, MAX_FRAME_PAYLOAD, MAX_FRAME_PAYLOAD + 13]) {
+            let mut key = [0u8; 4];
+            rng.fill_bytes(&mut key);
+            let mut masked = source[..len].to_vec();
+            apply_mask(&mut masked, key);
+            assert_eq!(masked, bytewise_mask(&source[..len], key), "length {len}");
+        }
+    }
+
+    #[test]
+    fn every_fragment_unmasks_with_its_own_key() {
+        let payload: Vec<u8> = (0..3 * MAX_FRAME_PAYLOAD + 7).map(|i| i as u8).collect();
+        let frames = encode_client_frames(&payload);
+        let mut offset = 0;
+        let mut recovered = Vec::new();
+        let mut keys = Vec::new();
+        while offset < frames.len() {
+            let length = match frames[offset + 1] & LENGTH_MASK {
+                126 => {
+                    let length = u16::from_be_bytes([frames[offset + 2], frames[offset + 3]]);
+                    offset += 4;
+                    usize::from(length)
+                }
+                length => {
+                    offset += 2;
+                    usize::from(length)
+                }
+            };
+            let key: [u8; 4] = frames[offset..offset + 4].try_into().unwrap();
+            offset += 4;
+            recovered.extend(bytewise_mask(&frames[offset..offset + length], key));
+            keys.push(key);
+            offset += length;
+        }
+        assert_eq!(recovered, payload);
+        assert_eq!(keys.len(), 4);
+        keys.sort();
+        keys.dedup();
+        assert_eq!(keys.len(), 4, "each fragment needs a fresh key");
+    }
 }

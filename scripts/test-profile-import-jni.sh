@@ -26,5 +26,6 @@ platform/android/gradlew -p platform/android :xraymobile:testDebugUnitTest \
   "-PxrayNativeImportLibraryPath=$test_root:$native_dir" \
   --tests '*XrayProfileImporter*' --tests '*XrayOutboundProbeNative*' --tests '*XrayHysteriaNative*' \
   --tests '*XrayTunAdmissionNative*' --tests '*XrayNetworkChangeNative*' \
-  --tests '*XrayStartupProbePreflight*' --tests '*XrayTunStatsNative*' \
+  --tests '*XrayStartupProbePreflight*' --tests '*XrayGeodataNative*' \
+  --tests '*XrayTunStatsNative*' \
   --console=plain "$@"

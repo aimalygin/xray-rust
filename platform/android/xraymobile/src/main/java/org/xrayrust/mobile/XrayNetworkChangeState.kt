@@ -48,6 +48,12 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
     private val onResult: (XrayNetworkRebindResult) -> Unit,
     private val onError: (Exception) -> Unit,
     private val waitForBlockedCallback: Boolean = false,
+    // Before Android O nothing follows onAvailable until a value changes, so availability reads
+    // the network's current state once instead of waiting for metadata that may never arrive.
+    private val seedOnAvailable: Boolean = false,
+    // Null when the network is gone. Queried on the control worker, and from onAvailable only
+    // when seedOnAvailable is set.
+    private val currentObservation: (N) -> XrayNetworkObservation<N, C, P>? = { null },
 ) : Closeable {
     // Also fences in-flight work: close returns only after a running policy/rebind call ends.
     // Reentrant so a host callback can stop its own session without deadlocking.
@@ -61,6 +67,8 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
         var properties: P? = null
         var blocked: Boolean? = if (waitForBlockedCallback) null else false
 
+        val settled get() = capabilities != null && properties != null && blocked != null
+
         fun observation(network: N): XrayNetworkObservation<N, C, P>? {
             val caps = capabilities ?: return null
             val props = properties ?: return null
@@ -72,6 +80,8 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
         val networks = linkedMapOf<N, Entry>()
         var selected: N? = initialNetwork
         var everSelected = initialNetwork != null
+        // The host's actual carrier until its own callbacks or onLost arrive.
+        var unreportedInitial: N? = initialNetwork
         var registered = false
         var registration: Closeable? = null
         var dirty = false
@@ -118,8 +128,15 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
     }
 
     private fun events(session: Session) = object : XrayNetworkEvents<N, C, P> {
-        override fun available(network: N) = change(session) {
-            session.networks.getOrPut(network) { Entry() }
+        override fun available(network: N) {
+            val seed = if (seedOnAvailable) currentObservation(network) else null
+            change(session) {
+                val entry = session.networks.getOrPut(network) { Entry() }
+                if (seed != null) record(session, network, entry) {
+                    it.capabilities = it.capabilities ?: seed.capabilities
+                    it.properties = it.properties ?: seed.properties
+                }
+            }
         }
 
         override fun capabilities(network: N, capabilities: C) = update(session, network) {
@@ -136,15 +153,20 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
 
         override fun lost(network: N) = change(session) {
             session.networks.remove(network)
+            if (session.unreportedInitial == network) session.unreportedInitial = null
             if (session.selected == network) session.dirty = true
         }
     }
 
     private fun update(session: Session, network: N, update: (Entry) -> Unit) = change(session) {
         // Late capability/property callbacks cannot resurrect a network after onLost.
-        val entry = session.networks[network] ?: return@change
+        session.networks[network]?.let { record(session, network, it, update) }
+    }
+
+    private fun record(session: Session, network: N, entry: Entry, update: (Entry) -> Unit) {
         val before = entry.observation(network)
         update(entry)
+        if (session.unreportedInitial == network && entry.settled) session.unreportedInitial = null
         val after = entry.observation(network)
         if (before != after && (after != null || session.selected == network)) session.dirty = true
         // A caller-supplied initial carrier may become unusable before all metadata arrives.
@@ -193,7 +215,8 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
                 if (active !== session) return
                 session.dirty = false
                 try {
-                    val candidates = session.networks.mapNotNull { (network, entry) -> entry.observation(network) }
+                    val observed = session.networks.mapNotNull { (network, entry) -> entry.observation(network) }
+                    val candidates = observed + listOfNotNull(unreportedInitial(session))
                     val selected = selectAndApply(candidates, session.selected)
                     if (active !== session || session.dirty) return@withLock
                     require(selected == null || candidates.any { it.network == selected }) {
@@ -221,6 +244,18 @@ internal class XrayNetworkChangeState<N : Any, C : Any, P : Any>(
         } finally {
             submit(next)
         }
+    }
+
+    /**
+     * Android reports existing networks one at a time, so the first drain can run before the
+     * host's actual carrier has reported. Its current state keeps that partial burst from looking
+     * like a migration away from it; a carrier that is already gone is handled as lost.
+     */
+    private fun unreportedInitial(session: Session): XrayNetworkObservation<N, C, P>? {
+        val network = session.unreportedInitial ?: return null
+        val current = currentObservation(network)?.takeIf { usable(it.capabilities) }
+        if (current == null) session.unreportedInitial = null
+        return current
     }
 
     private fun request(call: () -> Long): XrayRebindRequestResult = try {

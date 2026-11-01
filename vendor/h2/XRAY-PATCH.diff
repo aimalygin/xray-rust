@@ -1,0 +1,235 @@
+--- a/src/client.rs
++++ b/src/client.rs
+@@ -348,6 +348,10 @@
+     ///
+     /// When this gets exhausted, we issue a GOAWAY with `ENHANCE_YOUR_CALM`.
+     data_frame_budget: proto::DataFrameBudget,
++
++    /// Released stream capacity that triggers a WINDOW_UPDATE, or `None` to
++    /// wait for half of the remaining window.
++    stream_window_update_threshold: Option<u32>,
+ }
+ 
+ #[derive(Debug)]
+@@ -669,6 +673,7 @@
+             stream_id: 1.into(),
+             local_max_error_reset_streams: Some(proto::DEFAULT_LOCAL_RESET_COUNT_MAX),
+             data_frame_budget: proto::DataFrameBudget::Auto,
++            stream_window_update_threshold: None,
+         }
+     }
+ 
+@@ -1175,6 +1180,19 @@
+         self
+     }
+ 
++    /// Sends a stream's WINDOW_UPDATE once `size` bytes of released capacity
++    /// have accumulated, or once the update would at least double the window
++    /// the peer sees, instead of waiting for half of the remaining window.
++    ///
++    /// This is the policy of Go's `x/net/http2` (`inflow.add`, with a 4 KiB
++    /// minimum). With the default and a reader that keeps up, credit returns
++    /// about a third of the window at a time, and the sender runs short of
++    /// credit while each update crosses the link.
++    pub fn stream_window_update_threshold(&mut self, size: u32) -> &mut Self {
++        self.stream_window_update_threshold = Some(size);
++        self
++    }
++
+     /// Sets the first stream ID to something other than 1.
+     #[cfg(feature = "unstable")]
+     pub fn initial_stream_id(&mut self, stream_id: u32) -> &mut Self {
+@@ -1366,6 +1384,7 @@
+                 local_error_reset_streams_max: builder.local_max_error_reset_streams,
+                 settings: builder.settings,
+                 data_frame_budget: builder.data_frame_budget,
++                stream_window_update_threshold: builder.stream_window_update_threshold,
+             },
+         );
+         let send_request = SendRequest {
+--- a/src/proto/connection.rs
++++ b/src/proto/connection.rs
+@@ -87,6 +87,7 @@
+     pub local_error_reset_streams_max: Option<usize>,
+     pub settings: frame::Settings,
+     pub data_frame_budget: DataFrameBudget,
++    pub stream_window_update_threshold: Option<WindowSize>,
+ }
+ 
+ #[derive(Clone, Copy, Debug)]
+@@ -152,6 +153,7 @@
+                     .map(|max| max as usize),
+                 local_max_error_reset_streams: config.local_error_reset_streams_max,
+                 data_frame_budget: config.data_frame_budget,
++                local_stream_window_update_threshold: config.stream_window_update_threshold,
+             }
+         }
+         let streams = Streams::new(streams_config(&config));
+--- a/src/proto/streams/counts.rs
++++ b/src/proto/streams/counts.rs
+@@ -390,6 +390,7 @@
+             remote_max_initiated: None,
+             local_max_error_reset_streams: None,
+             data_frame_budget: DataFrameBudget::Configured(DEFAULT_DATA_FRAME_BUDGET),
++            local_stream_window_update_threshold: None,
+         }
+     }
+ 
+--- a/src/proto/streams/flow_control.rs
++++ b/src/proto/streams/flow_control.rs
+@@ -26,6 +26,45 @@
+     assert!(UNCLAIMED_DENOMINATOR > 0);
+ }
+ 
++#[test]
++fn a_minimum_update_returns_credit_before_a_third_of_the_window() {
++    let mut flow = FlowControl::new();
++    flow.inc_window(4 << 20).unwrap();
++    flow.assign_capacity(4 << 20).unwrap();
++
++    // 64 KiB arrive and the reader releases them.
++    flow.send_data(65_536).unwrap();
++    flow.assign_capacity(65_536).unwrap();
++
++    assert_eq!(flow.unclaimed_capacity(), None);
++    assert_eq!(flow.unclaimed_capacity_at(None), None);
++    assert_eq!(flow.unclaimed_capacity_at(Some(4096)), Some(65_536));
++}
++
++#[test]
++fn a_minimum_update_holds_small_releases_while_the_window_is_open() {
++    let mut flow = FlowControl::new();
++    flow.inc_window(4 << 20).unwrap();
++    flow.assign_capacity(4 << 20).unwrap();
++
++    flow.send_data(1000).unwrap();
++    flow.assign_capacity(1000).unwrap();
++
++    assert_eq!(flow.unclaimed_capacity_at(Some(4096)), None);
++}
++
++#[test]
++fn a_minimum_update_releases_anything_that_doubles_a_nearly_closed_window() {
++    let mut flow = FlowControl::new();
++    flow.inc_window(65_535).unwrap();
++    flow.assign_capacity(65_535).unwrap();
++
++    flow.send_data(64_535).unwrap();
++    flow.assign_capacity(1000).unwrap();
++
++    assert_eq!(flow.unclaimed_capacity_at(Some(4096)), Some(1000));
++}
++
+ #[derive(Copy, Clone, Debug)]
+ pub struct FlowControl {
+     /// Window the peer knows about.
+@@ -101,6 +140,27 @@
+         let threshold = self.window_size.0 / UNCLAIMED_DENOMINATOR * UNCLAIMED_NUMERATOR;
+ 
+         if unclaimed < threshold {
++            None
++        } else {
++            Some(unclaimed as WindowSize)
++        }
++    }
++
++    /// [`Self::unclaimed_capacity`], or with `min_update` set, Go's
++    /// `x/net/http2` policy: an update is due once `min_update` bytes are
++    /// unclaimed, or once it would at least double the window the peer sees.
++    pub fn unclaimed_capacity_at(&self, min_update: Option<WindowSize>) -> Option<WindowSize> {
++        let Some(min_update) = min_update else {
++            return self.unclaimed_capacity();
++        };
++        let available = self.available;
++
++        if self.window_size >= available {
++            return None;
++        }
++
++        let unclaimed = available.0 - self.window_size.0;
++        if unclaimed < min_update as i32 && unclaimed < self.window_size.0 {
+             None
+         } else {
+             Some(unclaimed as WindowSize)
+--- a/src/proto/streams/mod.rs
++++ b/src/proto/streams/mod.rs
+@@ -81,6 +81,10 @@
+ 
+     /// Connection-level budget policy for DATA framing overhead.
+     pub(crate) data_frame_budget: DataFrameBudget,
++
++    /// Released stream capacity that triggers a WINDOW_UPDATE, or `None` to
++    /// wait for half of the remaining window.
++    pub local_stream_window_update_threshold: Option<WindowSize>,
+ }
+ 
+ trait DebugStructExt<'a, 'b> {
+--- a/src/proto/streams/recv.rs
++++ b/src/proto/streams/recv.rs
+@@ -15,6 +15,10 @@
+     /// Initial window size of remote initiated streams
+     init_window_sz: WindowSize,
+ 
++    /// Released stream capacity that triggers a WINDOW_UPDATE, or `None` to
++    /// wait for half of the remaining window.
++    stream_window_update_threshold: Option<WindowSize>,
++
+     /// Connection level flow control governing received data
+     flow: FlowControl,
+ 
+@@ -98,6 +102,7 @@
+ 
+         Recv {
+             init_window_sz: DEFAULT_INITIAL_WINDOW_SIZE,
++            stream_window_update_threshold: config.local_stream_window_update_threshold,
+             flow,
+             in_flight_data: 0 as WindowSize,
+             next_stream_id: Ok(next_stream_id.into()),
+@@ -484,7 +489,11 @@
+         let _res = stream.recv_flow.assign_capacity(capacity);
+         debug_assert!(_res.is_ok());
+ 
+-        if stream.recv_flow.unclaimed_capacity().is_some() {
++        if stream
++            .recv_flow
++            .unclaimed_capacity_at(self.stream_window_update_threshold)
++            .is_some()
++        {
+             // Queue the stream for sending the WINDOW_UPDATE frame.
+             self.pending_window_updates.push(stream);
+ 
+@@ -1159,6 +1168,7 @@
+         T: AsyncWrite + Unpin,
+         B: Buf,
+     {
++        let threshold = self.stream_window_update_threshold;
+         loop {
+             // Ensure the codec has capacity
+             if !dst.has_send_capacity() {
+@@ -1186,7 +1196,7 @@
+                 }
+ 
+                 // TODO: de-dup
+-                if let Some(incr) = stream.recv_flow.unclaimed_capacity() {
++                if let Some(incr) = stream.recv_flow.unclaimed_capacity_at(threshold) {
+                     // Create the WINDOW_UPDATE frame
+                     let frame = frame::WindowUpdate::new(stream.id, incr);
+ 
+@@ -1291,6 +1301,7 @@
+             remote_max_initiated: None,
+             local_max_error_reset_streams: None,
+             data_frame_budget: DataFrameBudget::Configured(DEFAULT_DATA_FRAME_BUDGET),
++            local_stream_window_update_threshold: None,
+         };
+         let mut recv = Recv::new(peer::Dyn::Server, &config);
+         let mut store = Store::new();
+--- a/src/server.rs
++++ b/src/server.rs
+@@ -1535,6 +1535,7 @@
+                                 .local_max_error_reset_streams,
+                             settings: self.builder.settings.clone(),
+                             data_frame_budget: self.builder.data_frame_budget,
++                            stream_window_update_threshold: None,
+                         },
+                     );
+ 

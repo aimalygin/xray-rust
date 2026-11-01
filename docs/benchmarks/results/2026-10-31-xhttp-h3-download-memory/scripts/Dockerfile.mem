@@ -1,0 +1,4 @@
+FROM xray-h3-bench:1
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libjemalloc2 libmimalloc2.0 heaptrack gdb strace \
+ && rm -rf /var/lib/apt/lists/*

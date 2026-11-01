@@ -203,10 +203,20 @@ fn is_reality_fingerprint_advisory(diagnostic: &crate::Diagnostic) -> bool {
             .is_some_and(|path| path.ends_with(".realitySettings.fingerprint"))
 }
 fn validate_name(name: &str) -> Result<(), ImportError> {
-    if name.is_empty() || name.len() > 128 || name.chars().any(char::is_control) {
+    if name.is_empty()
+        || name.len() > 128
+        || name.chars().any(|c| c.is_control() || is_bidi_override(c))
+    {
         return Err(ImportError::Name);
     }
     Ok(())
+}
+/// Explicit bidi embeddings, overrides and isolates reorder the text around
+/// them, so a name could display as a different profile in system VPN UI
+/// (CVE-2021-42574). Implicit marks (LRM, RLM, ALM) only set direction and
+/// stay allowed for right-to-left names.
+fn is_bidi_override(c: char) -> bool {
+    matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 fn inbound() -> Value {
     // No sniffing rewrite: explicit WireGuard IP policy must remain IP policy.

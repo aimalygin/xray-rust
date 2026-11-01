@@ -488,7 +488,15 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("data class XrayOutboundProbeResult"));
     assert!(core.contains("fileLoggingDirectory: File? = null"));
     assert!(core.contains("nativeSetFileLogging"));
+    assert!(core.contains("enum class XrayGeodataSearchPolicy"));
+    assert!(core.contains("geodataSearchDirectory: File? = null"));
+    assert!(core.contains(
+        "geodataSearchPolicy: XrayGeodataSearchPolicy = XrayGeodataSearchPolicy.Exclusive"
+    ));
+    assert!(core.contains("requireCapability(XrayFfiCapability.GeodataSearch)"));
+    assert!(core.contains("nativeSetGeodataSearchDir"));
     assert!(core.contains("XrayTunRuntimeProfile"));
+    assert!(service.contains("protected open fun geodataSearchDirectory(): File? = null"));
     assert!(service.contains("VpnService"));
     assert!(service.contains("startupProbe"));
     assert!(service.contains("XrayTunBackend"));
@@ -511,6 +519,8 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("xray_core_set_tun_collect_tcp_timings"));
     assert!(jni.contains("xray_core_set_tun_runtime_profile"));
     assert!(jni.contains("xray_core_set_file_logging"));
+    assert!(jni.contains("xray_core_set_geodata_search_dir("));
+    assert!(jni.contains("xray_core_set_geodata_search_dir_exclusive("));
     assert!(jni.contains("xray_core_set_outbound_selector_override"));
     assert!(jni.contains("xray_core_clear_outbound_selector_override"));
     assert!(jni.contains("xray_core_replace_routing_policy_json"));
@@ -530,6 +540,7 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunCollectTcpTimings"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetTunRuntimeProfile"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging"));
+    assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetGeodataSearchDir"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeSetOutboundSelectorOverride"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeClearOutboundSelectorOverride"));
     assert!(jni.contains("Java_org_xrayrust_mobile_XrayCore_nativeReplaceRoutingPolicyJson"));
@@ -845,6 +856,42 @@ fn android_reference_vpn_runs_startup_probe_before_establishing_the_tunnel() {
     assert!(
         cancel_start_branch.contains("startupProbePreflight.cancel()"),
         "a stop during start must cancel the native preflight"
+    );
+}
+
+#[test]
+fn android_reference_vpn_passes_geodata_directory_to_both_cores() {
+    let service =
+        fs::read_to_string(workspace_root().join(
+            "platform/android/xraymobile/src/main/java/org/xrayrust/mobile/XrayVpnService.kt",
+        ))
+        .expect("read Kotlin VPN service");
+
+    let start = service
+        .find("private fun runXrayTunnelStart(")
+        .expect("reference VPN should define its start worker");
+    let start_body = &service[start..];
+    let resolved = start_body
+        .find("val geodataSearchDirectory = geodataSearchDirectory()")
+        .expect("reference VPN should resolve the geodata directory once per start");
+    let preflight = start_body
+        .find("startupProbePreflight.run(attempt, startupProbe)")
+        .expect("reference VPN should preflight the startup probe");
+    let establish = start_body
+        .find("tunnelBuilder.establish()")
+        .expect("reference VPN should establish the tunnel");
+    assert!(
+        resolved < preflight,
+        "the geodata directory must be resolved before the preflight core is created"
+    );
+    assert!(
+        start_body[preflight..establish]
+            .contains("geodataSearchDirectory = geodataSearchDirectory,"),
+        "the preflight core compiles routing too, so it needs the geodata directory"
+    );
+    assert!(
+        start_body[establish..].contains("geodataSearchDirectory = geodataSearchDirectory,"),
+        "the data-path core needs the same geodata directory as the preflight"
     );
 }
 

@@ -19,10 +19,11 @@ with the [shared import fixtures and SDK checks](v07-profile-import.md#verificat
 `scripts/test-profile-import-jni.sh` builds host Rust/JNI and runs the Kotlin
 boundary tests plus actual JNI import, an ABI 1.9 outbound probe through a
 loopback SOCKS/Freedom core, the ABI 1.12 startup-probe preflight that the
-reference `XrayVpnService` runs before `establish()`, and the TUN stats carrier
-decoded by `XrayTunStats`. It requires the configured
-JDK and Android SDK and supports macOS/Linux. This host proof does not start a
-VPN or replace device testing.
+reference `XrayVpnService` runs before `establish()`, exclusive geodata loading
+from a synthetic `geosite.dat`/`geoip.dat` directory, and the TUN stats carrier
+decoded by `XrayTunStats`. It requires the configured JDK and Android SDK and
+supports macOS/Linux. This host proof does not start a VPN or replace device
+testing.
 
 Run the platform-independent contract tests first:
 
@@ -621,6 +622,8 @@ passing attempts; the exact minimums remain owned by
 - The repository does not distribute geodata databases. A host using
   `geosite`/`geoip` must package verified files and expose the correct resource
   directory to the core. The Apple sample can install the repository's pinned,
-  checksum-verified assets with `scripts/fetch-geodata.sh`.
+  checksum-verified assets with `scripts/fetch-geodata.sh`. Android hosts copy
+  the files into app storage and pass `geodataSearchDirectory` to
+  `XrayCore.create` or override `XrayVpnService.geodataSearchDirectory()`.
 - Neither adapter is a complete production application or a substitute for
   device profiling with Instruments or Perfetto.
