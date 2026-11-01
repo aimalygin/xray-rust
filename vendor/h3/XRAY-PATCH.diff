@@ -1,0 +1,161 @@
+--- a/src/frame.rs
++++ b/src/frame.rs
+@@ -60,33 +60,37 @@
+         );
+ 
+         loop {
+-            let end = self.try_recv(cx)?;
+-
+-            return match self.decoder.decode(self.stream.buf_mut())? {
++            // Decode a frame that is already buffered before reading more.
++            // Reading a chunk on every call made the buffer grow by a chunk
++            // per frame while the peer kept the stream full; buffered bytes
++            // are outside QUIC flow control (hyperium/h3#308, #344).
++            match self.decoder.decode(self.stream.buf_mut())? {
+                 Some(Frame::Data(PayloadLen(len))) => {
+                     self.remaining_data = len;
+-                    Poll::Ready(Ok(Some(Frame::Data(PayloadLen(len)))))
++                    return Poll::Ready(Ok(Some(Frame::Data(PayloadLen(len)))));
+                 }
+                 frame @ Some(Frame::WebTransportStream(_)) => {
+                     self.remaining_data = usize::MAX;
+-                    Poll::Ready(Ok(frame))
++                    return Poll::Ready(Ok(frame));
+                 }
+-                Some(frame) => Poll::Ready(Ok(Some(frame))),
+-                None => match end {
+-                    // Received a chunk but frame is incomplete, poll until we get `Pending`.
+-                    Poll::Ready(false) => continue,
+-                    Poll::Pending => Poll::Pending,
+-                    Poll::Ready(true) => {
+-                        if self.stream.buf_mut().has_remaining() {
+-                            // Reached the end of receive stream, but there is still some data:
+-                            // The frame is incomplete.
+-                            Poll::Ready(Err(FrameStreamError::UnexpectedEnd))
+-                        } else {
+-                            Poll::Ready(Ok(None))
+-                        }
+-                    }
+-                },
+-            };
++                Some(frame) => return Poll::Ready(Ok(Some(frame))),
++                None => {}
++            }
++
++            match self.try_recv(cx)? {
++                // Received a chunk but frame is incomplete, poll until we get `Pending`.
++                Poll::Ready(false) => continue,
++                Poll::Pending => return Poll::Pending,
++                Poll::Ready(true) => {
++                    return if self.stream.buf_mut().has_remaining() {
++                        // Reached the end of receive stream, but there is still some data:
++                        // The frame is incomplete.
++                        Poll::Ready(Err(FrameStreamError::UnexpectedEnd))
++                    } else {
++                        Poll::Ready(Ok(None))
++                    };
++                }
++            }
+         }
+     }
+ 
+@@ -102,10 +106,18 @@
+             return Poll::Ready(Ok(None));
+         };
+ 
+-        let end = match self.try_recv(cx) {
+-            Poll::Ready(Ok(end)) => end,
+-            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+-            Poll::Pending => false,
++        // Hand out the rest of a frame that is already buffered without
++        // reading more: a read for every piece grew the buffer by a chunk at
++        // each frame boundary inside one. While part of the frame is still
++        // missing, reading first notices a stream that ended early.
++        let end = if self.stream.buf().remaining() >= self.remaining_data {
++            self.stream.is_eos()
++        } else {
++            match self.try_recv(cx) {
++                Poll::Ready(Ok(end)) => end,
++                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
++                Poll::Pending => false,
++            }
+         };
+         let data = self.stream.buf_mut().take_chunk(self.remaining_data);
+ 
+@@ -578,6 +590,64 @@
+             |cx| to_bytes(stream.poll_data(cx)),
+             Ok(Some(b)) if &*b == b"dy"
+         );
++    }
++
++    #[tokio::test]
++    async fn poll_next_decodes_buffered_frames_before_reading() {
++        let mut recv = FakeRecv::default();
++        for _ in 0..4 {
++            let mut chunk = BytesMut::new();
++            for _ in 0..16 {
++                Frame::headers(&b"header"[..]).encode_with_payload(&mut chunk);
++            }
++            recv.chunk(chunk.freeze());
++        }
++        let chunk_len = recv.chunks[0].len();
++        let mut stream: FrameStream<_, ()> = FrameStream::new(BufRecvStream::new(recv));
++
++        for _ in 0..64 {
++            assert_poll_matches!(|cx| stream.poll_next(cx), Ok(Some(Frame::Headers(_))));
++            assert!(stream.stream.buf().remaining() < chunk_len);
++        }
++        assert_poll_matches!(|cx| stream.poll_next(cx), Ok(None));
++    }
++
++    #[tokio::test]
++    async fn poll_data_reads_only_what_the_current_frame_needs() {
++        // DATA frames of 700 bytes in 1,150-byte chunks: frames straddle
++        // chunks, and some chunks hold a frame boundary.
++        const CHUNK: usize = 1150;
++        let mut wire = BytesMut::new();
++        let mut body = Vec::new();
++        for i in 0..64u8 {
++            let payload = vec![i; 700];
++            body.extend_from_slice(&payload);
++            Frame::Data(Bytes::from(payload)).encode_with_payload(&mut wire);
++        }
++        let mut wire = wire.freeze();
++        let mut recv = FakeRecv::default();
++        while !wire.is_empty() {
++            recv.chunk(wire.split_to(wire.len().min(CHUNK)));
++        }
++        let mut stream: FrameStream<_, ()> = FrameStream::new(BufRecvStream::new(recv));
++
++        let mut received = Vec::new();
++        loop {
++            match poll_fn(|cx| stream.poll_next(cx)).await {
++                Ok(Some(Frame::Data(_))) => {}
++                Ok(None) => break,
++                Ok(Some(_)) => panic!("expected only DATA frames"),
++                Err(_) => panic!("frame stream error"),
++            }
++            while let Some(data) = poll_fn(|cx| to_bytes(stream.poll_data(cx)))
++                .await
++                .unwrap_or_else(|_| panic!("frame stream error"))
++            {
++                received.extend_from_slice(&data);
++                assert!(stream.stream.buf().remaining() <= 2 * CHUNK);
++            }
++        }
++        assert_eq!(received, body);
+     }
+ 
+     // Helpers
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1,6 +1,9 @@
+ //! HTTP/3 client and server
+ #![deny(missing_docs, clippy::self_named_module_files)]
+ #![allow(clippy::derive_partial_eq_without_eq)]
++// crates.io builds of 0.0.8 cap lints; as a path override this copy builds
++// under the workspace's -Dwarnings, and rustc 1.96 flags these in its code.
++#![allow(dead_code, mismatched_lifetime_syntaxes, unused_imports, unused_variables)]
+ 
+ pub mod client;
+ 

@@ -680,7 +680,12 @@ impl EndpointRef {
         runtime: Arc<dyn Runtime>,
     ) -> Self {
         let (sender, events) = mpsc::unbounded_channel();
-        let recv_state = RecvState::new(sender, socket.max_receive_segments(), &inner);
+        let recv_state = RecvState::new(
+            sender,
+            socket.max_receive_segments(),
+            socket.max_receive_batch(),
+            &inner,
+        );
         Self(Arc::new(EndpointInner {
             shared: Shared {
                 incoming: Notify::new(),
@@ -738,6 +743,8 @@ struct RecvState {
     incoming: VecDeque<proto::Incoming>,
     connections: ConnectionSet,
     recv_buf: Box<[u8]>,
+    /// Number of datagrams `recv_buf` holds, at most `BATCH_SIZE`
+    recv_batch: usize,
     recv_limiter: WorkLimiter,
 }
 
@@ -745,13 +752,15 @@ impl RecvState {
     fn new(
         sender: mpsc::UnboundedSender<(ConnectionHandle, EndpointEvent)>,
         max_receive_segments: usize,
+        max_receive_batch: usize,
         endpoint: &proto::Endpoint,
     ) -> Self {
+        let recv_batch = max_receive_batch.clamp(1, BATCH_SIZE);
         let recv_buf = vec![
             0;
             endpoint.config().get_max_udp_payload_size().min(64 * 1024) as usize
                 * max_receive_segments
-                * BATCH_SIZE
+                * recv_batch
         ];
         Self {
             connections: ConnectionSet {
@@ -761,6 +770,7 @@ impl RecvState {
             },
             incoming: VecDeque::new(),
             recv_buf: recv_buf.into(),
+            recv_batch,
             recv_limiter: WorkLimiter::new(RECV_TIME_BOUND),
         }
     }
@@ -774,20 +784,20 @@ impl RecvState {
         now: Instant,
     ) -> Result<PollProgress, io::Error> {
         let mut received_connection_packet = false;
+        let batch = self.recv_batch;
         let mut metas = [RecvMeta::default(); BATCH_SIZE];
         let mut iovs: [IoSliceMut; BATCH_SIZE] = {
             let mut bufs = self
                 .recv_buf
-                .chunks_mut(self.recv_buf.len() / BATCH_SIZE)
+                .chunks_mut(self.recv_buf.len() / batch)
                 .map(IoSliceMut::new);
 
-            // expect() safe as self.recv_buf is chunked into BATCH_SIZE items
-            // and iovs will be of size BATCH_SIZE, thus from_fn is called
-            // exactly BATCH_SIZE times.
-            std::array::from_fn(|_| bufs.next().expect("BATCH_SIZE elements"))
+            // self.recv_buf is chunked into `batch` items; the iovs past them
+            // stay empty and are never passed to the socket.
+            std::array::from_fn(|_| bufs.next().unwrap_or_else(|| IoSliceMut::new(&mut [])))
         };
         loop {
-            match socket.poll_recv(cx, &mut iovs, &mut metas) {
+            match socket.poll_recv(cx, &mut iovs[..batch], &mut metas[..batch]) {
                 Poll::Ready(Ok(msgs)) => {
                     self.recv_limiter.record_work(msgs);
                     for (meta, buf) in metas.iter().zip(iovs.iter()).take(msgs) {

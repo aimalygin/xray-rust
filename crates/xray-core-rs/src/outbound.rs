@@ -7064,9 +7064,11 @@ mod tests {
                 bbr_profile: xray_config::QuicBbrProfile::Conservative,
                 ..QuicParamsSettings::default()
             },
+            // A maximum below its initial window; distinct maxima above it
+            // now auto-tune.
             QuicParamsSettings {
                 init_stream_receive_window: 2 * 1024 * 1024,
-                max_stream_receive_window: 6 * 1024 * 1024,
+                max_stream_receive_window: 1024 * 1024,
                 ..QuicParamsSettings::default()
             },
             QuicParamsSettings {
@@ -7087,6 +7089,19 @@ mod tests {
                 Err(CoreError::InvalidXhttpConfiguration(_))
             ));
         }
+
+        let mut adaptive = xhttp_vless(
+            XhttpSettings::default(),
+            tls_security(Some("sni.example"), &["h3"]),
+            TargetAddr::Domain("origin.example".to_owned()),
+            443,
+        );
+        adaptive.stream.quic_params = Some(QuicParamsSettings {
+            init_stream_receive_window: 2 * 1024 * 1024,
+            max_stream_receive_window: 6 * 1024 * 1024,
+            ..QuicParamsSettings::default()
+        });
+        build_vless_tcp_outbound(&adaptive).expect("receive windows auto-tune up to their maxima");
     }
 
     #[test]

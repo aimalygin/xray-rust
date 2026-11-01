@@ -167,6 +167,14 @@ impl Parser<'_> {
         raw: &[Value],
         outbounds: &mut [OutboundConfig],
     ) {
+        // Classify targets before inlining: an outbound that itself chains to
+        // a fragment handler gains its mask below, and must still be an ordinary
+        // chaining target for outbounds listed after it, as Xray resolves
+        // dialerProxy tags at dial time regardless of order.
+        let fragment_handlers: Vec<bool> = outbounds
+            .iter()
+            .map(|o| o.stream.tcp_fragment.is_some())
+            .collect();
         for index in 0..raw.len() {
             let Some(tag) = raw[index]
                 .pointer("/streamSettings/sockopt/dialerProxy")
@@ -194,7 +202,7 @@ impl Parser<'_> {
                 self.error(path, "dialerProxy cannot reference its own outbound");
                 continue;
             }
-            if target.stream.tcp_fragment.is_none()
+            if !fragment_handlers[*target_index]
                 || !matches!(target.settings, OutboundSettings::Freedom)
             {
                 // Ordinary transport-layer chaining is compiled and cycle-checked

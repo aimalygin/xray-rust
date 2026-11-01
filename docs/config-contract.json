@@ -528,7 +528,7 @@
         "fallbackTag"
       ],
       "id": "BALANCER",
-      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
     },
     {
       "context": "$.routing.balancers[].strategy",
@@ -872,7 +872,7 @@
         "costs"
       ],
       "id": "LEAST_LOAD",
-      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
     },
     {
       "context": "$.routing.balancers[].strategy.settings.costs[]",
@@ -904,7 +904,7 @@
         "enableConcurrency"
       ],
       "id": "OBSERVATORY",
-      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
     },
     {
       "context": "$.outbounds[]",
@@ -927,7 +927,7 @@
         "system"
       ],
       "id": "POLICY",
-      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
     },
     {
       "context": "$.policy.levels.*",
@@ -941,7 +941,7 @@
         "bufferSize"
       ],
       "id": "POLICY_LEVEL",
-      "notes": "dialerProxy selects transport-layer chaining; conflicts with proxySettings and missing/self/ambiguous targets are rejected. A dedicated freedom fragment handler is inlined before TLS/REALITY. happyEyeballs bounds and activation rules are enforced by the parser."
+      "notes": "Value types, bounds and activation rules are enforced by the executable parser."
     },
     {
       "context": "$.policy.system",

@@ -682,6 +682,8 @@ mod stream_grpc_framing_read_tests {
 mod stream_grpc_h2_tests {
     use std::future::{poll_fn, Future};
     use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Arc;
     use std::task::Poll;
     use std::time::Duration;
 
@@ -689,8 +691,11 @@ mod stream_grpc_h2_tests {
     use h2::server::{self, SendResponse};
     use h2::{RecvStream, SendStream};
     use http::{HeaderMap, HeaderValue, Method, Response, StatusCode};
-    use tokio::io::{duplex, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream};
-    use tokio::sync::oneshot;
+    use tokio::io::{
+        duplex, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, DuplexStream, ReadBuf,
+    };
+    use tokio::sync::{mpsc, oneshot};
+    use tokio::time::Instant;
     use xray_transport::stream::grpc_test_only::{
         encode_hunk, open_grpc_h2_stream, GrpcStream, MAX_HUNK_PAYLOAD_LEN,
     };
@@ -742,7 +747,14 @@ mod stream_grpc_h2_tests {
     }
 
     async fn open_dialling(io: DuplexStream, user_agent: &str, multi_mode: bool) -> GrpcStream {
-        let config = GrpcConfig {
+        let config = dial_config(user_agent, multi_mode);
+        open_grpc_h2_stream(Box::new(io) as BoxedTransportStream, &config)
+            .await
+            .expect("the POST opens")
+    }
+
+    fn dial_config(user_agent: &str, multi_mode: bool) -> GrpcConfig {
+        GrpcConfig {
             service_name: SERVICE_NAME.to_owned(),
             multi_mode,
             authority: AUTHORITY.parse().expect("a literal authority"),
@@ -751,10 +763,7 @@ mod stream_grpc_h2_tests {
             health_check_timeout_secs: 0,
             permit_without_stream: false,
             initial_windows_size: 0,
-        };
-        open_grpc_h2_stream(Box::new(io) as BoxedTransportStream, &config)
-            .await
-            .expect("the POST opens")
+        }
     }
 
     fn trailers(status: &str) -> HeaderMap {
@@ -827,6 +836,10 @@ mod stream_grpc_h2_tests {
             chunks: Vec<Bytes>,
             trailers: HeaderMap,
         },
+        /// Write these DATA payloads and then hold the call open, neither
+        /// ending it nor reading: a server whose download is done while the
+        /// client's upload is still running.
+        SayAndHold(Vec<Bytes>),
         /// Accept the call and answer nothing at all.
         Silent,
         /// Accept the call, answer nothing, and report how the client's
@@ -992,6 +1005,16 @@ mod stream_grpc_h2_tests {
                 }
                 send.send_trailers(trailers).expect("trailers");
                 drain_the_client(body).await;
+            }
+            Script::SayAndHold(chunks) => {
+                let mut send = respond
+                    .send_response(grpc_response(), false)
+                    .expect("respond");
+                for chunk in chunks {
+                    send_all(&mut send, chunk).await;
+                }
+                let _held = (send, body);
+                std::future::pending::<()>().await;
             }
             Script::SayWithResponse(response, chunks, trailers) => {
                 let mut send = respond.send_response(response, false).expect("respond");
@@ -1401,6 +1424,245 @@ mod stream_grpc_h2_tests {
         })
         .await;
         uplink.await.expect("the uplink task finishes");
+    }
+
+    /// Two pipes joined by a relay that holds every byte for `one_way` in each
+    /// direction: a long link without a network.
+    fn delayed_link(one_way: Duration) -> (DuplexStream, DuplexStream) {
+        let (client, client_side) = duplex(1 << 20);
+        let (server_side, server) = duplex(1 << 20);
+        let (client_read, client_write) = tokio::io::split(client_side);
+        let (server_read, server_write) = tokio::io::split(server_side);
+        tokio::spawn(delay(client_read, server_write, one_way));
+        tokio::spawn(delay(server_read, client_write, one_way));
+        (client, server)
+    }
+
+    async fn delay(
+        mut from: impl AsyncRead + Unpin,
+        mut to: impl AsyncWrite + Unpin + Send + 'static,
+        one_way: Duration,
+    ) {
+        let (queue, mut queued) = mpsc::unbounded_channel::<(Instant, Vec<u8>)>();
+        let writer = tokio::spawn(async move {
+            while let Some((due, bytes)) = queued.recv().await {
+                tokio::time::sleep_until(due).await;
+                if to.write_all(&bytes).await.is_err() {
+                    return;
+                }
+            }
+        });
+        let mut buffer = vec![0u8; 64 * 1024];
+        while let Ok(read @ 1..) = from.read(&mut buffer).await {
+            let _ = queue.send((Instant::now() + one_way, buffer[..read].to_vec()));
+        }
+        drop(queue);
+        let _ = writer.await;
+    }
+
+    /// Reads a 4 MiB downlink over a 40 ms round trip and returns how long it
+    /// took on the paused clock, from the open call to the last byte.
+    async fn download_over_a_long_link(initial_windows_size: u32) -> Duration {
+        const SIZE: usize = 4 * 1024 * 1024;
+
+        let (client_io, server_io) = delayed_link(Duration::from_millis(20));
+        let payload: Vec<u8> = (0..SIZE).map(|index| (index % 251) as u8).collect();
+        let messages: Vec<&[u8]> = payload.chunks(64 * 1024).collect();
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::Say(hunks(&messages), trailers("0")),
+        ));
+
+        let mut config = dial_config(USER_AGENT, false);
+        config.initial_windows_size = initial_windows_size;
+        let mut stream = within_deadline(open_grpc_h2_stream(
+            Box::new(client_io) as BoxedTransportStream,
+            &config,
+        ))
+        .await
+        .expect("the POST opens");
+
+        let started = Instant::now();
+        let mut received = vec![0u8; SIZE];
+        within_deadline(stream.read_exact(&mut received))
+            .await
+            .expect("downlink read");
+        assert_eq!(received, payload);
+        started.elapsed()
+    }
+
+    /// The stream window grows with the link, as grpc-go's BDP estimator grows
+    /// it, rather than holding the flow to 64 KiB per round trip.
+    ///
+    /// At the static 65,535-byte window 4 MiB needs 64 round trips, 2.56 s. A
+    /// window that doubles every round trip needs fewer than ten.
+    #[tokio::test(start_paused = true)]
+    async fn a_long_link_grows_the_stream_window() {
+        let elapsed = download_over_a_long_link(0).await;
+
+        assert!(elapsed < Duration::from_secs(1), "4 MiB took {elapsed:?}");
+    }
+
+    /// Any `initialWindowsSize` pins the windows, because it sets grpc-go's
+    /// `StaticWindowSize`, even when it is too small to change the window.
+    #[tokio::test(start_paused = true)]
+    async fn an_explicit_initial_window_size_keeps_the_window_static() {
+        let elapsed = download_over_a_long_link(65_535).await;
+
+        assert!(
+            elapsed >= Duration::from_millis(2_560),
+            "4 MiB took {elapsed:?}"
+        );
+    }
+
+    /// grpc-go's server ping policy, kept by watching both directions of a
+    /// link: a client PING is a strike unless the server has written DATA or
+    /// HEADERS since the previous one, and the third strike in a row is
+    /// `GOAWAY` `too_many_pings` (`handlePing`,
+    /// `grpc@v1.84.0/internal/transport/http2_server.go:882-933`).
+    #[derive(Debug, Default)]
+    struct PingPolicy {
+        pings: AtomicU32,
+        strikes: AtomicU32,
+        server_wrote: AtomicBool,
+    }
+
+    /// One direction of a link, read through an HTTP/2 frame parser that
+    /// reports to a [`PingPolicy`].
+    struct PolicedFrames<R> {
+        inner: R,
+        from_client: bool,
+        policy: Arc<PingPolicy>,
+        /// The client preface, then whatever is left of a frame's payload.
+        skip: usize,
+        header: Vec<u8>,
+    }
+
+    impl<R> PolicedFrames<R> {
+        fn new(inner: R, from_client: bool, policy: Arc<PingPolicy>) -> Self {
+            Self {
+                inner,
+                from_client,
+                policy,
+                skip: if from_client { 24 } else { 0 },
+                header: Vec::with_capacity(9),
+            }
+        }
+
+        fn push(&mut self, byte: u8) {
+            const DATA: u8 = 0x0;
+            const HEADERS: u8 = 0x1;
+            const PING: u8 = 0x6;
+            const ACK: u8 = 0x1;
+
+            if self.skip > 0 {
+                self.skip -= 1;
+                return;
+            }
+            self.header.push(byte);
+            if self.header.len() < 9 {
+                return;
+            }
+            let (len, kind, flags) = (
+                u32::from_be_bytes([0, self.header[0], self.header[1], self.header[2]]),
+                self.header[3],
+                self.header[4],
+            );
+            self.header.clear();
+            self.skip = len as usize;
+            if !self.from_client {
+                if kind == DATA || kind == HEADERS {
+                    self.policy.server_wrote.store(true, Ordering::Relaxed);
+                }
+            } else if kind == PING && flags & ACK == 0 {
+                let first = self.policy.pings.fetch_add(1, Ordering::Relaxed) == 0;
+                let paid_for = self.policy.server_wrote.swap(false, Ordering::Relaxed);
+                if !first && !paid_for {
+                    self.policy.strikes.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+
+    impl<R: AsyncRead + Unpin> AsyncRead for PolicedFrames<R> {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            let this = self.get_mut();
+            let before = buf.filled().len();
+            let polled = Pin::new(&mut this.inner).poll_read(cx, buf);
+            if let Poll::Ready(Ok(())) = polled {
+                for &byte in &buf.filled()[before..] {
+                    this.push(byte);
+                }
+            }
+            polled
+        }
+    }
+
+    /// [`delayed_link`] with a [`PingPolicy`] watching it at the server's end.
+    fn policed_link(one_way: Duration) -> (DuplexStream, DuplexStream, Arc<PingPolicy>) {
+        let policy = Arc::new(PingPolicy::default());
+        let (client, client_side) = duplex(1 << 20);
+        let (server_side, server) = duplex(1 << 20);
+        let (client_read, client_write) = tokio::io::split(client_side);
+        let (server_read, server_write) = tokio::io::split(server_side);
+        let from_client = PolicedFrames::new(client_read, true, Arc::clone(&policy));
+        let from_server = PolicedFrames::new(server_read, false, Arc::clone(&policy));
+        tokio::spawn(delay(from_client, server_write, one_way));
+        tokio::spawn(delay(from_server, client_write, one_way));
+        (client, server, policy)
+    }
+
+    /// Reading what h2 has already buffered must not ping a server that has
+    /// stopped writing.
+    ///
+    /// grpc-go's server answers a third such ping with `GOAWAY`
+    /// `too_many_pings`, which ends every call on the connection — the upload
+    /// of a full-duplex flow included, while its download was already done. A
+    /// BDP sample started by the arrival of DATA always follows DATA written
+    /// since the last ping; one started by a read does not.
+    #[tokio::test(start_paused = true)]
+    async fn draining_a_buffered_download_does_not_ping_a_quiet_server() {
+        const MESSAGES: usize = 16;
+        const MESSAGE_LEN: usize = 3 * 1024;
+
+        let (client_io, server_io, policy) = policed_link(Duration::from_millis(20));
+        let payload: Vec<u8> = (0..MESSAGES * MESSAGE_LEN)
+            .map(|index| (index % 251) as u8)
+            .collect();
+        let messages: Vec<&[u8]> = payload.chunks(MESSAGE_LEN).collect();
+        tokio::spawn(serve_one_call(
+            server_io,
+            Script::SayAndHold(hunks(&messages)),
+        ));
+        let mut stream = within_deadline(open(client_io)).await;
+
+        // All of it fits the 65,535-byte window, so it is in h2's buffer
+        // before the first read and the server has nothing left to write.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let mut received = vec![0u8; payload.len()];
+        for message in received.chunks_mut(MESSAGE_LEN) {
+            within_deadline(stream.read_exact(message))
+                .await
+                .expect("downlink read");
+            // Longer than the 40 ms round trip, so a ping is answered before
+            // the next read.
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        assert_eq!(received, payload);
+        assert!(
+            policy.pings.load(Ordering::Relaxed) > 0,
+            "the estimate never sampled"
+        );
+        assert_eq!(
+            policy.strikes.load(Ordering::Relaxed),
+            0,
+            "pings with nothing written since the previous one"
+        );
     }
 
     /// A write bigger than one `Hunk` may carry is a short write, not a panic

@@ -1,0 +1,921 @@
+{
+  "run_id": "1793395410140",
+  "provenance": {
+    "harness_profile": "release",
+    "workspace_git": {
+      "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+      "dirty": false
+    },
+    "engine_source_git": {
+      "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+      "dirty": false
+    },
+    "harness_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+    "harness_binary_sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+    "engine_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+    "engine_binary_sha256": "8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca",
+    "working_directory": "/Users/antonmalygin/xray-rust",
+    "invocation_args": [
+      "run",
+      "--engine",
+      "xray-rust",
+      "--workload",
+      "stream-transport",
+      "--duration-ms",
+      "2000",
+      "--sample-interval-ms",
+      "100",
+      "--run-timeout-ms",
+      "300000",
+      "--connections",
+      "1",
+      "--iterations",
+      "4096",
+      "--payload-size",
+      "65536",
+      "--stream-transport",
+      "ws",
+      "--traffic",
+      "upload",
+      "--settle-ms",
+      "0",
+      "--transport",
+      "both",
+      "--dns-upstream-transport",
+      "classic",
+      "--runs",
+      "5",
+      "--out-dir",
+      "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/stream-ws-upload-1-rerun",
+      "--xray-rust-bin",
+      "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+      "--xray-core-bin",
+      "/private/tmp/xray-migration-tools/xray-v26.10.21",
+      "--sing-box-bin",
+      "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/bin/sing-box-v1.14.4",
+      "--sing-box-dir",
+      "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/sing-box",
+      "--no-auto-build"
+    ]
+  },
+  "engine": "xray-rust",
+  "workload": "stream-transport",
+  "status": "ok",
+  "runs": 5,
+  "duration_ms": {
+    "min": 297,
+    "median": 305,
+    "p95": 316
+  },
+  "transfer_duration_ms": {
+    "min": 274,
+    "median": 283,
+    "p95": 290
+  },
+  "peak_rss_kib": {
+    "min": 9248,
+    "median": 9392,
+    "p95": 9632
+  },
+  "cpu_millis": {
+    "min": 100,
+    "median": 100,
+    "p95": 100
+  },
+  "cpu_millis_per_gib": {
+    "min": 400,
+    "median": 400,
+    "p95": 400
+  },
+  "throughput_mbps": {
+    "min": 7406,
+    "median": 7589,
+    "p95": 7838
+  },
+  "connections": 1,
+  "iterations": 4096,
+  "payload_size": 65536,
+  "stream_transport": "ws",
+  "stream_traffic": "upload",
+  "settle_ms": 0,
+  "latency_us": null,
+  "setup_us": {
+    "tcp_connect_us": {
+      "min": {
+        "min": 38,
+        "median": 46,
+        "p95": 93
+      },
+      "median": {
+        "min": 38,
+        "median": 46,
+        "p95": 93
+      },
+      "p95": {
+        "min": 38,
+        "median": 46,
+        "p95": 93
+      },
+      "p99": {
+        "min": 38,
+        "median": 46,
+        "p95": 93
+      }
+    },
+    "socks_method_us": {
+      "min": {
+        "min": 26,
+        "median": 31,
+        "p95": 83
+      },
+      "median": {
+        "min": 26,
+        "median": 31,
+        "p95": 83
+      },
+      "p95": {
+        "min": 26,
+        "median": 31,
+        "p95": 83
+      },
+      "p99": {
+        "min": 26,
+        "median": 31,
+        "p95": 83
+      }
+    },
+    "socks_connect_us": {
+      "min": {
+        "min": 18953,
+        "median": 19305,
+        "p95": 22280
+      },
+      "median": {
+        "min": 18953,
+        "median": 19305,
+        "p95": 22280
+      },
+      "p95": {
+        "min": 18953,
+        "median": 19305,
+        "p95": 22280
+      },
+      "p99": {
+        "min": 18953,
+        "median": 19305,
+        "p95": 22280
+      }
+    },
+    "socks_setup_us": {
+      "min": {
+        "min": 18985,
+        "median": 19332,
+        "p95": 22364
+      },
+      "median": {
+        "min": 18985,
+        "median": 19332,
+        "p95": 22364
+      },
+      "p95": {
+        "min": 18985,
+        "median": 19332,
+        "p95": 22364
+      },
+      "p99": {
+        "min": 18985,
+        "median": 19332,
+        "p95": 22364
+      }
+    },
+    "total_us": {
+      "min": {
+        "min": 19205,
+        "median": 19523,
+        "p95": 22690
+      },
+      "median": {
+        "min": 19205,
+        "median": 19523,
+        "p95": 22690
+      },
+      "p95": {
+        "min": 19205,
+        "median": 19523,
+        "p95": 22690
+      },
+      "p99": {
+        "min": 19205,
+        "median": 19523,
+        "p95": 22690
+      }
+    }
+  },
+  "bytes_sent": {
+    "min": 268435456,
+    "median": 268435456,
+    "p95": 268435456
+  },
+  "bytes_received": {
+    "min": 0,
+    "median": 0,
+    "p95": 0
+  },
+  "results": [
+    {
+      "run_id": "1793395410140",
+      "run_index": 1,
+      "provenance": {
+        "harness_profile": "release",
+        "workspace_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "engine_source_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "harness_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+        "harness_binary_sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+        "engine_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+        "engine_binary_sha256": "8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca",
+        "working_directory": "/Users/antonmalygin/xray-rust",
+        "invocation_args": [
+          "run",
+          "--engine",
+          "xray-rust",
+          "--workload",
+          "stream-transport",
+          "--duration-ms",
+          "2000",
+          "--sample-interval-ms",
+          "100",
+          "--run-timeout-ms",
+          "300000",
+          "--connections",
+          "1",
+          "--iterations",
+          "4096",
+          "--payload-size",
+          "65536",
+          "--stream-transport",
+          "ws",
+          "--traffic",
+          "upload",
+          "--settle-ms",
+          "0",
+          "--transport",
+          "both",
+          "--dns-upstream-transport",
+          "classic",
+          "--runs",
+          "5",
+          "--out-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/stream-ws-upload-1-rerun",
+          "--xray-rust-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+          "--xray-core-bin",
+          "/private/tmp/xray-migration-tools/xray-v26.10.21",
+          "--sing-box-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/bin/sing-box-v1.14.4",
+          "--sing-box-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/sing-box",
+          "--no-auto-build"
+        ]
+      },
+      "engine": "xray-rust",
+      "workload": "stream-transport",
+      "status": "ok",
+      "duration_ms": 316,
+      "transfer_duration_ms": 290,
+      "bytes_sent": 268435456,
+      "bytes_received": 0,
+      "peak_rss_kib": 9632,
+      "cpu_millis": 100,
+      "cpu_millis_per_gib": 400,
+      "throughput_mbps": 7406,
+      "connections": 1,
+      "iterations": 4096,
+      "payload_size": 65536,
+      "stream_transport": "ws",
+      "stream_traffic": "upload",
+      "settle_ms": 0,
+      "memory_phases": [
+        {
+          "phase": "startup",
+          "samples": 1,
+          "first_rss_kib": 4912,
+          "median_rss_kib": 4912,
+          "peak_rss_kib": 4912,
+          "last_rss_kib": 4912
+        },
+        {
+          "phase": "traffic",
+          "samples": 3,
+          "first_rss_kib": 9328,
+          "median_rss_kib": 9536,
+          "peak_rss_kib": 9536,
+          "last_rss_kib": 9536
+        },
+        {
+          "phase": "complete",
+          "samples": 1,
+          "first_rss_kib": 9632,
+          "median_rss_kib": 9632,
+          "peak_rss_kib": 9632,
+          "last_rss_kib": 9632
+        }
+      ],
+      "latency_us": null,
+      "setup_us": {
+        "tcp_connect_us": {
+          "min": 93,
+          "median": 93,
+          "p95": 93,
+          "p99": 93
+        },
+        "socks_method_us": {
+          "min": 83,
+          "median": 83,
+          "p95": 83,
+          "p99": 83
+        },
+        "socks_connect_us": {
+          "min": 22280,
+          "median": 22280,
+          "p95": 22280,
+          "p99": 22280
+        },
+        "socks_setup_us": {
+          "min": 22364,
+          "median": 22364,
+          "p95": 22364,
+          "p99": 22364
+        },
+        "total_us": {
+          "min": 22690,
+          "median": 22690,
+          "p95": 22690,
+          "p99": 22690
+        }
+      },
+      "samples": 5
+    },
+    {
+      "run_id": "1793395410140",
+      "run_index": 2,
+      "provenance": {
+        "harness_profile": "release",
+        "workspace_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "engine_source_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "harness_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+        "harness_binary_sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+        "engine_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+        "engine_binary_sha256": "8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca",
+        "working_directory": "/Users/antonmalygin/xray-rust",
+        "invocation_args": [
+          "run",
+          "--engine",
+          "xray-rust",
+          "--workload",
+          "stream-transport",
+          "--duration-ms",
+          "2000",
+          "--sample-interval-ms",
+          "100",
+          "--run-timeout-ms",
+          "300000",
+          "--connections",
+          "1",
+          "--iterations",
+          "4096",
+          "--payload-size",
+          "65536",
+          "--stream-transport",
+          "ws",
+          "--traffic",
+          "upload",
+          "--settle-ms",
+          "0",
+          "--transport",
+          "both",
+          "--dns-upstream-transport",
+          "classic",
+          "--runs",
+          "5",
+          "--out-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/stream-ws-upload-1-rerun",
+          "--xray-rust-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+          "--xray-core-bin",
+          "/private/tmp/xray-migration-tools/xray-v26.10.21",
+          "--sing-box-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/bin/sing-box-v1.14.4",
+          "--sing-box-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/sing-box",
+          "--no-auto-build"
+        ]
+      },
+      "engine": "xray-rust",
+      "workload": "stream-transport",
+      "status": "ok",
+      "duration_ms": 297,
+      "transfer_duration_ms": 274,
+      "bytes_sent": 268435456,
+      "bytes_received": 0,
+      "peak_rss_kib": 9280,
+      "cpu_millis": 100,
+      "cpu_millis_per_gib": 400,
+      "throughput_mbps": 7838,
+      "connections": 1,
+      "iterations": 4096,
+      "payload_size": 65536,
+      "stream_transport": "ws",
+      "stream_traffic": "upload",
+      "settle_ms": 0,
+      "memory_phases": [
+        {
+          "phase": "startup",
+          "samples": 1,
+          "first_rss_kib": 4896,
+          "median_rss_kib": 4896,
+          "peak_rss_kib": 4896,
+          "last_rss_kib": 4896
+        },
+        {
+          "phase": "traffic",
+          "samples": 2,
+          "first_rss_kib": 9184,
+          "median_rss_kib": 9200,
+          "peak_rss_kib": 9200,
+          "last_rss_kib": 9200
+        },
+        {
+          "phase": "complete",
+          "samples": 1,
+          "first_rss_kib": 9280,
+          "median_rss_kib": 9280,
+          "peak_rss_kib": 9280,
+          "last_rss_kib": 9280
+        }
+      ],
+      "latency_us": null,
+      "setup_us": {
+        "tcp_connect_us": {
+          "min": 38,
+          "median": 38,
+          "p95": 38,
+          "p99": 38
+        },
+        "socks_method_us": {
+          "min": 27,
+          "median": 27,
+          "p95": 27,
+          "p99": 27
+        },
+        "socks_connect_us": {
+          "min": 19173,
+          "median": 19173,
+          "p95": 19173,
+          "p99": 19173
+        },
+        "socks_setup_us": {
+          "min": 19201,
+          "median": 19201,
+          "p95": 19201,
+          "p99": 19201
+        },
+        "total_us": {
+          "min": 19392,
+          "median": 19392,
+          "p95": 19392,
+          "p99": 19392
+        }
+      },
+      "samples": 4
+    },
+    {
+      "run_id": "1793395410140",
+      "run_index": 3,
+      "provenance": {
+        "harness_profile": "release",
+        "workspace_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "engine_source_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "harness_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+        "harness_binary_sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+        "engine_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+        "engine_binary_sha256": "8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca",
+        "working_directory": "/Users/antonmalygin/xray-rust",
+        "invocation_args": [
+          "run",
+          "--engine",
+          "xray-rust",
+          "--workload",
+          "stream-transport",
+          "--duration-ms",
+          "2000",
+          "--sample-interval-ms",
+          "100",
+          "--run-timeout-ms",
+          "300000",
+          "--connections",
+          "1",
+          "--iterations",
+          "4096",
+          "--payload-size",
+          "65536",
+          "--stream-transport",
+          "ws",
+          "--traffic",
+          "upload",
+          "--settle-ms",
+          "0",
+          "--transport",
+          "both",
+          "--dns-upstream-transport",
+          "classic",
+          "--runs",
+          "5",
+          "--out-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/stream-ws-upload-1-rerun",
+          "--xray-rust-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+          "--xray-core-bin",
+          "/private/tmp/xray-migration-tools/xray-v26.10.21",
+          "--sing-box-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/bin/sing-box-v1.14.4",
+          "--sing-box-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/sing-box",
+          "--no-auto-build"
+        ]
+      },
+      "engine": "xray-rust",
+      "workload": "stream-transport",
+      "status": "ok",
+      "duration_ms": 305,
+      "transfer_duration_ms": 283,
+      "bytes_sent": 268435456,
+      "bytes_received": 0,
+      "peak_rss_kib": 9248,
+      "cpu_millis": 100,
+      "cpu_millis_per_gib": 400,
+      "throughput_mbps": 7589,
+      "connections": 1,
+      "iterations": 4096,
+      "payload_size": 65536,
+      "stream_transport": "ws",
+      "stream_traffic": "upload",
+      "settle_ms": 0,
+      "memory_phases": [
+        {
+          "phase": "startup",
+          "samples": 1,
+          "first_rss_kib": 4896,
+          "median_rss_kib": 4896,
+          "peak_rss_kib": 4896,
+          "last_rss_kib": 4896
+        },
+        {
+          "phase": "traffic",
+          "samples": 2,
+          "first_rss_kib": 9152,
+          "median_rss_kib": 9152,
+          "peak_rss_kib": 9152,
+          "last_rss_kib": 9152
+        },
+        {
+          "phase": "complete",
+          "samples": 1,
+          "first_rss_kib": 9248,
+          "median_rss_kib": 9248,
+          "peak_rss_kib": 9248,
+          "last_rss_kib": 9248
+        }
+      ],
+      "latency_us": null,
+      "setup_us": {
+        "tcp_connect_us": {
+          "min": 46,
+          "median": 46,
+          "p95": 46,
+          "p99": 46
+        },
+        "socks_method_us": {
+          "min": 32,
+          "median": 32,
+          "p95": 32,
+          "p99": 32
+        },
+        "socks_connect_us": {
+          "min": 19320,
+          "median": 19320,
+          "p95": 19320,
+          "p99": 19320
+        },
+        "socks_setup_us": {
+          "min": 19353,
+          "median": 19353,
+          "p95": 19353,
+          "p99": 19353
+        },
+        "total_us": {
+          "min": 19561,
+          "median": 19561,
+          "p95": 19561,
+          "p99": 19561
+        }
+      },
+      "samples": 4
+    },
+    {
+      "run_id": "1793395410140",
+      "run_index": 4,
+      "provenance": {
+        "harness_profile": "release",
+        "workspace_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "engine_source_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "harness_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+        "harness_binary_sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+        "engine_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+        "engine_binary_sha256": "8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca",
+        "working_directory": "/Users/antonmalygin/xray-rust",
+        "invocation_args": [
+          "run",
+          "--engine",
+          "xray-rust",
+          "--workload",
+          "stream-transport",
+          "--duration-ms",
+          "2000",
+          "--sample-interval-ms",
+          "100",
+          "--run-timeout-ms",
+          "300000",
+          "--connections",
+          "1",
+          "--iterations",
+          "4096",
+          "--payload-size",
+          "65536",
+          "--stream-transport",
+          "ws",
+          "--traffic",
+          "upload",
+          "--settle-ms",
+          "0",
+          "--transport",
+          "both",
+          "--dns-upstream-transport",
+          "classic",
+          "--runs",
+          "5",
+          "--out-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/stream-ws-upload-1-rerun",
+          "--xray-rust-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+          "--xray-core-bin",
+          "/private/tmp/xray-migration-tools/xray-v26.10.21",
+          "--sing-box-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/bin/sing-box-v1.14.4",
+          "--sing-box-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/sing-box",
+          "--no-auto-build"
+        ]
+      },
+      "engine": "xray-rust",
+      "workload": "stream-transport",
+      "status": "ok",
+      "duration_ms": 306,
+      "transfer_duration_ms": 283,
+      "bytes_sent": 268435456,
+      "bytes_received": 0,
+      "peak_rss_kib": 9392,
+      "cpu_millis": 100,
+      "cpu_millis_per_gib": 400,
+      "throughput_mbps": 7589,
+      "connections": 1,
+      "iterations": 4096,
+      "payload_size": 65536,
+      "stream_transport": "ws",
+      "stream_traffic": "upload",
+      "settle_ms": 0,
+      "memory_phases": [
+        {
+          "phase": "startup",
+          "samples": 1,
+          "first_rss_kib": 4912,
+          "median_rss_kib": 4912,
+          "peak_rss_kib": 4912,
+          "last_rss_kib": 4912
+        },
+        {
+          "phase": "traffic",
+          "samples": 2,
+          "first_rss_kib": 9120,
+          "median_rss_kib": 9120,
+          "peak_rss_kib": 9120,
+          "last_rss_kib": 9120
+        },
+        {
+          "phase": "complete",
+          "samples": 1,
+          "first_rss_kib": 9392,
+          "median_rss_kib": 9392,
+          "peak_rss_kib": 9392,
+          "last_rss_kib": 9392
+        }
+      ],
+      "latency_us": null,
+      "setup_us": {
+        "tcp_connect_us": {
+          "min": 45,
+          "median": 45,
+          "p95": 45,
+          "p99": 45
+        },
+        "socks_method_us": {
+          "min": 26,
+          "median": 26,
+          "p95": 26,
+          "p99": 26
+        },
+        "socks_connect_us": {
+          "min": 19305,
+          "median": 19305,
+          "p95": 19305,
+          "p99": 19305
+        },
+        "socks_setup_us": {
+          "min": 19332,
+          "median": 19332,
+          "p95": 19332,
+          "p99": 19332
+        },
+        "total_us": {
+          "min": 19523,
+          "median": 19523,
+          "p95": 19523,
+          "p99": 19523
+        }
+      },
+      "samples": 4
+    },
+    {
+      "run_id": "1793395410140",
+      "run_index": 5,
+      "provenance": {
+        "harness_profile": "release",
+        "workspace_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "engine_source_git": {
+          "revision": "5bbbf6781bf7b02070c46a69b4319ae8e239ade9",
+          "dirty": false
+        },
+        "harness_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/harness",
+        "harness_binary_sha256": "e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933",
+        "engine_binary_path": "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+        "engine_binary_sha256": "8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca",
+        "working_directory": "/Users/antonmalygin/xray-rust",
+        "invocation_args": [
+          "run",
+          "--engine",
+          "xray-rust",
+          "--workload",
+          "stream-transport",
+          "--duration-ms",
+          "2000",
+          "--sample-interval-ms",
+          "100",
+          "--run-timeout-ms",
+          "300000",
+          "--connections",
+          "1",
+          "--iterations",
+          "4096",
+          "--payload-size",
+          "65536",
+          "--stream-transport",
+          "ws",
+          "--traffic",
+          "upload",
+          "--settle-ms",
+          "0",
+          "--transport",
+          "both",
+          "--dns-upstream-transport",
+          "classic",
+          "--runs",
+          "5",
+          "--out-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/stream-ws-upload-1-rerun",
+          "--xray-rust-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-perf-final.noindex/bin/after",
+          "--xray-core-bin",
+          "/private/tmp/xray-migration-tools/xray-v26.10.21",
+          "--sing-box-bin",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/bin/sing-box-v1.14.4",
+          "--sing-box-dir",
+          "/Users/antonmalygin/xray-rust/target/benchmarks/2026-10-30-three-engine/comparators/sing-box",
+          "--no-auto-build"
+        ]
+      },
+      "engine": "xray-rust",
+      "workload": "stream-transport",
+      "status": "ok",
+      "duration_ms": 300,
+      "transfer_duration_ms": 278,
+      "bytes_sent": 268435456,
+      "bytes_received": 0,
+      "peak_rss_kib": 9424,
+      "cpu_millis": 100,
+      "cpu_millis_per_gib": 400,
+      "throughput_mbps": 7725,
+      "connections": 1,
+      "iterations": 4096,
+      "payload_size": 65536,
+      "stream_transport": "ws",
+      "stream_traffic": "upload",
+      "settle_ms": 0,
+      "memory_phases": [
+        {
+          "phase": "startup",
+          "samples": 1,
+          "first_rss_kib": 4912,
+          "median_rss_kib": 4912,
+          "peak_rss_kib": 4912,
+          "last_rss_kib": 4912
+        },
+        {
+          "phase": "traffic",
+          "samples": 2,
+          "first_rss_kib": 9152,
+          "median_rss_kib": 9152,
+          "peak_rss_kib": 9152,
+          "last_rss_kib": 9152
+        },
+        {
+          "phase": "complete",
+          "samples": 1,
+          "first_rss_kib": 9424,
+          "median_rss_kib": 9424,
+          "peak_rss_kib": 9424,
+          "last_rss_kib": 9424
+        }
+      ],
+      "latency_us": null,
+      "setup_us": {
+        "tcp_connect_us": {
+          "min": 54,
+          "median": 54,
+          "p95": 54,
+          "p99": 54
+        },
+        "socks_method_us": {
+          "min": 31,
+          "median": 31,
+          "p95": 31,
+          "p99": 31
+        },
+        "socks_connect_us": {
+          "min": 18953,
+          "median": 18953,
+          "p95": 18953,
+          "p99": 18953
+        },
+        "socks_setup_us": {
+          "min": 18985,
+          "median": 18985,
+          "p95": 18985,
+          "p99": 18985
+        },
+        "total_us": {
+          "min": 19205,
+          "median": 19205,
+          "p95": 19205,
+          "p99": 19205
+        }
+      },
+      "samples": 4
+    }
+  ]
+}

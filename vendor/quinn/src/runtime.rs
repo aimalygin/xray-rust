@@ -78,6 +78,16 @@ pub trait AsyncUdpSocket: Send + Sync + Debug + 'static {
         1
     }
 
+    /// Maximum number of [`RecvMeta`]s to fill in one [`poll_recv`](Self::poll_recv) call
+    ///
+    /// The endpoint keeps a receive buffer for this many datagrams of
+    /// [`max_receive_segments`](Self::max_receive_segments) segments each, so the socket of an
+    /// endpoint that carries a single connection can ask for a smaller one. The endpoint clamps
+    /// the value to `1..=`[`udp::BATCH_SIZE`].
+    fn max_receive_batch(&self) -> usize {
+        udp::BATCH_SIZE
+    }
+
     /// Whether datagrams might get fragmented into multiple parts
     ///
     /// Sockets should prevent this for best performance. See e.g. the `IPV6_DONTFRAG` socket
