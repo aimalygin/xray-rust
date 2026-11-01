@@ -1446,7 +1446,17 @@ async fn drive_response_inner(
             let data = tokio::select! {
                 biased;
                 () = cancelled(cancellation) => return Err(H3Error::Cancelled),
-                result = recv.recv_data() => result.map_err(|source| H3Error::Http3Stream {
+                result = poll_fn(|cx| {
+                    let data = recv.poll_recv_data(cx);
+                    if data.is_pending() {
+                        // Nothing is buffered: the reader keeps up. A batch
+                        // that ended at its byte limit never polled for this,
+                        // so a burst buffered whole before the batches drained
+                        // it would otherwise look like a reader falling behind.
+                        driver.record_caught_up();
+                    }
+                    data
+                }) => result.map_err(|source| H3Error::Http3Stream {
                     context: "response DATA could not be received",
                     source,
                 })?,
