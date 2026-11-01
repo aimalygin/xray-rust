@@ -292,6 +292,41 @@ fn import_request_limits_unknown_duplicate_fields_and_diagnostics_are_bounded() 
 }
 
 #[test]
+fn names_reject_bidi_overrides_but_keep_direction_marks() {
+    for name in [
+        "\u{202E}evil",
+        "a\u{202A}b",
+        "\u{2066}x\u{2069}",
+        "\u{2068}x",
+    ] {
+        assert_eq!(
+            import_profile(ProfileFormat::Hysteria2, HY, Some(name), &[]).unwrap_err(),
+            ImportError::Name,
+            "{name:?}"
+        );
+    }
+    // The same rule applies to a name taken from the link fragment.
+    assert_eq!(
+        import_profile(
+            ProfileFormat::Http,
+            "http://proxy.example#%E2%80%AEevil",
+            None,
+            &[]
+        )
+        .unwrap_err(),
+        ImportError::Name
+    );
+    for name in ["שרת\u{200F}", "خادم\u{061C}", "\u{200E}Office"] {
+        assert_eq!(
+            import_profile(ProfileFormat::Hysteria2, HY, Some(name), &[])
+                .unwrap()
+                .name,
+            name
+        );
+    }
+}
+
+#[test]
 fn wireguard_peer_prefix_address_and_dns_budgets_fail_before_output() {
     let (interface, first_peer) = WG.split_once("[Peer]").unwrap();
     let first_peer = first_peer.split("[Peer]").next().unwrap();

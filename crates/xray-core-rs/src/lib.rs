@@ -225,6 +225,20 @@ pub struct TunQueueOptions {
     pub outbound_queue_depth: usize,
 }
 
+impl TunRuntimeProfile {
+    /// The phone profiles keep multiplexed transports' buffers small, and the
+    /// desktop ones size them for throughput; `Default` follows the target.
+    fn transport_memory_class(self) -> Option<xray_transport::MemoryClass> {
+        match self {
+            Self::Default => None,
+            Self::Mobile | Self::MobilePlus | Self::LowMemory => {
+                Some(xray_transport::MemoryClass::Constrained)
+            }
+            Self::Desktop | Self::Throughput => Some(xray_transport::MemoryClass::Standard),
+        }
+    }
+}
+
 impl TunRuntimeOptions {
     pub fn with_profile(profile: TunRuntimeProfile) -> Self {
         Self {
@@ -740,6 +754,8 @@ impl Core {
             }
         }
         let config = Arc::new(config);
+        // Before any outbound exists: transports read it as they connect.
+        xray_transport::set_memory_class(tun_runtime_options.profile.transport_memory_class());
         let outbound_graph = Arc::new(OutboundGraph::new(Arc::clone(&config)));
         outbound_graph.validate_proxy_chains()?;
         let outbound_factory = Arc::new(OutboundFactory::with_hysteria_stream_limits(
@@ -1837,6 +1853,25 @@ mod tests {
             DnsRuntimeLimits::for_profile(TunRuntimeProfile::Default),
             DnsRuntimeLimits::for_profile(super::DEFAULT_DNS_RUNTIME_PROFILE)
         );
+    }
+
+    #[test]
+    fn transport_memory_follows_the_device_class_a_profile_names() {
+        use xray_transport::MemoryClass;
+
+        for (profile, class) in [
+            (TunRuntimeProfile::Default, None),
+            (TunRuntimeProfile::LowMemory, Some(MemoryClass::Constrained)),
+            (TunRuntimeProfile::Mobile, Some(MemoryClass::Constrained)),
+            (
+                TunRuntimeProfile::MobilePlus,
+                Some(MemoryClass::Constrained),
+            ),
+            (TunRuntimeProfile::Desktop, Some(MemoryClass::Standard)),
+            (TunRuntimeProfile::Throughput, Some(MemoryClass::Standard)),
+        ] {
+            assert_eq!(profile.transport_memory_class(), class, "{profile:?}");
+        }
     }
 
     #[async_trait]

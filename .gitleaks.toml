@@ -903,3 +903,21 @@ condition = "AND"
 regexTarget = "secret"
 regexes = ['''^879751ac43a741e7826a9266cc1efb609907eb8ede3ea2cf9953bebdc887c5f7$''']
 paths = ['''^docs/device\-results/2026\-10\-12\-v08\-candidate/performance\-features/build\-manifest\.json$''']
+
+# Executable SHA-256 values that pin the 2026-10-30 benchmark inputs: the
+# xray-bench driver, the xray-rust client and the Xray-core v26.10.21 server.
+# The JFrog rule reads "xray" before a 64-character hex value as an Xray token.
+[[allowlists]]
+description = "Pinned executable SHA256 values in the 2026-10-30 benchmark scripts"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+  '''^b8c58f14180eb0cad5665fa2cefb7d10897eec945d007212a053fc1de2257ee8$''',
+  '''^e5a9561f140ef79d62802940d1c1fb0097b3155bb9c7cdf55acd7b52e6cba933$''',
+  '''^8ea36af1fc504ee5469e75dbaac87df80a4f90a47d31b56b07fc1cf4c76535ca$''',
+]
+paths = [
+  '''^docs/benchmarks/results/2026-10-30-xhttp-h3-send-budget/scripts/stream_ab\.py$''',
+  '''^docs/benchmarks/results/2026-10-30-v26\.10\.21-three-engine/commands\.sh$''',
+]

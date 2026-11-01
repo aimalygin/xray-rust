@@ -1,0 +1,10 @@
+{"label": "one-way 20 ms", "udp_rtt_ms": 53.537, "tcp_rtt_ms": 0.06}
+{"label": "one-way 50 ms", "udp_rtt_ms": 112.346, "tcp_rtt_ms": 0.07}
+{"label": "one-way 20 ms", "udp_rtt_ms": 52.65, "tcp_rtt_ms": 0.066}
+{"label": "one-way 20 ms", "udp_rtt_ms": 53.588, "tcp_rtt_ms": 0.082}
+{"label": "one-way 50 ms", "udp_rtt_ms": 112.584, "tcp_rtt_ms": 0.063}
+{"label": "one-way 50 ms", "udp_rtt_ms": 115.97, "tcp_rtt_ms": 0.081}
+{"label": "one-way 20 ms", "udp_rtt_ms": 53.02, "tcp_rtt_ms": 0.084}
+{"label": "one-way 20 ms", "udp_rtt_ms": 52.347, "tcp_rtt_ms": 0.064}
+{"label": "one-way 20 ms", "udp_rtt_ms": 54.346, "tcp_rtt_ms": 0.06}
+{"label": "one-way 50 ms", "udp_rtt_ms": 114.021, "tcp_rtt_ms": 0.067}

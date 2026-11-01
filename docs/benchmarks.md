@@ -8,17 +8,39 @@ checkout and reject source changes; caller-supplied binaries must report Xray
 `26.10.21` and are identified by their executable SHA-256. Published
 `v26.7.28` and `v26.5.9` groups retain their original inputs and results.
 
-## Paired migration measurements
+## Paired before/after measurements
 
-The [2026-10-27/28 report](benchmarks/results/2026-10-27-v26.10.21-migration/README.md)
-contains the completed 200-case, 2,000-trial comparison, all repeated samples,
-rejected attempts and charts.
+Two completed 200-case, 2,000-trial comparisons use this collector, with all
+repeated samples, rejected attempts and charts:
 
-`scripts/run-migration-benchmarks.py` compares frozen Rust release builds from
-before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration. Both use the
-same post-migration driver and the same local Xray-core v26.10.21 server, so
-this controls for server and driver changes. It does not measure old versus
-new Go Xray, SDK packaging, mobile-device energy or WAN behavior.
+- the [2026-10-30 performance-branch report](benchmarks/results/2026-10-30-perf-branch/README.md):
+  `main` at `9b06d374` against the branch at `123b9d8d`;
+- the [2026-10-27/28 migration report](benchmarks/results/2026-10-27-v26.10.21-migration/README.md):
+  before (`3ca380e`) and after (`53756fe`) the v26.10.21 migration.
+
+The smaller [2026-10-30 XHTTP H3 send-budget report](benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)
+reran the collector's twelve `xhttp-h3` cases in five AB/BA pairs each, with
+interleaved stream-transport pairs, before (`a87a0292`) and after
+(`bae0ed5b`) the shared H3 send budget. The
+[2026-10-31 XHTTP H3 receive-budget report](benchmarks/results/2026-10-31-xhttp-h3-receive-budget/README.md)
+reran them before (`591216c5`) and after (`95280e73`) the shared H3 receive
+budget, with rotated stream-transport runs in Docker's Linux VM.
+
+Two Linux reports measure 32-flow XHTTP H3 transfers in Docker Desktop's Linux
+VM on the same Mac, against the same Xray-core v26.10.21, with their own
+scripts: the [2026-10-30 receive-buffer report](benchmarks/results/2026-10-30-xhttp-h3-receive-batch/README.md)
+(`33d5d35c` against `9340a335`) and the
+[2026-10-31 download-memory report](benchmarks/results/2026-10-31-xhttp-h3-download-memory/README.md)
+(`94347de0` against `54c77a31`). The
+[2026-10-31 macOS re-check](benchmarks/results/2026-10-31-xhttp-h3-macos-recheck/README.md)
+reran the twelve `xhttp-h3` collector cases and the stream pairs with both
+changes, `bae0ed5b` against `57b5a655`; nothing moved beyond the run-to-run
+spread.
+
+`scripts/run-migration-benchmarks.py` compares two frozen Rust release builds.
+Both use one driver and the same local Xray-core v26.10.21 server, so this
+controls for server and driver changes. It does not measure old versus new Go
+Xray, SDK packaging, mobile-device energy or WAN behavior.
 
 The fixed matrix has 200 cases: seven Trojan/SS2022/VMess cipher profiles;
 VLESS/TLS, REALITY/Vision, WS, HTTPUpgrade, gRPC and XHTTP H1/H2/H3;
@@ -29,13 +51,44 @@ its connections sequentially (one concurrently active). SOCKS uses a verified
 warmup; bulk SOCKS also sends a verified preface before the transfer window.
 The current matrix and byte counts are in the collector's `cases()` function.
 
-Build both clients with the same Rust toolchain and `cargo build --locked
---release -p xray-cli`; build the driver from `53756fe` with `-p xray-bench`.
-Freeze copies of the binaries before building another revision in a shared
-target directory. `inputs.json` binds each client/driver to its source commit,
-tree, Cargo.lock hash, compiler, release command and executable SHA-256. It
-also binds the clean reference and the local REALITY cover-origin helper.
-Complete builds and tests before collecting measurements.
+Build every Rust binary with `scripts/build-isolated-release.py`. Never build
+two revisions in one target directory: Cargo's artifact hash for a workspace
+crate ignores the checkout's absolute path and freshness follows file mtimes,
+so a second checkout can silently reuse the first build's workspace crates.
+The 2026-10-27 "before" client was built that way and contains the
+migration's `xray-config` and `xray-utls`
+([erratum](benchmarks/results/2026-10-27-v26.10.21-migration/README.md#erratum-2026-10-29-the-before-client-is-a-mixed-build)).
+The script exports the exact commit to a fresh temporary directory, builds it
+with an empty target directory and a sanitized environment, and fails unless
+every workspace and vendored path package was compiled from that export. Its
+JSON record has the `inputs.json` keys (source commit, tree, Cargo.lock hash,
+compiler, release command, executable path and SHA-256) plus the compiled
+package list; the collector refuses client and driver entries without it.
+`inputs.json` also binds the clean reference and the local REALITY
+cover-origin helper. Complete builds and tests before collecting measurements.
+
+```sh
+python3 scripts/build-isolated-release.py --rev 3ca380e --name before --campaign /absolute/campaign
+python3 scripts/build-isolated-release.py --rev 53756fe --name after --campaign /absolute/campaign
+python3 scripts/build-isolated-release.py --rev 53756fe --name harness --campaign /absolute/campaign \
+  --package xray-cli --package xray-bench --binary xray-bench
+```
+
+To measure identical-binary variation, collect a separate A/A control with
+an `inputs.json` whose `after` entry is a copy of `before`. A paired change
+counts only when it falls outside that control's range; five pairs cannot
+distinguish 10–15% p99 movements, whose A/A range reached ±20% in the
+2026-10-29 re-measurement.
+
+`protocol-run` results now also contain `peak_footprint_kib`: the client's
+exact lifetime peak physical footprint (macOS `proc_pid_rusage`), read before
+the client stops. It counts dirty and compressed memory like iOS jetsam limits
+and cannot miss a spike between 100 ms RSS samples. The publisher adds it as
+`footprint_mib` when every trial has it; archives collected earlier keep their
+summaries. The TUN TCP echo driver waits for frame readiness or its smoltcp
+timer instead of 1 ms sleeps. Earlier TUN TCP echo latencies of about 2.7 ms
+were mostly driver wakeup delay, not client latency: one client measured a
+2,719 µs median with the old driver and 75 µs with the new one.
 
 ```sh
 # Python >=3.11; Go 1.27.3 must be on PATH for reference identity verification.
@@ -48,8 +101,15 @@ python3 scripts/run-migration-benchmarks.py \
   --inputs /absolute/campaign/inputs.json \
   --output /absolute/campaign/full
 
+# Or the whole campaign, smoke included, with waits for a quiet machine and retries.
+# It lists the blocks to pass to collect as --accepted in accepted-blocks.json.
+python3 scripts/run-migration-campaign.py --campaign /absolute/campaign.noindex
+
+# --pin names the commit each Rust build must come from; --label titles the charts.
 python3 scripts/publish-migration-benchmarks.py collect \
   --campaign /absolute/campaign --accepted full \
+  --pin before=<commit> --pin after=<commit> --pin harness=<commit> \
+  --label "perf branch" \
   --report docs/benchmarks/results/NEW-DATED-GROUP
 python3 scripts/publish-migration-benchmarks.py verify \
   --report docs/benchmarks/results/NEW-DATED-GROUP
@@ -75,6 +135,18 @@ One-second observations retain lighter desktop load; they cannot prove a
 fully idle machine or detect every brief process. Smoke timing is never
 publishable, including smoke attempts that passed under background load.
 
+macOS background services can hold that load for long stretches: during the
+2026-10-30 campaigns `mediaanalysisd` used about 1.2 cores continuously, an
+App Store install held `installd` at up to 4.5 cores, and Spotlight indexed the
+campaign's own trial files. `scripts/run-migration-campaign.py` runs a whole
+campaign around that: one smoke run, then one block per case in the
+collector's order. Before every attempt it waits until the collector's own
+load rule has passed for 30 seconds; it retries a block that only external
+load rejected, up to ten times per case, stops on any other failure, and
+resumes after the last attempt when run again. The waits are outside measured
+pairs. End the campaign directory's name in `.noindex` to keep Spotlight out
+of it.
+
 Publication requires all successful full blocks (no silently discarded successes)
 and all 2,000 successful trials with exact payload counts,
 stock worker settings, fixed inputs and five pairs per case. It preserves
@@ -84,7 +156,8 @@ are accompanied by per-repeat ratios and exact empirical percentile bootstrap
 intervals over the five pairs. Those intervals are descriptive, have limited
 resolution and are not adjusted for 200-case multiple comparisons. A zero CPU
 counter denominator yields an unavailable ratio, not an invented speedup.
-Charts show sampled process RSS, not physical footprint or system-wide memory.
+Charts show the exact peak footprint when every trial reports it, and
+sampled process RSS for the earlier archives; neither is system-wide memory.
 
 ## v0.8 candidate protocol comparisons
 
@@ -104,6 +177,38 @@ numeric results, rejected experiments and measurement-quality selection maps;
 its verification script reconstructs the published summaries. Overall CPU and
 throughput parity is not yet met. These host SOCKS measurements do not replace
 candidate-bound device, WAN or TUN acceptance.
+
+## Three-engine group, 2026-10-30
+
+The [2026-10-30 group](benchmarks/results/2026-10-30-v26.10.21-three-engine/README.md)
+repeats the RC4 matrix on an Apple M6 with xray-rust `123b9d8d`, Xray-core
+`v26.10.21` and stable sing-box `v1.14.4`, built with the same tags: 58
+scenarios, 138 engine series of five runs. Its `commands.sh` records the
+exact inputs and arguments; reviewed `summary.json` files are under
+`chart-inputs/`, and raw run directories stay outside Git. It has no
+machine-validated manifest: `scripts/check-benchmark-publication.py` pins the
+RC4 comparators. Its charts pass `--omit-sing-box-reality` and
+`--omit-sing-box-1000-flows`. Its 32-flow XHTTP H3 upload and duplex rows
+predate the shared H3 send budget; the
+[send-budget report](benchmarks/results/2026-10-30-xhttp-h3-send-budget/README.md)
+measured them again on the same host.
+
+Stable sing-box v1.14.4 still cannot use REALITY against a v26.10.21 server.
+Xray-core v26.9.8 dropped the automatic `minClientVer` floor, but its REALITY
+server requires an `X25519MLKEM768` key share, which sing-box's REALITY client
+removes from its ClientHello (`common/tls/reality_client.go`).
+
+The 1,000-flow group runs one engine at a time after a 90-second pause. In one
+`compare` invocation the engines' 1,000-flow runs follow each other while
+earlier sockets wait in TIME_WAIT; on 2026-10-30 Xray-core's third run, after
+xray-rust's five, failed with a reset SOCKS handshake and 4,800 sockets in
+TIME_WAIT. macOS has 16,384 ephemeral ports. sing-box v1.14.4 failed the
+first run of all three 1,000-flow attempts, alone or not: the harness target
+reset its direct connections, most likely at the 128-connection listen queue.
+
+Do not commit to the repository while a `compare` runs: each run records the
+workspace revision and state, and a summary refuses runs whose provenance
+differs ("cannot summarize mixed benchmark provenance").
 
 ## Historical RC4 publication
 
@@ -824,7 +929,11 @@ routed geodata is always two-engine and the other slots use all three engines.
 With the flag, the mixed latency chart retains the three-engine legend for its
 direct TCP/UDP groups and dynamically notes, using the supplied comparator
 versions, why the REALITY group has no sing-box bar. The REALITY throughput
-chart uses only two engine labels and the same note. The renderer writes
+chart uses only two engine labels and the same note.
+`--omit-sing-box-1000-flows` likewise leaves sing-box out of the 1,000-flow
+group of the memory chart, which then needs no such summary and says why; the
+2026-10-30 group passes it because none of sing-box v1.14.4's 1,000-flow runs
+completed on its host. The renderer writes
 light/dark SVG pairs (`memory-rss`, `latency`, `throughput`,
 `reality-throughput`, `cpu-per-gib`, `geo-setup-latency`, `geo-memory`) to
 `docs/benchmarks/media/` (override with

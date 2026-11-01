@@ -259,6 +259,41 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn ss2022_udp_decodes_pinned_go_server_responses() {
+        for case in fixtures() {
+            let method = Arc::new(
+                Method::new(
+                    case["method"].as_str().unwrap(),
+                    case["password"].as_str().unwrap(),
+                )
+                .unwrap(),
+            );
+            let mut session = UdpSession::with_id(method, case["udpSessionId"].as_u64().unwrap());
+            let (target, payload) = session
+                .decode_at(
+                    &unhex(case["udpResponseWire"].as_str().unwrap()),
+                    1700000000,
+                )
+                .unwrap();
+            assert_eq!(
+                target,
+                Target::new(
+                    TargetAddr::Ip("2001:db8::8".parse().unwrap()),
+                    53,
+                    Network::Udp
+                ),
+                "{}",
+                case["method"]
+            );
+            assert_eq!(
+                payload,
+                unhex(case["udpResponsePayload"].as_str().unwrap()),
+                "{}",
+                case["method"]
+            );
+        }
+    }
     fn response(
         session: &UdpSession,
         remote: u64,

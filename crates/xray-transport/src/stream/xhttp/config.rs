@@ -269,6 +269,9 @@ impl Default for XhttpConfigInput {
 pub struct XhttpConfig {
     /// Fixed H2 receive credit per stream. H1/H3 ignore this setting.
     pub h2_stream_receive_window: u32,
+    /// Whether `h2_stream_receive_window` was configured. A configured
+    /// window stays fixed; the default adapts on a constrained host.
+    pub h2_stream_receive_window_configured: bool,
     pub mode: XhttpMode,
     /// Decoded URL path with a leading slash. A trailing slash is added only
     /// when session or sequence metadata is placed in the path, matching
@@ -396,6 +399,7 @@ impl XhttpConfig {
 
         Ok(Self {
             h2_stream_receive_window: h2_stream_receive_window(input.h2_stream_receive_window)?,
+            h2_stream_receive_window_configured: input.h2_stream_receive_window.is_some(),
             mode,
             path,
             raw_query: raw_query.to_owned(),

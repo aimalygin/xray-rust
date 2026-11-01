@@ -576,6 +576,8 @@ class XrayCore private constructor(handle: Long) : Closeable {
             fileLoggingDirectory: File? = null,
             hysteriaStreamLimits: XrayHysteriaStreamLimits? = null,
             tunAdmission: XrayTunAdmissionOptions? = null,
+            geodataSearchDirectory: File? = null,
+            geodataSearchPolicy: XrayGeodataSearchPolicy = XrayGeodataSearchPolicy.Exclusive,
         ): XrayCore {
             val core = XrayCore(nativeNew())
             try {
@@ -607,6 +609,9 @@ class XrayCore private constructor(handle: Long) : Closeable {
                 }
                 if (fileLoggingDirectory != null) {
                     core.setFileLogging(fileLoggingDirectory)
+                }
+                if (geodataSearchDirectory != null) {
+                    core.setGeodataSearchDirectory(geodataSearchDirectory, geodataSearchPolicy)
                 }
                 core.loadConfig(configJson)
                 return core
@@ -687,7 +692,10 @@ class XrayCore private constructor(handle: Long) : Closeable {
         withDataPathHandle { nativeClearOutboundSelectorOverride(it, groupTag) }
     }
 
-    /** Replaces routing rules and compiled geodata matchers for new flows. */
+    /**
+     * Replaces routing rules and compiled geodata matchers for new flows. Referenced `.dat` files
+     * are read again from the geodata directory passed to [create], with the same policy.
+     */
     fun replaceRoutingPolicy(configJson: String) {
         requireCapability(XrayFfiCapability.RoutingPolicyUpdate)
         require(configJson.isNotEmpty()) { "routing policy JSON must not be empty" }
@@ -946,6 +954,14 @@ class XrayCore private constructor(handle: Long) : Closeable {
         }
     }
 
+    private fun setGeodataSearchDirectory(directory: File, policy: XrayGeodataSearchPolicy) {
+        val path = geodataSearchDirectoryPath(directory)
+        requireCapability(XrayFfiCapability.GeodataSearch)
+        withLifecycleHandle {
+            nativeSetGeodataSearchDir(it, path, policy.exclusive)
+        }
+    }
+
     private fun requireCapability(capability: XrayFfiCapability) {
         check(ffiInfo().supports(capability)) {
             "required xray FFI capability is unavailable: $capability"
@@ -1053,6 +1069,11 @@ class XrayCore private constructor(handle: Long) : Closeable {
         directory: String,
         enabled: Boolean,
     )
+    private external fun nativeSetGeodataSearchDir(
+        handle: Long,
+        directory: String,
+        exclusive: Boolean,
+    )
     private external fun nativeSetStartupProbe(
         handle: Long,
         url: String,
@@ -1109,6 +1130,23 @@ enum class XrayTunRuntimeProfile(val ffiValue: Int) {
 enum class XrayDnsBootstrapMode(val ffiValue: Int) {
     System(0),
     StaticOnly(1),
+}
+
+/**
+ * Where `geosite:`, `geoip:` and `ext:` rules look for `.dat` files. [Exclusive] searches only
+ * the configured directory. [FallbackToDefaults] also searches the core's process defaults
+ * (working directory and executable directory), which on Android are `/` and `/system/bin`,
+ * so it is only useful for host-side tests.
+ */
+enum class XrayGeodataSearchPolicy(internal val exclusive: Boolean) {
+    FallbackToDefaults(false),
+    Exclusive(true),
+}
+
+/** Returns the path handed to the core; the core rejects a symlinked leaf directory itself. */
+internal fun geodataSearchDirectoryPath(directory: File): String {
+    require(directory.isDirectory) { "geodata search directory must already exist" }
+    return directory.absolutePath
 }
 
 data class XrayTunStats(

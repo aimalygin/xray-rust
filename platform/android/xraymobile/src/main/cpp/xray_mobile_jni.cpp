@@ -1299,6 +1299,36 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetFileLogging(
 } XRAY_JNI_CATCH_VOID(env)
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetGeodataSearchDir(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring directory,
+    jboolean exclusive) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) {
+    return;
+  }
+
+  std::string utf8_directory;
+  if (!jstring_to_utf8(env, directory, &utf8_directory)) {
+    return;
+  }
+
+  XrayError *error = nullptr;
+  XrayStatus status = exclusive == JNI_TRUE
+      ? xray_core_set_geodata_search_dir_exclusive(
+            native->core,
+            utf8_directory.c_str(),
+            &error)
+      : xray_core_set_geodata_search_dir(
+            native->core,
+            utf8_directory.c_str(),
+            &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_xrayrust_mobile_XrayCore_nativeStart(JNIEnv *env, jobject, jlong handle) try {
   NativeCore *native = core_from_handle(handle);
   if (native == nullptr || native->core == nullptr) {
