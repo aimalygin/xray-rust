@@ -41,7 +41,11 @@ carry the transition ids: Apple `udp-refused` rows have `transition`
 `ipv4-udp-refused` or `ipv6-udp-refused` (echo rows `udp` have `ipv4-udp` or
 `ipv6-udp`), and Android `traffic` events list theirs under `transitions`.
 This is a fail-closed negative control, not UDP coverage; known limitations
-should say that HTTP carries no UDP.
+should say that HTTP carries no UDP. The probe observes only silence: a
+datagram that escaped the tunnel toward the unroutable TEST-NET target would
+look the same. What excludes that is the tunnel's route for the synthetic
+prefixes and the absence of a direct path in the client routing, so known
+limitations should name this boundary too.
 
 HTTP DNS resolves over `tcp://` through the proxy, as the HTTP link importer
 configures it, so `routed-dns` for HTTP is DNS over TCP.
@@ -124,14 +128,15 @@ Runs, per protocol unless noted:
 
 1. LAN, with the Mac's LAN address as `--bind`: `--protocol v09` with
    `--mode smoke`, `lifecycle` and `resources`.
-1. Ciphers: `run-v08-apple-acceptance-fixture.py --suite ciphers-v09`, smoke.
-2. WAN: on a public host, one run each for `--protocol socks`, `http`, `https`
+2. Ciphers: `run-v08-apple-acceptance-fixture.py --suite ciphers-v09`, smoke.
+3. WAN: on a public host, one run each for `--protocol socks`, `http`, `https`
    and `shadowsocks-aead` with `--bind <public IPv4> --port <open TCP+UDP port>
    --mode transitions`. Cellular cannot reach a LAN fixture. The 0.8.1 runs
-   used a bounded `systemd-run` unit; see `ios-wan-manual.py`. SOCKS UDP
+   used a bounded `systemd-run` unit; see
+   [ios-wan-manual.py](device-results/2026-10-18-v081-candidate/ios-wan-manual.py). SOCKS UDP
    crosses carrier NAT here for the first time; Xray-core's SOCKS inbound
    answers each datagram's observed source, not the port the client declares.
-3. Legacy: `run-v08-apple-acceptance-fixture.py --suite legacy-v09`, smoke.
+4. Legacy: `run-v08-apple-acceptance-fixture.py --suite legacy-v09`, smoke.
    REALITY's decoy handshake reaches `www.google.com:443`.
 
 `profile-import`: `socks-link`, `http-link` and `shadowsocks-aead-link` are the
