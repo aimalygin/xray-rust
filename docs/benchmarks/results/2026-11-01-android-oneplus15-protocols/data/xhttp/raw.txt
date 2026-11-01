@@ -1,0 +1,135 @@
+rep=1 cfg=xhttp-tls-h2 pid=28015 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=195764 rsskb=190116 t0=1793538758.560596891 t1=1793538768.587059544 temperature:338
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=xhttp-tls-h2 pid=28015 result mode=dl flows=1 bytes=0 ticks=1116 srvticks=576 srvconns=1 hwmkb=207588 rsskb=206404 t0=1793538768.753121783 t1=1793538775.628313239 temperature:338
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2 pid=28015 result mode=dl flows=4 bytes=0 ticks=1423 srvticks=577 srvconns=3 hwmkb=213724 rsskb=207136 t0=1793538777.833502926 t1=1793538786.534919068 temperature:335
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow0 srvcount=1073741860
+rep=1 cfg=xhttp-tls-h2 pid=28015 result mode=ul flows=1 bytes=1073741824 ticks=2040 srvticks=2147 srvconns=3 hwmkb=216664 rsskb=209792 t0=1793538788.756448130 t1=1793538823.596064262 temperature:334
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow0 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow3 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow2 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=28015 flow1 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2 pid=28015 result mode=ul flows=4 bytes=268435456 ticks=949 srvticks=797 srvconns=3 hwmkb=238664 rsskb=230604 t0=1793538825.792922855 t1=1793538835.353181810 temperature:334
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=194136 rsskb=190384 t0=1793538847.879037951 t1=1793538857.904756176 temperature:331
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 result mode=dl flows=1 bytes=0 ticks=1079 srvticks=560 srvconns=1 hwmkb=206648 rsskb=206648 t0=1793538858.090703364 t1=1793538864.863210965 temperature:331
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 result mode=dl flows=4 bytes=0 ticks=1483 srvticks=602 srvconns=3 hwmkb=209664 rsskb=202400 t0=1793538867.075767110 t1=1793538876.107064399 temperature:331
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow0 srvcount=1073741860
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 result mode=ul flows=1 bytes=1073741824 ticks=1005 srvticks=844 srvconns=3 hwmkb=209664 rsskb=206968 t0=1793538878.283654450 t1=1793538884.768761062 temperature:331
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow3 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow1 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow2 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 flow0 srvcount=268435492
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 result mode=ul flows=4 bytes=268435456 ticks=776 srvticks=610 srvconns=3 hwmkb=212096 rsskb=209912 t0=1793538886.976229707 t1=1793538891.653923559 temperature:331
+rep=1 cfg=vless-raw pid=3444 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=200224 rsskb=195856 t0=1793538904.129766888 t1=1793538914.154550947 temperature:329
+rep=1 cfg=vless-raw pid=3444 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=1 cfg=vless-raw pid=3444 result mode=dl flows=1 bytes=0 ticks=725 srvticks=74 srvconns=1 hwmkb=203208 rsskb=202808 t0=1793538914.364543082 t1=1793538921.919767767 temperature:328
+rep=1 cfg=vless-raw pid=3444 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=3444 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=3444 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=3444 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=1 cfg=vless-raw pid=3444 result mode=dl flows=4 bytes=0 ticks=1031 srvticks=77 srvconns=4 hwmkb=203208 rsskb=201324 t0=1793538924.132853964 t1=1793538932.348657346 temperature:328
+rep=1 cfg=vless-raw pid=3444 flow0 srvcount=1073741860
+rep=1 cfg=vless-raw pid=3444 result mode=ul flows=1 bytes=1073741824 ticks=673 srvticks=258 srvconns=1 hwmkb=208544 rsskb=208544 t0=1793538934.568121928 t1=1793538940.295389166 temperature:328
+rep=1 cfg=vless-raw pid=3444 flow0 srvcount=268435492
+rep=1 cfg=vless-raw pid=3444 flow3 srvcount=268435492
+rep=1 cfg=vless-raw pid=3444 flow1 srvcount=268435492
+rep=1 cfg=vless-raw pid=3444 flow2 srvcount=268435492
+rep=1 cfg=vless-raw pid=3444 result mode=ul flows=4 bytes=268435456 ticks=535 srvticks=260 srvconns=4 hwmkb=213284 rsskb=211964 t0=1793538942.507569946 t1=1793538946.424924580 temperature:328
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 result mode=idle flows=0 bytes=10 ticks=8 srvticks=1 srvconns=0 hwmkb=199240 rsskb=194036 t0=1793538959.086612752 t1=1793538969.114329207 temperature:325
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 result mode=dl flows=1 bytes=0 ticks=1076 srvticks=554 srvconns=1 hwmkb=208112 rsskb=208112 t0=1793538969.323674988 t1=1793538976.094847121 temperature:325
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 result mode=dl flows=4 bytes=0 ticks=1477 srvticks=619 srvconns=3 hwmkb=216028 rsskb=207228 t0=1793538978.302762693 t1=1793538987.293434096 temperature:325
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow0 srvcount=1073741860
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 result mode=ul flows=1 bytes=1073741824 ticks=990 srvticks=799 srvconns=3 hwmkb=216028 rsskb=209940 t0=1793538989.473005085 t1=1793538995.909897843 temperature:325
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow2 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow0 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow3 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 flow1 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 result mode=ul flows=4 bytes=268435456 ticks=786 srvticks=578 srvconns=3 hwmkb=216956 rsskb=215052 t0=1793538998.150431904 t1=1793539002.661022371 temperature:325
+rep=2 cfg=vless-raw pid=10507 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=198560 rsskb=194716 t0=1793539015.229930387 t1=1793539025.249833873 temperature:325
+rep=2 cfg=vless-raw pid=10507 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=vless-raw pid=10507 result mode=dl flows=1 bytes=0 ticks=728 srvticks=78 srvconns=1 hwmkb=205404 rsskb=205404 t0=1793539025.460252467 t1=1793539032.979344912 temperature:324
+rep=2 cfg=vless-raw pid=10507 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=10507 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=10507 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=10507 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=vless-raw pid=10507 result mode=dl flows=4 bytes=0 ticks=958 srvticks=79 srvconns=4 hwmkb=204448 rsskb=200496 t0=1793539035.214974130 t1=1793539043.097435429 temperature:324
+rep=2 cfg=vless-raw pid=10507 flow0 srvcount=1073741860
+rep=2 cfg=vless-raw pid=10507 result mode=ul flows=1 bytes=1073741824 ticks=691 srvticks=258 srvconns=1 hwmkb=209220 rsskb=209220 t0=1793539045.306841574 t1=1793539050.744492301 temperature:324
+rep=2 cfg=vless-raw pid=10507 flow3 srvcount=268435492
+rep=2 cfg=vless-raw pid=10507 flow2 srvcount=268435492
+rep=2 cfg=vless-raw pid=10507 flow1 srvcount=268435492
+rep=2 cfg=vless-raw pid=10507 flow0 srvcount=268435492
+rep=2 cfg=vless-raw pid=10507 result mode=ul flows=4 bytes=268435456 ticks=519 srvticks=254 srvconns=4 hwmkb=212536 rsskb=208920 t0=1793539052.976257664 t1=1793539056.822781153 temperature:324
+rep=2 cfg=xhttp-tls-h2 pid=13268 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=197552 rsskb=193820 t0=1793539069.550476044 t1=1793539079.580874998 temperature:324
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=2 cfg=xhttp-tls-h2 pid=13268 result mode=dl flows=1 bytes=0 ticks=1111 srvticks=559 srvconns=1 hwmkb=209124 rsskb=208712 t0=1793539079.776229998 t1=1793539086.534169370 temperature:324
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=2 cfg=xhttp-tls-h2 pid=13268 result mode=dl flows=4 bytes=0 ticks=1501 srvticks=595 srvconns=3 hwmkb=217592 rsskb=209524 t0=1793539088.780923380 t1=1793539097.927381762 temperature:325
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow0 srvcount=1073741860
+rep=2 cfg=xhttp-tls-h2 pid=13268 result mode=ul flows=1 bytes=1073741824 ticks=2033 srvticks=2111 srvconns=3 hwmkb=221232 rsskb=214132 t0=1793539100.155339001 t1=1793539134.969446123 temperature:325
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow1 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow2 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow3 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=13268 flow0 srvcount=268435492
+rep=2 cfg=xhttp-tls-h2 pid=13268 result mode=ul flows=4 bytes=268435456 ticks=988 srvticks=857 srvconns=3 hwmkb=245020 rsskb=216716 t0=1793539137.196012059 t1=1793539146.727567472 temperature:325
+rep=3 cfg=vless-raw pid=15504 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=197484 rsskb=193376 t0=1793539159.471196738 t1=1793539169.501288141 temperature:324
+rep=3 cfg=vless-raw pid=15504 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=vless-raw pid=15504 result mode=dl flows=1 bytes=0 ticks=734 srvticks=79 srvconns=1 hwmkb=199792 rsskb=199056 t0=1793539169.719816474 t1=1793539177.326729805 temperature:324
+rep=3 cfg=vless-raw pid=15504 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=15504 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=15504 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=15504 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=vless-raw pid=15504 result mode=dl flows=4 bytes=0 ticks=969 srvticks=78 srvconns=4 hwmkb=200056 rsskb=199356 t0=1793539179.555346158 t1=1793539187.473923082 temperature:324
+rep=3 cfg=vless-raw pid=15504 flow0 srvcount=1073741860
+rep=3 cfg=vless-raw pid=15504 result mode=ul flows=1 bytes=1073741824 ticks=670 srvticks=257 srvconns=1 hwmkb=208036 rsskb=208036 t0=1793539189.676013810 t1=1793539195.342902662 temperature:324
+rep=3 cfg=vless-raw pid=15504 flow3 srvcount=268435492
+rep=3 cfg=vless-raw pid=15504 flow0 srvcount=268435492
+rep=3 cfg=vless-raw pid=15504 flow2 srvcount=268435492
+rep=3 cfg=vless-raw pid=15504 flow1 srvcount=268435492
+rep=3 cfg=vless-raw pid=15504 result mode=ul flows=4 bytes=268435456 ticks=508 srvticks=254 srvconns=4 hwmkb=210380 rsskb=208844 t0=1793539197.570892141 t1=1793539201.451544743 temperature:324
+rep=3 cfg=xhttp-tls-h2 pid=17333 result mode=idle flows=0 bytes=10 ticks=8 srvticks=0 srvconns=0 hwmkb=199584 rsskb=195460 t0=1793539214.093053436 t1=1793539224.117806870 temperature:323
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=xhttp-tls-h2 pid=17333 result mode=dl flows=1 bytes=0 ticks=1098 srvticks=555 srvconns=1 hwmkb=209784 rsskb=209784 t0=1793539224.329987860 t1=1793539231.288245826 temperature:323
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2 pid=17333 result mode=dl flows=4 bytes=0 ticks=1447 srvticks=590 srvconns=3 hwmkb=218016 rsskb=212100 t0=1793539233.506072023 t1=1793539242.352030301 temperature:323
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow0 srvcount=1073741860
+rep=3 cfg=xhttp-tls-h2 pid=17333 result mode=ul flows=1 bytes=1073741824 ticks=2040 srvticks=2146 srvconns=3 hwmkb=225060 rsskb=217364 t0=1793539244.581692123 t1=1793539279.309092630 temperature:323
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow2 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow0 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow1 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=17333 flow3 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2 pid=17333 result mode=ul flows=4 bytes=268435456 ticks=930 srvticks=928 srvconns=3 hwmkb=248532 rsskb=231384 t0=1793539281.531848515 t1=1793539291.075946115 temperature:323
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 result mode=idle flows=0 bytes=10 ticks=9 srvticks=0 srvconns=0 hwmkb=199904 rsskb=195760 t0=1793539303.707713454 t1=1793539313.736589857 temperature:323
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow0 md5=cd573cfaace07e7949bc0c46028904ff  -
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 result mode=dl flows=1 bytes=0 ticks=1070 srvticks=546 srvconns=1 hwmkb=210160 rsskb=210160 t0=1793539313.946446523 t1=1793539320.662893239 temperature:323
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow0 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow3 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow1 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow2 md5=1f5039e50bd66b290c56684d8550c6c2  -
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 result mode=dl flows=4 bytes=0 ticks=1475 srvticks=584 srvconns=3 hwmkb=213900 rsskb=207372 t0=1793539322.895005687 t1=1793539331.883275371 temperature:323
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow0 srvcount=1073741860
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 result mode=ul flows=1 bytes=1073741824 ticks=1004 srvticks=794 srvconns=3 hwmkb=213900 rsskb=211092 t0=1793539334.064859745 t1=1793539340.859396826 temperature:323
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow2 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow1 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow0 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 flow3 srvcount=268435492
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 result mode=ul flows=4 bytes=268435456 ticks=784 srvticks=617 srvconns=3 hwmkb=217456 rsskb=213692 t0=1793539343.080526148 t1=1793539347.686216562 temperature:323

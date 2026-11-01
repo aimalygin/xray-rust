@@ -1,0 +1,9 @@
+rep=1 cfg=xhttp-tls-h2 pid=28015 16:12:38 status:4 level:85 temperature:338 Capacitylevel:3 
+rep=1 cfg=xhttp-tls-h2-streamup pid=31402 16:14:07 status:4 level:85 temperature:331 Capacitylevel:3 
+rep=1 cfg=vless-raw pid=3444 16:15:04 status:4 level:85 temperature:329 Capacitylevel:3 
+rep=2 cfg=xhttp-tls-h2-streamup pid=8133 16:15:59 status:4 level:85 temperature:325 Capacitylevel:3 
+rep=2 cfg=vless-raw pid=10507 16:16:55 status:4 level:85 temperature:325 Capacitylevel:3 
+rep=2 cfg=xhttp-tls-h2 pid=13268 16:17:49 status:4 level:85 temperature:324 Capacitylevel:3 
+rep=3 cfg=vless-raw pid=15504 16:19:19 status:4 level:85 temperature:324 Capacitylevel:3 
+rep=3 cfg=xhttp-tls-h2 pid=17333 16:20:14 status:4 level:85 temperature:323 Capacitylevel:3 
+rep=3 cfg=xhttp-tls-h2-streamup pid=19580 16:21:43 status:4 level:85 temperature:323 Capacitylevel:3 
