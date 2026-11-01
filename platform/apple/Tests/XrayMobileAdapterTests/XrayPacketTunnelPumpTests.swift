@@ -341,6 +341,20 @@ final class XrayPacketTunnelPumpTests: XCTestCase {
         XCTAssertEqual(accountingSnapshot.outbounds[0].outboundTag, "direct")
         XCTAssertEqual(accountingSnapshot.outbounds[0].hostClosedConnections, 1)
         XCTAssertEqual(accountingSnapshot.outbounds[0].downlinkBytes, 96)
+        XCTAssertNil(accountingSnapshot.outbounds[0].activeUplinkBytes)
+        XCTAssertNil(accountingSnapshot.outbounds[0].activeDownlinkBytes)
+
+        let live = #"{"schemaVersion":1,"revision":10,"outbounds":[{"outboundTag":null,"openedConnections":3,"completedConnections":2,"hostClosedConnections":1,"uplinkBytes":64,"downlinkBytes":96,"activeUplinkBytes":4096,"activeDownlinkBytes":1048576}]}"#
+        let liveOutbound = try XCTUnwrap(
+            JSONDecoder().decode(
+                XrayOutboundAccountingSnapshot.self,
+                from: Data(live.utf8)
+            ).outbounds.first
+        )
+        XCTAssertNil(liveOutbound.outboundTag)
+        XCTAssertEqual(liveOutbound.uplinkBytes, 64)
+        XCTAssertEqual(liveOutbound.activeUplinkBytes, 4096)
+        XCTAssertEqual(liveOutbound.activeDownlinkBytes, 1_048_576)
     }
 
     func testOutboundSnapshotsRejectUnknownSchemaVersions() {

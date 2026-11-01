@@ -373,7 +373,7 @@ the owning host because per-connection display and close are the purpose of the
 surface; credentials and free-form transport errors are not included.
 
 The accounting document keeps cumulative totals after flows leave the active
-inventory:
+inventory and reports the bytes of flows that are still in it:
 
 ```json
 {
@@ -386,11 +386,36 @@ inventory:
       "completedConnections": 2,
       "hostClosedConnections": 1,
       "uplinkBytes": 64,
-      "downlinkBytes": 96
+      "downlinkBytes": 96,
+      "activeUplinkBytes": 4096,
+      "activeDownlinkBytes": 1048576
     }
   ]
 }
 ```
+
+Byte fields count relayed application payload between the inbound client and
+the target: uplink toward the target, downlink back. Transport framing,
+encryption and handshakes are not included. `uplinkBytes` and `downlinkBytes`
+count completed flows only; a flow adds its bytes once, when it leaves the
+inventory. `activeUplinkBytes` and `activeDownlinkBytes` count the bytes relayed
+so far by the opening and active flows routed to that outbound, read when the
+snapshot is taken. Both pairs are read under the registry lock that moves a
+completing flow's bytes from the active to the completed pair, so each byte is
+counted exactly once and `uplinkBytes + activeUplinkBytes` (likewise downlink)
+never decreases between snapshots. A host builds a per-outbound speed meter by
+polling the document and dividing the change of that sum by the interval.
+
+`revision` is shared with the connection document and advances when a flow
+opens, becomes active, is asked to close, or completes. Relayed bytes alone do
+not advance it, so two documents with the same revision can carry different
+active byte counts; a meter must not skip a poll because the revision is
+unchanged.
+
+Within schema version 1, documents may gain fields; consumers must ignore
+fields they do not know. The active byte fields were added this way, so a
+library that predates them omits them. The checked-in Swift and Kotlin models
+report them as `nil`/`null` in that case.
 
 `xray_core_close_connection` accepts a nonzero ID from a recent connection
 snapshot. It marks the host-close request before signalling cancellation, so a

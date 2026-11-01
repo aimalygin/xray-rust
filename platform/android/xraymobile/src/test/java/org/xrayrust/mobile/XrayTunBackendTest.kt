@@ -239,6 +239,16 @@ class XrayTunBackendTest {
         assertEquals("direct", accounting.outbounds[0].outboundTag)
         assertEquals(1L, accounting.outbounds[0].hostClosedConnections)
         assertEquals(96L, accounting.outbounds[0].downlinkBytes)
+        assertNull(accounting.outbounds[0].activeUplinkBytes)
+        assertNull(accounting.outbounds[0].activeDownlinkBytes)
+
+        val live = parseOutboundAccountingSnapshot(
+            """{"schemaVersion":1,"revision":10,"outbounds":[{"outboundTag":null,"openedConnections":3,"completedConnections":2,"hostClosedConnections":1,"uplinkBytes":64,"downlinkBytes":96,"activeUplinkBytes":4096,"activeDownlinkBytes":1048576}]}""",
+        ).outbounds.single()
+        assertNull(live.outboundTag)
+        assertEquals(64L, live.uplinkBytes)
+        assertEquals(4096L, live.activeUplinkBytes)
+        assertEquals(1048576L, live.activeDownlinkBytes)
     }
 
     @Test

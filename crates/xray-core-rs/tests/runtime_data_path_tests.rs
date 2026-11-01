@@ -53,8 +53,9 @@ use xray_config::{
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
-    ConnectionState, Core, CoreError, DnsBootstrapMode, OutboundRouter, RuntimeLogConfig,
-    RuntimeLogger, TcpOutbound, TunRuntimeOptions, TunRuntimeProfile, VlessTcpOutbound,
+    ConnectionState, Core, CoreError, DnsBootstrapMode, OutboundAccounting, OutboundRouter,
+    RuntimeLogConfig, RuntimeLogger, TcpOutbound, TunRuntimeOptions, TunRuntimeProfile,
+    VlessTcpOutbound,
 };
 use xray_proxy::inbound::{
     encode_socks5_udp_datagram, parse_socks5_udp_datagram, SocksAccount, SocksInboundAuth,
@@ -1985,6 +1986,16 @@ async fn socks_tcp_inventory_close_and_per_outbound_accounting_share_runtime_sta
         assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
         assert_eq!(connection.target.port, echo_addr.port());
 
+        managed.write_all(payload).await.unwrap();
+        let mut echoed = vec![0; payload.len()];
+        managed.read_exact(&mut echoed).await.unwrap();
+        let (live_revision, live) =
+            wait_for_live_direct_bytes(&core, payload.len() as u64, payload.len() as u64).await;
+        assert_eq!(live_revision, snapshot.revision);
+        assert_eq!(live.completed_connections, 1);
+        assert_eq!(live.uplink_bytes, payload.len() as u64);
+        assert_eq!(live.downlink_bytes, payload.len() as u64);
+
         core.close_connection(connection.id).unwrap();
         let mut byte = [0u8; 1];
         let read = managed.read(&mut byte).await.unwrap();
@@ -2007,8 +2018,10 @@ async fn socks_tcp_inventory_close_and_per_outbound_accounting_share_runtime_sta
         assert_eq!(direct.opened_connections, 2);
         assert_eq!(direct.completed_connections, 2);
         assert_eq!(direct.host_closed_connections, 1);
-        assert_eq!(direct.uplink_bytes, payload.len() as u64);
-        assert_eq!(direct.downlink_bytes, payload.len() as u64);
+        assert_eq!(direct.uplink_bytes, 2 * payload.len() as u64);
+        assert_eq!(direct.downlink_bytes, 2 * payload.len() as u64);
+        assert_eq!(direct.active_uplink_bytes, 0);
+        assert_eq!(direct.active_downlink_bytes, 0);
 
         core.stop().await.unwrap();
         echo_handle.await.unwrap();
@@ -2370,6 +2383,10 @@ async fn tun_tcp_inventory_close_and_accounting_share_runtime_state() {
         assert_eq!(connection.inbound_tag.as_deref(), Some("tun-in"));
         assert_eq!(connection.outbound_tag.as_deref(), Some("direct"));
         assert_eq!(connection.target.port, echo_addr.port());
+        let (live_revision, live) =
+            wait_for_live_direct_bytes(&core, payload.len() as u64, payload.len() as u64).await;
+        assert_eq!(live_revision, snapshot.revision);
+        assert_eq!((live.uplink_bytes, live.downlink_bytes), (0, 0));
 
         core.close_connection(connection.id).unwrap();
         wait_for_empty_connection_snapshot(&core).await;
@@ -2396,6 +2413,8 @@ async fn tun_tcp_inventory_close_and_accounting_share_runtime_state() {
         assert_eq!(direct.host_closed_connections, 1);
         assert_eq!(direct.uplink_bytes, payload.len() as u64);
         assert_eq!(direct.downlink_bytes, payload.len() as u64);
+        assert_eq!(direct.active_uplink_bytes, 0);
+        assert_eq!(direct.active_downlink_bytes, 0);
 
         core.stop().await.unwrap();
         echo_handle.await.unwrap();
@@ -4189,6 +4208,35 @@ async fn wait_for_empty_connection_snapshot(core: &Core) {
         assert!(
             TokioInstant::now() < deadline,
             "managed connection stayed registered"
+        );
+        tokio::task::yield_now().await;
+    }
+}
+
+/// Waits until the `direct` outbound reports the given live bytes for its
+/// active connections. Relays count a chunk after forwarding it, so the peer
+/// can observe the data just before the counter moves.
+async fn wait_for_live_direct_bytes(
+    core: &Core,
+    active_uplink_bytes: u64,
+    active_downlink_bytes: u64,
+) -> (u64, OutboundAccounting) {
+    let deadline = TokioInstant::now() + Duration::from_secs(1);
+    loop {
+        let snapshot = core.outbound_accounting_snapshot();
+        let direct = snapshot
+            .outbounds
+            .into_iter()
+            .find(|outbound| outbound.outbound_tag.as_deref() == Some("direct"))
+            .unwrap();
+        if (direct.active_uplink_bytes, direct.active_downlink_bytes)
+            == (active_uplink_bytes, active_downlink_bytes)
+        {
+            return (snapshot.revision, direct);
+        }
+        assert!(
+            TokioInstant::now() < deadline,
+            "live direct bytes stayed at {direct:?}"
         );
         tokio::task::yield_now().await;
     }
