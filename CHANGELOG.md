@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Mux (Trojan, Shadowsocks 2022, VMess): a child that reads slower than the
+  server sends no longer loses its session. When a child's receive queue was
+  full, the shared runtime reset it, so bulk downloads through a slow local
+  consumer such as the TUN stack ended after a few hundred KiB while the server
+  logged `read/write on closed pipe`. The parent's reader now waits for that
+  child to drain, end or be dropped, as Xray-core's Mux client blocks on the
+  session pipe. Queues stay bounded; like Xray-core, a stalled child delays its
+  siblings' downloads on the same parent until it drains or closes.
+
 - TUN TCP acknowledges client data after handing it to the outbound, so the
   ACK advertises the drained receive window. The stack ran smoltcp's ingress
   and egress in one `Interface::poll` and read the sockets only afterwards:
