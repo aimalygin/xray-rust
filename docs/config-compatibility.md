@@ -256,10 +256,14 @@ multiplexing. `xudpConcurrency: 0` shares the TCP pool, a positive value creates
 a separate UDP pool, and a negative value uses the native protocol UDP path.
 Positive concurrency is limited to 64. `xudpProxyUDP443` is `reject` by default,
 or `allow`/`skip`; `skip` bypasses Mux for UDP/443. Each pool has at most four
-parents, 128 lifetime child IDs per parent, bounded per-child queues and a
-30-second empty-parent timeout. Queue overload resets the affected child;
-parent failure terminates its children without replay. This Mux is distinct
-from XHTTP's existing `xmux` transport pooling.
+parents, 128 lifetime child IDs per parent, bounded per-child queues (eight
+frames, at most 64 KiB, per direction) and a 30-second empty-parent timeout.
+A child whose receive queue is full pauses its parent's reader until the child
+drains, ends or is closed, as Xray-core's Mux client blocks on the session
+pipe. A slow child is therefore never reset, but, as in Xray-core, it delays
+its siblings' downloads on the same parent. Parent failure terminates its
+children without replay. This Mux is distinct from XHTTP's existing `xmux`
+transport pooling.
 
 The pinned Xray XHTTP inbound permits only UDP Mux children. XHTTP therefore
 requires `mux.concurrency: -1`; use positive `xudpConcurrency` for UDP pooling.

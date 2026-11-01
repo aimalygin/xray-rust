@@ -10,6 +10,15 @@ long-term supported release series.
 
 ## Unreleased
 
+- Mux (Trojan, Shadowsocks 2022, VMess): a child that reads slower than the
+  server sends no longer loses its session. When a child's receive queue was
+  full, the shared runtime reset it, so bulk downloads through a slow local
+  consumer such as the TUN stack ended after a few hundred KiB while the server
+  logged `read/write on closed pipe`. The parent's reader now waits for that
+  child to drain, end or be dropped, as Xray-core's Mux client blocks on the
+  session pipe. Queues stay bounded; like Xray-core, a stalled child delays its
+  siblings' downloads on the same parent until it drains or closes.
+
 - Shape `fingerprint: "randomizednoalpn"` on the weights Xray-core's preset
   uses: TLS 1.3 with an X25519 key share and no ALPN. It had shared the TLS 1.2
   snapshot of the bare uTLS `hellorandomizednoalpn`, so plain TLS failed against
