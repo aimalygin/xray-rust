@@ -1463,6 +1463,16 @@ impl Connection {
         }
     }
 
+    /// Changes [`TransportConfig::stream_receive_window()`] for open and new
+    /// streams. The peer learns a larger window from the next
+    /// MAX_STREAM_DATA, which a read sends once it frees an eighth of the
+    /// window. Credit already sent is never withdrawn: under a smaller window
+    /// a stream grants nothing new until its reader catches up, and a new
+    /// stream starts from the handshake value.
+    pub fn set_stream_receive_window(&mut self, window: VarInt) {
+        self.streams.set_stream_receive_window(window.into());
+    }
+
     fn on_ack_received(
         &mut self,
         now: Instant,

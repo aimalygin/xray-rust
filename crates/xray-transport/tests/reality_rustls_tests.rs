@@ -16,6 +16,8 @@ const TLS_GROUP_X25519_MLKEM768_DRAFT: u16 = 0x6399;
 const X25519_PUBLIC_KEY_LEN: usize = 32;
 const CLIENTHELLO_SHAPE_HELLOCHROME_100_JSON: &str =
     include_str!("../../../tests/fixtures/reality/clienthello_shape_hellochrome_100.json");
+const CLIENTHELLO_SHAPE_RANDOMIZEDNOALPN_JSON: &str =
+    include_str!("../../../tests/fixtures/reality/clienthello_shape_randomizednoalpn.json");
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, Eq)]
 struct ClientHelloShape {
@@ -345,6 +347,37 @@ fn rustls_reality_provider_matches_utls_hellochrome_100_shape_oracle() {
     let actual = parse_client_hello_shape(
         "hellochrome_100",
         "Chrome-100",
+        "example.com",
+        &prepared.raw_client_hello,
+    )
+    .expect("rustls ClientHello shape should parse");
+
+    assert_eq!(actual, expected);
+}
+
+/// Xray-core's REALITY client dials `randomizednoalpn`: its `init()` weights
+/// force TLS 1.3 and an X25519 first key share. The fixture is the oracle run
+/// on those weights, so the REALITY hello must match it field for field.
+#[test]
+fn rustls_reality_provider_matches_utls_randomizednoalpn_shape_oracle() {
+    let mut expected: ClientHelloShape =
+        serde_json::from_str(CLIENTHELLO_SHAPE_RANDOMIZEDNOALPN_JSON)
+            .expect("uTLS ClientHello shape fixture should decode");
+    apply_provider_cipher_filter(&mut expected);
+    let provider = RustlsRealityTlsSessionProvider::new();
+
+    let session = provider
+        .create_session(RealityClientHelloRequest {
+            server_name: "example.com",
+            fingerprint: "randomizednoalpn",
+        })
+        .expect("randomizednoalpn REALITY session should be created");
+    let prepared = session
+        .prepared_client_hello()
+        .expect("prepared ClientHello should be available");
+    let actual = parse_client_hello_shape(
+        "randomizednoalpn",
+        "Randomized-NoALPN-0",
         "example.com",
         &prepared.raw_client_hello,
     )

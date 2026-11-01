@@ -1308,7 +1308,7 @@ names Xray accepts. An absent or empty value means `chrome`, matching Xray's
 `GetFingerprint("")`, so shaping is the default rather than an opt-in; an
 unknown name is rejected at parse time with a JSON path and the offending
 value. Unlike `realitySettings.fingerprint`, no X25519 key share is required,
-so eleven of the fourteen names REALITY rejects are usable here; the other
+so ten of the thirteen names REALITY rejects are usable here; the other
 three — `hello360_7_5` and its aliases `360` and `hello360_auto`, one profile
 under three names — are refused for a separate reason given below. The
 X25519MLKEM768 requirement of REALITY v26.10.21 servers does not apply here
@@ -1356,10 +1356,10 @@ disabled while shaping, because a resumed handshake emits a second ClientHello
 carrying `pre_shared_key`, an extension the fingerprint never described.
 `fingerprint: "unsafe"` keeps the previous ring path, resumption included.
 
-Fourteen of the 61 names are TLS-1.2-era, which is exactly the set REALITY
-rejects. Eleven of those are shaped but not byte-exact; the other three, the
+Thirteen of the 61 names are TLS-1.2-era, which is exactly the set REALITY
+rejects. Ten of those are shaped but not byte-exact; the other three, the
 `360` aliases refused below, build no ClientHello at all. The uTLS hello behind
-the eleven declares no `supported_versions` extension, while the TLS stack
+the ten declares no `supported_versions` extension, while the TLS stack
 emits that extension on every ClientHello it builds — a TLS-1.2-only
 configuration included, where it carries just `0x0303` — and nothing in the
 shaping API can suppress it. The extension order is pinned so uTLS's own order
@@ -1395,7 +1395,7 @@ X25519MLKEM768 key share (group `0x11ec`, 1216 bytes) before any ordinary
 X25519 key share, and treats any other ClientHello as an unauthenticated
 visitor. Profiles that meet this are Chrome 131/133, Firefox 148 and
 Safari 26.3, including their current `chrome`, `firefox`, `safari` and `_auto`
-aliases, plus the frozen `hellorandomized` snapshot
+aliases, plus the frozen `randomizednoalpn` and `hellorandomized` snapshots
 (`XRAY_REALITY_HYBRID_FINGERPRINTS`).
 
 Xray-core's client did not narrow `realitySettings.fingerprint` with that
@@ -1404,7 +1404,7 @@ change, and neither do we. A profile without the X25519MLKEM768 share — `ios`,
 parses and still dials, because servers older than v26.10.21 accept it.
 Parsing adds a warning at the `fingerprint` JSON path that names the new
 requirement, so a profile that stops working after a server upgrade has an
-explanation before the first dial. The fourteen TLS-1.2-era names with no
+explanation before the first dial. The thirteen TLS-1.2-era names with no
 X25519 key share at all remain a parse error, as before.
 
 For REALITY, `random` and `randomized` each choose independently from the four
@@ -1439,9 +1439,20 @@ would rather be in than a bucket of one.
 `randomizednoalpn` is the one name still pinned to a fixed shape. Every entry in
 `ModernFingerprints` carries ALPN, so resolving it by the same draw would add
 the extension the name exists to suppress; the honest fix for it is the
-generator port, not an alias. `hellorandomized`, `hellorandomizedalpn` and
-`hellorandomizednoalpn` are likewise fixed. In Xray those three come from the
-`OtherFingerprints` table with no seed pinned, which makes uTLS synthesize a
+generator port, not an alias. The snapshot follows Xray's preset, not the bare
+uTLS ID: Xray-core's `init()` runs `HelloRandomizedNoALPN` on uTLS's default
+weights with TLS 1.3 forced and the legacy P-256 first key share turned off, so
+every install offers TLS 1.3 with an X25519 key share and REALITY accepts the
+name. Ours is the spec the uTLS oracle builds from those weights with a zero
+seed: TLS 1.3 and 1.2, key shares X25519MLKEM768, X25519 and P-256, no ALPN.
+Xray seeds the preset once per process, and uTLS adds the X25519MLKEM768 share
+on a 0.5-weighted coin, so on xray-core about half of installs send a
+`randomizednoalpn` hello that REALITY v26.10.21 servers refuse; ours always
+leads with the hybrid share.
+
+`hellorandomized`, `hellorandomizedalpn` and `hellorandomizednoalpn` are
+likewise fixed. In Xray those three come from the `OtherFingerprints` table
+with no seed pinned and uTLS's default weights, which makes uTLS synthesize a
 *fresh* spec on every connection — a shape that changes per connection, which is
 worse than a fixed one for the reason above. Ours is a recorded snapshot of one
 such spec.
@@ -1635,7 +1646,11 @@ Domain matchers:
 IP matchers:
 
 - IPv4/IPv6 address or CIDR;
-- `geoip:private`;
+- `geoip:private`, built in so no `geoip.dat` is needed: Xray-core's own
+  private/reserved set (`common/geodata/consts.go`), which includes `0.0.0.0/8`,
+  `198.18.0.0/15`, the TEST-NETs, IPv4 multicast and reserved space through
+  `255.255.255.255` (`224.0.0.0/3`), `::/127` and `ff00::/8`, as common
+  `geoip.dat` builds do;
 - `geoip:code`;
 - `ext:file.dat:code` and `ext-ip:file.dat:code`;
 - the supported inverse `!` forms.
@@ -2141,7 +2156,8 @@ before redistributing those files.
 
 For the CLI, lookup starts with the config directory, then the current working
 directory and executable directory. Embedders should set a resource directory
-with `xray_core_set_geodata_search_dir` before loading the config.
+with `xray_core_set_geodata_search_dir` before loading the config. The Swift and
+Kotlin adapters expose it as `geodataSearchDirectory`.
 
 File names must be relative and cannot escape a configured search directory.
 Parsing enforces file, entry, matcher, rule, attribute, domain, and CIDR budgets

@@ -65,10 +65,15 @@ func vectors() error {
 		AES      string `json:"aes"`
 		ChaCha   string `json:"chacha"`
 	}
+	type ctrVector struct {
+		IV     string `json:"iv"`
+		Masked string `json:"masked"`
+	}
 	result := struct {
-		Upstream string   `json:"upstream"`
-		Vectors  []vector `json:"vectors"`
-		CTR      string   `json:"ctr"`
+		Upstream string      `json:"upstream"`
+		Vectors  []vector    `json:"vectors"`
+		CTR      string      `json:"ctr"`
+		CTRCarry []ctrVector `json:"ctrCarry"`
 	}{Upstream: "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"}
 	material := pattern(96)
 	for _, n := range []int{0, 16, 63, 64, 65, 1023, 1024, 1025, 1120, 1216, 16645} {
@@ -84,6 +89,18 @@ func vectors() error {
 	masked := pattern(1088)
 	encryption.NewCTR(material, pattern(16)).XORKeyStream(masked, masked)
 	result.CTR = hex.EncodeToString(masked)
+	// pattern(16) never carries out of its low counter byte. These IVs carry
+	// out of the low 32 and 64 bits and wrap all 128 bits within five blocks,
+	// pinning the counter width of crypto/cipher's CTR.
+	for _, iv := range [][]byte{
+		append(pattern(12), 0xff, 0xff, 0xff, 0xfe),
+		append(pattern(8), 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe),
+		{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe},
+	} {
+		masked := pattern(80)
+		encryption.NewCTR(material, iv).XORKeyStream(masked, masked)
+		result.CTRCarry = append(result.CTRCarry, ctrVector{IV: hex.EncodeToString(iv), Masked: hex.EncodeToString(masked)})
+	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)

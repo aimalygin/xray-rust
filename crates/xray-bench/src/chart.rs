@@ -14,6 +14,7 @@ pub struct ChartOptions {
     pub xray_core_version: String,
     pub sing_box_version: String,
     pub omit_sing_box_reality: bool,
+    pub omit_sing_box_1000_flows: bool,
     pub geodata_version: Option<String>,
 }
 
@@ -27,6 +28,7 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
     let mut xray_core_version = None;
     let mut sing_box_version = None;
     let mut omit_sing_box_reality = false;
+    let mut omit_sing_box_1000_flows = false;
     let mut geodata_version = None;
 
     let mut index = 0;
@@ -60,6 +62,9 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
             }
             "--omit-sing-box-reality" => {
                 omit_sing_box_reality = true;
+            }
+            "--omit-sing-box-1000-flows" => {
+                omit_sing_box_1000_flows = true;
             }
             "--geodata-version" => {
                 geodata_version = Some(required_value(args, &mut index, flag)?.to_owned());
@@ -99,6 +104,7 @@ pub fn parse_chart_args(args: &[String]) -> Result<ChartOptions, BenchError> {
             sing_box_version.unwrap_or_default()
         },
         omit_sing_box_reality,
+        omit_sing_box_1000_flows,
         geodata_version,
     })
 }
@@ -511,6 +517,29 @@ fn chart_engines(workload: WorkloadKind, omit_sing_box_reality: bool) -> &'stati
         }
         _ => &ENGINES,
     }
+}
+
+/// The engines a chart slot loads and draws. An omitted sing-box series is
+/// neither required nor drawn, and its chart says why.
+fn slot_engines(
+    workload: WorkloadKind,
+    connections: Option<u64>,
+    options: &ChartOptions,
+) -> &'static [EngineKind] {
+    if workload == WorkloadKind::ManyIdleFlows
+        && connections == Some(1000)
+        && options.omit_sing_box_1000_flows
+    {
+        return &GEO_ENGINES;
+    }
+    chart_engines(workload, options.omit_sing_box_reality)
+}
+
+fn flows_sing_box_omission_note(options: &ChartOptions) -> String {
+    format!(
+        "sing-box {} omitted from many-idle-flows ×1000: none of its runs completed on this host",
+        options.sing_box_version
+    )
 }
 
 fn reality_sing_box_omission_note(options: &ChartOptions) -> String {
@@ -1168,10 +1197,11 @@ fn rss_group(
     workload: WorkloadKind,
     connections: Option<u64>,
     label: &str,
+    engines: &[EngineKind],
 ) -> BarGroup {
     BarGroup {
         label: label.to_owned(),
-        bars: ENGINES
+        bars: engines
             .iter()
             .enumerate()
             .map(|(series, engine)| {
@@ -1326,7 +1356,7 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
     } else {
         let mut entries = Vec::new();
         for (workload, connections) in CHART_SLOTS {
-            for engine in chart_engines(workload, options.omit_sing_box_reality) {
+            for engine in slot_engines(workload, connections, options) {
                 let summary = load_summary(&options.groups, *engine, workload, connections)?;
                 entries.push(((*engine, workload, connections), summary));
             }
@@ -1422,21 +1452,25 @@ pub fn run_chart(options: &ChartOptions) -> Result<(), BenchError> {
                 title: "Peak resident set size — MiB (lower is better)".to_owned(),
                 series_labels: &SERIES_LABELS_ALL,
                 groups: vec![
-                    rss_group(loaded, WorkloadKind::Idle, None, "idle"),
+                    rss_group(loaded, WorkloadKind::Idle, None, "idle", &ENGINES),
                     rss_group(
                         loaded,
                         WorkloadKind::ManyIdleFlows,
                         Some(100),
                         "many-idle-flows ×100",
+                        &ENGINES,
                     ),
                     rss_group(
                         loaded,
                         WorkloadKind::ManyIdleFlows,
                         Some(1000),
                         "many-idle-flows ×1000",
+                        slot_engines(WorkloadKind::ManyIdleFlows, Some(1000), options),
                     ),
                 ],
-                note: None,
+                note: options
+                    .omit_sing_box_1000_flows
+                    .then(|| flows_sing_box_omission_note(options)),
             },
         ),
         (
@@ -1781,6 +1815,11 @@ mod tests {
         omit_args.push("--omit-sing-box-reality".to_owned());
         let options = parse_chart_args(&omit_args).unwrap();
         assert!(options.omit_sing_box_reality);
+        assert!(!options.omit_sing_box_1000_flows);
+
+        omit_args.push("--omit-sing-box-1000-flows".to_owned());
+        let options = parse_chart_args(&omit_args).unwrap();
+        assert!(options.omit_sing_box_1000_flows);
     }
 
     #[test]
@@ -1862,6 +1901,25 @@ mod tests {
             assert_eq!(chart_engines(workload, false), &ENGINES);
             assert_eq!(chart_engines(workload, true), &ENGINES);
         }
+    }
+
+    #[test]
+    fn only_the_thousand_flow_slot_drops_sing_box_when_omitted() {
+        let mut options = parse_chart_args(&full_args("target/benchmarks/123")).unwrap();
+        assert_eq!(
+            slot_engines(WorkloadKind::ManyIdleFlows, Some(1000), &options),
+            &ENGINES
+        );
+        options.omit_sing_box_1000_flows = true;
+        assert_eq!(
+            slot_engines(WorkloadKind::ManyIdleFlows, Some(1000), &options),
+            &GEO_ENGINES
+        );
+        assert_eq!(
+            slot_engines(WorkloadKind::ManyIdleFlows, Some(100), &options),
+            &ENGINES
+        );
+        assert_eq!(slot_engines(WorkloadKind::Idle, None, &options), &ENGINES);
     }
 
     #[test]
@@ -2684,6 +2742,31 @@ mod tests {
         assert!(reality.contains("sing-box v1.12.0 omitted from REALITY"));
         assert!(reality.contains("Xray-core v26.7.28"));
         assert!(reality.contains("Xray-core v26.7.28 · sing-box v1.12.0"));
+
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn run_chart_omits_sing_box_at_a_thousand_flows_only_when_asked() {
+        let root = temp_root("omit-flows");
+        let out_dir = root.join("media");
+        let mut options = parse_chart_args(&full_args(root.to_str().unwrap())).unwrap();
+        options.groups = write_full_group(&root);
+        options.out_dir = out_dir.clone();
+        options.geodata_version = Some("geodata-test".to_owned());
+        fs::remove_dir_all(root.join("g-many-idle-flows-1000/sing-box/many-idle-flows")).unwrap();
+
+        let error = run_chart(&options).unwrap_err();
+        assert!(error.to_string().contains("connections=1000"));
+
+        options.omit_sing_box_1000_flows = true;
+        run_chart(&options).unwrap();
+
+        let memory = fs::read_to_string(out_dir.join("memory-rss-light.svg")).unwrap();
+        assert!(memory.contains(">sing-box<"));
+        assert!(memory.contains("sing-box v1.12.0 omitted from many-idle-flows ×1000"));
+        let latency = fs::read_to_string(out_dir.join("latency-light.svg")).unwrap();
+        assert!(!latency.contains("many-idle-flows"));
 
         fs::remove_dir_all(&root).unwrap();
     }

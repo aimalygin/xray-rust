@@ -14,7 +14,8 @@ use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 
 use xray_transport::stream::xhttp_h2_test_only::{
-    connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, H2Client, H2Error,
+    connect_h2, connect_h2_with_keepalive, connect_h2_with_receive_window, connect_h2_with_window,
+    H2Client, H2Error, H2ReceiveWindow,
 };
 use xray_transport::{BoxedTransportStream, TransportStream};
 
@@ -1121,6 +1122,20 @@ async fn cloned_client_opens_concurrent_streams_without_serializing_headers() {
 
     assert_eq!((first_body, second_body), (b"/a".to_vec(), b"/b".to_vec()));
     server_task.await.expect("server task");
+}
+
+/// Before the server's SETTINGS a connection admits as many streams as Go's
+/// client assumes, so a packet-up flow's first upload shares it with the
+/// download instead of dialing a second connection.
+#[tokio::test]
+async fn a_fresh_connection_assumes_gos_initial_stream_limit() {
+    let (client_io, _silent_server) = tokio::io::duplex(1024 * 1024);
+    let client = timeout(DEADLINE, connect_h2(Box::new(client_io)))
+        .await
+        .expect("the handshake does not wait for SETTINGS")
+        .expect("client HTTP/2 handshake");
+
+    assert_eq!(client.current_max_send_streams(), 100);
 }
 
 #[tokio::test]

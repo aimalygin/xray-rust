@@ -1,0 +1,927 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 405b228..4fdbb4a 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -90,6 +90,7 @@ quinn = { path = "vendor/quinn" }
+ smoltcp = { path = "vendor/smoltcp" }
+ blake3 = { path = "vendor/blake3" }
+ h3-quinn = { path = "vendor/h3-quinn" }
++h3 = { path = "vendor-exp/h3" }
+ quinn-proto = { path = "vendor/quinn-proto" }
+ h2 = { path = "vendor/h2" }
+ rustls = { git = "https://github.com/aimalygin/shaped-rustls", rev = "3a131beaef0183b0cb61e5a9070a703b6be39ed3" }
+diff --git a/crates/xray-core-rs/src/policy.rs b/crates/xray-core-rs/src/policy.rs
+index 4651cd3..80ff451 100644
+--- a/crates/xray-core-rs/src/policy.rs
++++ b/crates/xray-core-rs/src/policy.rs
+@@ -249,7 +249,7 @@ where
+     // Start small so idle/chatty connections stay cheap; double toward the cap
+     // only while reads keep filling the buffer (bulk transfers).
+     let buffer_cap = buffer_size.clamp(MIN_COPY_BUFFER_SIZE, MAX_COPY_BUFFER_SIZE);
+-    let mut buffer = vec![0; buffer_cap.min(INITIAL_COPY_BUFFER_SIZE)];
++    let mut buffer = xray_transport::xray_exp_mem::with_tag(xray_transport::xray_exp_mem::TAG_RELAY, || vec![0; buffer_cap.min(INITIAL_COPY_BUFFER_SIZE)]);
+     let flush_deadline = tokio::time::sleep(COPY_FLUSH_INTERVAL);
+     tokio::pin!(flush_deadline);
+ 
+diff --git a/crates/xray-transport/Cargo.toml b/crates/xray-transport/Cargo.toml
+index b2e28a6..76dde1c 100644
+--- a/crates/xray-transport/Cargo.toml
++++ b/crates/xray-transport/Cargo.toml
+@@ -21,6 +21,7 @@ ghash.workspace = true
+ h2.workspace = true
+ h3.workspace = true
+ h3-quinn.workspace = true
++libc.workspace = true
+ hkdf.workspace = true
+ hmac.workspace = true
+ http.workspace = true
+diff --git a/crates/xray-transport/src/lib.rs b/crates/xray-transport/src/lib.rs
+index 283d0a5..1ab5847 100644
+--- a/crates/xray-transport/src/lib.rs
++++ b/crates/xray-transport/src/lib.rs
+@@ -32,6 +32,7 @@ pub fn validate_tls_server_name(server_name: &str) -> Result<(), TransportError>
+ }
+ mod penetrating_tls;
+ mod quic_receive_batch;
++pub mod xray_exp_mem;
+ pub mod reality;
+ pub mod reality_connector;
+ pub mod reality_runtime;
+diff --git a/crates/xray-transport/src/stream/xhttp/h3.rs b/crates/xray-transport/src/stream/xhttp/h3.rs
+index fa89b38..92d6a2f 100644
+--- a/crates/xray-transport/src/stream/xhttp/h3.rs
++++ b/crates/xray-transport/src/stream/xhttp/h3.rs
+@@ -757,6 +757,7 @@ impl H3Client {
+ 
+ /// Connects one protected UDP destination and starts its HTTP/3 driver.
+ pub async fn connect_h3(config: H3ConnectConfig) -> Result<H3Client, H3Error> {
++    crate::xray_exp_mem::start_sampler();
+     let class = memory_class();
+     let receive_windows = config.quic.receive_windows(class);
+     let (endpoint, connection, diagnostics) = connect_quic_transport(config, b"h3").await?;
+@@ -847,9 +848,18 @@ pub(crate) async fn connect_quic_transport_with_datagrams(
+         #[cfg(not(target_os = "macos"))]
+         {
+             use quinn::Runtime as _;
+-            quinn::TokioRuntime
++            use std::os::fd::AsRawFd;
++            let fd = socket.as_raw_fd();
++            let wrapped = quinn::TokioRuntime
+                 .wrap_udp_socket(socket)
+-                .map_err(H3Error::Endpoint)?
++                .map_err(H3Error::Endpoint)?;
++            if std::env::var_os("XRAY_EXP_NO_GRO").is_some() {
++                let off: libc::c_int = 0;
++                unsafe {
++                    libc::setsockopt(fd, libc::SOL_UDP, 104, (&off as *const libc::c_int).cast(), std::mem::size_of::<libc::c_int>() as libc::socklen_t);
++                }
++            }
++            wrapped
+         }
+     };
+     // XHTTP and DoQ open an endpoint for every connection; Hysteria keeps one
+@@ -1171,7 +1181,7 @@ async fn drive_upload(
+             };
+         }
+ 
+-        let data = Bytes::copy_from_slice(&buffer[..read]);
++        let data = quinn::xray_exp::with_tag(quinn::xray_exp::TAG_UPLOAD, || Bytes::copy_from_slice(&buffer[..read]));
+         let sent = tokio::select! {
+             biased;
+             () = cancelled(&mut cancellation) => Err(H3Error::Cancelled),
+@@ -1321,7 +1331,7 @@ async fn drive_response_inner(
+                     let take = pending.len().min(MAX_RESPONSE_BATCH_BYTES - length);
+                     if take != 0 {
+                         let buffer = combined.get_or_insert_with(|| {
+-                            let mut buffer = BytesMut::with_capacity(MAX_RESPONSE_BATCH_BYTES);
++                            let mut buffer = quinn::xray_exp::with_tag(quinn::xray_exp::TAG_H3_BATCH, || BytesMut::with_capacity(MAX_RESPONSE_BATCH_BYTES));
+                             buffer.extend_from_slice(&first);
+                             buffer
+                         });
+diff --git a/crates/xray-transport/src/xray_exp_mem.rs b/crates/xray-transport/src/xray_exp_mem.rs
+new file mode 100644
+index 0000000..ea9ef77
+--- /dev/null
++++ b/crates/xray-transport/src/xray_exp_mem.rs
+@@ -0,0 +1,428 @@
++//! Experiment-only tagging allocator and memory sampler; never committed.
++//!
++//! Every allocation carries a header whose last byte names the site that was
++//! tagged when it was made (`quinn::xray_exp::with_tag`). A sampler thread
++//! started by the first XHTTP H3 connection writes, every 50 ms, the process
++//! RSS, glibc's `mallinfo2`, the live bytes per tag and quinn's receive-side
++//! counters to `$XRAY_EXP_MEMLOG`, and dumps `malloc_info` and smaps whenever
++//! RSS grows 2 MiB past the last dump.
++use std::alloc::{GlobalAlloc, Layout, System};
++use std::io::Write;
++use std::sync::atomic::{AtomicI64, AtomicU64, Ordering::Relaxed};
++use std::sync::Once;
++use std::time::{Duration, Instant};
++
++use quinn::xray_exp as qx;
++pub use quinn::xray_exp::{with_tag, TAG_RELAY};
++
++const HEADER: usize = 16;
++
++pub struct TagAlloc;
++
++static LIVE: [AtomicI64; qx::TAGS] = [const { AtomicI64::new(0) }; qx::TAGS];
++static LIVE_COUNT: [AtomicI64; qx::TAGS] = [const { AtomicI64::new(0) }; qx::TAGS];
++static ALLOCS: AtomicU64 = AtomicU64::new(0);
++
++#[global_allocator]
++static GLOBAL: TagAlloc = TagAlloc;
++
++// Registry of live received-datagram allocations, so the sampler can take a
++// census of their ages, owners and contents. Header layout (16 bytes before
++// the pointer): u32 registry index, u32 allocation time in ms, u32 size,
++// u16 owner slot, one spare byte, the tag.
++const REGISTRY_SLOTS: usize = 1 << 20;
++static REGISTRY: std::sync::atomic::AtomicPtr<std::sync::atomic::AtomicUsize> =
++    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
++static REGISTRY_CURSOR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
++static CENSUS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
++
++fn registry() -> &'static [std::sync::atomic::AtomicUsize] {
++    let mut table = REGISTRY.load(std::sync::atomic::Ordering::Acquire);
++    if table.is_null() {
++        let layout = Layout::array::<std::sync::atomic::AtomicUsize>(REGISTRY_SLOTS).unwrap();
++        let fresh = unsafe { System.alloc_zeroed(layout) }.cast::<std::sync::atomic::AtomicUsize>();
++        match REGISTRY.compare_exchange(
++            std::ptr::null_mut(),
++            fresh,
++            std::sync::atomic::Ordering::AcqRel,
++            std::sync::atomic::Ordering::Acquire,
++        ) {
++            Ok(_) => table = fresh,
++            Err(existing) => {
++                unsafe { System.dealloc(fresh.cast(), layout) };
++                table = existing;
++            }
++        }
++    }
++    unsafe { std::slice::from_raw_parts(table, REGISTRY_SLOTS) }
++}
++
++fn now_ms() -> u32 {
++    EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u32
++}
++
++unsafe fn register(ptr: *mut u8, size: usize) {
++    let table = registry();
++    let mut index = u32::MAX;
++    for _ in 0..64 {
++        let candidate = REGISTRY_CURSOR.fetch_add(1, Relaxed) & (REGISTRY_SLOTS - 1);
++        if table[candidate]
++            .compare_exchange(0, ptr as usize, Relaxed, Relaxed)
++            .is_ok()
++        {
++            index = candidate as u32;
++            break;
++        }
++    }
++    unsafe {
++        ptr.sub(16).cast::<u32>().write(index);
++        ptr.sub(12).cast::<u32>().write(now_ms());
++        ptr.sub(8).cast::<u32>().write(size as u32);
++        ptr.sub(4).cast::<u16>().write(qx::current_owner());
++    }
++}
++
++unsafe fn unregister(ptr: *mut u8) {
++    let index = unsafe { ptr.sub(16).cast::<u32>().read() };
++    if index != u32::MAX {
++        registry()[index as usize].store(0, Relaxed);
++    }
++}
++
++#[inline]
++fn header(layout: &Layout) -> usize {
++    layout.align().max(HEADER)
++}
++
++unsafe impl GlobalAlloc for TagAlloc {
++    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++        let header = header(&layout);
++        let base = unsafe {
++            System.alloc(Layout::from_size_align_unchecked(layout.size() + header, header))
++        };
++        if base.is_null() {
++            return base;
++        }
++        let tag = qx::current_tag();
++        let ptr = unsafe { base.add(header) };
++        unsafe { *ptr.sub(1) = tag };
++        if tag == qx::TAG_RECV_DATAGRAM && header == HEADER {
++            if CENSUS.load(Relaxed) {
++                unsafe { register(ptr, layout.size()) };
++            } else {
++                unsafe { ptr.sub(16).cast::<u32>().write(u32::MAX) };
++            }
++        }
++        LIVE[tag as usize].fetch_add(layout.size() as i64, Relaxed);
++        LIVE_COUNT[tag as usize].fetch_add(1, Relaxed);
++        ALLOCS.fetch_add(1, Relaxed);
++        ptr
++    }
++
++    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++        let header = header(&layout);
++        let base = unsafe {
++            System.alloc_zeroed(Layout::from_size_align_unchecked(layout.size() + header, header))
++        };
++        if base.is_null() {
++            return base;
++        }
++        let tag = qx::current_tag();
++        let ptr = unsafe { base.add(header) };
++        unsafe { *ptr.sub(1) = tag };
++        if tag == qx::TAG_RECV_DATAGRAM && header == HEADER {
++            if CENSUS.load(Relaxed) {
++                unsafe { register(ptr, layout.size()) };
++            } else {
++                unsafe { ptr.sub(16).cast::<u32>().write(u32::MAX) };
++            }
++        }
++        LIVE[tag as usize].fetch_add(layout.size() as i64, Relaxed);
++        LIVE_COUNT[tag as usize].fetch_add(1, Relaxed);
++        ALLOCS.fetch_add(1, Relaxed);
++        ptr
++    }
++
++    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
++        let header = header(&layout);
++        let tag = unsafe { *ptr.sub(1) } as usize % qx::TAGS;
++        if tag == qx::TAG_RECV_DATAGRAM as usize && header == HEADER {
++            unsafe { unregister(ptr) };
++        }
++        LIVE[tag].fetch_sub(layout.size() as i64, Relaxed);
++        LIVE_COUNT[tag].fetch_sub(1, Relaxed);
++        unsafe {
++            System.dealloc(
++                ptr.sub(header),
++                Layout::from_size_align_unchecked(layout.size() + header, header),
++            )
++        }
++    }
++
++    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
++        let header = header(&layout);
++        let tag = unsafe { *ptr.sub(1) } as usize % qx::TAGS;
++        if tag == qx::TAG_RECV_DATAGRAM as usize && header == HEADER {
++            unsafe { unregister(ptr) };
++        }
++        let base = unsafe {
++            System.realloc(
++                ptr.sub(header),
++                Layout::from_size_align_unchecked(layout.size() + header, header),
++                new_size + header,
++            )
++        };
++        if base.is_null() {
++            return base;
++        }
++        LIVE[tag].fetch_add(new_size as i64 - layout.size() as i64, Relaxed);
++        let ptr = unsafe { base.add(header) };
++        if tag == qx::TAG_RECV_DATAGRAM as usize && header == HEADER {
++            if CENSUS.load(Relaxed) {
++                unsafe { register(ptr, new_size) };
++            } else {
++                unsafe { ptr.sub(16).cast::<u32>().write(u32::MAX) };
++            }
++        }
++        ptr
++    }
++}
++
++static START: Once = Once::new();
++
++pub fn start_sampler() {
++    START.call_once(|| {
++        CENSUS.store(std::env::var_os("XRAY_EXP_CENSUS").is_some(), Relaxed);
++        if let Some(path) = std::env::var_os("XRAY_EXP_MEMLOG") {
++            let path = path.to_string_lossy().into_owned();
++            let _ = std::thread::Builder::new()
++                .name("xray-exp-mem".into())
++                .spawn(move || sample_loop(&path));
++        }
++    });
++}
++
++fn status_kib() -> (u64, u64, u64) {
++    let mut values = (0, 0, 0);
++    if let Ok(text) = std::fs::read_to_string("/proc/self/status") {
++        for line in text.lines() {
++            let mut parts = line.split_whitespace();
++            let key = parts.next().unwrap_or("");
++            let value: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
++            match key {
++                "VmRSS:" => values.0 = value,
++                "RssAnon:" => values.1 = value,
++                "RssFile:" => values.2 = value,
++                _ => {}
++            }
++        }
++    }
++    values
++}
++
++#[cfg(all(target_os = "linux", target_env = "gnu"))]
++fn mallinfo() -> [u64; 6] {
++    let info = unsafe { libc::mallinfo2() };
++    [
++        info.arena as u64,
++        info.hblkhd as u64,
++        info.uordblks as u64,
++        info.fordblks as u64,
++        info.keepcost as u64,
++        info.ordblks as u64,
++    ]
++}
++
++#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
++fn mallinfo() -> [u64; 6] {
++    [0; 6]
++}
++
++#[cfg(all(target_os = "linux", target_env = "gnu"))]
++fn dump_malloc_info(path: &str) {
++    let Ok(path) = std::ffi::CString::new(path) else {
++        return;
++    };
++    unsafe {
++        let file = libc::fopen(path.as_ptr(), c"w".as_ptr());
++        if !file.is_null() {
++            libc::malloc_info(0, file);
++            libc::fclose(file);
++        }
++    }
++}
++
++#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
++fn dump_malloc_info(_path: &str) {}
++
++fn sample_loop(path: &str) {
++    let Ok(mut out) = std::fs::File::create(path) else {
++        return;
++    };
++    let start = Instant::now();
++    let mut dumped_rss = 0_u64;
++    let mut dumps = 0_u32;
++    let mut last_census = 0_u128;
++    let mut census_rss = 0_u64;
++    loop {
++        let (rss, anon, file) = status_kib();
++        let mi = mallinfo();
++        let live: Vec<i64> = LIVE.iter().map(|v| v.load(Relaxed)).collect();
++        let counts: Vec<i64> = LIVE_COUNT.iter().map(|v| v.load(Relaxed)).collect();
++        let total: i64 = live.iter().sum();
++        let mut buffered: Vec<u64> = qx::CONN_BUFFERED
++            .iter()
++            .map(|v| v.load(Relaxed))
++            .filter(|&v| v > 0)
++            .collect();
++        buffered.sort_unstable();
++        let channel: Vec<i64> = qx::CONN_CHANNEL
++            .iter()
++            .map(|v| v.load(Relaxed))
++            .filter(|&v| v > 0)
++            .collect();
++        let at_least = |limit: u64| buffered.iter().filter(|&&v| v >= limit).count();
++        let line = format!(
++            "t_ms={} rss={} anon={} file={} arena={} hblkhd={} uord={} ford={} keep={} ordblks={} \
++             live_total={} live_other={} live_recv={} live_defrag={} live_h3={} live_recvbuf={} \
++             live_relay={} live_upload={} n_recv={} n_other={} allocs={} asm_buf={} asm_alloc={} \
++             asm_chunks={} defrags={} chan_bytes={} chan_events={} conns={} buf_conns={} \
++             buf_max={} buf_p50={} buf_ge512k={} buf_ge1m={} buf_ge1_5m={} buf_ge1_9m={} \
++             chan_conns={} chan_max={} h3_bytes={} h3_chunks={} h3_max_chunks={}",
++            start.elapsed().as_millis(),
++            rss,
++            anon,
++            file,
++            mi[0],
++            mi[1],
++            mi[2],
++            mi[3],
++            mi[4],
++            mi[5],
++            total,
++            live[0],
++            live[qx::TAG_RECV_DATAGRAM as usize],
++            live[qx::TAG_DEFRAG as usize],
++            live[qx::TAG_H3_BATCH as usize],
++            live[qx::TAG_RECV_BUF as usize],
++            live[qx::TAG_RELAY as usize],
++            live[qx::TAG_UPLOAD as usize],
++            counts[qx::TAG_RECV_DATAGRAM as usize],
++            counts[0],
++            ALLOCS.load(Relaxed),
++            qx::ASSEMBLER_BUFFERED.load(Relaxed),
++            qx::ASSEMBLER_ALLOCATED.load(Relaxed),
++            qx::ASSEMBLER_CHUNKS.load(Relaxed),
++            qx::DEFRAGMENTS.load(Relaxed),
++            qx::CHANNEL_BYTES.load(Relaxed),
++            qx::CHANNEL_EVENTS.load(Relaxed),
++            qx::CONNECTIONS.load(Relaxed),
++            buffered.len(),
++            buffered.last().copied().unwrap_or(0),
++            buffered.get(buffered.len() / 2).copied().unwrap_or(0),
++            at_least(512 * 1024),
++            at_least(1024 * 1024),
++            at_least(1536 * 1024),
++            at_least(1946 * 1024),
++            channel.len(),
++            channel.iter().max().copied().unwrap_or(0),
++            h3::XRAY_EXP_BUFLIST_BYTES.load(Relaxed),
++            h3::XRAY_EXP_BUFLIST_CHUNKS.load(Relaxed),
++            h3::XRAY_EXP_BUFLIST_MAX_CHUNKS.load(Relaxed),
++        );
++        let _ = writeln!(out, "{line}");
++        if rss > dumped_rss + 2048 && dumps < 200 {
++            dumped_rss = rss;
++            dumps += 1;
++            dump_malloc_info(&format!("{path}.peak-malloc-info.xml"));
++            if let Ok(smaps) = std::fs::read_to_string("/proc/self/smaps") {
++                let _ = std::fs::write(format!("{path}.peak-smaps"), smaps);
++            }
++            let _ = std::fs::write(format!("{path}.peak-line"), &line);
++        }
++        if CENSUS.load(Relaxed) && start.elapsed().as_millis() / 1000 != last_census {
++            last_census = start.elapsed().as_millis() / 1000;
++            census(path, &format!("{path}.census-oldest"));
++        }
++        if CENSUS.load(Relaxed) && rss > census_rss + 4096 {
++            census_rss = rss;
++            census(path, &format!("{path}.peak-oldest"));
++        }
++        std::thread::sleep(Duration::from_millis(50));
++    }
++}
++
++fn census(path: &str, oldest_path: &str) {
++    let table = registry();
++    let now = now_ms();
++    let mut per_owner = std::collections::BTreeMap::<u16, (u64, u64, u64)>::new();
++    let mut ages = [0_u64; 6];
++    let mut oldest: Vec<(u32, u16, u32, usize)> = Vec::new();
++    let mut live = 0_u64;
++    let mut count = 0_u64;
++    for entry in table {
++        let ptr = entry.load(Relaxed) as *mut u8;
++        if ptr.is_null() {
++            continue;
++        }
++        let (time, size, owner) = unsafe {
++            (
++                ptr.sub(12).cast::<u32>().read(),
++                ptr.sub(8).cast::<u32>().read(),
++                ptr.sub(4).cast::<u16>().read(),
++            )
++        };
++        let age = now.saturating_sub(time);
++        live += u64::from(size);
++        count += 1;
++        let row = per_owner.entry(owner).or_default();
++        row.0 += u64::from(size);
++        row.1 += 1;
++        if age >= 1000 {
++            row.2 += u64::from(size);
++        }
++        let bucket = match age {
++            0..100 => 0,
++            100..300 => 1,
++            300..1000 => 2,
++            1000..3000 => 3,
++            3000..10000 => 4,
++            _ => 5,
++        };
++        ages[bucket] += u64::from(size);
++        oldest.push((time, owner, size, ptr as usize));
++    }
++    oldest.sort_unstable();
++    let owners: Vec<String> = per_owner
++        .iter()
++        .map(|(owner, (bytes, n, old))| {
++            let buffered = qx::CONN_BUFFERED
++                .get(usize::from(*owner))
++                .map_or(0, |v| v.load(Relaxed));
++            format!("{owner}:{bytes}:{n}:{old}:{buffered}")
++        })
++        .collect();
++    if let Ok(mut out) = std::fs::OpenOptions::new()
++        .create(true)
++        .append(true)
++        .open(format!("{path}.census"))
++    {
++        let _ = writeln!(
++            out,
++            "t_ms={now} live={live} n={count} age_lt100ms={} age_lt300ms={} age_lt1s={} age_lt3s={} age_lt10s={} age_ge10s={} owners={}",
++            ages[0], ages[1], ages[2], ages[3], ages[4], ages[5], owners.join(",")
++        );
++    }
++    let mut dump = String::new();
++    for (time, owner, size, ptr) in oldest.iter().take(40) {
++        let shown = (*size as usize).min(160);
++        let bytes = unsafe { std::slice::from_raw_parts(*ptr as *const u8, shown) };
++        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
++        dump.push_str(&format!(
++            "age_ms={} owner={owner} size={size} hex={hex}\n",
++            now.saturating_sub(*time)
++        ));
++    }
++    let _ = std::fs::write(oldest_path, dump);
++}
+diff --git a/vendor/quinn-proto/src/connection/assembler.rs b/vendor/quinn-proto/src/connection/assembler.rs
+index 98eed6d..1c1b0f8 100644
+--- a/vendor/quinn-proto/src/connection/assembler.rs
++++ b/vendor/quinn-proto/src/connection/assembler.rs
+@@ -22,6 +22,16 @@ pub(super) struct Assembler {
+     /// aka the stream offset.
+     bytes_read: u64,
+     end: u64,
++    exp_reported: [usize; 3],
++}
++
++impl Drop for Assembler {
++    fn drop(&mut self) {
++        use std::sync::atomic::Ordering::Relaxed;
++        crate::xray_exp::ASSEMBLER_BUFFERED.fetch_sub(self.exp_reported[0] as i64, Relaxed);
++        crate::xray_exp::ASSEMBLER_ALLOCATED.fetch_sub(self.exp_reported[1] as i64, Relaxed);
++        crate::xray_exp::ASSEMBLER_CHUNKS.fetch_sub(self.exp_reported[2] as i64, Relaxed);
++    }
+ }
+ 
+ impl Assembler {
+@@ -45,6 +55,7 @@ impl Assembler {
+             if !self.data.is_empty() {
+                 // Get rid of possible duplicates
+                 self.defragment();
++                self.exp_sync();
+             }
+             let mut recvd = RangeSet::new();
+             recvd.insert(0..self.bytes_read);
+@@ -56,8 +67,27 @@ impl Assembler {
+         Ok(())
+     }
+ 
++    fn exp_sync(&mut self) {
++        use std::sync::atomic::Ordering::Relaxed;
++        let now = [self.buffered, self.allocated, self.data.len()];
++        crate::xray_exp::ASSEMBLER_BUFFERED.fetch_add(now[0] as i64 - self.exp_reported[0] as i64, Relaxed);
++        crate::xray_exp::ASSEMBLER_ALLOCATED.fetch_add(now[1] as i64 - self.exp_reported[1] as i64, Relaxed);
++        crate::xray_exp::ASSEMBLER_CHUNKS.fetch_add(now[2] as i64 - self.exp_reported[2] as i64, Relaxed);
++        self.exp_reported = now;
++    }
++
++    pub(super) fn exp_buffered(&self) -> usize {
++        self.buffered
++    }
++
+     /// Get the the next chunk
+     pub(super) fn read(&mut self, max_length: usize, ordered: bool) -> Option<Chunk> {
++        let chunk = self.read_inner(max_length, ordered);
++        self.exp_sync();
++        chunk
++    }
++
++    fn read_inner(&mut self, max_length: usize, ordered: bool) -> Option<Chunk> {
+         loop {
+             let mut chunk = self.data.peek_mut()?;
+ 
+@@ -103,6 +133,7 @@ impl Assembler {
+     /// This makes sure we're not unnecessarily holding on to many larger allocations.
+     /// We merge contiguous chunks in the process of doing so.
+     fn defragment(&mut self) {
++        crate::xray_exp::DEFRAGMENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+         let new = BinaryHeap::with_capacity(self.data.len());
+         let old = mem::replace(&mut self.data, new);
+         let mut buffers = old.into_sorted_vec();
+@@ -119,7 +150,7 @@ impl Assembler {
+             }
+         }
+         self.allocated = self.buffered;
+-        let mut buffer = BytesMut::with_capacity(fragmented_buffered);
++        let mut buffer = crate::xray_exp::with_tag(crate::xray_exp::TAG_DEFRAG, || BytesMut::with_capacity(fragmented_buffered));
+         let mut offset = 0;
+         for chunk in buffers.into_iter().rev() {
+             if chunk.defragmented {
+@@ -148,6 +179,17 @@ impl Assembler {
+     // Note: If a packet contains many frames from the same stream, the estimated over-allocation
+     // will be much higher because we are counting the same allocation multiple times.
+     pub(super) fn insert(
++        &mut self,
++        offset: u64,
++        bytes: Bytes,
++        allocation_size: usize,
++    ) -> Result<(), TooManyChunks> {
++        let result = self.insert_inner(offset, bytes, allocation_size);
++        self.exp_sync();
++        result
++    }
++
++    fn insert_inner(
+         &mut self,
+         mut offset: u64,
+         mut bytes: Bytes,
+@@ -229,6 +271,7 @@ impl Assembler {
+         self.data.clear();
+         self.buffered = 0;
+         self.allocated = 0;
++        self.exp_sync();
+     }
+ }
+ 
+diff --git a/vendor/quinn-proto/src/connection/mod.rs b/vendor/quinn-proto/src/connection/mod.rs
+index 241befb..72d9c29 100644
+--- a/vendor/quinn-proto/src/connection/mod.rs
++++ b/vendor/quinn-proto/src/connection/mod.rs
+@@ -238,6 +238,30 @@ pub struct Connection {
+     stats: ConnectionStats,
+     /// QUIC version used for the connection.
+     version: u32,
++    exp_slot: usize,
++}
++
++impl Drop for Connection {
++    fn drop(&mut self) {
++        use std::sync::atomic::Ordering::Relaxed;
++        crate::xray_exp::CONN_BUFFERED[self.exp_slot].store(0, Relaxed);
++        crate::xray_exp::CONN_CHANNEL[self.exp_slot].store(0, Relaxed);
++        crate::xray_exp::CONN_WINDOW[self.exp_slot].store(0, Relaxed);
++        crate::xray_exp::CONNECTIONS.fetch_sub(1, Relaxed);
++    }
++}
++
++impl Connection {
++    /// Experiment: this connection's counter slot.
++    pub fn xray_exp_slot(&self) -> usize {
++        self.exp_slot
++    }
++
++    /// Experiment: publishes this connection's buffered stream bytes.
++    pub fn xray_exp_publish(&self) {
++        use std::sync::atomic::Ordering::Relaxed;
++        crate::xray_exp::CONN_BUFFERED[self.exp_slot].store(self.streams.exp_buffered() as u64, Relaxed);
++    }
+ }
+ 
+ impl Connection {
+@@ -355,6 +379,10 @@ impl Connection {
+             rng,
+             stats: ConnectionStats::default(),
+             version,
++            exp_slot: {
++                crate::xray_exp::CONNECTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
++                crate::xray_exp::NEXT_SLOT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % crate::xray_exp::SLOTS
++            },
+         };
+         if path_validated {
+             this.on_path_validated();
+diff --git a/vendor/quinn-proto/src/connection/streams/state.rs b/vendor/quinn-proto/src/connection/streams/state.rs
+index 7fd4b88..81a3a51 100644
+--- a/vendor/quinn-proto/src/connection/streams/state.rs
++++ b/vendor/quinn-proto/src/connection/streams/state.rs
+@@ -250,6 +250,15 @@ impl StreamsState {
+     /// Process incoming stream frame
+     ///
+     /// If successful, returns whether a `MAX_DATA` frame needs to be transmitted
++    pub(crate) fn exp_buffered(&self) -> usize {
++        self.recv
++            .values()
++            .flatten()
++            .filter_map(|stream| stream.as_open_recv())
++            .map(|recv| recv.assembler.exp_buffered())
++            .sum()
++    }
++
+     pub(crate) fn received(
+         &mut self,
+         frame: frame::Stream,
+diff --git a/vendor/quinn-proto/src/lib.rs b/vendor/quinn-proto/src/lib.rs
+index 5982b69..4ed3146 100644
+--- a/vendor/quinn-proto/src/lib.rs
++++ b/vendor/quinn-proto/src/lib.rs
+@@ -27,6 +27,7 @@ use std::{
+ };
+ 
+ mod cid_queue;
++pub mod xray_exp;
+ pub mod coding;
+ mod constant_time;
+ mod range_set;
+diff --git a/vendor/quinn-proto/src/shared.rs b/vendor/quinn-proto/src/shared.rs
+index f2d0ad5..b289c6d 100644
+--- a/vendor/quinn-proto/src/shared.rs
++++ b/vendor/quinn-proto/src/shared.rs
+@@ -8,6 +8,18 @@ use crate::{Instant, MAX_CID_SIZE, ResetToken, coding::BufExt, packet::PartialDe
+ #[derive(Debug)]
+ pub struct ConnectionEvent(pub(crate) ConnectionEventInner);
+ 
++impl ConnectionEvent {
++    /// Experiment: datagram bytes this event carries.
++    pub fn xray_exp_len(&self) -> usize {
++        match &self.0 {
++            ConnectionEventInner::Datagram(event) => {
++                event.first_decode.len() + event.remaining.as_ref().map_or(0, |r| r.len())
++            }
++            ConnectionEventInner::NewIdentifiers(..) => 0,
++        }
++    }
++}
++
+ #[derive(Debug)]
+ pub(crate) enum ConnectionEventInner {
+     /// A datagram has been received for the Connection
+diff --git a/vendor/quinn-proto/src/xray_exp.rs b/vendor/quinn-proto/src/xray_exp.rs
+new file mode 100644
+index 0000000..cd71121
+--- /dev/null
++++ b/vendor/quinn-proto/src/xray_exp.rs
+@@ -0,0 +1,53 @@
++#![allow(missing_docs)]
++//! Experiment-only memory counters; never committed.
++use std::cell::Cell;
++use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize};
++
++pub const TAG_RECV_DATAGRAM: u8 = 1;
++pub const TAG_DEFRAG: u8 = 2;
++pub const TAG_H3_BATCH: u8 = 3;
++pub const TAG_RECV_BUF: u8 = 4;
++pub const TAG_RELAY: u8 = 5;
++pub const TAG_UPLOAD: u8 = 6;
++pub const TAGS: usize = 8;
++
++thread_local! {
++    static TAG: Cell<u8> = const { Cell::new(0) };
++    static OWNER: Cell<u16> = const { Cell::new(u16::MAX) };
++}
++
++pub fn current_owner() -> u16 {
++    OWNER.try_with(|owner| owner.get()).unwrap_or(u16::MAX)
++}
++
++pub fn with_owner<R>(owner: u16, f: impl FnOnce() -> R) -> R {
++    let previous = OWNER.try_with(|current| current.replace(owner)).unwrap_or(u16::MAX);
++    let result = f();
++    let _ = OWNER.try_with(|current| current.set(previous));
++    result
++}
++
++pub fn current_tag() -> u8 {
++    TAG.try_with(|tag| tag.get()).unwrap_or(0)
++}
++
++pub fn with_tag<R>(tag: u8, f: impl FnOnce() -> R) -> R {
++    let previous = TAG.try_with(|current| current.replace(tag)).unwrap_or(0);
++    let result = f();
++    let _ = TAG.try_with(|current| current.set(previous));
++    result
++}
++
++pub static ASSEMBLER_BUFFERED: AtomicI64 = AtomicI64::new(0);
++pub static ASSEMBLER_ALLOCATED: AtomicI64 = AtomicI64::new(0);
++pub static ASSEMBLER_CHUNKS: AtomicI64 = AtomicI64::new(0);
++pub static DEFRAGMENTS: AtomicU64 = AtomicU64::new(0);
++pub static CHANNEL_BYTES: AtomicI64 = AtomicI64::new(0);
++pub static CHANNEL_EVENTS: AtomicI64 = AtomicI64::new(0);
++pub static CONNECTIONS: AtomicI64 = AtomicI64::new(0);
++
++pub const SLOTS: usize = 512;
++pub static CONN_BUFFERED: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
++pub static CONN_CHANNEL: [AtomicI64; SLOTS] = [const { AtomicI64::new(0) }; SLOTS];
++pub static CONN_WINDOW: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
++pub static NEXT_SLOT: AtomicUsize = AtomicUsize::new(0);
+diff --git a/vendor/quinn/src/connection.rs b/vendor/quinn/src/connection.rs
+index a01cb46..97b4147 100644
+--- a/vendor/quinn/src/connection.rs
++++ b/vendor/quinn/src/connection.rs
+@@ -255,6 +255,7 @@ impl Future for ConnectionDriver {
+         keep_going |= conn.drive_timer(cx);
+         conn.forward_endpoint_events();
+         conn.forward_app_events(&self.0.shared);
++        conn.inner.xray_exp_publish();
+ 
+         if !conn.inner.is_drained() {
+             if keep_going {
+@@ -1088,6 +1089,13 @@ impl State {
+                     self.inner.local_address_changed();
+                 }
+                 Poll::Ready(Some(ConnectionEvent::Proto(event))) => {
++                    {
++                        use std::sync::atomic::Ordering::Relaxed;
++                        let len = event.xray_exp_len() as i64;
++                        proto::xray_exp::CHANNEL_BYTES.fetch_sub(len, Relaxed);
++                        proto::xray_exp::CHANNEL_EVENTS.fetch_sub(1, Relaxed);
++                        proto::xray_exp::CONN_CHANNEL[self.inner.xray_exp_slot()].fetch_sub(len, Relaxed);
++                    }
+                     self.inner.handle_event(event);
+                 }
+                 Poll::Ready(Some(ConnectionEvent::Close { reason, error_code })) => {
+diff --git a/vendor/quinn/src/endpoint.rs b/vendor/quinn/src/endpoint.rs
+index 9f10397..4e45c45 100644
+--- a/vendor/quinn/src/endpoint.rs
++++ b/vendor/quinn/src/endpoint.rs
+@@ -533,6 +533,15 @@ impl State {
+             let Some(event) = self.inner.handle_event(ch, event) else {
+                 continue;
+             };
++            {
++                use std::sync::atomic::Ordering::Relaxed;
++                let len = event.xray_exp_len() as i64;
++                proto::xray_exp::CHANNEL_BYTES.fetch_add(len, Relaxed);
++                proto::xray_exp::CHANNEL_EVENTS.fetch_add(1, Relaxed);
++                if let Some(slot) = self.recv_state.connections.exp_slots.get(&ch) {
++                    proto::xray_exp::CONN_CHANNEL[*slot].fetch_add(len, Relaxed);
++                }
++            }
+             // Ignoring errors from dropped connections that haven't yet been cleaned up
+             let _ = self
+                 .recv_state
+@@ -596,6 +605,7 @@ struct ConnectionSet {
+     sender: mpsc::UnboundedSender<(ConnectionHandle, EndpointEvent)>,
+     /// Set if the endpoint has been manually closed
+     close: Option<(VarInt, Bytes)>,
++    exp_slots: FxHashMap<ConnectionHandle, usize>,
+ }
+ 
+ impl ConnectionSet {
+@@ -615,6 +625,7 @@ impl ConnectionSet {
+             .unwrap();
+         }
+         self.senders.insert(handle, send);
++        self.exp_slots.insert(handle, conn.xray_exp_slot());
+         Connecting::new(handle, conn, self.sender.clone(), recv, socket, runtime)
+     }
+ 
+@@ -756,17 +767,18 @@ impl RecvState {
+         endpoint: &proto::Endpoint,
+     ) -> Self {
+         let recv_batch = max_receive_batch.clamp(1, BATCH_SIZE);
+-        let recv_buf = vec![
++        let recv_buf = proto::xray_exp::with_tag(proto::xray_exp::TAG_RECV_BUF, || vec![
+             0;
+             endpoint.config().get_max_udp_payload_size().min(64 * 1024) as usize
+                 * max_receive_segments
+                 * recv_batch
+-        ];
++        ]);
+         Self {
+             connections: ConnectionSet {
+                 senders: FxHashMap::default(),
+                 sender,
+                 close: None,
++                exp_slots: FxHashMap::default(),
+             },
+             incoming: VecDeque::new(),
+             recv_buf: recv_buf.into(),
+@@ -801,7 +813,8 @@ impl RecvState {
+                 Poll::Ready(Ok(msgs)) => {
+                     self.recv_limiter.record_work(msgs);
+                     for (meta, buf) in metas.iter().zip(iovs.iter()).take(msgs) {
+-                        let mut data: BytesMut = buf[0..meta.len].into();
++                        let owner = self.connections.exp_slots.values().next().map_or(u16::MAX, |slot| *slot as u16);
++                        let mut data: BytesMut = proto::xray_exp::with_owner(owner, || proto::xray_exp::with_tag(proto::xray_exp::TAG_RECV_DATAGRAM, || buf[0..meta.len].into()));
+                         while !data.is_empty() {
+                             let buf = data.split_to(meta.stride.min(data.len()));
+                             let mut response_buffer = Vec::new();
+@@ -825,6 +838,15 @@ impl RecvState {
+                                 Some(DatagramEvent::ConnectionEvent(handle, event)) => {
+                                     // Ignoring errors from dropped connections that haven't yet been cleaned up
+                                     received_connection_packet = true;
++                                    {
++                                        use std::sync::atomic::Ordering::Relaxed;
++                                        let len = event.xray_exp_len() as i64;
++                                        proto::xray_exp::CHANNEL_BYTES.fetch_add(len, Relaxed);
++                                        proto::xray_exp::CHANNEL_EVENTS.fetch_add(1, Relaxed);
++                                        if let Some(slot) = self.connections.exp_slots.get(&handle) {
++                                            proto::xray_exp::CONN_CHANNEL[*slot].fetch_add(len, Relaxed);
++                                        }
++                                    }
+                                     let _ = self
+                                         .connections
+                                         .senders
+diff --git a/vendor/quinn/src/lib.rs b/vendor/quinn/src/lib.rs
+index 82becdb..45e31ed 100644
+--- a/vendor/quinn/src/lib.rs
++++ b/vendor/quinn/src/lib.rs
+@@ -59,6 +59,7 @@ pub(crate) use web_time::{Duration, Instant};
+ 
+ #[cfg(feature = "bloom")]
+ pub use proto::BloomTokenLog;
++pub use proto::xray_exp;
+ pub use proto::{
+     AckFrequencyConfig, ApplicationClose, Chunk, ClientConfig, ClosedStream, ConfigError,
+     ConnectError, ConnectionClose, ConnectionError, ConnectionId, ConnectionIdGenerator,
+diff --git a/vendor/quinn/src/recv_stream.rs b/vendor/quinn/src/recv_stream.rs
+index 8b77e62..cd27d41 100644
+--- a/vendor/quinn/src/recv_stream.rs
++++ b/vendor/quinn/src/recv_stream.rs
+@@ -375,6 +375,7 @@ impl RecvStream {
+                 if chunks.finalize().should_transmit() {
+                     conn.wake();
+                 }
++                conn.inner.xray_exp_publish();
+                 status
+             }
+         };

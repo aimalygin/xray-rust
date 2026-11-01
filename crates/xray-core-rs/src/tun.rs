@@ -91,6 +91,16 @@ const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES: usize =
 const TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 2 * 1024 * 1024;
 const MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 1024 * 1024;
 const LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES: usize = 256 * 1024;
+// Bytes one TCP flow may hold between smoltcp and its outbound, including the
+// batch being written. Outbounds carry their own bandwidth-delay buffering
+// (kernel socket, QUIC/H2 windows, XHTTP pipes); a deeper TUN queue only holds
+// memory while a slow outbound drains. The message-count limit alone allowed
+// 8 MiB per flow, which XHTTP packet-up uploads filled.
+const TCP_BRIDGE_FLOW_MAX_BYTES: usize = 512 * 1024;
+const MOBILE_TCP_BRIDGE_FLOW_MAX_BYTES: usize = 256 * 1024;
+const LOW_MEMORY_TCP_BRIDGE_FLOW_MAX_BYTES: usize = 128 * 1024;
+// Upload chunks are coalesced into writes of at most this many bytes.
+const TCP_BRIDGE_COALESCE_BYTES: usize = 64 * 1024;
 const MAX_TUN_INBOUND_DRAIN_PER_TICK: usize = 256;
 const MAX_BRIDGE_TASK_COMPLETIONS_PER_TICK: usize = 64;
 const MAX_UDP_TASK_COMPLETIONS_PER_TICK: usize = MAX_TUN_INBOUND_DRAIN_PER_TICK + 1;
@@ -183,6 +193,7 @@ struct TcpUploadBridgePolicy {
     channel_depth: usize,
     max_batch_messages: usize,
     max_batch_bytes: usize,
+    max_flow_bytes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -260,18 +271,21 @@ const DEFAULT_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBridgeP
     channel_depth: TCP_BRIDGE_CHANNEL_DEPTH,
     max_batch_messages: TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES,
     max_batch_bytes: TCP_BRIDGE_WRITE_BATCH_MAX_BYTES,
+    max_flow_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
 };
 
 const MOBILE_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBridgePolicy {
     channel_depth: MOBILE_TCP_BRIDGE_CHANNEL_DEPTH,
     max_batch_messages: MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES,
     max_batch_bytes: MOBILE_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES,
+    max_flow_bytes: MOBILE_TCP_BRIDGE_FLOW_MAX_BYTES,
 };
 
 const LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY: TcpUploadBridgePolicy = TcpUploadBridgePolicy {
     channel_depth: LOW_MEMORY_TCP_BRIDGE_CHANNEL_DEPTH,
     max_batch_messages: LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_MESSAGES,
     max_batch_bytes: LOW_MEMORY_TCP_BRIDGE_WRITE_BATCH_MAX_BYTES,
+    max_flow_bytes: LOW_MEMORY_TCP_BRIDGE_FLOW_MAX_BYTES,
 };
 
 const MOBILE_TUN_RUNTIME_POLICY: TunRuntimePolicy = TunRuntimePolicy {
@@ -474,18 +488,36 @@ impl TcpUploadBufferState {
 #[derive(Debug)]
 struct TcpUploadReservation {
     state: Arc<TcpUploadBufferState>,
+    flow: Option<Arc<AtomicUsize>>,
     bytes: usize,
 }
 
 impl TcpUploadReservation {
+    #[cfg(test)]
     fn new(state: Arc<TcpUploadBufferState>, bytes: usize) -> Self {
+        Self::for_flow(state, None, bytes)
+    }
+
+    fn for_flow(
+        state: Arc<TcpUploadBufferState>,
+        flow: Option<Arc<AtomicUsize>>,
+        bytes: usize,
+    ) -> Self {
+        if let Some(flow) = &flow {
+            flow.fetch_add(bytes, Ordering::SeqCst);
+        }
         state.reserve(bytes);
-        Self { state, bytes }
+        Self { state, flow, bytes }
     }
 }
 
 impl Drop for TcpUploadReservation {
     fn drop(&mut self) {
+        // Lower the flow's count before the global release, which may wake the
+        // stack: the woken stack must already see this flow's freed room.
+        if let Some(flow) = &self.flow {
+            flow.fetch_sub(self.bytes, Ordering::SeqCst);
+        }
         self.state.release(self.bytes);
     }
 }
@@ -701,12 +733,16 @@ impl FlowBudgetState {
         true
     }
 
-    fn reserve_pending_upload(&mut self, data_len: usize) -> Option<TcpUploadReservation> {
+    fn reserve_pending_upload(
+        &mut self,
+        data_len: usize,
+        flow: Option<Arc<AtomicUsize>>,
+    ) -> Option<TcpUploadReservation> {
         if !self.can_reserve_pending_upload(data_len) {
             return None;
         }
 
-        let reservation = TcpUploadReservation::new(self.tcp_upload.clone(), data_len);
+        let reservation = TcpUploadReservation::for_flow(self.tcp_upload.clone(), flow, data_len);
         self.refresh_tcp_pressure_state();
         Some(reservation)
     }
@@ -1619,6 +1655,9 @@ struct TcpFlow {
     task: Option<AbortHandle>,
     remote_open: bool,
     upload_queue_packets: Option<usize>,
+    /// Bytes read from smoltcp whose upload reservation is still live.
+    upload_pending: Arc<AtomicUsize>,
+    upload_max_bytes: usize,
     pending_remote: VecDeque<Bytes>,
     pending_remote_bytes: usize,
     has_deferred_remote_data: bool,
@@ -1628,6 +1667,12 @@ struct TcpFlow {
 }
 
 impl TcpFlow {
+    /// Bytes this flow may still read from smoltcp toward its outbound.
+    fn upload_room(&self) -> usize {
+        self.upload_max_bytes
+            .saturating_sub(self.upload_pending.load(Ordering::SeqCst))
+    }
+
     fn upload_queue_full(&self) -> bool {
         self.to_remote.as_ref().is_some_and(|sender| {
             self.upload_queue_packets.is_some_and(|limit| {
@@ -2036,6 +2081,8 @@ fn open_ready_tcp_flows(
                 task: None,
                 remote_open: false,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: context.runtime_policy.tcp_upload.max_flow_bytes,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -2206,6 +2253,8 @@ fn insert_aborted_tcp_flow(
             task: None,
             remote_open: false,
             upload_queue_packets: None,
+            upload_pending: Arc::default(),
+            upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
             has_deferred_remote_data: false,
@@ -2667,7 +2716,8 @@ fn read_socket_data_to_remote(
             }
             let mut max_read = flow_budget_state
                 .available_upload_bytes()
-                .min(TCP_BUFFER_SIZE);
+                .min(TCP_BUFFER_SIZE)
+                .min(flow.upload_room());
             if max_read == 0 {
                 flow_budget_state
                     .tcp_upload
@@ -2677,7 +2727,8 @@ fn read_socket_data_to_remote(
                 // registration so already-freed capacity cannot be missed.
                 max_read = flow_budget_state
                     .available_upload_bytes()
-                    .min(TCP_BUFFER_SIZE);
+                    .min(TCP_BUFFER_SIZE)
+                    .min(flow.upload_room());
             }
             if max_read == 0 {
                 tun.record_tcp_stack_to_remote_backpressure();
@@ -2717,7 +2768,9 @@ fn read_socket_data_to_remote(
             if data.is_empty() {
                 break;
             }
-            let Some(reservation) = flow_budget_state.reserve_pending_upload(data.len()) else {
+            let Some(reservation) = flow_budget_state
+                .reserve_pending_upload(data.len(), Some(Arc::clone(&flow.upload_pending)))
+            else {
                 tun.record_tcp_stack_to_remote_backpressure();
                 socket.abort();
                 break;
@@ -4189,34 +4242,45 @@ where
         return Ok(());
     }
 
-    let mut first = first;
-    let mut batch_messages = 1usize;
-    let mut batch_bytes = first.len();
-    batch.reserve(first.len().min(policy.max_batch_bytes));
-    batch.extend_from_slice(&first.data);
-    if let Some(reservation) = first.reservation.take() {
-        reservations.push(reservation);
-    }
-
-    let mut next = second;
-    while let Some(mut item) = next {
-        let data_len = item.data.len();
-        batch.extend_from_slice(&item.data);
+    let mut batch_messages = 0usize;
+    let mut batch_bytes = 0usize;
+    let write_start = StdInstant::now();
+    let mut write_result = Ok(());
+    let mut queued = second;
+    let mut next = Some(first);
+    while let Some(mut item) = next.take() {
         if let Some(reservation) = item.reservation.take() {
             reservations.push(reservation);
         }
-
         batch_messages = batch_messages.saturating_add(1);
-        batch_bytes = batch_bytes.saturating_add(data_len);
+        batch_bytes = batch_bytes.saturating_add(item.data.len());
+        // Coalesce chunks into writes of up to TCP_BRIDGE_COALESCE_BYTES. The
+        // copy buffer never grows past that, so it is reused rather than
+        // reallocated as fresh pages for every batch.
+        if batch.len() + item.data.len() > TCP_BRIDGE_COALESCE_BYTES && !batch.is_empty() {
+            write_result = remote_writer.write_all(batch).await;
+            batch.clear();
+            if write_result.is_err() {
+                break;
+            }
+        }
+        if item.data.len() > TCP_BRIDGE_COALESCE_BYTES {
+            write_result = remote_writer.write_all(&item.data).await;
+            if write_result.is_err() {
+                break;
+            }
+        } else {
+            batch.extend_from_slice(&item.data);
+        }
         if batch_messages >= policy.max_batch_messages || batch_bytes >= policy.max_batch_bytes {
             break;
         }
-
-        next = from_stack.try_recv().ok();
+        next = queued.take().or_else(|| from_stack.try_recv().ok());
     }
-
-    let write_start = StdInstant::now();
-    let write_result = remote_writer.write_all(batch).await;
+    if write_result.is_ok() && !batch.is_empty() {
+        write_result = remote_writer.write_all(batch).await;
+    }
+    batch.clear();
     let write_duration_ms = elapsed_ms_since(&write_start);
     tun.record_tcp_remote_write_wait(write_duration_ms);
     record_tcp_remote_write_slow_event(
@@ -4237,6 +4301,9 @@ where
     tun.record_tcp_remote_flush_wait(elapsed_ms_since(&flush_start));
     flush_result?;
     tun.record_tcp_remote_write_batch(batch_messages, batch_bytes);
+    // The written bytes no longer occupy the flow's upload budget. Holding the
+    // reservations until the next batch would stall a stack that waits for
+    // this flow's room before reading the data which starts that batch.
     reservations.clear();
     Ok(())
 }
@@ -7116,6 +7183,7 @@ mod tests {
         assert_eq!(policy.tcp_upload.channel_depth, 64);
         assert_eq!(policy.tcp_upload.max_batch_messages, 65);
         assert_eq!(policy.tcp_upload.max_batch_bytes, 256 * 1024);
+        assert_eq!(policy.tcp_upload.max_flow_bytes, 128 * 1024);
     }
 
     #[test]
@@ -7126,7 +7194,164 @@ mod tests {
             assert_eq!(policy.tcp_upload.channel_depth, 128);
             assert_eq!(policy.tcp_upload.max_batch_messages, 129);
             assert_eq!(policy.tcp_upload.max_batch_bytes, 1024 * 1024);
+            assert_eq!(policy.tcp_upload.max_flow_bytes, 256 * 1024);
         }
+    }
+
+    #[test]
+    fn every_profile_bounds_queued_upload_bytes_per_flow() {
+        for profile in [
+            TunRuntimeProfile::Default,
+            TunRuntimeProfile::Mobile,
+            TunRuntimeProfile::MobilePlus,
+            TunRuntimeProfile::Desktop,
+            TunRuntimeProfile::LowMemory,
+            TunRuntimeProfile::Throughput,
+        ] {
+            let policy = tun_runtime_policy_for_options(TunRuntimeOptions::with_profile(profile));
+            // The message-count bound alone admits channel_depth × 32 KiB.
+            assert!(
+                policy.tcp_upload.max_flow_bytes <= 512 * 1024,
+                "{profile:?}"
+            );
+            assert!(
+                policy.tcp_upload.max_flow_bytes
+                    < policy.tcp_upload.channel_depth * TCP_BUFFER_SIZE,
+                "{profile:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn flow_upload_reservations_free_the_flow_before_the_shared_budget() {
+        let mut budget = test_flow_budget(256);
+        let pending = Arc::new(AtomicUsize::new(0));
+        let flow_room = |pending: &Arc<AtomicUsize>| {
+            (64 * 1024usize).saturating_sub(pending.load(Ordering::SeqCst))
+        };
+
+        let first = budget
+            .reserve_pending_upload(32 * 1024, Some(Arc::clone(&pending)))
+            .unwrap();
+        let second = budget
+            .reserve_pending_upload(32 * 1024, Some(Arc::clone(&pending)))
+            .unwrap();
+        assert_eq!(flow_room(&pending), 0);
+        assert_eq!(budget.pending_upload_bytes(), 64 * 1024);
+
+        drop(first);
+        assert_eq!(flow_room(&pending), 32 * 1024);
+        assert_eq!(budget.pending_upload_bytes(), 32 * 1024);
+        drop(second);
+        assert_eq!(pending.load(Ordering::SeqCst), 0);
+        assert_eq!(budget.pending_upload_bytes(), 0);
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_batch_releases_flow_room_after_writing() {
+        let state = Arc::new(TcpUploadBufferState::default());
+        let pending = Arc::new(AtomicUsize::new(0));
+        let tracked = |len: usize| {
+            StackToRemoteData::tracked(
+                Bytes::from(vec![0x5a; len]),
+                TcpUploadReservation::for_flow(Arc::clone(&state), Some(Arc::clone(&pending)), len),
+            )
+        };
+        let (tx, mut rx) = mpsc::channel(4);
+        for _ in 0..3 {
+            tx.try_send(tracked(32 * 1024)).unwrap();
+        }
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
+
+        write_stack_batch_to_remote(
+            &mut writer,
+            &test_tcp443_target(),
+            Some("proxy"),
+            tracked(32 * 1024),
+            &mut rx,
+            &tun,
+            DEFAULT_TCP_UPLOAD_BRIDGE_POLICY,
+            &mut batch,
+            &mut reservations,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(writer.written.len(), 128 * 1024);
+        // A stack waiting for this flow's room must not wait for another batch.
+        assert_eq!(pending.load(Ordering::SeqCst), 0);
+        assert_eq!(state.pending_bytes(), 0);
+        assert!(reservations.is_empty());
+        // Coalesced writes never grow the reused copy buffer past their size.
+        assert!(batch.is_empty());
+        assert!(batch.capacity() <= 2 * TCP_BRIDGE_COALESCE_BYTES);
+        assert_eq!(writer.writes, 2);
+    }
+
+    #[tokio::test]
+    async fn stack_to_remote_writes_large_bursts_as_bounded_coalesced_writes() {
+        let policy = LOW_MEMORY_TCP_UPLOAD_BRIDGE_POLICY;
+        let chunk = Bytes::from_static(&[0x5a; 32 * 1024]);
+        let (tx, mut rx) = mpsc::channel(16);
+        for _ in 0..11 {
+            tx.try_send(stack_to_remote_data(chunk.clone())).unwrap();
+        }
+        let mut writer = CountingWrite::default();
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let mut batch = BytesMut::new();
+        let mut reservations = Vec::new();
+        let target = test_tcp443_target();
+
+        // The 256 KiB batch limit ends the first batch after eight chunks,
+        // written as four 64 KiB writes and one flush.
+        write_stack_batch_to_remote(
+            &mut writer,
+            &target,
+            Some("proxy"),
+            stack_to_remote_data(chunk.clone()),
+            &mut rx,
+            &tun,
+            policy,
+            &mut batch,
+            &mut reservations,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(writer.written.len(), 8 * 32 * 1024);
+        assert_eq!(writer.writes, 4);
+        assert_eq!(writer.flushes, 1);
+        let capacity = batch.capacity();
+        assert!(capacity <= 2 * TCP_BRIDGE_COALESCE_BYTES);
+
+        // The next batch reuses the same buffer.
+        write_stack_batch_to_remote(
+            &mut writer,
+            &target,
+            Some("proxy"),
+            stack_to_remote_data(chunk),
+            &mut rx,
+            &tun,
+            policy,
+            &mut batch,
+            &mut reservations,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(rx.is_empty());
+        assert_eq!(batch.capacity(), capacity);
+        assert_eq!(writer.written.len(), 13 * 32 * 1024);
     }
 
     #[test]
@@ -7248,6 +7473,96 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upload_tcp_data_stops_at_the_flow_byte_limit_and_resumes_after_writing() {
+        let client_ip = Ipv4Addr::new(10, 10, 0, 2);
+        let server_ip = Ipv4Addr::new(203, 0, 113, 7);
+        let client_port = 49_152;
+        let server_port = 443;
+        let client_seq = 1_000u32;
+        let payload: Vec<u8> = (0..1024u32).map(|i| (i % 251) as u8).collect();
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(server_ip), server_port);
+
+        let mut device = PacketDevice::new(1500);
+        let mut iface_config = InterfaceConfig::new(HardwareAddress::Ip);
+        iface_config.random_seed = DEFAULT_RANDOM_SEED;
+        let mut iface = Interface::new(iface_config, &mut device, Instant::now());
+        iface.set_any_ip(true);
+        let mut sockets = SocketSet::new(Vec::new());
+        let mut listeners = HashMap::new();
+        add_tcp_listener(&mut sockets, &mut listeners, endpoint);
+        let handle = listeners.get(&endpoint).unwrap().handle;
+        let packet = |seq: u32, ack: u32, flags: u8, data: &[u8]| {
+            Bytes::from(build_ipv4_tcp_packet(
+                client_ip,
+                client_port,
+                server_ip,
+                server_port,
+                seq,
+                ack,
+                flags,
+                data,
+            ))
+        };
+        device.push_inbound(packet(client_seq, 0, TCP_SYN, &[]));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        let server_seq = ipv4_tcp_sequence(&device.pop_outbound().unwrap()).unwrap();
+        device.push_inbound(packet(client_seq + 1, server_seq + 1, TCP_ACK, &[]));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+        while device.pop_outbound().is_some() {}
+        device.push_inbound(packet(client_seq + 1, server_seq + 1, TCP_ACK, &payload));
+        iface.poll(Instant::now(), &mut device, &mut sockets);
+
+        let tun = TunEndpoint::new(xray_tun::TunConfig {
+            mtu: 1500,
+            queue_depth: 1,
+        });
+        let (to_remote, mut from_stack) = mpsc::channel(8);
+        let mut flow_budget_state = test_flow_budget(256);
+        let mut tcp_flows = HashMap::new();
+        tcp_flows.insert(
+            handle,
+            TcpFlow {
+                generation: 1,
+                to_remote: Some(to_remote),
+                task: None,
+                remote_open: true,
+                upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: 400,
+                pending_remote: VecDeque::new(),
+                pending_remote_bytes: 0,
+                has_deferred_remote_data: false,
+                pending_remote_delivery: None,
+                remote_closed: false,
+                remote_aborted: false,
+            },
+        );
+
+        let mut received = Vec::new();
+        for expected in [400, 400, 224] {
+            read_socket_data_to_remote(&tun, &mut sockets, &mut tcp_flows, &mut flow_budget_state);
+            let message = from_stack.try_recv().unwrap();
+            assert_eq!(message.data.len(), expected);
+            assert!(
+                from_stack.try_recv().is_err(),
+                "the flow limit admits no second message"
+            );
+            assert_eq!(
+                tcp_flows[&handle].upload_pending.load(Ordering::SeqCst),
+                expected
+            );
+            received.extend_from_slice(&message.data);
+            // Writing the message releases its reservation and the flow's room.
+            drop(message);
+            assert_eq!(tcp_flows[&handle].upload_pending.load(Ordering::SeqCst), 0);
+        }
+        assert_eq!(received, payload);
+        assert!(!sockets.get::<tcp::Socket>(handle).can_recv());
+        assert_eq!(flow_budget_state.pending_upload_bytes(), 0);
+        assert!(tun.stats().await.tcp_stack_to_remote_backpressure_events >= 2);
+    }
+
+    #[tokio::test]
     async fn upload_tcp_data_and_fin_backpressure_when_combined_budget_is_full() {
         let client_ip = Ipv4Addr::new(10, 10, 0, 2);
         let server_ip = Ipv4Addr::new(203, 0, 113, 7);
@@ -7323,6 +7638,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7372,6 +7689,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: NORMAL_TCP_REMOTE_PENDING_LIMIT,
                 has_deferred_remote_data: false,
@@ -7427,6 +7746,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7477,6 +7798,8 @@ mod tests {
                 task: None,
                 remote_open: false,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7545,6 +7868,8 @@ mod tests {
             task: Some(task),
             remote_open: false,
             upload_queue_packets: None,
+            upload_pending: Arc::default(),
+            upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
             pending_remote: VecDeque::new(),
             pending_remote_bytes: 0,
             has_deferred_remote_data: false,
@@ -7600,6 +7925,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote,
                 pending_remote_bytes: 1024 * 1024,
                 has_deferred_remote_data: false,
@@ -7657,6 +7984,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,
@@ -7718,6 +8047,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote,
                 pending_remote_bytes: PRESSURE_TCP_REMOTE_PENDING_LIMIT,
                 has_deferred_remote_data: false,
@@ -7815,6 +8146,8 @@ mod tests {
                 task: None,
                 remote_open: true,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote,
                 pending_remote_bytes: TCP_BUFFER_SIZE,
                 has_deferred_remote_data: false,
@@ -7913,6 +8246,8 @@ mod tests {
                 task: None,
                 remote_open: false,
                 upload_queue_packets: None,
+                upload_pending: Arc::default(),
+                upload_max_bytes: TCP_BRIDGE_FLOW_MAX_BYTES,
                 pending_remote: VecDeque::new(),
                 pending_remote_bytes: 0,
                 has_deferred_remote_data: false,

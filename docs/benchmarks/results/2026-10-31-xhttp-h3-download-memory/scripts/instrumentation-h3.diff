@@ -1,0 +1,202 @@
+diff -ruN h3-pristine/h3-0.0.8/src/buf.rs exp-src/vendor-exp/h3/src/buf.rs
+--- h3/src/buf.rs
++++ h3/src/buf.rs
+@@ -2,16 +2,48 @@
+ use std::io::IoSlice;
+ 
+ use bytes::{Buf, Bytes};
++use std::sync::atomic::{AtomicI64, Ordering::Relaxed};
+ 
++/// Experiment: bytes held by every `BufList`.
++pub static XRAY_EXP_BUFLIST_BYTES: AtomicI64 = AtomicI64::new(0);
++/// Experiment: chunks held by every `BufList`.
++pub static XRAY_EXP_BUFLIST_CHUNKS: AtomicI64 = AtomicI64::new(0);
++/// Experiment: largest chunk count one `BufList` reached.
++pub static XRAY_EXP_BUFLIST_MAX_CHUNKS: AtomicI64 = AtomicI64::new(0);
++
+ #[derive(Debug)]
+ pub(crate) struct BufList<T> {
+     bufs: VecDeque<T>,
++    exp_bytes: usize,
+ }
+ 
++impl<T> BufList<T> {
++    fn exp_add(&mut self, bytes: usize) {
++        self.exp_bytes += bytes;
++        XRAY_EXP_BUFLIST_BYTES.fetch_add(bytes as i64, Relaxed);
++        XRAY_EXP_BUFLIST_CHUNKS.fetch_add(1, Relaxed);
++        XRAY_EXP_BUFLIST_MAX_CHUNKS.fetch_max(self.bufs.len() as i64 + 1, Relaxed);
++    }
++
++    fn exp_sub(&mut self, bytes: usize, chunks: usize) {
++        self.exp_bytes -= bytes;
++        XRAY_EXP_BUFLIST_BYTES.fetch_sub(bytes as i64, Relaxed);
++        XRAY_EXP_BUFLIST_CHUNKS.fetch_sub(chunks as i64, Relaxed);
++    }
++}
++
++impl<T> Drop for BufList<T> {
++    fn drop(&mut self) {
++        XRAY_EXP_BUFLIST_BYTES.fetch_sub(self.exp_bytes as i64, Relaxed);
++        XRAY_EXP_BUFLIST_CHUNKS.fetch_sub(self.bufs.len() as i64, Relaxed);
++    }
++}
++
+ impl<T: Buf> BufList<T> {
+     pub(crate) fn new() -> BufList<T> {
+         BufList {
+             bufs: VecDeque::new(),
++            exp_bytes: 0,
+         }
+     }
+ 
+@@ -19,6 +51,7 @@
+     #[allow(dead_code)]
+     pub(crate) fn push(&mut self, buf: T) {
+         debug_assert!(buf.has_remaining());
++        self.exp_add(buf.remaining());
+         self.bufs.push_back(buf);
+     }
+ 
+@@ -34,7 +67,11 @@
+ 
+ impl BufList<Bytes> {
+     pub fn take_first_chunk(&mut self) -> Option<Bytes> {
+-        self.bufs.pop_front()
++        let chunk = self.bufs.pop_front();
++        if let Some(chunk) = &chunk {
++            self.exp_sub(chunk.len(), 1);
++        }
++        chunk
+     }
+ 
+     pub fn take_chunk(&mut self, max_len: usize) -> Option<Bytes> {
+@@ -43,9 +80,13 @@
+             .front_mut()
+             .map(|chunk| chunk.split_to(usize::min(max_len, chunk.remaining())));
+ 
++        if let Some(chunk) = &chunk {
++            self.exp_sub(chunk.len(), 0);
++        }
+         if let Some(front) = self.bufs.front() {
+             if front.remaining() == 0 {
+                 let _ = self.bufs.pop_front();
++                self.exp_sub(0, 1);
+             }
+         }
+         chunk
+@@ -56,6 +97,7 @@
+         T: Buf,
+     {
+         debug_assert!(buf.has_remaining());
++        self.exp_add(buf.remaining());
+         self.bufs.push_back(buf.copy_to_bytes(buf.remaining()))
+     }
+ }
+@@ -82,6 +124,7 @@
+ 
+     #[inline]
+     fn advance(&mut self, mut cnt: usize) {
++        self.exp_sub(cnt, 0);
+         while cnt > 0 {
+             {
+                 let front = &mut self.bufs[0];
+@@ -95,6 +138,7 @@
+                 }
+             }
+             self.bufs.pop_front();
++            self.exp_sub(0, 1);
+         }
+     }
+ 
+diff -ruN h3-pristine/h3-0.0.8/src/frame.rs exp-src/vendor-exp/h3/src/frame.rs
+--- h3/src/frame.rs
++++ h3/src/frame.rs
+@@ -43,6 +43,17 @@
+     }
+ }
+ 
++/// Experiment: 0 = h3 0.0.8, 1 = decode buffered frames first (h3#344),
++/// 2 = also read from QUIC in poll_data only when nothing is buffered.
++fn exp_fix() -> u8 {
++    static FIX: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
++    *FIX.get_or_init(|| match std::env::var("XRAY_EXP_H3_FIX").as_deref() {
++        Ok("next") => 1,
++        Ok("full") => 2,
++        _ => 0,
++    })
++}
++
+ impl<S, B> FrameStream<S, B>
+ where
+     S: RecvStream,
+@@ -59,6 +70,34 @@
+             "There is still data to read, please call poll_data() until it returns None."
+         );
+ 
++        if exp_fix() >= 1 {
++            loop {
++                match self.decoder.decode(self.stream.buf_mut())? {
++                    Some(Frame::Data(PayloadLen(len))) => {
++                        self.remaining_data = len;
++                        return Poll::Ready(Ok(Some(Frame::Data(PayloadLen(len)))));
++                    }
++                    frame @ Some(Frame::WebTransportStream(_)) => {
++                        self.remaining_data = usize::MAX;
++                        return Poll::Ready(Ok(frame));
++                    }
++                    Some(frame) => return Poll::Ready(Ok(Some(frame))),
++                    None => {}
++                }
++                match self.try_recv(cx)? {
++                    Poll::Ready(false) => continue,
++                    Poll::Pending => return Poll::Pending,
++                    Poll::Ready(true) => {
++                        return if self.stream.buf_mut().has_remaining() {
++                            Poll::Ready(Err(FrameStreamError::UnexpectedEnd))
++                        } else {
++                            Poll::Ready(Ok(None))
++                        };
++                    }
++                }
++            }
++        }
++
+         loop {
+             let end = self.try_recv(cx)?;
+ 
+@@ -102,10 +141,14 @@
+             return Poll::Ready(Ok(None));
+         };
+ 
+-        let end = match self.try_recv(cx) {
+-            Poll::Ready(Ok(end)) => end,
+-            Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+-            Poll::Pending => false,
++        let end = if exp_fix() >= 2 && self.stream.buf().remaining() >= self.remaining_data {
++            self.stream.is_eos()
++        } else {
++            match self.try_recv(cx) {
++                Poll::Ready(Ok(end)) => end,
++                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
++                Poll::Pending => false,
++            }
+         };
+         let data = self.stream.buf_mut().take_chunk(self.remaining_data);
+ 
+diff -ruN h3-pristine/h3-0.0.8/src/lib.rs exp-src/vendor-exp/h3/src/lib.rs
+--- h3/src/lib.rs
++++ h3/src/lib.rs
+@@ -1,3 +1,4 @@
++#![allow(warnings)]
+ //! HTTP/3 client and server
+ #![deny(missing_docs, clippy::self_named_module_files)]
+ #![allow(clippy::derive_partial_eq_without_eq)]
+@@ -14,6 +15,7 @@
+ //pub use error::Error;
+ 
+ mod buf;
++pub use buf::{XRAY_EXP_BUFLIST_BYTES, XRAY_EXP_BUFLIST_CHUNKS, XRAY_EXP_BUFLIST_MAX_CHUNKS};
+ 
+ mod shared_state;
+ 
