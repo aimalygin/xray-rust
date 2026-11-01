@@ -97,6 +97,67 @@ fn udp_hop_mask_normalizes_supported_mode_and_rejects_unimplemented_modes() {
     assert!(parse_xray_json(&raw.to_string()).is_err());
 }
 
+fn xhttp(alpn: Value, finalmask: Value) -> Value {
+    json!({"outbounds":[{"tag":"proxy","protocol":"vless",
+        "settings":{"vnext":[{"address":"server.example","port":443,
+            "users":[{"id":"00010203-0405-0607-0809-0a0b0c0d0e0f","encryption":"none"}]}]},
+        "streamSettings":{"network":"xhttp","security":"tls",
+            "tlsSettings":{"serverName":"server.example","alpn":alpn},
+            "finalmask":finalmask}}]})
+}
+
+#[test]
+fn udp_hop_mask_hops_xhttp_over_h3_like_hysteria() {
+    let mask = json!({"type":"udphop","settings":{"mode":"intervalLocal,intervalRemote",
+        "remotePorts":"20000-20002","interval":"5-10"}});
+    let parrot = json!({"disableChromeParrot":true});
+    let raw = xhttp(json!(["h3"]), json!({"udp":[mask],"quicParams":parrot}));
+    let parsed = parse_xray_json(&raw.to_string()).unwrap();
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let hop = &parsed.config.outbounds[0]
+        .stream
+        .quic_params
+        .as_ref()
+        .unwrap()
+        .udp_hop;
+    assert_eq!(hop.ports, [20000, 20001, 20002]);
+    assert_eq!((hop.interval.from, hop.interval.to), (5, 10));
+    // Without exact h3 ALPN XHTTP runs over TCP, where there is nothing to hop.
+    for alpn in [json!(["h2"]), json!(["h3", "h2"])] {
+        let raw = xhttp(alpn.clone(), json!({"udp":[mask]}));
+        assert!(parse_xray_json(&raw.to_string()).is_err(), "{alpn}");
+    }
+}
+
+#[test]
+fn legacy_udp_hop_hint_points_only_quic_carriers_at_the_udphop_mask() {
+    let hint = |raw: &Value| -> String {
+        let parsed = parse_xray_json(&raw.to_string()).unwrap();
+        let [message] = parsed
+            .diagnostics
+            .into_iter()
+            .map(|d| d.message)
+            .filter(|message| message.contains("legacy udpHop"))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
+        message
+    };
+    let legacy = json!({"udpHop":{"ports":"443"},"disableChromeParrot":true});
+    let mut hysteria = hysteria();
+    hysteria["outbounds"][0]["streamSettings"]["finalmask"]["quicParams"] = legacy.clone();
+    let h3 = xhttp(json!(["h3"]), json!({"quicParams":legacy}));
+    for raw in [hysteria, h3] {
+        assert!(hint(&raw).contains("migrate to finalmask.udp udphop"));
+    }
+    let h2 = xhttp(
+        json!(["h2"]),
+        json!({"quicParams":{"udpHop":{"ports":"443"}}}),
+    );
+    let message = hint(&h2);
+    assert!(message.contains("has no effect"), "{message}");
+}
+
 #[test]
 fn quic_fingerprint_limit_is_explicit_and_unimplemented_controls_fail_closed() {
     let mut raw = hysteria();

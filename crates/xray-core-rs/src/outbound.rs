@@ -7030,10 +7030,10 @@ mod tests {
 
     #[test]
     fn unsupported_explicit_h3_quic_features_fail_closed_but_h2_ignores_them() {
-        let invalid = QuicParamsSettings {
+        let hop = |from| QuicParamsSettings {
             udp_hop: xray_config::QuicUdpHopSettings {
                 ports: vec![4_443],
-                interval: xray_config::QuicIntervalRange { from: 5, to: 6 },
+                interval: xray_config::QuicIntervalRange { from, to: 6 },
             },
             ..QuicParamsSettings::default()
         };
@@ -7043,7 +7043,9 @@ mod tests {
             TargetAddr::Domain("origin.example".to_owned()),
             443,
         );
-        h3.stream.quic_params = Some(invalid.clone());
+        h3.stream.quic_params = Some(hop(5));
+        build_vless_tcp_outbound(&h3).expect("H3 hops its UDP carrier");
+        h3.stream.quic_params = Some(hop(4));
         assert!(matches!(
             build_vless_tcp_outbound(&h3),
             Err(CoreError::InvalidXhttpConfiguration(message)) if message.contains("UDP hop")

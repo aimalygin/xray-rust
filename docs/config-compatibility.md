@@ -36,11 +36,15 @@ Hysteria accepts one Salamander mask and the v26.10.21 UDP-hop mask:
 
 Both masks are optional. UDP-hop must be first; the supported mode changes the
 local socket and remote port together. Independent `intervalLocal`,
-`intervalRemote`, `perConnRemote`, nonempty `remoteIPs` and XHTTP H3 hopping are
-rejected. Ports preserve order and duplicate weights, with at most 65535
+`intervalRemote`, `perConnRemote` and nonempty `remoteIPs` are rejected. XHTTP
+with exact `h3` ALPN accepts the same UDP-hop mask (see the XHTTP H3 section).
+Ports preserve order and duplicate weights, with at most 65535
 expanded entries and at least one port. An omitted/zero interval defaults to
 30 seconds; other bounds must both be at least five seconds. The first packet
 already uses a randomly selected port; all ports must reach the same server.
+Each scheduled hop draws among the ports other than the current one, keeping
+duplicate weights, so every hop changes the path. Xray draws with
+replacement, so with two ports half of its hops keep the same port.
 The old `quicParams.udpHop` spelling remains accepted with a migration warning;
 combining both spellings fails. Profile import emits the new mask form.
 
@@ -1053,8 +1057,14 @@ connection. Standard BBR is likewise a Quinn-BBR approximation with Xray's
 initial congestion window, not quic-go's exact controller. Distinct
 `maxStreamReceiveWindow`/`maxConnectionReceiveWindow` values, QUIC v2 through
 the transport API, conservative/aggressive BBR profiles, Brutal and
-force-Brutal, non-empty `udpHop`, and `debug: true` fail closed before opening
-a socket. H3 rejects TCP masks and UDP masks other than the bounded noise mask; the opt-in TCP fragment
+force-Brutal, and `debug: true` fail closed before opening
+a socket. H3 accepts the UDP-hop mask, or the legacy `quicParams.udpHop`, with
+the Hysteria rules above: the first Initial already goes to a hop port, and
+each interval moves the connection to a fresh protected socket aimed at
+another port while QUIC migrates the path. The timer starts once the
+connection exists and stops with it; a failed hop keeps the current path until
+the next interval, as in Xray. Each pooled QUIC connection hops independently.
+H3 rejects TCP masks and UDP masks other than UDP-hop and the bounded noise mask; the opt-in TCP fragment
 and Hysteria Salamander support described above does not apply to H3. H3 has hermetic mode, wire, pool, lifecycle, TLS, and protected
 UDP tests, and the ignored live Xray-core `packet-up`, `stream-up`, and
 `stream-one` interoperability cases pass. The current pool conservatively

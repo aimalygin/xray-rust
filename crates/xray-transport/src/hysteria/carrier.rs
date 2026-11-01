@@ -92,6 +92,27 @@ impl HysteriaCarrierConfig {
         peer
     }
 
+    /// The port for a scheduled hop: drawn among the configured ports other
+    /// than `current_port`, so every hop changes the path. Xray draws with
+    /// replacement, so with two ports half of its hops leave the path as is.
+    /// A single distinct port keeps it.
+    pub(crate) fn next_hop_peer(&self, mut peer: SocketAddr, current_port: u16) -> SocketAddr {
+        let mut others = self
+            .udp_hop
+            .ports
+            .iter()
+            .filter(|&&port| port != current_port);
+        let count = others.clone().count();
+        let port = match count {
+            0 => current_port,
+            _ => *others
+                .nth(rand::thread_rng().gen_range(0..count))
+                .expect("index below count"),
+        };
+        peer.set_port(port);
+        peer
+    }
+
     pub(crate) fn next_interval(&self) -> Option<Duration> {
         if self.udp_hop.ports.is_empty() {
             return None;
@@ -449,6 +470,33 @@ mod tests {
         }
         config.udp_hop.ports.push(0);
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn scheduled_hops_always_leave_the_current_port() {
+        let logical: SocketAddr = "192.0.2.1:443".parse().unwrap();
+        let mut config = HysteriaCarrierConfig::default();
+        config.udp_hop.ports = vec![443, 8443];
+        // With two ports Xray's draw with replacement stays put half the time.
+        let mut current = 443;
+        for _ in 0..100 {
+            let next = config.next_hop_peer(logical, current);
+            assert_eq!(next.ip(), logical.ip());
+            assert_ne!(next.port(), current);
+            current = next.port();
+        }
+        // Duplicates do not count as a different port.
+        config.udp_hop.ports = vec![443, 443, 8443];
+        assert_eq!(config.next_hop_peer(logical, 443).port(), 8443);
+        // Every other port is reachable.
+        config.udp_hop.ports = (1000..1010).collect();
+        let seen: std::collections::HashSet<u16> = (0..1000)
+            .map(|_| config.next_hop_peer(logical, 1000).port())
+            .collect();
+        assert_eq!(seen, (1001..1010).collect());
+        // A single distinct port has nowhere else to go.
+        config.udp_hop.ports = vec![443, 443];
+        assert_eq!(config.next_hop_peer(logical, 443).port(), 443);
     }
 
     #[tokio::test]
