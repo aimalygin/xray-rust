@@ -5,6 +5,8 @@ Requires Xray-core v26.10.21, openssl, and either Go (to inspect its clean build
 identity) or an explicitly pinned binary SHA-256. Hash pinning alone does not
 verify upstream provenance. Creates a new private directory containing ephemeral
 credentials; removes those credentials when stopped. Never changes host routes.
+--protocol v09 serves SOCKS5 (password, UDP), HTTP CONNECT (Basic, plain and
+TLS) and classic Shadowsocks AEAD; see docs/v09-release-evidence.md.
 """
 
 import argparse
@@ -16,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import signal
 import socket
 import struct
@@ -25,6 +28,10 @@ from urllib.parse import quote
 
 
 REFERENCE = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+V08_PROTOCOLS = ("trojan", "shadowsocks2022", "vmess")
+V09_PROTOCOLS = ("socks", "http", "https", "shadowsocks-aead")
+SHADOWSOCKS_AEAD_METHOD = "aes-256-gcm"
+REDACTION_MARKER = "NONSECRET-V09-IMPORT-CONTROL"
 
 
 def openssl(*args):
@@ -51,39 +58,71 @@ class Echo(asyncio.DatagramProtocol):
             self.transport.sendto(data, address)
 
 
+def dns_answer(data, probe_host):
+    if not 17 <= len(data) <= 512 or data[4:12] != b"\0\1\0\0\0\0\0\0":
+        return None
+    offset, labels = 12, []
+    try:
+        while data[offset]:
+            length = data[offset]
+            offset += 1
+            if length > 63 or offset + length >= len(data):
+                return None
+            labels.append(data[offset:offset + length].decode("ascii").lower())
+            offset += length
+        offset += 1
+        query_type, query_class = struct.unpack("!HH", data[offset:offset + 4])
+        end = offset + 4
+    except (IndexError, UnicodeError, struct.error):
+        return None
+    if end != len(data):
+        return None
+    known = ".".join(labels) == probe_host and query_class == 1
+    answer = b""
+    if known and query_type in (1, 28):
+        family = socket.AF_INET if query_type == 1 else socket.AF_INET6
+        value = "198.51.100.7" if query_type == 1 else "2001:db8::7"
+        packed = socket.inet_pton(family, value)
+        answer = b"\xc0\x0c" + struct.pack("!HHIH", query_type, 1, 5, len(packed)) + packed
+    flags = 0x8180 if known else 0x8183
+    header = data[:2] + struct.pack("!HHHHH", flags, 1, int(bool(answer)), 0, 0)
+    return header + data[12:end] + answer
+
+
 class DNS(Echo):
     def __init__(self, probe_host="v07-probe.test"):
         self.probe_host = probe_host
 
     def datagram_received(self, data, address):
-        if not 17 <= len(data) <= 512 or data[4:12] != b"\0\1\0\0\0\0\0\0":
-            return
-        offset, labels = 12, []
+        response = dns_answer(data, self.probe_host)
+        if response is not None:
+            self.transport.sendto(response, address)
+
+
+async def tcp_dns(reader, writer, probe_host, query_limit=64):
+    # HTTP CONNECT has no UDP relay, so its client fixture resolves over
+    # tcp:// through the proxy. Same answers as the UDP listener, RFC 1035
+    # length framing, bounded per connection.
+    try:
+        for _ in range(query_limit):
+            try:
+                prefix = await asyncio.wait_for(reader.readexactly(2), 10)
+            except asyncio.IncompleteReadError:
+                break
+            query = await asyncio.wait_for(reader.readexactly(struct.unpack("!H", prefix)[0]), 10)
+            response = dns_answer(query, probe_host)
+            if response is None:
+                break
+            writer.write(struct.pack("!H", len(response)) + response)
+            await asyncio.wait_for(writer.drain(), 10)
+    except (TimeoutError, ConnectionError, asyncio.IncompleteReadError):
+        pass
+    finally:
+        writer.close()
         try:
-            while data[offset]:
-                length = data[offset]
-                offset += 1
-                if length > 63 or offset + length >= len(data):
-                    return
-                labels.append(data[offset:offset + length].decode("ascii").lower())
-                offset += length
-            offset += 1
-            query_type, query_class = struct.unpack("!HH", data[offset:offset + 4])
-            end = offset + 4
-        except (IndexError, UnicodeError, struct.error):
-            return
-        if end != len(data):
-            return
-        known = ".".join(labels) == self.probe_host and query_class == 1
-        answer = b""
-        if known and query_type in (1, 28):
-            family = socket.AF_INET if query_type == 1 else socket.AF_INET6
-            value = "198.51.100.7" if query_type == 1 else "2001:db8::7"
-            packed = socket.inet_pton(family, value)
-            answer = b"\xc0\x0c" + struct.pack("!HHIH", query_type, 1, 5, len(packed)) + packed
-        flags = 0x8180 if known else 0x8183
-        header = data[:2] + struct.pack("!HHHHH", flags, 1, int(bool(answer)), 0, 0)
-        self.transport.sendto(header + data[12:end] + answer, address)
+            await writer.wait_closed()
+        except ConnectionError:
+            pass
 
 
 async def tcp_echo(reader, writer, byte_limit=1024 * 1024):
@@ -123,7 +162,7 @@ def loopback_outbound():
 def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", port=None, mode="smoke", probe_host="v07-probe.test", direct_targets=False):
     if direct_targets and protocol not in ("both", "wireguard", "hysteria2"):
         raise ValueError("direct targets require WireGuard or Hysteria")
-    if protocol in ("v08", "trojan", "shadowsocks2022", "vmess"):
+    if protocol in ("v08", "v09", *V08_PROTOCOLS, *V09_PROTOCOLS):
         return write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host)
     def save(name, value):
         (root / name).write_text(json.dumps(value, indent=2) + "\n")
@@ -219,13 +258,36 @@ def write_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol="both", po
     save("v07-probe.json", {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host})
 
 
+def invalid_imports(selected):
+    """Malformed links that must be rejected without echoing the marker."""
+    marker = REDACTION_MARKER
+    rows = {
+        # Empty host literal.
+        "socks": ("socks", f"socks5://v09-user:{marker}@[]:1080"),
+        # Share links carry no query; dropping one could silently lose TLS policy.
+        "http": ("http", f"https://v09-user:{marker}@127.0.0.1:443?sni=v09-probe.test"),
+        # Stream ciphers stay rejected, as upstream. Plain userinfo keeps the
+        # marker literal, so an error echoing the raw link is caught too.
+        "shadowsocks-aead": ("shadowsocks2022", f"ss://rc4-md5:{marker}@127.0.0.1:8388"),
+    }
+    families = {"https": "http"}
+    wanted = dict.fromkeys(families.get(fmt, fmt) for fmt in selected if fmt in V09_PROTOCOLS)
+    return [{"scenario": name, "format": rows[name][0], "text": rows[name][1]} for name in wanted]
+
+
 def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, port, mode, probe_host):
-    """New client fixtures retain the existing device harness envelope."""
+    """New client fixtures retain the existing device harness envelope.
+
+    v0.9 cases carry a scenario-prefixed label (``scenario:variant``) and a
+    ``udp`` expectation: HTTP CONNECT has no UDP relay, so its UDP checks are
+    fail-closed negative controls and its DNS resolves over TCP.
+    """
     openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
             "-nodes", "-days", "1", "-subj", "/CN=v08-probe.test",
             "-keyout", str(root / "tls.key"), "-out", str(root / "tls.crt"))
     pin = hashlib.sha256(openssl("x509", "-in", str(root / "tls.crt"), "-outform", "DER")).hexdigest()
-    selected = ("trojan", "shadowsocks2022", "vmess") if protocol == "v08" else (protocol,)
+    selected = {"v08": V08_PROTOCOLS, "v09": V09_PROTOCOLS}.get(protocol, (protocol,))
+    certificates = [{"certificateFile": str(root / "tls.crt"), "keyFile": str(root / "tls.key")}]
     inbounds, cases, ports = [], [], set()
     for fmt in selected:
         if port is None:
@@ -243,13 +305,15 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
         settings = {"address": bind, "port": carrier_port}
         stream = {"network": "raw"}
         server_stream = {"network": "raw"}
+        label, import_format, udp_expected = None, fmt, True
+        dns_server = f"198.51.100.53:{dns_port}"
         if fmt == "trojan":
             password = secrets.token_urlsafe(32)
             name = "trojan"
             settings["password"] = password
             server_settings = {"clients": [{"password": password}]}
             stream.update(security="tls", tlsSettings={"serverName": "v08-probe.test", "pinnedPeerCertSha256": pin})
-            server_stream.update(security="tls", tlsSettings={"certificates": [{"certificateFile": str(root / "tls.crt"), "keyFile": str(root / "tls.key")}]})
+            server_stream.update(security="tls", tlsSettings={"certificates": certificates})
             text = f"trojan://{password}@{bind}:{carrier_port}?sni=v08-probe.test"
         elif fmt == "shadowsocks2022":
             password = base64.b64encode(secrets.token_bytes(32)).decode()
@@ -257,28 +321,85 @@ def write_client_fixtures(root, bind, tcp_port, udp_port, dns_port, protocol, po
             settings.update(method="2022-blake3-chacha20-poly1305", password=password)
             server_settings = {"method": settings["method"], "password": password, "network": "tcp,udp"}
             text = f"ss://{settings['method']}:{quote(password, safe='')}@{bind}:{carrier_port}"
-        else:
+        elif fmt == "vmess":
             user = str(uuid.uuid4())
             name = "vmess"
             settings.update(id=user, security="auto", alterId=0)
             server_settings = {"clients": [{"id": user}]}
             text = "vmess://" + base64.b64encode(json.dumps({"v": "2", "ps": "device fixture", "add": bind, "port": str(carrier_port), "id": user, "aid": "0", "net": "tcp", "tls": "", "scy": "auto"}).encode()).decode()
+        elif fmt == "socks":
+            user, password = "v09-" + secrets.token_hex(6), secrets.token_urlsafe(32)
+            name, label = "socks", "socks:password"
+            settings.update({"user": user, "pass": password})
+            # Xray answers UDP ASSOCIATE with "ip"; its default is loopback.
+            server_settings = {"auth": "password", "accounts": [{"user": user, "pass": password}],
+                               "udp": True, "ip": bind}
+            text = f"socks5://{quote(user, safe='')}:{quote(password, safe='')}@{bind}:{carrier_port}"
+        elif fmt in ("http", "https"):
+            user, password = "v09-" + secrets.token_hex(6), secrets.token_urlsafe(32)
+            name, import_format, udp_expected = "http", "http", False
+            label = "http:tls" if fmt == "https" else "http:plain"
+            settings.update({"user": user, "pass": password})
+            server_settings = {"accounts": [{"user": user, "pass": password}]}
+            if fmt == "https":
+                stream.update(security="tls", tlsSettings={
+                    "serverName": "v08-probe.test", "alpn": ["http/1.1"], "pinnedPeerCertSha256": pin})
+                server_stream.update(security="tls", tlsSettings={
+                    "alpn": ["http/1.1"], "certificates": certificates})
+            text = f"{fmt}://{quote(user, safe='')}:{quote(password, safe='')}@{bind}:{carrier_port}"
+            dns_server = f"tcp://198.51.100.53:{dns_port}"
+        elif fmt == "shadowsocks-aead":
+            method, password = SHADOWSOCKS_AEAD_METHOD, secrets.token_urlsafe(24)
+            name, import_format = "shadowsocks", "shadowsocks2022"
+            label = f"shadowsocks-aead:{method}"
+            settings.update(method=method, password=password)
+            server_settings = {"method": method, "password": password, "network": "tcp,udp"}
+            text = sip002(method, password, bind, carrier_port)
+        else:
+            raise ValueError(f"unsupported client fixture protocol: {fmt}")
         inbounds.append({"listen": bind, "port": carrier_port, "protocol": name, "settings": server_settings, "streamSettings": server_stream})
         config = {
             "inbounds": [{"tag": "tun-in", "protocol": "tun"}],
-            "dns": {"servers": [f"198.51.100.53:{dns_port}"]},
+            "dns": {"servers": [dns_server]},
             "routing": {"domainStrategy": "AsIs", "rules": [
                 {"type": "field", "domain": [f"full:{probe_host}"], "outboundTag": "proxy"},
                 {"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "proxy"}]},
             "outbounds": [{"tag": "proxy", "protocol": name, "settings": settings, "streamSettings": stream}],
         }
-        cases.append({"format": fmt, "text": text, "serverAddress": bind, "configJSON": json.dumps(config)})
+        case = {"format": import_format, "text": text, "serverAddress": bind, "configJSON": json.dumps(config)}
+        if label:
+            case.update(label=label, udp=udp_expected)
+        cases.append(case)
     server = {"log": {"loglevel": "warning"}, "inbounds": inbounds,
               "outbounds": [{"tag": "blocked", "protocol": "blackhole"},
                             loopback_outbound()],
               "routing": {"rules": [{"type": "field", "ip": ["198.51.100.0/24", "2001:db8::/32"], "outboundTag": "echo"}]}}
+    envelope = {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host}
+    invalid = invalid_imports(selected)
+    if invalid:
+        envelope.update(redactionMarker=REDACTION_MARKER, invalidImports=invalid)
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
-    (root / "v07-probe.json").write_text(json.dumps({"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port, "mode": mode, "probeHost": probe_host}, indent=2) + "\n")
+    (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
+
+
+def sip002(method, password, host, port):
+    """SIP002 requires Base64URL userinfo for AEAD-2017 methods."""
+    userinfo = base64.urlsafe_b64encode(f"{method}:{password}".encode()).decode().rstrip("=")
+    return f"ss://{userinfo}@{host}:{port}"
+
+
+async def dns_listeners(loop, address, probe_host):
+    """UDP and TCP DNS on one port number, so plain and tcp:// servers agree."""
+    for _ in range(16):
+        transport, _ = await loop.create_datagram_endpoint(lambda: DNS(probe_host), local_addr=(address, 0))
+        try:
+            server = await asyncio.start_server(lambda r, w: tcp_dns(r, w, probe_host), address,
+                                                transport.get_extra_info("sockname")[1], limit=8192)
+        except OSError:
+            transport.close()
+            continue
+        return transport, server
+    raise RuntimeError("no DNS port is free for both UDP and TCP")
 
 
 async def serve(args):
@@ -287,7 +408,7 @@ async def serve(args):
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     direct_targets = getattr(args, "direct_targets", False)
-    transports, child, tcp, tcp6 = [], None, None, None
+    transports, child, tcp, tcp6, dns_tcp = [], None, None, None, None
     try:
         echo_bind = "198.51.100.7" if direct_targets else "127.0.0.1"
         dns_bind = "198.51.100.53" if direct_targets else "127.0.0.1"
@@ -296,9 +417,10 @@ async def serve(args):
         # Each fixture gets a fresh name so an OS-level negative answer from a
         # previous, stopped VPN does not poison the next baseline before DNS I/O.
         probe_host = f"v07-probe-{secrets.token_hex(6)}.test"
-        for protocol, address in ((Echo, echo_bind), (lambda: DNS(probe_host), dns_bind)):
-            transport, _ = await loop.create_datagram_endpoint(protocol, local_addr=(address, 0))
-            transports.append(transport)
+        transport, _ = await loop.create_datagram_endpoint(Echo, local_addr=(echo_bind, 0))
+        transports.append(transport)
+        transport, dns_tcp = await dns_listeners(loop, dns_bind, probe_host)
+        transports.append(transport)
         tcp_port = tcp.sockets[0].getsockname()[1]
         udp_port, dns_port = (transport.get_extra_info("sockname")[1] for transport in transports)
         if direct_targets:
@@ -335,7 +457,7 @@ async def serve(args):
             except TimeoutError:
                 child.kill()
                 await child.wait()
-        for server in (tcp, tcp6):
+        for server in (tcp, tcp6, dns_tcp):
             if server:
                 server.close()
                 await server.wait_closed()
@@ -343,6 +465,8 @@ async def serve(args):
             transport.close()
         for name in ("server-wg.pem", "client-wg.pem", "tls.key", "tls.crt", "server.json", "v07-probe.json"):
             (args.output / name).unlink(missing_ok=True)
+        # Combined suites generate each part's keys in its own directory.
+        shutil.rmtree(args.output / "parts", ignore_errors=True)
 
 
 def main():
@@ -351,7 +475,7 @@ def main():
     parser.add_argument("--reference-binary", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path, help="new private directory")
     parser.add_argument("--seconds", type=int, default=600, help="maximum fixture lifetime (1..1800)")
-    parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", "trojan", "shadowsocks2022", "vmess"), default="both")
+    parser.add_argument("--protocol", choices=("both", "wireguard", "hysteria2", "v08", *V08_PROTOCOLS, "v09", *V09_PROTOCOLS), default="both")
     parser.add_argument("--port", type=int, help="explicit carrier port; requires a single protocol")
     parser.add_argument("--mode", choices=("smoke", "transitions", "lock-wake", "transitions-reset", "lifecycle", "resources", "udp-sweep"), default="smoke")
     parser.add_argument("--reference-sha256", help="expected binary SHA-256, instead of a clean Go VCS stamp check")
@@ -363,7 +487,7 @@ def main():
     address = ipaddress.IPv4Address(args.bind)
     if address.is_unspecified or address.is_multicast or not 1 <= args.seconds <= 1800:
         parser.error("use a specific unicast IPv4 address and 1..1800 seconds")
-    if args.port is not None and (args.protocol in ("both", "v08") or not 1 <= args.port <= 65535):
+    if args.port is not None and (args.protocol in ("both", "v08", "v09") or not 1 <= args.port <= 65535):
         parser.error("an explicit port requires one protocol and a port in 1..65535")
     if args.reference_sha256 and (len(args.reference_sha256) != 64 or any(c not in "0123456789abcdef" for c in args.reference_sha256)):
         parser.error("reference SHA-256 must be 64 lowercase hex characters")

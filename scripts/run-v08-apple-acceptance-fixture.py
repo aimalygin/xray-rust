@@ -4,6 +4,8 @@
 Same safety/identity/lifetime rules as run-v07-apple-protocol-fixture.py.
 The REALITY decoy uses a TLS handshake with www.google.com:443; application
 traffic is restricted to local synthetic echo/DNS targets by server routing.
+--suite ciphers-v09 covers every classic Shadowsocks AEAD method; --suite
+legacy-v09 combines the nine v0.9 legacy-regression protocols in one fixture.
 """
 import argparse
 import base64
@@ -116,6 +118,69 @@ def write_legacy(root, bind, tcp_port, udp_port, dns_port, **kwargs):
     save(root, server, envelope)
 
 
+def write_ciphers_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """Every classic Shadowsocks AEAD method; one alias exercises name folding."""
+    used, inbounds, cases = set(), [], []
+    for method, link_method in [("aes-128-gcm", "aes-128-gcm"), ("aes-256-gcm", "aes-256-gcm"),
+                                ("chacha20-poly1305", "chacha20-ietf-poly1305"),
+                                ("xchacha20-poly1305", "xchacha20-poly1305")]:
+        port = reserve(bind, used)
+        original(root, bind, tcp_port, udp_port, dns_port, **{**kwargs, "protocol": "shadowsocks-aead", "port": port})
+        server = json.loads((root / "server.json").read_text())
+        envelope = json.loads((root / "v07-probe.json").read_text())
+        case = envelope["cases"][0]
+        config = json.loads(case["configJSON"])
+        settings = config["outbounds"][0]["settings"]
+        password = secrets.token_urlsafe(24)
+        settings.update(method=method, password=password)
+        server["inbounds"][0]["settings"].update(method=method, password=password)
+        case.update(label=f"shadowsocks-aead:{method}", configJSON=json.dumps(config),
+                    text=fixture.sip002(link_method, password, bind, port))
+        cases.append(case)
+        inbounds.extend(server["inbounds"])
+    server["inbounds"], envelope["cases"] = inbounds, cases
+    save(root, server, envelope)
+
+
+def write_legacy_v09(root, bind, tcp_port, udp_port, dns_port, **kwargs):
+    """The nine v0.9 legacy-regression protocols in one fixture.
+
+    Each generator writes its keys under parts/<name>; the base fixture removes
+    that tree on shutdown. Labels equal the evidence transition names.
+    """
+    server, cases = None, []
+    for name, protocol in [("legacy", None), ("v07", "both"), ("v08", "v08")]:
+        part = root / "parts" / name
+        part.mkdir(parents=True, mode=0o700)
+        if protocol is None:
+            write_legacy(part, bind, tcp_port, udp_port, dns_port, **{**kwargs, "port": None})
+        else:
+            original(part, bind, tcp_port, udp_port, dns_port, **{**kwargs, "protocol": protocol, "port": None})
+        part_server = json.loads((part / "server.json").read_text())
+        part_cases = json.loads((part / "v07-probe.json").read_text())["cases"]
+        for case in part_cases:
+            case.setdefault("label", case["format"])
+        if server is None:
+            server = part_server
+        else:
+            server["inbounds"].extend(part_server["inbounds"])
+        cases.extend(part_cases)
+        (part / "server.json").unlink()
+        (part / "v07-probe.json").unlink()
+    ports = [(inbound["port"], inbound["protocol"]) for inbound in server["inbounds"]]
+    if len({port for port, _ in ports}) != len(ports):
+        raise RuntimeError("legacy generators allocated the same carrier port twice")
+    labels = [case["label"] for case in cases]
+    if sorted(labels) != sorted(LEGACY_V09):
+        raise RuntimeError(f"unexpected legacy-regression cases: {labels}")
+    save(root, server, {"cases": cases, "tcpPort": tcp_port, "udpPort": udp_port,
+                        "mode": kwargs.get("mode", "smoke"), "probeHost": kwargs.get("probe_host", "v07-probe.test")})
+
+
+LEGACY_V09 = ("vless-reality", "xhttp-h1", "xhttp-h2", "xhttp-h3", "hysteria2", "wireguard",
+              "trojan", "shadowsocks2022", "vmess")
+
+
 def save(root, server, envelope):
     (root / "server.json").write_text(json.dumps(server, indent=2) + "\n")
     (root / "v07-probe.json").write_text(json.dumps(envelope, indent=2) + "\n")
@@ -123,8 +188,9 @@ def save(root, server, envelope):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--suite", choices=("ciphers", "legacy"), default="ciphers")
+    parser.add_argument("--suite", choices=("ciphers", "legacy", "ciphers-v09", "legacy-v09"), default="ciphers")
     args, remaining = parser.parse_known_args()
     sys.argv = [sys.argv[0], *remaining]
-    fixture.write_fixtures = write_ciphers if args.suite == "ciphers" else write_legacy
+    fixture.write_fixtures = {"ciphers": write_ciphers, "legacy": write_legacy,
+                              "ciphers-v09": write_ciphers_v09, "legacy-v09": write_legacy_v09}[args.suite]
     fixture.main()

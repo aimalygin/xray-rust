@@ -2,8 +2,9 @@
 """Paired local release benchmarks. Fresh processes; failures are retained.
 
 Run the original v0.5/v0.6 gates separately. This collector adds old transport
-coverage and same-driver SOCKS/TUN measurements for Hysteria2, WireGuard and
-the v0.8 clients (Trojan, Shadowsocks 2022 and VMess AEAD).
+coverage and same-driver SOCKS/TUN measurements for Hysteria2, WireGuard, the
+v0.8 clients (Trojan, Shadowsocks 2022 and VMess AEAD) and the v0.9 clients
+(SOCKS, HTTP plain/TLS and classic Shadowsocks AEAD; HTTP has no UDP case).
 It never changes host routes or invokes production VPNs.
 """
 from __future__ import annotations
@@ -24,7 +25,8 @@ import subprocess
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCE = "5ca6f4b7d4dc20a881d4330e498892697627ec0c"
+# Recorded in manifests; the fixture verifies the binary against the same pin.
+REFERENCE = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
 UUID = "00010203-0405-0607-0809-0a0b0c0d0e0f"
 
 
@@ -75,11 +77,13 @@ def load_module(path):
 
 @contextlib.contextmanager
 def fixture(reference, output, reality=False, client_protocols=False):
+    """client_protocols: False, "v08" or "v09" (True means "v08")."""
+    client_protocols = "v08" if client_protocols is True else client_protocols
     root = output / "fixture"
     root.mkdir(mode=0o700, parents=True)
     device = load_module(ROOT / "scripts/run-v07-apple-protocol-fixture.py")
     device.verify_reference(reference)
-    device.write_fixtures(root, "127.0.0.1", 1, 2, 3, protocol="v08" if client_protocols else "both")
+    device.write_fixtures(root, "127.0.0.1", 1, 2, 3, protocol=client_protocols or "both")
     server = json.loads((root / "server.json").read_text())
     # The driver binds its synthetic origin to this host's own IPv4 interface.
     # No production credentials, DNS names or remote application targets.
@@ -93,10 +97,10 @@ def fixture(reference, output, reality=False, client_protocols=False):
         config.pop("routing")
         if case["format"] == "wireguard":
             config["outbounds"][0]["settings"]["peers"][0]["allowedIPs"] = ["0.0.0.0/0"]
-        configs[case["format"]] = config
+        configs[V09_CASES.get(case.get("label"), case["format"])] = config
     cert = str(root / "tls.crt")
     key = str(root / "tls.key")
-    tls_protocol = "trojan" if client_protocols else "hysteria2"
+    tls_protocol = {"v08": "trojan", "v09": "https"}.get(client_protocols, "hysteria2")
     fixture_tls = configs[tls_protocol]["outbounds"][0]["streamSettings"]["tlsSettings"]
     pin = fixture_tls["pinnedPeerCertSha256"]
     configs["freedom"] = {"outbounds": [{"protocol": "freedom"}]}
@@ -157,19 +161,27 @@ def protocol_cases(suite, smoke):
     protocols = ["hysteria2", "wireguard"] if suite == "new" else ["freedom", "vless-tls", "xhttp-h1", "xhttp-h2", "xhttp-h3"]
     if suite == "reality": protocols = ["reality-vision"]
     if suite == "v08": protocols = ["trojan", "shadowsocks2022", "vmess"]
-    paths = ["socks", "tun"] if suite in ("new", "reality", "v08") else ["tun"]
+    if suite == "v09": protocols = list(V09_CASES.values())
+    paths = ["socks", "tun"] if suite in ("new", "reality", "v08", "v09") else ["tun"]
     cases = []
     for protocol in protocols:
         for path in paths:
             for connections in [1, 8]:
-                traffic_types = ["upload", "download", "full-duplex", "tcp-latency", "udp"] if suite in ("new", "v08") else ["upload", "download", "full-duplex"]
+                traffic_types = ["upload", "download", "full-duplex", "tcp-latency", "udp"] if suite in ("new", "v08", "v09") else ["upload", "download", "full-duplex"]
                 for traffic in traffic_types:
+                    if traffic == "udp" and protocol.startswith("http"):
+                        continue  # HTTP CONNECT has no UDP relay
                     latency = traffic in ("tcp-latency", "udp")
                     cases.append({"id": f"{protocol}-{path}-{traffic}-{connections}",
                         "protocol": protocol,"path": path,"traffic": traffic,"connections": connections,
                         "payload_size": 1200 if traffic == "udp" else 1024 if latency else 65536,
                         "iterations": (10 if latency else 4) if smoke else (1000 if latency else 64 if path == "tun" else 512)})
     return cases
+
+
+# Device fixture labels -> collector protocol names.
+V09_CASES = {"socks:password": "socks", "http:plain": "http", "http:tls": "https",
+             "shadowsocks-aead:aes-256-gcm": "shadowsocks-aead"}
 
 
 def legacy_cases(smoke):
@@ -243,7 +255,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root",type=Path,required=True,help="campaign directory with bin/{baseline,candidate} and clean source checkouts")
     parser.add_argument("--harness",type=Path,required=True)
-    parser.add_argument("--suite",choices=["legacy","tun","new","reality","v08"],required=True)
+    parser.add_argument("--suite",choices=["legacy","tun","new","reality","v08","v09"],required=True)
     parser.add_argument("--output",type=Path,required=True)
     parser.add_argument("--smoke",action="store_true")
     parser.add_argument("--case",help="optional exact case ID for diagnosis; never replaces original evidence")
@@ -261,7 +273,7 @@ def main():
     if args.iterations is not None:
         if args.suite=="legacy" or not 1<=args.iterations<=16384:raise ValueError("iterations override requires a generic suite and 1..16384")
         for case in cases:case["iterations"]=args.iterations
-    versions = ["candidate"] if args.suite in ("new", "v08") else ["baseline","candidate"]
+    versions = ["candidate"] if args.suite in ("new", "v08", "v09") else ["baseline","candidate"]
     manifest={"schema_version":1,"suite":args.suite,"smoke":args.smoke,"diagnostic":bool(args.case or args.iterations is not None),
         "repeats":repeats,"cases":cases,"started_unix":time.time(),"platform":platform.platform(),
         "harness_sha256":sha(args.harness),"collector_sha256":sha(__file__),
@@ -291,7 +303,7 @@ def main():
                     identifier=f"{case['id']}-{version}-{repeat+1}"
                     output=args.output/identifier
                     print(identifier,flush=True)
-                    context=contextlib.nullcontext(shared) if shared is not None else contextlib.nullcontext({}) if args.suite=="legacy" else fixture(args.root/"bin/xray-core",args.output/f"{identifier}-server",client_protocols=args.suite=="v08")
+                    context=contextlib.nullcontext(shared) if shared is not None else contextlib.nullcontext({}) if args.suite=="legacy" else fixture(args.root/"bin/xray-core",args.output/f"{identifier}-server",client_protocols=args.suite if args.suite in ("v08","v09") else False)
                     with context as configs:
                         if args.suite=="legacy":
                             invocation=[str(args.root/"bin"/version/"xray-bench"),"run","--engine","xray-rust",

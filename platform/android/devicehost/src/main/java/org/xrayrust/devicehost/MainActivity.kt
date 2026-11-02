@@ -123,7 +123,7 @@ class MainActivity : Activity() {
         content.addView(statusText, matchWrap())
 
         profileInput = EditText(this).apply {
-            hint = "Paste a VLESS, Trojan, SS2022, VMess or Hysteria2 link"
+            hint = "Paste a VLESS, Trojan, Shadowsocks, VMess, Hysteria2, SOCKS5 or HTTP(S) link"
             minLines = 3
             maxLines = 7
             inputType = InputType.TYPE_CLASS_TEXT or

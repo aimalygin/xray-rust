@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare pinned full clients for the synthetic v0.8 SOCKS comparison.
+"""Prepare pinned full clients for the synthetic v0.8/v0.9 SOCKS comparison.
 
 Preparation happens before the measured binary is spawned. No Python/OpenSSL
 process, native-library adapter or config translator is included in client CPU.
@@ -16,9 +16,33 @@ import sys
 METHODS = ("2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm",
            "2022-blake3-chacha20-poly1305")
 CIPHERS = ("auto", "aes-128-gcm", "chacha20-poly1305")
+# Classic AEAD-2017, by Xray name -> sing-box name.
+AEAD_METHODS = {"aes-128-gcm": "aes-128-gcm", "aes-256-gcm": "aes-256-gcm",
+                "chacha20-poly1305": "chacha20-ietf-poly1305",
+                "xchacha20-poly1305": "xchacha20-ietf-poly1305"}
+SUITE_PROTOCOLS = {"v08": ("trojan", "shadowsocks", "vmess"), "v09": ("socks", "http", "shadowsocks")}
 
 
-def translate(config, mode, cert):
+def verified_tls(stream, cert):
+    tls = stream.get("tlsSettings", {})
+    if (stream.get("security") != "tls" or tls.get("allowInsecure")
+            or tls.get("fingerprint") != "chrome"):
+        raise ValueError("verified Chrome-shaped TLS required")
+    der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
+    if hashlib.sha256(der).hexdigest() != tls["pinnedPeerCertSha256"]:
+        raise ValueError("fixture certificate does not match the measured pin")
+    return tls
+
+
+def singbox_tls(tls, cert):
+    public = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-pubkey", "-noout"])
+    spki = subprocess.check_output(["openssl", "pkey", "-pubin", "-outform", "DER"], input=public)
+    return {"enabled": True, "server_name": tls["serverName"], "alpn": tls["alpn"],
+            "utls": {"enabled": True, "fingerprint": "chrome"},
+            "certificate_public_key_sha256": [base64.b64encode(hashlib.sha256(spki).digest()).decode()]}
+
+
+def translate(config, mode, cert, suite="v08"):
     config = copy.deepcopy(config)
     inbound, = config["inbounds"]
     outbound, = config["outbounds"]
@@ -30,37 +54,34 @@ def translate(config, mode, cert):
             or settings.get("address") != "127.0.0.1"
             or stream.get("network") != "raw" or outbound.get("mux")):
         raise ValueError("only the synthetic loopback/raw SOCKS comparison is supported")
-    if protocol == "shadowsocks" and settings.get("method") not in METHODS:
-        raise ValueError("SS2022 method required")
+    if protocol not in SUITE_PROTOCOLS.get(suite, ()):
+        raise ValueError("unsupported comparison protocol")
+    if protocol == "shadowsocks" and settings.get("method") not in (METHODS if suite == "v08" else AEAD_METHODS):
+        raise ValueError("SS2022 method required" if suite == "v08" else "Shadowsocks AEAD-2017 method required")
     if protocol == "vmess" and (settings.get("security") not in CIPHERS
                                 or settings.get("alterId", 0) != 0
                                 or settings.get("experiments")):
         raise ValueError("standard VMess AEAD profile required")
-    if protocol not in ("trojan", "shadowsocks", "vmess"):
-        raise ValueError("unsupported comparison protocol")
-    if protocol != "trojan" and stream.get("security", "none") != "none":
-        raise ValueError("protocol AEAD comparison must not add outer TLS")
-    if protocol == "trojan":
-        tls = stream.get("tlsSettings", {})
-        if (stream.get("security") != "tls" or tls.get("allowInsecure")
-                or tls.get("fingerprint") != "chrome"):
-            raise ValueError("verified Chrome-shaped TLS required for Trojan")
-        der = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-outform", "DER"])
-        if hashlib.sha256(der).hexdigest() != tls["pinnedPeerCertSha256"]:
-            raise ValueError("fixture certificate does not match the measured pin")
+    if protocol in ("socks", "http") and not (settings.get("user") and settings.get("pass")):
+        raise ValueError("authenticated proxy profile required")
+    if protocol not in ("trojan", "http") and stream.get("security", "none") != "none":
+        raise ValueError("protocol comparison must not add outer TLS")
+    tls = verified_tls(stream, cert) if protocol == "trojan" or stream.get("security", "none") != "none" else None
     if mode == "xray":
         return config, ["run", "-config"], "xray"
     out = {"type": protocol, "tag": "proxy", "server": settings["address"],
            "server_port": settings["port"]}
+    if tls is not None:
+        out["tls"] = singbox_tls(tls, cert)
     if protocol == "trojan":
-        public = subprocess.check_output(["openssl", "x509", "-in", str(cert), "-pubkey", "-noout"])
-        spki = subprocess.check_output(["openssl", "pkey", "-pubin", "-outform", "DER"], input=public)
-        out.update(password=settings["password"], tls={
-            "enabled": True, "server_name": tls["serverName"], "alpn": tls["alpn"],
-            "utls": {"enabled": True, "fingerprint": "chrome"},
-            "certificate_public_key_sha256": [base64.b64encode(hashlib.sha256(spki).digest()).decode()]})
+        out.update(password=settings["password"])
+    elif protocol in ("socks", "http"):
+        out.update(username=settings["user"], password=settings["pass"])
+        if protocol == "socks":
+            out["version"] = "5"
     elif protocol == "shadowsocks":
-        out.update(method=settings["method"], password=settings["password"])
+        out.update(method=AEAD_METHODS.get(settings["method"], settings["method"]),
+                   password=settings["password"])
     else:
         # Both Rust and the pinned Xray enable global padding for AEAD and use
         # XUDP on the non-DNS/non-QUIC destination ports selected by the driver.
@@ -77,7 +98,7 @@ def main():
     spec = json.loads(Path(sys.argv[0] + ".json").read_text())
     source = Path(sys.argv[3])
     config, args, kind = translate(json.loads(source.read_text()), spec["mode"],
-                                   os.environ.get("BENCH_REFERENCE_CERT", ""))
+                                   os.environ.get("BENCH_REFERENCE_CERT", ""), spec.get("suite", "v08"))
     target = source.with_name("reference-client.json")
     target.write_text(json.dumps(config, indent=2) + "\n")
     print(json.dumps({"binary": spec["binaries"][kind], "args": [*args, str(target)]}))

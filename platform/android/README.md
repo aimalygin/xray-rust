@@ -431,8 +431,9 @@ An arm64-only device rehearsal can use `-Pandroid.injected.build.abi=arm64-v8a`;
 it does not qualify the other release ABIs.
 
 `devicehost` is a minimal `VpnService` owner. It imports the supported VLESS
-share-link subset and Trojan, SS2022, VMess and Hysteria2 links through their
-existing SDK importers, immediately converts them to core JSON, encrypts that JSON with
+share-link subset and Trojan, Shadowsocks (2022 and classic AEAD), VMess,
+Hysteria2, SOCKS5 (`socks://`, `socks5://`) and HTTP CONNECT (`http://`,
+`https://`) links through their existing SDK importers, immediately converts them to core JSON, encrypts that JSON with
 an Android Keystore AES-GCM key, and stores the ciphertext under the app's
 no-backup directory. Backup and device-to-device transfer are disabled. The
 profile input and clipboard are cleared after import, and structured
@@ -500,7 +501,8 @@ replace Perfetto, or waive the full scenario matrix in
 The current v0.8 gate has no fixed soak duration; retain actual durations,
 independently verified recovery and resource limits. In particular, the host's
 placeholder `unrecoveredTransitions` telemetry field is not a measured verdict.
-See [v0.8 evidence assembly](../../docs/v08-release-evidence.md).
+See [v0.8 evidence assembly](../../docs/v08-release-evidence.md) and
+[v0.9 evidence collection](../../docs/v09-release-evidence.md).
 
 For the new protocols, `scripts/run-v08-android-protocol-fixture.py --protocol
 v08` uses the same pinned Xray-core and private cleanup rules as the Apple
@@ -510,8 +512,24 @@ Trojan, all three SS2022 ciphers, and VMess auto/AES/ChaCha. HTTP success is an
 availability check, not byte-integrity or throughput evidence. Explicitly set
 both probe endpoints to this fixture before starting the probe app.
 
+For v0.9, `--suite v09 --protocol v09` adds SOCKS5 with password auth and UDP,
+HTTP CONNECT with Basic auth in plain and TLS form, and classic Shadowsocks
+AEAD with `aes-128-gcm`, `aes-256-gcm`, `chacha20-poly1305` and
+`xchacha20-poly1305` (SIP002 links). `caseId` is the scenario-prefixed label,
+such as `socks-password`, `http-tls` or `shadowsocks-aead-chacha20-poly1305`.
+HTTP CONNECT has no UDP relay: its cases carry `"udp": false`, resolve DNS over
+TCP through the proxy, and every UDP probe must go unanswered, a fail-closed
+negative control rather than UDP coverage, which the v0.9 profile names
+`ipv4-udp-refused` and `ipv6-udp-refused`. The envelope's `invalidImports` are
+malformed links holding a non-secret marker for the redaction controls.
+`scripts/run-v09-android-device-matrix.py` drives both apps through an
+envelope on both backends and honours these expectations; see
+[v0.9 evidence collection](../../docs/v09-release-evidence.md).
+
 For legacy regression, select `--suite legacy` (VLESS/REALITY and XHTTP
-H1/H2/H3) or `--suite v07` (WireGuard and Hysteria2). These suites require
+H1/H2/H3), `--suite v07` (WireGuard and Hysteria2), or `--suite legacy-v09`,
+which holds all nine v0.9 legacy protocols, Trojan, SS2022 and VMess included,
+with `caseId` equal to the evidence transition id. These suites require
 dynamically allocated ports. `/v08-hold/NUMBER` withholds an HTTP response for
 up to twenty seconds and records peer EOF separately from the fixture timeout.
 `--udp-delay-seconds 3` submits the same nonce-checked UDP response after three

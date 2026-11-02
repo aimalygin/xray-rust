@@ -381,6 +381,7 @@ expected_rust="$(cat <<'EXPECTED'
           python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence scripts.tests.test_v07_stable_promotion scripts.tests.test_v08_release_evidence scripts.tests.test_v09_release_evidence
           python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison scripts.tests.test_v08_android_fixture scripts.tests.test_migration_benchmarks scripts.tests.test_migration_campaign scripts.tests.test_build_isolated_release
           python3 -m unittest scripts.tests.test_source_tag_ci
+          python3 -m unittest scripts.tests.test_v09_device_fixtures
           python3 scripts/publish-migration-benchmarks.py verify --report docs/benchmarks/results/2026-10-27-v26.10.21-migration
           python3 scripts/publish-migration-benchmarks.py verify --report docs/benchmarks/results/2026-10-30-perf-branch
           python3 scripts/tests/set-xray-ss2022-udp-pmtu.test.py

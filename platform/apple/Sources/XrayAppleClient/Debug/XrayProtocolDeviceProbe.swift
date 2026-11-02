@@ -43,6 +43,8 @@ private final class ProtocolDeviceProbe: ObservableObject {
         let loadSeconds: Int?
         let udpPayloadSizes: [Int]?
         let udpRepeats: Int?
+        let redactionMarker: String?
+        let invalidImports: [InvalidImport]?
         var trafficHost: String { probeHost ?? "v07-probe.test" }
     }
     private struct Profile: Decodable {
@@ -51,6 +53,14 @@ private final class ProtocolDeviceProbe: ObservableObject {
         let text: String
         let configJSON: String
         let serverAddress: String
+        /// False for outbounds without a UDP relay (HTTP CONNECT): UDP checks
+        /// then require that no datagram is answered instead of an echo.
+        let udp: Bool?
+    }
+    private struct InvalidImport: Decodable {
+        let scenario: String
+        let format: String
+        let text: String
     }
     private enum Failure: Int, CustomNSError {
         case configuration, mismatch, missingStats, shutdown, budget, retainedFlows
@@ -64,6 +74,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
     private let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     private var rows: [[String: Any]] = []
     private var label = "setup"
+    private var udpExpected = true
 
     func run(update: (String) -> Void) async {
         if ProcessInfo.processInfo.environment["XRAY_STARTUP_PROBE_DEVICE_CHECK"] == "1" {
@@ -79,7 +90,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             let size = try input.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard (1...524_288).contains(size) else { throw Failure.configuration }
             let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: input))
-            guard (1...5).contains(fixture.cases.count), fixture.tcpPort > 0, fixture.udpPort > 0 else {
+            guard (1...10).contains(fixture.cases.count), fixture.tcpPort > 0, fixture.udpPort > 0 else {
                 throw Failure.configuration
             }
             let labels = fixture.trafficHost.split(separator: ".", omittingEmptySubsequences: false)
@@ -89,9 +100,11 @@ private final class ProtocolDeviceProbe: ObservableObject {
                   } }) else { throw Failure.configuration }
             let info = XrayCore.ffiInfo
             emit(["event": "abi", "major": info.version.major, "minor": info.version.minor])
+            try invalidImports(fixture)
             try await cleanup()
             for item in fixture.cases {
                 label = item.label ?? item.format
+                udpExpected = item.udp ?? true
                 update("\(label): import and VPN startup")
                 // Exercise the actual Swift -> FFI -> Rust import on the device.
                 if item.format == "vless" {
@@ -160,8 +173,33 @@ private final class ProtocolDeviceProbe: ObservableObject {
         update(passed ? "Checks passed. Test VPN removed." : "A check failed. See the device report.")
     }
 
+    /// Malformed links must be rejected, and neither the error nor its
+    /// description may echo the fixture's marker (a stand-in credential).
+    private func invalidImports(_ fixture: Fixture) throws {
+        guard let inputs = fixture.invalidImports, !inputs.isEmpty else { return }
+        guard let marker = fixture.redactionMarker, marker.utf8.count >= 16, inputs.count <= 8 else {
+            throw Failure.configuration
+        }
+        for input in inputs {
+            label = input.scenario
+            guard input.text.contains(marker),
+                  let format = XrayProfileFormat(rawValue: input.format) else { throw Failure.configuration }
+            var rejected = false
+            do { _ = try XrayProfileImporter.profile(from: input.text, format: format) }
+            catch {
+                rejected = true
+                guard !String(reflecting: error).contains(marker),
+                      !(error as NSError).localizedDescription.contains(marker) else { throw Failure.mismatch }
+            }
+            guard rejected else { throw Failure.mismatch }
+            emit(["event": "invalid-import-redaction", "format": input.format, "result": "passed"])
+        }
+        label = "setup"
+    }
+
     private func udpSweep(_ fixture: Fixture, profile: XrayClientProfile,
                           update: (String) -> Void) async throws {
+        guard udpExpected else { throw Failure.configuration }
         let sizes = fixture.udpPayloadSizes ?? [32, 1200, 1300, 1340, 1350, 1360, 1372, 1392, 1420, 1450]
         let repeats = fixture.udpRepeats ?? 2
         guard (1...16).contains(sizes.count), (1...3).contains(repeats),
@@ -458,6 +496,28 @@ private final class ProtocolDeviceProbe: ObservableObject {
         for (host, count) in [("198.51.100.7", 1392), ("2001:db8::7", 1372)] {
             let payload = Data((0..<count).map { UInt8($0 % 251) })
             let started = ProcessInfo.processInfo.systemUptime
+            // Evidence transition ids; the v0.9 profile names HTTP's refusals.
+            let family = host.contains(":") ? "ipv6" : "ipv4"
+            if !udpExpected {
+                // Negative control: the outbound has no UDP relay, so an echo
+                // would mean the datagram bypassed it. Silence or an error is
+                // the fail-closed result; the error class is retained.
+                emit(["event": "udp-refusal-start", "host": host, "bytes": count])
+                do {
+                    _ = try await ProbeExchange.run(host: host, port: fixture.udpPort, request: payload,
+                                                    tcpLength: nil, timeout: min(3, try timeout()))
+                    emit(["event": "udp-unexpected-reply", "host": host])
+                    throw Failure.mismatch
+                } catch let error as Failure {
+                    throw error
+                } catch {
+                    let detail = error as NSError
+                    emit(["event": "udp-refused", "host": host, "transition": "\(family)-udp-refused",
+                          "result": "passed", "domain": detail.domain,
+                          "code": detail.code, "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
+                }
+                continue
+            }
             emit(["event": "udp-start", "host": host, "bytes": count])
             let reply: Data
             do {
@@ -471,6 +531,7 @@ private final class ProtocolDeviceProbe: ObservableObject {
             }
             guard reply == payload else { throw Failure.mismatch }
             emit(["event": "udp", "host": host, "bytes": count, "result": "passed",
+                  "transition": "\(family)-udp",
                   "exchangeSeconds": ProcessInfo.processInfo.systemUptime - started])
         }
         let id = UInt16.random(in: 1...UInt16.max)
