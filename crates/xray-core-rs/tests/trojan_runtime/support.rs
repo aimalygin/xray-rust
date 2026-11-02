@@ -46,6 +46,8 @@ pub fn reference_supports(protocol: &str, network: &str) -> bool {
 pub struct ReferenceServer {
     child: Child,
     directory: PathBuf,
+    /// The reference's own inbound; `address` may be a relay in front of it.
+    listen: SocketAddr,
     pub address: SocketAddr,
     pub connector: TlsConnector,
     pub stream: Value,
@@ -262,6 +264,7 @@ impl ReferenceServer {
         let mut server = Self {
             child,
             directory,
+            listen: address,
             address: client_address,
             connector,
             stream,
@@ -297,6 +300,8 @@ impl ReferenceServer {
         let deadline = tokio::time::Instant::now() + DEADLINE;
         loop {
             assert!(self.child.try_wait().unwrap().is_none(), "reference exited");
+            // Xray's gRPC hub binds its listener in a goroutine after the core
+            // reports `started`, so the log line alone can race the first dial.
             if std::fs::read_to_string(self.directory.join("server.log"))
                 .unwrap()
                 .contains(if independent_reference() {
@@ -304,6 +309,7 @@ impl ReferenceServer {
                 } else {
                     "core: Xray 26.10.21 started"
                 })
+                && tokio::net::TcpStream::connect(self.listen).await.is_ok()
             {
                 break;
             }
