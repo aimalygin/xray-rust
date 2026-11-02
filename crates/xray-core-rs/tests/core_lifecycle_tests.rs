@@ -12,7 +12,7 @@ use xray_config::{
     VlessOutboundSettings, VlessUser,
 };
 use xray_core_rs::{
-    Core, CoreError, CoreState, OutboundNodeKind, TunRuntimeOptions, TunRuntimeProfile,
+    Core, CoreError, CoreState, OutboundNodeKind, TunMtu, TunRuntimeOptions, TunRuntimeProfile,
 };
 use xray_transport::{SystemDnsResolver, TransportDialer};
 
@@ -197,6 +197,46 @@ fn core_rejects_programmatic_fake_ip_with_zero_ttl() {
         Core::new(config),
         Err(CoreError::InvalidFakeIpConfiguration)
     ));
+}
+
+#[test]
+fn tun_mtu_rejects_values_outside_its_range_instead_of_clamping() {
+    assert_eq!(TunMtu::default().get(), 1500);
+    assert_eq!(TunRuntimeOptions::default().mtu, TunMtu::default());
+    for mtu in [TunMtu::MIN, 1500, 4000, TunMtu::MAX] {
+        assert_eq!(TunMtu::new(mtu).unwrap().get(), mtu as usize);
+    }
+    for mtu in [0, 576, TunMtu::MIN - 1, TunMtu::MAX + 1, 65_535, u32::MAX] {
+        assert!(matches!(TunMtu::new(mtu), Err(CoreError::InvalidTunMtu(m)) if m == mtu));
+    }
+}
+
+#[test]
+fn every_tun_profile_keeps_1500_and_takes_the_host_mtu() {
+    for profile in [
+        TunRuntimeProfile::Default,
+        TunRuntimeProfile::Mobile,
+        TunRuntimeProfile::MobilePlus,
+        TunRuntimeProfile::Desktop,
+        TunRuntimeProfile::LowMemory,
+        TunRuntimeProfile::Throughput,
+    ] {
+        let options = TunRuntimeOptions::with_profile(profile);
+        assert_eq!(options.tun_queue_options().mtu, 1500, "{profile:?}");
+        let jumbo = TunRuntimeOptions {
+            mtu: TunMtu::new(9000).unwrap(),
+            ..options
+        };
+        assert_eq!(jumbo.tun_queue_options().mtu, 9000, "{profile:?}");
+        let core = Core::with_runtime_dependencies_and_tun_options(
+            tun_runtime_config(),
+            Arc::new(SystemDnsResolver),
+            Arc::new(TransportDialer::system().unwrap()),
+            jumbo,
+        )
+        .unwrap();
+        assert_eq!(core.tun().mtu(), 9000, "{profile:?}");
+    }
 }
 
 #[tokio::test]

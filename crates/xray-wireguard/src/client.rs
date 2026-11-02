@@ -466,6 +466,11 @@ impl UdpSession {
     pub fn peer_addr(&self) -> SocketAddr {
         self.remote
     }
+    /// The largest payload [`Self::send`] accepts: the tunnel MTU less the
+    /// inner IP and UDP headers. Larger datagrams fail with `PacketTooLarge`.
+    pub fn max_payload(&self) -> usize {
+        self.max_payload
+    }
     pub async fn send(&self, payload: &[u8]) -> Result<(), Error> {
         if payload.len() > self.max_payload {
             return Err(Error::PacketTooLarge);

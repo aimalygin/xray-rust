@@ -46,6 +46,12 @@ pub(super) async fn bridge(
                 &traffic,
                 UDP_IDLE_TIMEOUT,
                 Some(&context.tun),
+                |payload: Bytes, max_payload| {
+                    let context = &context;
+                    async move {
+                        reject_oversize_udp_datagram(context, key, &payload, max_payload).await;
+                    }
+                },
                 |_source, payload| {
                     let stack = &context.stack_tx;
                     async move {

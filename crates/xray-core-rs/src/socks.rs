@@ -1601,7 +1601,16 @@ async fn bridge_socks_udp_vless_flow(
     let fallback_source = target.clone();
     let mut sent_xudp_new = false;
     let global_id = socks_udp_flow_global_id(context.client_addr, &target);
-    let first_payload_len = first_payload.len();
+    let record_write = |written: Option<usize>, len: usize| match written {
+        Some(written) => traffic.record_uplink(written as u64),
+        None => crate::outbound::datagram::log_oversize_udp_datagram(
+            &context.runtime_logger,
+            "socks",
+            len,
+            crate::tun::VLESS_UDP_MAX_PAYLOAD,
+        ),
+    };
+    let first_len = first_payload.len();
     let first_write = tokio::select! {
         biased;
         () = wait_for_connection_close(&mut connection_close) => return,
@@ -1615,10 +1624,10 @@ async fn bridge_socks_udp_vless_flow(
             true,
         ) => result,
     };
-    if first_write.is_err() {
+    let Ok(first_written) = first_write else {
         return;
-    }
-    traffic.record_uplink(first_payload_len as u64);
+    };
+    record_write(first_written, first_len);
     drop(pending_open_permit);
 
     let flush_deadline = tokio::time::sleep(SOCKS_VLESS_UDP_FLUSH_INTERVAL);
@@ -1646,9 +1655,9 @@ async fn bridge_socks_udp_vless_flow(
                 let Some(payload) = payload else {
                     break;
                 };
-                let payload_len = payload.len();
                 let flush_now = pending_frames + 1 >= SOCKS_VLESS_UDP_FLUSH_BATCH;
-                if write_socks_vless_udp_payload(
+                let len = payload.len();
+                let Ok(written) = write_socks_vless_udp_payload(
                     &mut remote_writer,
                     framing,
                     &target,
@@ -1658,11 +1667,10 @@ async fn bridge_socks_udp_vless_flow(
                     flush_now,
                 )
                 .await
-                .is_err()
-                {
+                else {
                     break;
-                }
-                traffic.record_uplink(payload_len as u64);
+                };
+                record_write(written, len);
                 if flush_now {
                     pending_frames = 0;
                 } else {
@@ -1706,10 +1714,18 @@ async fn write_socks_vless_udp_payload<W>(
     sent_xudp_new: &mut bool,
     payload: Bytes,
     flush: bool,
-) -> std::io::Result<()>
+) -> std::io::Result<Option<usize>>
 where
     W: AsyncWrite + Unpin,
 {
+    // As on the TUN path, a datagram the VLESS stream cannot relay intact is
+    // dropped alone (`None`) instead of breaking or splitting the stream.
+    if payload.len() > crate::tun::VLESS_UDP_MAX_PAYLOAD {
+        if flush {
+            writer.flush().await?;
+        }
+        return Ok(None);
+    }
     match framing {
         VlessUdpFraming::LengthPrefixed => {
             let len = u16::try_from(payload.len()).map_err(|_| {
@@ -1735,7 +1751,7 @@ where
     if flush {
         writer.flush().await?;
     }
-    Ok(())
+    Ok(Some(payload.len()))
 }
 
 async fn read_socks_vless_udp_response<R>(
@@ -2000,6 +2016,52 @@ mod tests {
 
         assert_eq!(writer.bytes, b"\0\x03one\0\x03two");
         assert_eq!(writer.flushes, 1);
+    }
+
+    #[tokio::test]
+    async fn vless_udp_writer_drops_an_oversize_datagram_but_keeps_flushing() {
+        let target = Target::new(
+            TargetAddr::Ip("192.0.2.1".parse().expect("test IP should parse")),
+            53,
+            Network::Udp,
+        );
+        for framing in [VlessUdpFraming::LengthPrefixed, VlessUdpFraming::Xudp] {
+            let mut writer = RecordingWriter::default();
+            let mut sent_xudp_new = false;
+            let oversize = Bytes::from(vec![7; crate::tun::VLESS_UDP_MAX_PAYLOAD + 1]);
+            let written = write_socks_vless_udp_payload(
+                &mut writer,
+                framing,
+                &target,
+                [0; 8],
+                &mut sent_xudp_new,
+                oversize,
+                true,
+            )
+            .await
+            .expect("an oversize datagram is dropped, not an error");
+            assert_eq!(written, None);
+            assert!(writer.bytes.is_empty());
+            assert!(
+                !sent_xudp_new,
+                "the next datagram still opens the XUDP session"
+            );
+            assert_eq!(writer.flushes, 1);
+
+            let fits = Bytes::from(vec![7; crate::tun::VLESS_UDP_MAX_PAYLOAD]);
+            let written = write_socks_vless_udp_payload(
+                &mut writer,
+                framing,
+                &target,
+                [0; 8],
+                &mut sent_xudp_new,
+                fits,
+                false,
+            )
+            .await
+            .expect("an 8 KiB datagram fits");
+            assert_eq!(written, Some(crate::tun::VLESS_UDP_MAX_PAYLOAD));
+        }
     }
 
     fn admission_test_target() -> Target {

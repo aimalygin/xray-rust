@@ -128,6 +128,14 @@ Android defaults to fd-backed operation. The Apple provider uses a discovered
 Darwin utun fd when enabled and available, otherwise it falls back to the
 `NEPacketTunnelFlow` packet pump.
 
+The TUN MTU is a host runtime option (`TunRuntimeOptions::mtu`, 1280..=9000,
+default 1500), never Xray JSON, because the host also sets it on the interface.
+It sizes the smoltcp device, the fd reads and the TCP receive buffers
+(`max(32 KiB, 4 × MSS)`); the packet queues are also bounded in bytes
+(`depth × 1500`), so their memory does not grow with it. A UDP datagram larger than its outbound path carries
+is dropped alone with an ICMP packet-too-big back to the host instead of ending
+the flow ([TUN MTU](ffi.md#tun-mtu)).
+
 ### DNS
 
 DNS is split at the wire-transport boundary instead of being owned by TUN.

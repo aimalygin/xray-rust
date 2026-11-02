@@ -165,6 +165,29 @@ public struct XrayFFICapabilities: OptionSet, Equatable, Sendable {
     public static let hysteriaStreamLimits = Self(
         rawValue: UInt64(XRAY_FFI_CAPABILITY_HYSTERIA_STREAM_LIMITS.rawValue)
     )
+    public static let tunMtu = Self(rawValue: UInt64(XRAY_FFI_CAPABILITY_TUN_MTU.rawValue))
+}
+
+/// MTU of the host's TUN interface (ABI 1.16). Give the interface and the core
+/// the same value, chosen with `XrayCore.supportedTunMtu(_:)`.
+public struct XrayTunMtu: Equatable, Sendable {
+    public static let range: ClosedRange<UInt32> = 1_280...9_000
+    /// The MTU of every library, including those without `TUN_MTU`.
+    public static let standard = XrayTunMtu(validated: 1_500)
+
+    public let value: UInt32
+
+    public init(_ value: UInt32) throws {
+        guard Self.range.contains(value) else {
+            throw XrayCoreError.status(code: XRAY_STATUS_INVALID_ARGUMENT,
+                message: "TUN MTU must be in 1280...9000, got \(value)")
+        }
+        self.value = value
+    }
+
+    private init(validated value: UInt32) {
+        self.value = value
+    }
 }
 
 /// Host concurrency policy for each Hysteria outbound, shared across inbounds.
@@ -741,6 +764,8 @@ public struct XrayTunStatsSnapshot: Equatable, Sendable {
     public let tunFdReadLoopExits: UInt64
     public let tunFdWriteLoopExits: UInt64
     public let tunFdTransientIoErrors: UInt64
+    /// ABI 1.16: UDP datagrams dropped because their outbound path carries less.
+    public var udpOversizeDatagrams: UInt64 = 0
 }
 
 public extension XrayTunStatsSnapshot {
@@ -754,7 +779,7 @@ public extension XrayTunStatsSnapshot {
             "\(prefix) tcpWriteWait tcpRemoteWriteWaitEvents=\(tcpRemoteWriteWaitEvents) tcpRemoteWriteWaitAvgMs=\(averageDurationMs(total: tcpRemoteWriteWaitDurationMsTotal, events: tcpRemoteWriteWaitEvents)) tcpRemoteWriteWaitMaxMs=\(tcpRemoteWriteWaitDurationMsMax) tcpRemoteFlushWaitEvents=\(tcpRemoteFlushWaitEvents) tcpRemoteFlushWaitAvgMs=\(averageDurationMs(total: tcpRemoteFlushWaitDurationMsTotal, events: tcpRemoteFlushWaitEvents)) tcpRemoteFlushWaitMaxMs=\(tcpRemoteFlushWaitDurationMsMax)",
             "\(prefix) tcpTiming tcpOpenEvents=\(tcpOpenEvents) tcpOpenAvgMs=\(averageDurationMs(total: tcpOpenDurationMsTotal, events: tcpOpenEvents)) tcpOpenMaxMs=\(tcpOpenDurationMsMax) tcpFirstByteEvents=\(tcpFirstByteEvents) tcpFirstByteAvgMs=\(averageDurationMs(total: tcpFirstByteDurationMsTotal, events: tcpFirstByteEvents)) tcpFirstByteMaxMs=\(tcpFirstByteDurationMsMax) tcp443OpenEvents=\(tcp443OpenEvents) tcp443OpenAvgMs=\(averageDurationMs(total: tcp443OpenDurationMsTotal, events: tcp443OpenEvents)) tcp443OpenMaxMs=\(tcp443OpenDurationMsMax) tcp443FirstByteEvents=\(tcp443FirstByteEvents) tcp443FirstByteAvgMs=\(averageDurationMs(total: tcp443FirstByteDurationMsTotal, events: tcp443FirstByteEvents)) tcp443FirstByteMaxMs=\(tcp443FirstByteDurationMsMax)",
             "\(prefix) udpFlows udpFlowLimit=\(udpFlowLimit) udpBudgetDrops=\(udpBudgetDrops) udpEvictedFlows=\(udpEvictedFlows) udpChannelDroppedPackets=\(udpChannelDroppedPackets)",
-            "\(prefix) udpRemote udpOpenEvents=\(udpRemoteOpenEvents) udpUDP443OpenEvents=\(udpRemoteUDP443OpenEvents) udpWrittenBytes=\(udpRemoteWrittenBytes) udpReadBytes=\(udpRemoteReadBytes) udpOpenErrors=\(udpOpenErrors) udpVisionUDP443Rejections=\(udpVisionUDP443Rejections) udpWriteErrors=\(udpRemoteWriteErrors) udpReadErrors=\(udpRemoteReadErrors) udpRemoteClosed=\(udpRemoteClosedEvents) udpQuicBlockedPackets=\(udpQuicBlockedPackets)",
+            "\(prefix) udpRemote udpOpenEvents=\(udpRemoteOpenEvents) udpUDP443OpenEvents=\(udpRemoteUDP443OpenEvents) udpWrittenBytes=\(udpRemoteWrittenBytes) udpReadBytes=\(udpRemoteReadBytes) udpOpenErrors=\(udpOpenErrors) udpVisionUDP443Rejections=\(udpVisionUDP443Rejections) udpWriteErrors=\(udpRemoteWriteErrors) udpReadErrors=\(udpRemoteReadErrors) udpRemoteClosed=\(udpRemoteClosedEvents) udpQuicBlockedPackets=\(udpQuicBlockedPackets) udpOversizeDatagrams=\(udpOversizeDatagrams)",
         ]
     }
 }
@@ -889,6 +914,15 @@ public final class XrayCore: @unchecked Sendable {
     private var handle: OpaquePointer?
     private var dataPathEnabled = false
     private var retainedSocketProtectContext: Unmanaged<XraySocketProtectContext>?
+    /// The MTU this core runs its TUN at; the interface must use the same value.
+    public private(set) var tunMtu: XrayTunMtu = .standard
+
+    /// `requested` when the library supports `TUN_MTU`, otherwise the standard
+    /// 1500 that every library runs at.
+    public static func supportedTunMtu(_ requested: XrayTunMtu) -> XrayTunMtu {
+        let info = ffiInfo
+        return info.version.minor >= 16 && info.supports(.tunMtu) ? requested : .standard
+    }
 
     public static var ffiInfo: XrayFFIInfo {
         XrayFFIInfo(
@@ -928,7 +962,8 @@ public final class XrayCore: @unchecked Sendable {
         startupProbe: XrayStartupProbeOptions? = nil,
         fileLogDirectory: URL? = nil,
         hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
-        tunAdmission: XrayTunAdmissionOptions? = nil
+        tunAdmission: XrayTunAdmissionOptions? = nil,
+        tunMtu: XrayTunMtu = .standard
     ) throws {
         try self.init(
             configJSON: configJSON,
@@ -943,7 +978,8 @@ public final class XrayCore: @unchecked Sendable {
             tunPacketFormat: XRAY_TUN_FD_PACKET_FORMAT_DARWIN_UTUN,
             tunClosePolicy: XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
             hysteriaStreamLimits: hysteriaStreamLimits,
-            tunAdmission: tunAdmission
+            tunAdmission: tunAdmission,
+            tunMtu: tunMtu
         )
     }
 
@@ -961,7 +997,8 @@ public final class XrayCore: @unchecked Sendable {
         tunPacketFormat: XrayTunFdPacketFormat = XRAY_TUN_FD_PACKET_FORMAT_RAW_IP,
         tunClosePolicy: XrayTunFdClosePolicy = XRAY_TUN_FD_CLOSE_POLICY_BORROWED,
         hysteriaStreamLimits: XrayHysteriaStreamLimits? = nil,
-        tunAdmission: XrayTunAdmissionOptions? = nil
+        tunAdmission: XrayTunAdmissionOptions? = nil,
+        tunMtu: XrayTunMtu = .standard
     ) throws {
         let ffiInfo = Self.ffiInfo
         try Self.validateFFIVersion(
@@ -1079,6 +1116,14 @@ public final class XrayCore: @unchecked Sendable {
                 ),
                 error: error
             )
+            if tunMtu != .standard {
+                guard ffiInfo.version.minor >= 16 else {
+                    throw XrayCoreError.incompatibleFFIMinorVersion(required: 16, actual: ffiInfo.version.minor)
+                }
+                try requireCapability(.tunMtu)
+                try check(xray_core_set_tun_mtu(handle, tunMtu.value, &error), error: error)
+                self.tunMtu = tunMtu
+            }
             if let hysteriaStreamLimits {
                 guard ffiInfo.version.minor >= 10 else {
                     throw XrayCoreError.incompatibleFFIMinorVersion(required: 10, actual: ffiInfo.version.minor)
@@ -1445,7 +1490,8 @@ public final class XrayCore: @unchecked Sendable {
         }
     }
 
-    public func pollPacket(maxBytes: Int = 1_500) throws -> Data? {
+    public func pollPacket(maxBytes: Int? = nil) throws -> Data? {
+        let maxBytes = maxBytes ?? Int(tunMtu.value)
         try Self.validatePacketPollSize(maxBytes)
         return try withDataPathHandle { handle in
             var error: OpaquePointer?
@@ -1474,9 +1520,10 @@ public final class XrayCore: @unchecked Sendable {
     /// for the first one. Returns an empty array on timeout.
     public func pollPackets(
         maxPackets: Int = 64,
-        maxPacketBytes: Int = 1_500,
+        maxPacketBytes: Int? = nil,
         waitMilliseconds: UInt32 = 0
     ) throws -> [Data] {
+        let maxPacketBytes = maxPacketBytes ?? Int(tunMtu.value)
         let byteCount = try Self.validatedPacketBatchByteCount(
             maxPackets: maxPackets,
             maxPacketBytes: maxPacketBytes
@@ -1636,7 +1683,8 @@ public final class XrayCore: @unchecked Sendable {
                 tunFdWriteBatchMaxPackets: stats.tun_fd_write_batch_max_packets,
                 tunFdReadLoopExits: stats.tun_fd_read_loop_exits,
                 tunFdWriteLoopExits: stats.tun_fd_write_loop_exits,
-                tunFdTransientIoErrors: stats.tun_fd_transient_io_errors
+                tunFdTransientIoErrors: stats.tun_fd_transient_io_errors,
+                udpOversizeDatagrams: stats.udp_oversize_datagrams
             )
         }
     }

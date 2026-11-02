@@ -866,6 +866,21 @@ Java_org_xrayrust_mobile_XrayCore_nativeSetHysteriaStreamLimits(
   check_status(env, status, error);
 } XRAY_JNI_CATCH_VOID(env)
 
+extern "C" JNIEXPORT void JNICALL
+Java_org_xrayrust_mobile_XrayCore_nativeSetTunMtu(
+    JNIEnv *env, jobject, jlong handle, jint mtu) try {
+  NativeCore *native = core_from_handle(handle);
+  if (native == nullptr || native->core == nullptr) return;
+  if (mtu < 1280 || mtu > 9000) {
+    throw_illegal_argument(env, "TUN MTU must be in 1280..9000");
+    return;
+  }
+  XrayError *error = nullptr;
+  const XrayStatus status =
+      xray_core_set_tun_mtu(native->core, static_cast<uint32_t>(mtu), &error);
+  check_status(env, status, error);
+} XRAY_JNI_CATCH_VOID(env)
+
 // Blocks for at most timeout_ms. The Kotlin caller holds the data-path read
 // lock. Lifecycle calls cancel probes, then drain readers before freeing.
 extern "C" JNIEXPORT jlongArray JNICALL
@@ -1536,9 +1551,10 @@ Java_org_xrayrust_mobile_XrayCore_nativeStats(JNIEnv *env, jobject, jlong handle
       static_cast<jlong>(stats.tcp443_first_byte_duration_ms_max),
       static_cast<jlong>(stats.tcp_remote_written_bytes),
       static_cast<jlong>(stats.tcp_remote_read_bytes),
+      static_cast<jlong>(stats.udp_oversize_datagrams),
   };
   constexpr jsize value_count = sizeof(values) / sizeof(values[0]);
-  static_assert(value_count == 21, "keep NATIVE_TUN_STATS_VALUE_COUNT in XrayCore.kt in sync");
+  static_assert(value_count == 22, "keep NATIVE_TUN_STATS_VALUE_COUNT in XrayCore.kt in sync");
   jlongArray array = env->NewLongArray(value_count);
   if (array == nullptr) {
     return nullptr;

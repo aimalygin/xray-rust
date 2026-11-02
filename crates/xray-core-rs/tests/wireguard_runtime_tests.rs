@@ -74,6 +74,32 @@ async fn sharing_accounting_and_stop(psk: Option<[u8; 32]>) {
         let reply = parse_socks5_udp_datagram(&packet[..n]).unwrap();
         assert_eq!(reply.target, target);
         assert_eq!(reply.payload.as_ref(), payload);
+        phase = "oversize SOCKS UDP keeps the flow";
+        let udp_flow = |core: &xray_core_rs::Core| {
+            core.connection_snapshot()
+                .connections
+                .iter()
+                .find(|c| c.network == Network::Udp)
+                .map(|c| c.id)
+        };
+        let flow_before = udp_flow(&core).unwrap();
+        // The default 1420-byte tunnel carries at most 1392 bytes over IPv4.
+        udp.send_to(
+            &encode_socks5_udp_datagram(&target, &[0xa5; 1393]).unwrap(),
+            relay,
+        )
+        .await
+        .unwrap();
+        udp.send_to(
+            &encode_socks5_udp_datagram(&target, &payload).unwrap(),
+            relay,
+        )
+        .await
+        .unwrap();
+        let n = udp.recv(&mut packet).await.unwrap();
+        let reply = parse_socks5_udp_datagram(&packet[..n]).unwrap();
+        assert_eq!(reply.payload.as_ref(), payload);
+        assert_eq!(udp_flow(&core), Some(flow_before));
         assert_eq!(
             protector.0.load(Ordering::SeqCst),
             1,

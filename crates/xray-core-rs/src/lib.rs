@@ -46,7 +46,6 @@ mod tun_fd;
 #[doc(hidden)]
 pub use sniffing::sniff_quic_initial_sni_for_fuzzing;
 
-const TUN_MTU: usize = 1500;
 const TUN_INBOUND_QUEUE_DEPTH: usize = 1024;
 const TUN_OUTBOUND_QUEUE_DEPTH: usize = 4096;
 const GENERATED_DNS_TAG_PREFIX: &str = "xray.system.";
@@ -92,6 +91,40 @@ pub struct TunRuntimeOptions {
     /// Host resource limits for each Hysteria outbound, shared by all inbounds.
     /// Independent of the TUN profile and never interpreted as Xray JSON fields.
     pub hysteria_stream_limits: HysteriaStreamLimits,
+    /// MTU of the host's TUN interface. The host must give the interface the
+    /// same value (`VpnService.Builder.setMtu`, `NEPacketTunnelNetworkSettings.mtu`).
+    pub mtu: TunMtu,
+}
+
+/// MTU of the TUN link, validated to [`TunMtu::MIN`]..=[`TunMtu::MAX`].
+/// The default stays 1500 on every profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TunMtu(u16);
+
+impl Default for TunMtu {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl TunMtu {
+    /// The IPv6 minimum link MTU (RFC 8200).
+    pub const MIN: u32 = 1280;
+    pub const MAX: u32 = 9000;
+    pub const DEFAULT: Self = Self(1500);
+
+    /// Rejects values outside `MIN..=MAX` instead of clamping them, so a
+    /// host never runs with an MTU other than the one it gave its interface.
+    pub fn new(mtu: u32) -> Result<Self, CoreError> {
+        if !(Self::MIN..=Self::MAX).contains(&mtu) {
+            return Err(CoreError::InvalidTunMtu(mtu));
+        }
+        Ok(Self(mtu as u16))
+    }
+
+    pub fn get(self) -> usize {
+        usize::from(self.0)
+    }
 }
 
 /// Bounded concurrent streams per Hysteria connection. Existing defaults are
@@ -250,23 +283,23 @@ impl TunRuntimeOptions {
     pub fn tun_queue_options(self) -> TunQueueOptions {
         match self.profile {
             TunRuntimeProfile::LowMemory => TunQueueOptions {
-                mtu: TUN_MTU,
+                mtu: self.mtu.get(),
                 inbound_queue_depth: 256,
                 outbound_queue_depth: 512,
             },
             TunRuntimeProfile::Throughput => TunQueueOptions {
-                mtu: TUN_MTU,
+                mtu: self.mtu.get(),
                 inbound_queue_depth: 2048,
                 outbound_queue_depth: 8192,
             },
             TunRuntimeProfile::MobilePlus => TunQueueOptions {
-                mtu: TUN_MTU,
+                mtu: self.mtu.get(),
                 inbound_queue_depth: 2048,
                 outbound_queue_depth: 8192,
             },
             TunRuntimeProfile::Default | TunRuntimeProfile::Mobile | TunRuntimeProfile::Desktop => {
                 TunQueueOptions {
-                    mtu: TUN_MTU,
+                    mtu: self.mtu.get(),
                     inbound_queue_depth: TUN_INBOUND_QUEUE_DEPTH,
                     outbound_queue_depth: TUN_OUTBOUND_QUEUE_DEPTH,
                 }
@@ -316,6 +349,8 @@ pub enum CoreError {
     Hysteria(#[from] xray_transport::hysteria::HysteriaError),
     #[error(transparent)]
     Wireguard(#[from] xray_wireguard::Error),
+    #[error("TUN MTU {0} is outside {min}..={max}", min = TunMtu::MIN, max = TunMtu::MAX)]
+    InvalidTunMtu(u32),
     #[error("core is already running")]
     AlreadyRunning,
     #[error("core is already stopped")]

@@ -7176,3 +7176,31 @@ fn shared_mobile_encryption_fixtures_match_rust_validation() {
         );
     }
 }
+
+#[test]
+fn tun_inbound_mtu_warns_that_the_host_owns_it() {
+    for key in ["mtu", "MTU"] {
+        let raw = format!(
+            r#"{{
+                "inbounds": [{{ "protocol": "tun", "settings": {{ "{key}": 9000 }} }}],
+                "outbounds": [{{ "protocol": "freedom" }}]
+            }}"#
+        );
+        let parsed = parse_xray_json(&raw).expect("TUN MTU stays a warning");
+
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        let diagnostic = &parsed.diagnostics[0];
+        assert_eq!(diagnostic.severity, DiagnosticSeverity::Warning);
+        assert_eq!(
+            diagnostic.path.as_deref(),
+            Some(format!("$.inbounds[0].settings.{key}").as_str())
+        );
+        assert!(diagnostic.message.contains("xray_core_set_tun_mtu"));
+    }
+
+    let raw = r#"{
+        "inbounds": [{ "protocol": "tun", "settings": {} }],
+        "outbounds": [{ "protocol": "freedom" }]
+    }"#;
+    assert!(parse_xray_json(raw).unwrap().diagnostics.is_empty());
+}

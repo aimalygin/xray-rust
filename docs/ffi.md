@@ -8,7 +8,7 @@ source of truth for declarations and enum values.
 ## ABI version
 
 Call `xray_ffi_version_major()` and `xray_ffi_version_minor()` before creating a
-handle. The current ABI version is `1.15`. The checked-in Swift and JNI adapters
+handle. The current ABI version is `1.16`. The checked-in Swift and JNI adapters
 reject any major other than `1` and require minor `1` or newer. Their selector
 and health methods require the corresponding ABI 1.2 capability bits; their
 connection-management methods require the ABI 1.3 capability bit, and routing
@@ -27,6 +27,7 @@ The on-demand outbound probe requires minor >=9 and `OUTBOUND_PROBE`.
 Cancelling in-flight probes without the teardown latch requires minor >=15 and
 `OUTBOUND_PROBE_CANCEL` (bit 28).
 Startup-probe preflight requires minor >=12 and `STARTUP_PROBE_PREFLIGHT` (bit 25).
+A TUN MTU other than 1500 requires minor >=16 and `TUN_MTU` (bit 29).
 
 An incompatible function signature, enum representation, ownership rule, or
 required struct layout requires a major version change. Consumers should
@@ -308,6 +309,53 @@ latch above and does not cancel startup-probe preflights. Kotlin
 `cancelOutboundProbes()` and Swift `cancelOutboundProbes()` require minor 15
 and the capability.
 
+## TUN MTU
+
+ABI 1.16 adds `XRAY_FFI_CAPABILITY_TUN_MTU` (bit 29) and
+`xray_core_set_tun_mtu(handle, mtu, error)`. The host owns the TUN interface, so
+the MTU is a runtime option rather than Xray JSON: a tun inbound's
+`settings.mtu` is ignored with a parser warning. Set it before config load, in
+`1280..=9000`; any other value returns `INVALID_ARGUMENT` and keeps the previous
+one, with no clamping. The default stays 1500 on every profile.
+
+Give the interface the same value (`VpnService.Builder.setMtu`,
+`NEPacketTunnelNetworkSettings.mtu`). The core drops packets longer than its MTU
+in both directions, so a mismatch loses traffic. A host that finds no `TUN_MTU`
+capability keeps both at 1500. Kotlin `XrayCore.supportedTunMtu(requested)` and
+Swift `XrayCore.supportedTunMtu(_:)` return the value to use for both, and
+`XrayCore.create(..., tunMtu)` / `XrayCore(..., tunMtu:)` apply it; the reference
+`XrayVpnService.startXrayTunnel(..., tunMtu)` and the `tunMtu()` override of
+`XrayPacketTunnelProvider` do both steps. Size `xray_tun_poll_packets` buffers
+by the MTU; the adapters do this from `tunMtu`.
+
+What grows with the MTU:
+
+- each TUN TCP socket's receive buffer is `max(32 KiB, 4 × MSS)`, because
+  Linux, Android and Darwin senders only put whole segments into the window.
+  32 KiB already covers MTUs up to 8232; at 9000 it is 35 KiB, at most
+  768 KiB more on the `Mobile` profile (256 flows) and 1.1 MiB on `MobilePlus`;
+- nothing else: the inbound and outbound packet queues keep their packet
+  depth and also hold at most `depth × 1500` bytes (at least one MTU), so a
+  jumbo MTU does not multiply their worst case. At 1500 or less the packet
+  count binds first, as before;
+- the DNS response cap (`MTU − 28` or `− 48`), still bounded by the client's
+  EDNS size;
+- UDP datagrams the host may send. A connection-oriented UDP path carries less
+  than a jumbo MTU allows: VLESS UDP (length-prefixed or XUDP, since Xray
+  servers read a datagram into one 8 KiB buffer), Mux/XUDP and Trojan 8192
+  bytes, native VMess 8094, and a WireGuard outbound its own tunnel MTU less
+  28/48 (1392 at the default 1420, already below a 1500-byte TUN). A larger datagram is dropped on its own, the
+  flow stays up, `udp_oversize_datagrams` counts it (Kotlin
+  `XrayTunStats.udpOversizeDatagrams`, Swift `udpOversizeDatagrams`), and the
+  host gets an ICMP "fragmentation needed" (IPv4) or "packet too big" (IPv6,
+  path MTU >= 1280) carrying the path MTU. Senders that set DF, such as QUIC
+  stacks and sockets with PMTU discovery, then shrink their datagrams. Others
+  may fragment the next ones locally, and the TUN stack does not reassemble
+  IPv4 fragments, so those datagrams stay lost, as before. SOCKS,
+  Shadowsocks 2022, Hysteria2 (which fragments) and freedom carry any datagram
+  of a 9000-byte TUN. Before ABI 1.16 such a datagram ended the whole UDP flow,
+  or, over length-prefixed VLESS, reached the target split in two.
+
 It is a shared call: it may overlap packet, statistics, snapshot, and other
 shared calls, including other probes, but not load/start/stop/free. Each
 in-flight call blocks its caller and holds at most one outbound connection, so
@@ -503,8 +551,8 @@ stats.struct_size = sizeof(stats);
 Within ABI major 1, `XrayTunStats` is append-only. The library accepts the
 original prefix ending with `tun_fd_write_batch_max_packets` (560 bytes on the
 supported 64-bit targets) and writes at most
-`min(stats.struct_size, sizeof(XrayTunStats))` bytes. The current layout is 584
-bytes on those targets; an older caller receives every field in its prefix and
+`min(stats.struct_size, sizeof(XrayTunStats))` bytes. The current layout is 592
+bytes on those targets (ABI 1.16 appended `udp_oversize_datagrams`); an older caller receives every field in its prefix and
 the allocation size in `struct_size` is preserved, so the same object remains
 safe to reuse. A future caller's unknown tail remains untouched. Buffers shorter
 than the original prefix are rejected with `XRAY_STATUS_BUFFER_TOO_SMALL`.

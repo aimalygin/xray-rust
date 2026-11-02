@@ -10,6 +10,31 @@ long-term supported release series.
 
 ## Unreleased
 
+- TUN: configurable MTU (ABI 1.16, `TUN_MTU`, bit 29). `xray_core_set_tun_mtu`
+  takes 1280..=9000 before config load and rejects other values instead of
+  clamping; the default stays 1500 on every profile. The Kotlin and Swift
+  adapters pass one value to the interface and the core
+  (`XrayCore.supportedTunMtu`, `create(..., tunMtu)`, `XrayCore(..., tunMtu:)`,
+  `XrayVpnService.startXrayTunnel(..., tunMtu)`, the provider's `tunMtu()`) and
+  keep 1500 on a library without the capability. A tun inbound's JSON
+  `settings.mtu` now gets a warning: the host, not the config, owns the MTU.
+  Previously a host interface above 1500 lost every longer packet silently.
+  See [TUN MTU](docs/ffi.md#tun-mtu).
+- TUN: each TCP socket's receive buffer is `max(32 KiB, 4 × MSS)`, so kernel
+  senders, which only send whole segments into the window, do not stall on a
+  jumbo MTU. Unchanged up to MTU 8232; at 9000 it adds at most 768 KiB on
+  `Mobile`. The TUN packet queues also hold at most `depth × 1500` bytes, so
+  a jumbo MTU does not multiply their memory.
+- UDP: a datagram larger than its outbound path carries (VLESS UDP, Mux/XUDP
+  and Trojan 8192 bytes, native VMess 8094, WireGuard its tunnel MTU less
+  28/48, so 1392 at the default 1420) no longer ends the whole flow or, over
+  length-prefixed VLESS, reaches the target split in two. It is dropped alone and
+  counted in the new `udp_oversize_datagrams` stat (appended to
+  `XrayTunStats`, now 592 bytes on 64-bit targets, and to the Kotlin and Swift
+  stats), and a TUN host gets an ICMP fragmentation-needed or packet-too-big
+  with the path MTU, which senders that set DF (QUIC, PMTU discovery) follow. This already
+  affected WireGuard outbounds at the default 1500-byte TUN.
+
 ## 0.9.0 - 2026-11-01
 
 Release candidate preparation; publication and exact-candidate release

@@ -829,3 +829,63 @@ async fn tun_fd_pump_failure_counters_start_at_zero_and_increment() {
     assert_eq!(stats.tun_fd_write_loop_exits, 1);
     assert_eq!(stats.tun_fd_transient_io_errors, 2);
 }
+
+#[tokio::test]
+async fn jumbo_mtu_queue_holds_the_bytes_of_a_1500_byte_queue_and_frees_them() {
+    // 4 slots × 1500 bytes, raised to one full 9000-byte packet: a second
+    // jumbo packet or a fourth 2500-byte one does not fit, while small
+    // packets still get every slot of the depth.
+    let tun = TunEndpoint::new_with_queue_depths(
+        TunConfig {
+            mtu: 9000,
+            queue_depth: 4,
+        },
+        4,
+        4,
+    );
+    tun.push_outbound(Bytes::from(vec![0x45; 9000]))
+        .await
+        .unwrap();
+    assert_eq!(
+        tun.push_outbound(Bytes::from(vec![0x45; 9000])).await,
+        Err(TunError::QueueFull)
+    );
+    assert_eq!(tun.poll_outbound().await.unwrap().len(), 9000);
+    tun.push_outbound(Bytes::from(vec![0x45; 9000]))
+        .await
+        .unwrap();
+    assert_eq!(
+        tun.try_poll_outbound().await.unwrap().map(|p| p.len()),
+        Some(9000)
+    );
+
+    for _ in 0..4 {
+        tun.push_inbound(Bytes::from(vec![0x45; 1500]))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        tun.push_inbound(Bytes::from_static(&[0x45; 40])).await,
+        Err(TunError::QueueFull)
+    );
+    tun.poll_inbound().await.unwrap();
+    tun.push_inbound(Bytes::from(vec![0x45; 1500]))
+        .await
+        .unwrap();
+
+    for _ in 0..3 {
+        tun.push_outbound(Bytes::from(vec![0x45; 2500]))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        tun.push_outbound(Bytes::from(vec![0x45; 2500])).await,
+        Err(TunError::QueueFull)
+    );
+    assert_eq!(tun.poll_outbound_batch(8).await.unwrap().len(), 3);
+    for _ in 0..3 {
+        tun.push_outbound(Bytes::from(vec![0x45; 2500]))
+            .await
+            .unwrap();
+    }
+}

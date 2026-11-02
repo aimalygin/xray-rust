@@ -143,7 +143,6 @@ final class XrayPacketTunnelTerminalFailureDelivery: @unchecked Sendable {
 @available(iOS 9.0, tvOS 17.0, macOS 10.11, *)
 public final class XrayPacketTunnelPump: @unchecked Sendable {
     private static let maxPacketsPerPoll = 64
-    private static let maxPacketBytes = 1_500
     private static let pollWaitMilliseconds: UInt32 = 250
     private static let pollErrorBackoffSeconds: TimeInterval = 0.05
     private static let maxConsecutivePacketFailures = 8
@@ -188,10 +187,12 @@ public final class XrayPacketTunnelPump: @unchecked Sendable {
         terminalFailureDelivery = XrayPacketTunnelTerminalFailureDelivery(
             handler: terminalFailureHandler
         )
-        let pollByteCount = Self.maxPacketsPerPoll * Self.maxPacketBytes
+        // One packet slot per MTU: the core never emits a longer packet.
+        let maxPacketBytes = Int(core.tunMtu.value)
+        let pollByteCount = Self.maxPacketsPerPoll * maxPacketBytes
         pollStorage = XrayPacketBatchPollStorage(
             validatedMaxPackets: Self.maxPacketsPerPoll,
-            validatedMaxPacketBytes: Self.maxPacketBytes,
+            validatedMaxPacketBytes: maxPacketBytes,
             validatedByteCount: pollByteCount
         )
     }

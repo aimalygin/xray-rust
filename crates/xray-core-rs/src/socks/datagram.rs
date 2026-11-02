@@ -44,6 +44,15 @@ pub(super) async fn bridge(
             &traffic,
             SOCKS_UDP_FLOW_IDLE_TIMEOUT,
             None,
+            |payload: bytes::Bytes, max_payload| {
+                crate::outbound::datagram::log_oversize_udp_datagram(
+                    &context.runtime_logger,
+                    "socks",
+                    payload.len(),
+                    max_payload,
+                );
+                std::future::ready(())
+            },
             |source, payload| {
                 let source = client_visible_target.clone().unwrap_or(source);
                 let context = &context;

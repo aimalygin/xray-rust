@@ -1305,6 +1305,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
     public var tunFdReadLoopExits: UInt64
     public var tunFdWriteLoopExits: UInt64
     public var tunFdTransientIoErrors: UInt64
+    public var udpOversizeDatagrams: UInt64
 
     private enum CodingKeys: String, CodingKey {
         case inboundPackets
@@ -1352,6 +1353,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         case tunFdReadLoopExits
         case tunFdWriteLoopExits
         case tunFdTransientIoErrors
+        case udpOversizeDatagrams
     }
 
     public init(
@@ -1399,7 +1401,8 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         tunFdWriteBatchMaxPackets: UInt64 = 0,
         tunFdReadLoopExits: UInt64 = 0,
         tunFdWriteLoopExits: UInt64 = 0,
-        tunFdTransientIoErrors: UInt64 = 0
+        tunFdTransientIoErrors: UInt64 = 0,
+        udpOversizeDatagrams: UInt64 = 0
     ) {
         self.inboundPackets = inboundPackets
         self.outboundPackets = outboundPackets
@@ -1446,6 +1449,7 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         self.tunFdReadLoopExits = tunFdReadLoopExits
         self.tunFdWriteLoopExits = tunFdWriteLoopExits
         self.tunFdTransientIoErrors = tunFdTransientIoErrors
+        self.udpOversizeDatagrams = udpOversizeDatagrams
     }
 
     public init(from decoder: Decoder) throws {
@@ -1596,6 +1600,10 @@ public struct XrayClientRuntimeStats: Codable, Equatable, Sendable {
         tunFdTransientIoErrors = try container.decodeIfPresent(
             UInt64.self,
             forKey: .tunFdTransientIoErrors
+        ) ?? 0
+        udpOversizeDatagrams = try container.decodeIfPresent(
+            UInt64.self,
+            forKey: .udpOversizeDatagrams
         ) ?? 0
     }
 }

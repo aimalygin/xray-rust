@@ -279,6 +279,21 @@ mod padding {
         }
 
         #[test]
+        fn every_record_mode_carries_the_published_datagram_bound() {
+            let key = [1; 16];
+            let iv = [2; 16];
+            for auth_length in [None, Some((&key, &iv))] {
+                let records = Records::new(Cipher::Aes128Gcm, &key, &iv, auth_length);
+                assert!(records.max_payload() >= crate::vmess::MAX_DATAGRAM_PAYLOAD);
+            }
+            let authenticated = Records::new(Cipher::Aes128Gcm, &key, &iv, Some((&key, &iv)));
+            assert_eq!(
+                authenticated.max_payload(),
+                crate::vmess::MAX_DATAGRAM_PAYLOAD
+            );
+        }
+
+        #[test]
         fn empty_padding_does_not_request_entropy_and_oversize_is_rejected() {
             let mut entropy = Entropy::new();
             entropy

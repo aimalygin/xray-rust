@@ -52,6 +52,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
         "xray_core_probe_outbound_url",
         "xray_core_cancel_outbound_probes",
         "xray_core_cancel_inflight_outbound_probes",
+        "xray_core_set_tun_mtu",
+        "xray_core_set_tun_mtu",
         "XrayOutboundProbeFailureKind",
         "xray_core_start",
         "xray_core_stop",
@@ -102,6 +104,8 @@ fn ffi_header_declares_lifecycle_error_and_tun_abi() {
     assert!(header.contains("XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT = 1 << 26"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT = 1 << 27"));
     assert!(header.contains("XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL = 1 << 28"));
+    assert!(header.contains("XRAY_FFI_CAPABILITY_TUN_MTU = 1 << 29"));
+    assert!(header.contains("uint64_t udp_oversize_datagrams;"));
     // The Rust enum, the JNI result carrier and the Swift mapping all rely on
     // these discriminants staying stable within ABI major 1.
     for (name, value) in [
@@ -485,6 +489,10 @@ fn android_adapter_declares_vpn_service_jni_and_socket_protection() {
     assert!(core.contains("fun probeOutboundUrl("));
     assert!(core.contains("requireCapability(XrayFfiCapability.OutboundProbe)"));
     assert!(core.contains("OutboundProbeCancel(1L shl 28)"));
+    assert!(core.contains("TunMtu(1L shl 29)"));
+    assert!(core.contains("fun supportedTunMtu(requested: Int): Int"));
+    assert!(core.contains("requireFeature(16, XrayFfiCapability.TunMtu)"));
+    assert!(jni.contains("xray_core_set_tun_mtu(native->core, static_cast<uint32_t>(mtu), &error)"));
     assert!(core.contains("fun cancelOutboundProbes()"));
     assert!(core.contains("requireFeature(15, XrayFfiCapability.OutboundProbeCancel)"));
     assert!(jni.contains("xray_core_cancel_inflight_outbound_probes(native->core, &error)"));
@@ -1384,9 +1392,11 @@ static void use_xray_ffi_api(void) {
   capabilities &= XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
+  capabilities &= XRAY_FFI_CAPABILITY_TUN_MTU;
   capabilities &= XRAY_FFI_CAPABILITY_OUTBOUND_PROBE;
   (void)capabilities;
   (void)xray_profile_import_json(packet, sizeof(packet), NULL, 0, &written, &error);
+  (void)xray_core_set_tun_mtu(handle, 1500, &error);
   (void)xray_core_set_geodata_search_dir(handle, ".", &error);
   (void)xray_core_set_geodata_search_dir_exclusive(handle, ".", &error);
   (void)xray_core_set_socket_protect_callback(handle, NULL, NULL, &error);

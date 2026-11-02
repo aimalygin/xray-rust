@@ -30,7 +30,7 @@ use xray_tun::TunTcpSlowFlowKind;
 use zeroize::Zeroize;
 
 pub const XRAY_FFI_ABI_MAJOR: u32 = 1;
-pub const XRAY_FFI_ABI_MINOR: u32 = 15;
+pub const XRAY_FFI_ABI_MINOR: u32 = 16;
 
 pub const XRAY_FFI_CAPABILITY_CONFIG_WARNINGS: u64 = 1 << 0;
 pub const XRAY_FFI_CAPABILITY_GEODATA_SEARCH: u64 = 1 << 1;
@@ -62,6 +62,7 @@ pub const XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT: u64 = 1 << 25;
 pub const XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT: u64 = 1 << 26;
 pub const XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT: u64 = 1 << 27;
 pub const XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL: u64 = 1 << 28;
+pub const XRAY_FFI_CAPABILITY_TUN_MTU: u64 = 1 << 29;
 
 pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_GEODATA_SEARCH
@@ -91,7 +92,8 @@ pub const XRAY_FFI_CAPABILITIES: u64 = XRAY_FFI_CAPABILITY_CONFIG_WARNINGS
     | XRAY_FFI_CAPABILITY_STARTUP_PROBE_PREFLIGHT
     | XRAY_FFI_CAPABILITY_SOCKS_PROFILE_IMPORT
     | XRAY_FFI_CAPABILITY_HTTP_PROFILE_IMPORT
-    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL;
+    | XRAY_FFI_CAPABILITY_OUTBOUND_PROBE_CANCEL
+    | XRAY_FFI_CAPABILITY_TUN_MTU;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,6 +370,8 @@ pub struct XrayTunStats {
     pub tun_fd_read_loop_exits: u64,
     pub tun_fd_write_loop_exits: u64,
     pub tun_fd_transient_io_errors: u64,
+    /// Appended in ABI 1.16.
+    pub udp_oversize_datagrams: u64,
 }
 
 /// The original ABI-major-1 `XrayTunStats` prefix, before the three TUN-fd
@@ -452,6 +456,7 @@ impl Default for XrayTunStats {
             tun_fd_read_loop_exits: 0,
             tun_fd_write_loop_exits: 0,
             tun_fd_transient_io_errors: 0,
+            udp_oversize_datagrams: 0,
         }
     }
 }
@@ -2331,6 +2336,50 @@ pub unsafe extern "C" fn xray_core_set_hysteria_stream_limits(
     }
 }
 
+/// Sets the MTU of the host's TUN interface before config load (ABI 1.16,
+/// `TUN_MTU`). The host passes the same value to its interface
+/// (`VpnService.Builder.setMtu`, `NEPacketTunnelNetworkSettings.mtu`); a host
+/// that sees no `TUN_MTU` capability keeps both at 1500. The MTU must be
+/// 1280..=9000 and defaults to 1500 on every profile. Rejection preserves the
+/// previous value. A tun inbound's JSON `settings.mtu` is not used.
+///
+/// # Safety
+/// `handle` must be null or a live handle. This lifecycle call must not race
+/// other handle calls. `error`, when non-null, must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn xray_core_set_tun_mtu(
+    handle: *mut XrayCoreHandle,
+    mtu: u32,
+    error: *mut *mut XrayError,
+) -> XrayStatus {
+    unsafe {
+        ffi_status(error, || {
+            clear_error(error);
+            let Some(handle) = handle.as_mut() else {
+                set_error(error, XrayStatus::NullArgument, "core handle is null");
+                return XrayStatus::NullArgument;
+            };
+            let mtu = match xray_core_rs::TunMtu::new(mtu) {
+                Ok(mtu) => mtu,
+                Err(source) => {
+                    set_error(error, XrayStatus::InvalidArgument, source.to_string());
+                    return XrayStatus::InvalidArgument;
+                }
+            };
+            if handle.core.is_some() {
+                set_error(
+                    error,
+                    XrayStatus::RuntimeError,
+                    "TUN MTU must be set before config load",
+                );
+                return XrayStatus::RuntimeError;
+            }
+            handle.tun_runtime_options.mtu = mtu;
+            XrayStatus::Ok
+        })
+    }
+}
+
 /// Selects the TUN runtime performance profile.
 ///
 /// # Safety
@@ -3705,6 +3754,7 @@ unsafe fn xray_tun_stats_inner(
         tun_fd_read_loop_exits: snapshot.tun_fd_read_loop_exits,
         tun_fd_write_loop_exits: snapshot.tun_fd_write_loop_exits,
         tun_fd_transient_io_errors: snapshot.tun_fd_transient_io_errors,
+        udp_oversize_datagrams: snapshot.udp_oversize_datagrams,
     };
     unsafe {
         std::ptr::copy_nonoverlapping(
@@ -4369,6 +4419,43 @@ mod tests {
         xray_core_routing_policy_snapshot_json, xray_core_set_dns_bootstrap_mode, DnsBootstrapMode,
         OutStrArgs, OutStrBuf, XrayCoreHandle, XrayDnsBootstrapMode, XrayError, XrayStatus,
     };
+
+    #[test]
+    fn tun_mtu_is_validated_atomically_and_frozen_at_config_load() {
+        use super::xray_core_set_tun_mtu as set;
+        unsafe {
+            let mut error = ptr::null_mut();
+            assert_eq!(
+                set(ptr::null_mut(), 1500, &mut error),
+                XrayStatus::NullArgument
+            );
+            free_error(error);
+            error = ptr::null_mut();
+            let handle = xray_core_new(&mut error);
+            assert!(!handle.is_null());
+            assert_eq!((*handle).tun_runtime_options.mtu.get(), 1500);
+            for mtu in [1280, 9000, 4000] {
+                assert_eq!(set(handle, mtu, &mut error), XrayStatus::Ok);
+                assert_eq!((*handle).tun_runtime_options.mtu.get(), mtu as usize);
+            }
+            for mtu in [0, 576, 1279, 9001, 65535, u32::MAX] {
+                assert_eq!(set(handle, mtu, &mut error), XrayStatus::InvalidArgument);
+                assert_eq!((*handle).tun_runtime_options.mtu.get(), 4000);
+                free_error(error);
+                error = ptr::null_mut();
+            }
+            let config = CString::new(r#"{"outbounds":[{"protocol":"freedom"}]}"#).unwrap();
+            assert_eq!(
+                xray_core_load_config_json(handle, config.as_ptr(), &mut error),
+                XrayStatus::Ok
+            );
+            assert_eq!((*handle).core.as_ref().unwrap().tun().mtu(), 4000);
+            assert_eq!(set(handle, 1500, &mut error), XrayStatus::RuntimeError);
+            assert_eq!((*handle).tun_runtime_options.mtu.get(), 4000);
+            free_error(error);
+            xray_core_free(handle);
+        }
+    }
 
     #[test]
     fn hysteria_limits_are_validated_atomically_and_frozen_at_config_load() {
