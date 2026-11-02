@@ -10,6 +10,11 @@ long-term supported release series.
 
 ## Unreleased
 
+## 0.9.0 - 2026-11-01
+
+Release candidate preparation; publication and exact-candidate release
+qualification are pending.
+
 - Require versioned exact-candidate Apple/Android evidence for 0.9 publication.
   SOCKS, HTTP and classic Shadowsocks AEAD each need every device transition on
   Apple and both Android adapter paths, plus throughput, latency and memory

@@ -2,12 +2,18 @@
 
 Requested on 2026-11-01 in
 [#136](https://github.com/aimalygin/xray-rust/issues/136). The owner chose
-0.9.0 over 0.8.2 for the scope below. Publication is pending; no candidate
-commit is fixed yet.
+0.9.0 over 0.8.2 for the scope below. Publication is pending.
+
+The candidate is the 0.9.0 release commit: `main` through
+`96cff12be7ad9a902191739f4c0648e18a66f96a` plus the workspace version,
+lockfile, generated configuration contract, dated changelog section and this
+document. Its exact revision and tree are recorded here once it merges; every
+later step binds to them. The README install snippets keep the published
+0.8.1 until the 0.9.0 packages exist.
 
 ## Scope
 
-Everything merged into `main` since 0.8.1, listed under Unreleased in the
+Everything merged into `main` since 0.8.1, listed under 0.9.0 in the
 [changelog](../CHANGELOG.md). Highlights:
 
 - SOCKS and HTTP outbounds with Swift/Kotlin link import, classic Shadowsocks
@@ -60,10 +66,12 @@ historical records, not 0.9 decisions.
 
 ## Remaining work, in order
 
-1. Extend the Apple and Android device fixtures and harnesses to the three new
-   protocols and their links.
-2. Bump the workspace to 0.9.0, date the changelog section, regenerate the
-   configuration contract and fix the candidate commit.
+1. ~~Extend the Apple and Android device fixtures and harnesses to the three
+   new protocols and their links.~~ Done in
+   [#149](https://github.com/aimalygin/xray-rust/pull/149); see
+   [v0.9 evidence collection](v09-release-evidence.md).
+2. ~~Bump the workspace to 0.9.0, date the changelog section and regenerate
+   the configuration contract.~~ Done in the release commit.
 3. Pin that exact revision in `xray-rust-mobile`, synchronize the canonical
    adapters, header and tests, add the `v09` profile there, and pass both
    repositories' CI.
