@@ -24,6 +24,46 @@ ARCHIVE_ALLOWLIST = "Nine verified file digests in the v0.7 automated evidence i
 
 
 class EvidenceAllowlists(unittest.TestCase):
+    def test_v090_evidence_exceptions_are_narrow(self):
+        base = "docs/device-results/2026-11-02-v090-candidate/"
+        names = ("performance-protocols/manifest.json",
+                 "failed/performance-protocols-attempt1/manifest.json",
+                 "performance-features/build-manifest.json",
+                 "tools/udp_cancel_v09.py")
+        inventory = json.loads((ROOT / base / "inventory.json").read_text())
+        hashes = {item["path"]: item["publishedSHA256"] for item in inventory["files"]}
+        reviewed = {}
+        for name in names:
+            content = (ROOT / base / name).read_bytes()
+            self.assertEqual(hashlib.sha256(content).hexdigest(), hashes[name])
+            reviewed[base + name] = content.decode()
+        self.assertEqual(self.scan(reviewed), set())
+        other = "e79a0029cc782ff8166c708f8c911ef39de33563b71a30df2cd2ff1d63d799ab"
+        reference = json.loads(reviewed[base + names[0]])["binarySha256"]["xray"]
+        for name in names[:3]:
+            path = base + name
+            self.assertIn((path, "jfrog-identity-token"),
+                          self.scan({path: reviewed[path].replace(reference, other)}))
+        feature = base + names[2]
+        key_digest = json.loads(reviewed[feature])["binarySha256"]["keys"]
+        self.assertIn((feature, "generic-api-key"),
+                      self.scan({feature: json.dumps({"api_key": key_digest})}))
+        collector = base + names[3]
+        synthetic = "ABcdeF01234" + "GHijk56789lMno"
+        self.assertIn((collector, "generic-api-key"), self.scan(
+            {collector: reviewed[collector].replace("shadowsocks-aead-aes-256-gcm", synthetic)}))
+        outside = {"unreviewed/" + name: content for name, content in reviewed.items()}
+        findings = self.scan(outside)
+        for name in names[:3]:
+            self.assertIn(("unreviewed/" + base + name, "jfrog-identity-token"), findings)
+        self.assertIn(("unreviewed/" + collector, "generic-api-key"), findings)
+        token = "ghp_" + "aB7cD9eF2gH4iJ6kL8mN0oP1qR3sT5uV7wX9"
+        controls = {path: json.dumps({"api_key": synthetic, "token": token}) for path in reviewed}
+        findings = self.scan(controls)
+        for path in controls:
+            self.assertIn((path, "generic-api-key"), findings)
+            self.assertIn((path, "github-pat"), findings)
+
     def test_v081_binary_digest_exceptions_are_narrow(self):
         base = "docs/device-results/2026-10-18-v081-candidate/"
         names = ("performance-protocols/manifest.json",
