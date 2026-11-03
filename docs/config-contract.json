@@ -1395,13 +1395,14 @@
         "scMaxBufferedPosts",
         "scStreamUpServerSecs",
         "serverMaxHeaderBytes",
+        "h2Params",
         "xmux",
         "downloadSettings",
         "extra",
         "h2StreamReceiveWindow"
       ],
       "id": "XHTTP",
-      "notes": "extra replaces rather than merges outer values except host/path/mode. Nested extra is inert. downloadSettings supports an independent XHTTP stack for packet-up/stream-up only; no recursive download. scMaxConcurrentPosts is ignored with a warning. Rust-only h2StreamReceiveWindow: optional integer 65535..16777216 bytes, absent/null defaults to 4194304; H2 only, connection credit unchanged."
+      "notes": "extra replaces rather than merges outer values except host/path/mode. Nested extra is inert. downloadSettings supports an independent XHTTP stack for packet-up/stream-up only; no recursive download. scMaxConcurrentPosts is ignored with a warning; h2Params (any JSON, Xray inbound only) is ignored. Rust-only h2StreamReceiveWindow: optional integer 65535..16777216 bytes, absent/null defaults to 4194304; H2 only, connection credit unchanged."
     },
     {
       "context": "xhttpSettings.xmux; splithttpSettings.xmux; effective extra.xmux",

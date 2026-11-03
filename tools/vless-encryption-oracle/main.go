@@ -74,7 +74,7 @@ func vectors() error {
 		Vectors  []vector    `json:"vectors"`
 		CTR      string      `json:"ctr"`
 		CTRCarry []ctrVector `json:"ctrCarry"`
-	}{Upstream: "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"}
+	}{Upstream: "a4a3dff5b20c2faae567b742c172c7b95e75c083"}
 	material := pattern(96)
 	for _, n := range []int{0, 16, 63, 64, 65, 1023, 1024, 1025, 1120, 1216, 16645} {
 		context := pattern(n)

@@ -14,8 +14,8 @@ See [Xray-core differences and verification gaps](xray-core-differences.md)
 for the reference revision, deliberate SOCKS restrictions, mobile integration
 gaps, and pending HTTP decisions from issues #79 and #81.
 
-The active compatibility reference is **Xray-core v26.10.21**; see the
-[migration record](xray-core-v26.10.21-migration.md) for checks and limitations.
+The active compatibility reference is **Xray-core v26.10.31**; see the
+[migration record](xray-core-v26.10.31-migration.md) for checks and limitations.
 References to earlier versions below describe the origin of unchanged behavior.
 
 ## v0.8 Hysteria carrier additions
@@ -219,7 +219,7 @@ adapter. UDP noise is available through their ordinary JSON configuration.
 The current development tree adds Trojan, Shadowsocks 2022 and VMess AEAD.
 These additions are not part of the published 0.7 artifacts. See the
 [implementation evidence](v08-implementation-plan.md) for verified combinations,
-resource bounds and remaining release gates. The active reference is Xray-core v26.10.21; unsupported options fail closed.
+resource bounds and remaining release gates. The active reference is Xray-core v26.10.31; unsupported options fail closed.
 
 | Outbound | Settings | Import |
 | --- | --- | --- |
@@ -952,7 +952,7 @@ The accepted `xhttpSettings` surface is:
   `uplinkDataPlacement`, `uplinkDataKey`, and `uplinkChunkSize`;
 - packet/stream controls: `noGRPCHeader`, `noSSEHeader`,
   `scMaxEachPostBytes`, `scMinPostsIntervalMs`, `scMaxBufferedPosts`,
-  `scStreamUpServerSecs`, and `serverMaxHeaderBytes`;
+  `scStreamUpServerSecs`, `serverMaxHeaderBytes` and `h2Params`;
 - Rust-specific H2 receive credit: `h2StreamReceiveWindow`;
 - `xmux`, with `maxConcurrency`, `maxConnections`, `cMaxReuseTimes`,
   `hMaxRequestTimes`, `hMaxReusableSecs`, and `hKeepAlivePeriod`.
@@ -1009,8 +1009,9 @@ Range fields accept a JSON integer or Xray's string form such as
 `"100-1000"`; null scalar/range/xmux values retain Go's zero-value semantics.
 `uplinkHTTPMethod` must be an HTTP token and `GET` is allowed only in
 `packet-up`; cookie/header uplink-data placement is also packet-up-only.
-`noSSEHeader` and `serverMaxHeaderBytes` are accepted but have no client-side
-effect because they configure Xray's inbound response/listener. A null
+`noSSEHeader`, `serverMaxHeaderBytes` and `h2Params` (added in Xray-core
+v26.10.31; any JSON value) are accepted but have no client-side effect because
+they configure Xray's inbound response/listener. A null
 `downloadSettings` is equivalent to absent. A populated effective value selects
 one independent XHTTP download stack, requiring explicit `address`, `port`, and
 `network: "xhttp"` (or `splithttp`, including the `method` alias). It has its own

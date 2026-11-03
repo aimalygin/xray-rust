@@ -35,6 +35,9 @@ LEGACY_PINS = {'before': '3ca380e7e32d82cfff55f38698117dba8bef077b',
                'after': '53756feea4868e77114f71688cb27b34b8e57ffb',
                'harness': '53756feea4868e77114f71688cb27b34b8e57ffb'}
 LEGACY_LABEL = 'migration'
+# Reports collected before the index recorded its reference all ran against
+# the Xray-core v26.10.21 server.
+LEGACY_REFERENCE = '1b1647cd9ddf0abc34b981d4611fc03bcac1ca74'
 
 
 def digest(data):
@@ -111,7 +114,7 @@ def paired(before, after):
     return result
 
 
-def summarize(entries, accepted, pins):
+def summarize(entries, accepted, pins, reference=LEGACY_REFERENCE):
     expected_cases = {case['id']: case for case in m.cases()}
     observed, groups, case_blocks, hosts, inputs, quality = set(), {}, {}, [], None, []
     require(set(pins) == set(PINNED), 'pin exactly ' + ', '.join(PINNED))
@@ -120,7 +123,7 @@ def summarize(entries, accepted, pins):
         require(manifest['status'] == 'pass' and not manifest['smoke'] and manifest['repeats'] == 5, 'incomplete/non-publication block')
         if inputs is None:
             inputs = manifest['inputs']
-            expected = {**pins, 'reference': m.REFERENCE}
+            expected = {**pins, 'reference': reference}
             require(all(inputs[k]['commit'] == pin for k, pin in expected.items()), 'wrong comparison source pin')
             require(inputs['before']['rustc'] == inputs['after']['rustc'] == inputs['harness']['rustc'], 'Rust compiler changed')
             for name in ('before', 'after', 'harness'):
@@ -214,7 +217,7 @@ def collect(campaign, accepted, report, pins, label):
     for path in sorted((campaign / 'provenance').glob('*')):
         require(path.is_file(), 'unexpected provenance directory')
         entries['provenance/' + path.name] = path.read_bytes()
-    summary = summarize(entries, accepted, pins)
+    summary = summarize(entries, accepted, pins, m.REFERENCE)
     report.mkdir(parents=True)
     with (report / 'measurements.tar.gz').open('wb') as stream:
         with gzip.GzipFile(fileobj=stream, mode='wb', mtime=0, filename='') as zipped:
@@ -222,7 +225,7 @@ def collect(campaign, accepted, report, pins, label):
                 for name, data in sorted(entries.items()):
                     info = tarfile.TarInfo(name); info.size = len(data); info.mode = 0o644
                     archive.addfile(info, io.BytesIO(data))
-    index = {'accepted_blocks': accepted, 'attempts': attempts, 'pins': pins, 'label': label,
+    index = {'accepted_blocks': accepted, 'attempts': attempts, 'pins': pins, 'reference': m.REFERENCE, 'label': label,
         'archive_sha256': digest((report / 'measurements.tar.gz').read_bytes()),
         'members_sha256': {name: digest(data) for name, data in entries.items()},
         'privacy': 'Numeric results, manifests and campaign-controller provenance; unrelated process names/PIDs removed from ambient samples; configs, private fixture keys and application logs remain local.'}
@@ -338,7 +341,8 @@ def main():
     else:
         entries, index = archive_entries(args.report)
         label = index.get('label', LEGACY_LABEL)
-        summary = summarize(entries, index['accepted_blocks'], index.get('pins', LEGACY_PINS))
+        summary = summarize(entries, index['accepted_blocks'], index.get('pins', LEGACY_PINS),
+                            index.get('reference', LEGACY_REFERENCE))
         require(encoded(summary) == (args.report / 'summary.json').read_bytes(), 'summary differs from evidence')
         require(csv_bytes(summary) == (args.report / 'results.csv').read_bytes(), 'CSV differs from evidence')
     if args.action == 'charts':

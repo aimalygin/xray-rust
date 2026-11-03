@@ -8,8 +8,8 @@ use std::fmt;
 
 use uuid::Uuid;
 use xray_routing::{
-    domain_matcher::domain_matches_suffix, Cidr, DomainMatcherSetBuilder, DomainMatcherSetError,
-    DomainRegexError, PRIVATE_NETWORKS,
+    canonicalize_ip, domain_matcher::domain_matches_suffix, Cidr, DomainMatcherSetBuilder,
+    DomainMatcherSetError, DomainRegexError,
 };
 pub use xray_routing::{
     DnsHostTarget, DnsIpFilter, DomainHostIndex, DomainMatcher, DomainMatcherSet, DomainNameMode,
@@ -1419,13 +1419,22 @@ impl TargetAddr {
     /// Whether Xray-core exempts this server address from its outbound
     /// transport-security requirement.
     ///
-    /// IP addresses use Xray's private/reserved/test set
-    /// ([`xray_routing::PRIVATE_NETWORKS`], also the routing `geoip:private`
-    /// set). Xray normalizes one trailing domain dot and domain case before
-    /// applying the domain rules.
+    /// Since v26.10.31 an IP address is exempt only when Go's
+    /// `IsPrivate() || IsLoopback() || IsLinkLocalUnicast()` holds
+    /// (`requiresTransportSecurity` in `infra/conf/xray.go`); the reserved,
+    /// shared (100.64.0.0/10), benchmarking, documentation, multicast and
+    /// unspecified ranges of the older `geoip:private` set no longer are.
+    /// `net.IP.To4` makes an IPv4-mapped IPv6 address count as IPv4. Xray
+    /// normalizes one trailing domain dot and domain case before applying the
+    /// domain rules.
     pub fn is_xray_plaintext_server_exempt(&self) -> bool {
         match self {
-            Self::Ip(ip) => PRIVATE_NETWORKS.iter().any(|cidr| cidr.contains(*ip)),
+            Self::Ip(ip) => match canonicalize_ip(*ip) {
+                IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
+                IpAddr::V6(ip) => {
+                    ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local()
+                }
+            },
             Self::Domain(domain) => xray_plaintext_server_domain_matches(domain),
         }
     }
@@ -1472,6 +1481,7 @@ mod tests {
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     use super::*;
+    use xray_routing::PRIVATE_NETWORKS;
 
     #[derive(Clone, Copy)]
     enum Matcher {

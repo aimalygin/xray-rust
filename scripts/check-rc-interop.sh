@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly EXPECTED_XRAY_CORE_REVISION="1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+readonly EXPECTED_XRAY_CORE_REVISION="a4a3dff5b20c2faae567b742c172c7b95e75c083"
 readonly WORKSPACE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 if [[ -z "${XRAY_CORE_CHECKOUT:-}" ]]; then

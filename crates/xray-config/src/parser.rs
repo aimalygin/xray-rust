@@ -1038,6 +1038,11 @@ impl Parser<'_> {
                     &format!("$.outbounds[{index}].settings.fragment"),
                     true,
                 );
+                // Xray-core v26.10.31 prints the same deprecation notice.
+                self.warning(
+                    format!("$.outbounds[{index}].settings.fragment"),
+                    "freedom `fragment` is deprecated; use a fragment mask in `streamSettings.finalmask.tcp`",
+                );
                 if stream.tcp_fragment.is_some() {
                     self.error(
                         format!("$.outbounds[{index}].settings.fragment"),

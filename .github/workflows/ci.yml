@@ -311,7 +311,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # The pinned Xray-core v26.10.21 source requires Go 1.27.
+      # The pinned Xray-core v26.10.31 source requires Go 1.27.
       # Use one exact toolchain for all oracle and interoperability checks.
       #
       # Every locally committed module's `go.sum` is listed: the cache key uses these
@@ -334,7 +334,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
+          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
           path: Xray-core
           persist-credentials: false
 
@@ -419,7 +419,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
+          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
           path: Xray-core
           persist-credentials: false
 
@@ -454,7 +454,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
+          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
           path: Xray-core
           persist-credentials: false
 
@@ -602,7 +602,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: XTLS/Xray-core
-          ref: 1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
+          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
           path: Xray-core
           persist-credentials: false
 

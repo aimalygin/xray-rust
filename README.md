@@ -17,7 +17,7 @@ SDKs for VPN apps on iOS, tvOS, macOS and Android.**
 [Benchmarks](#benchmarks) ·
 [Support the project](#support-the-project)
 
-The development compatibility reference is [Xray-core v26.10.21](docs/xray-core-v26.10.21-migration.md).
+The development compatibility reference is [Xray-core v26.10.31](docs/xray-core-v26.10.31-migration.md).
 Dated release and benchmark results retain their original references.
 
 ## Support the project

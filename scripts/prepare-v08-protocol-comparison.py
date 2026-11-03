@@ -8,11 +8,11 @@ import shutil
 import subprocess
 import zipfile
 
-# Must equal the device fixture's REFERENCE (Xray-core v26.10.21), which the
+# Must equal the device fixture's REFERENCE (Xray-core v26.10.31), which the
 # comparison verifies again before measuring.
-XRAY = "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74"
+XRAY = "a4a3dff5b20c2faae567b742c172c7b95e75c083"
 SINGBOX = "56f91dfeabd6f4edbd437dfcc1e5b0ebc856b778"
-# Xray-core v26.10.21 is built with the Go release CI uses for it.
+# Xray-core v26.10.31 is built with the Go release CI uses for it.
 GO_RELEASES = {"xray": "go1.27.3", "singbox": "go1.26.0"}
 
 
@@ -78,7 +78,7 @@ def main():
         inputs[name] = {"path": str(path), "sha256": sha(path)}
     inputs["candidate"].update(rust_identity)
     inputs["harness"].update({k: harness[k] for k in rust_identity})
-    inputs["xray"].update(commit=XRAY, version="26.10.21", build_info=go_info["xray"])
+    inputs["xray"].update(commit=XRAY, version="26.10.31", build_info=go_info["xray"])
     inputs["singbox"].update(commit=SINGBOX, version="1.13.20", build_info=go_info["singbox"],
                               module_identity={**expected, "Origin": source["Origin"]},
                               module_archive_sha256=sha(Path(source["Zip"])))

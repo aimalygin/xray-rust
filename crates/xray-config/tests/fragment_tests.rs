@@ -81,6 +81,27 @@ fn dialer_proxy_chain_through_a_fragment_user_does_not_depend_on_outbound_order(
 }
 
 #[test]
+fn freedom_fragment_parses_with_the_upstream_deprecation_warning() {
+    let parsed = parse_xray_json(&legacy_profile().to_string()).unwrap();
+    let warnings: Vec<_> = parsed
+        .diagnostics
+        .iter()
+        .map(|d| (d.path.as_deref(), d.message.as_str()))
+        .collect();
+    assert_eq!(
+        warnings,
+        [(
+            Some("$.outbounds[1].settings.fragment"),
+            "freedom `fragment` is deprecated; use a fragment mask in `streamSettings.finalmask.tcp`"
+        )]
+    );
+    assert!(parsed.config.outbounds[1].stream.tcp_fragment.is_some());
+
+    let finalmask = parse_xray_json(&profile(settings()).to_string()).unwrap();
+    assert!(finalmask.diagnostics.is_empty());
+}
+
+#[test]
 fn legacy_dialer_proxy_normalizes_only_dedicated_fragment_handlers() {
     let config = legacy_profile();
     let parsed = parse_xray_json(&config.to_string()).unwrap();
