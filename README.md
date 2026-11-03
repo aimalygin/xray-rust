@@ -53,10 +53,11 @@ Thank you for your support!
   pinned Xray-core ([verification](docs/verification.md)).
 
 > [!NOTE]
-> `xray-rust` is a client-side core. It has not been independently security
-> audited, and "supported" means implemented and covered by tests, not complete
-> behavioral parity with every Xray-core release; see [project status](docs/status.md)
-> and [Xray-core differences](docs/xray-core-differences.md).
+> `xray-rust` is a client-side core. Security audits are done with Fable 5.1 and
+> GPT-6 Sol Daybreak, not by an independent auditor. "Supported" means
+> implemented and covered by tests, not complete behavioral parity with every
+> Xray-core release; see [project status](docs/status.md) and
+> [Xray-core differences](docs/xray-core-differences.md).
 
 ## At a glance
 
