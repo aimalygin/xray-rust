@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, codex/v06-candidate, codex/v0.7.0-rc.1]
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
   schedule:
@@ -24,13 +24,14 @@ env:
 
 jobs:
   release-metadata:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/codex/v06-candidate' || github.ref == 'refs/heads/codex/v0.7.0-rc.1')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       artifact_name: ${{ steps.release.outputs.artifact_name }}
       candidate_commit: ${{ steps.release.outputs.candidate_commit }}
       candidate_tree: ${{ steps.release.outputs.candidate_tree }}
+      bind_candidate_ci: ${{ steps.release.outputs.bind_candidate_ci }}
       is_rc: ${{ steps.release.outputs.is_rc }}
       run_release_gates: ${{ steps.release.outputs.run_release_gates }}
     steps:
@@ -57,9 +58,16 @@ jobs:
           else
             echo "is_rc=false" >>"$GITHUB_OUTPUT"
           fi
-          if [[ "$GITHUB_REF" == refs/tags/* || "$GITHUB_EVENT_NAME" == workflow_dispatch || "$GITHUB_REF" == refs/heads/codex/v06-candidate || "$GITHUB_REF" == refs/heads/codex/v0.7.0-rc.1 ]]; then
+          # A stable tag binds to the passing manual run on its exact commit
+          # instead of repeating it; an RC tag publishes, so it reruns them.
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/* && "$is_rc" == false ]]; then
+            echo "bind_candidate_ci=true" >>"$GITHUB_OUTPUT"
+            echo "run_release_gates=false" >>"$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/* || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            echo "bind_candidate_ci=false" >>"$GITHUB_OUTPUT"
             echo "run_release_gates=true" >>"$GITHUB_OUTPUT"
           else
+            echo "bind_candidate_ci=false" >>"$GITHUB_OUTPUT"
             echo "run_release_gates=false" >>"$GITHUB_OUTPUT"
           fi
           echo "candidate_commit=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
@@ -120,7 +128,7 @@ jobs:
           retention-days: 14
 
   release-evidence:
-    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.') || startsWith(github.ref, 'refs/tags/v0.8.') || startsWith(github.ref, 'refs/tags/v0.9.')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: release-metadata
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -210,16 +218,56 @@ jobs:
       - name: Verify scoped evidence exceptions and leak detection
         run: GITLEAKS_BINARY="$RUNNER_TEMP/gitleaks" python3 scripts/tests/check-gitleaks-allowlists.test.py
 
-      - name: Scan complete Git history for common secrets
+      - name: Scan Git history for common secrets
+        # A tag scans its own ancestry with the policy it carries. Evidence
+        # commits land on main after the tag, and their exceptions exist only
+        # in main's policy, which every main push scans across all branches.
         run: |
+          log_opts=--all
+          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/tags/* ]]; then
+            log_opts=HEAD
+          fi
           "$RUNNER_TEMP/gitleaks" git \
             --config .gitleaks.toml \
             --redact=100 \
             --no-banner \
-            --log-opts="--all" \
+            --log-opts="$log_opts" \
             .
 
+  candidate-ci:
+    if: needs.release-metadata.outputs.bind_candidate_ci == 'true'
+    needs:
+      - release-metadata
+      - release-evidence
+      - secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out exact release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Bind the tag to its passing candidate CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/verify-candidate-ci.py . "$RELEASE_TAG" "$RUNNER_TEMP/source-tag-validation.json"
+
+      - name: Retain source verification record
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: source-tag-validation
+          path: ${{ runner.temp }}/source-tag-validation.json
+          if-no-files-found: error
+          retention-days: 90
+
   rust:
+    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -248,7 +296,7 @@ jobs:
           bash scripts/tests/check-mobile-device-evidence.test.sh
           python3 -m unittest scripts.tests.test_v06_release_evidence scripts.tests.test_v06_stable_promotion scripts.tests.test_v07_release_evidence scripts.tests.test_v07_stable_promotion scripts.tests.test_v08_release_evidence scripts.tests.test_v09_release_evidence
           python3 -m unittest scripts.tests.test_v07_protocol_parity scripts.tests.test_v07_performance_processes scripts.tests.test_v08_protocol_comparison scripts.tests.test_v08_android_fixture scripts.tests.test_migration_benchmarks scripts.tests.test_migration_campaign scripts.tests.test_build_isolated_release
-          python3 -m unittest scripts.tests.test_source_tag_ci
+          python3 -m unittest scripts.tests.test_candidate_ci scripts.tests.test_release_records
           python3 -m unittest scripts.tests.test_v09_device_fixtures
           python3 scripts/publish-migration-benchmarks.py verify --report docs/benchmarks/results/2026-10-27-v26.10.21-migration
           python3 scripts/publish-migration-benchmarks.py verify --report docs/benchmarks/results/2026-10-30-perf-branch
@@ -303,6 +351,7 @@ jobs:
         run: bash scripts/tests/check-mobile-toolchains.test.sh
 
   go-oracles:
+    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -639,6 +688,7 @@ jobs:
           retention-days: 14
 
   apple:
+    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: macos-15
     timeout-minutes: 90
     env:
@@ -727,6 +777,7 @@ jobs:
             build
 
   android:
+    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -788,6 +839,7 @@ jobs:
             --no-daemon
 
   supply-chain:
+    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:

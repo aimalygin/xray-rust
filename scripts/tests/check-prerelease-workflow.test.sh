@@ -199,7 +199,7 @@ classifier_output="$(mktemp)"
 trap 'rm -f "$classifier_output"' EXIT
 
 check_classification() {
-  local event="$1" ref="$2" expected_rc="$3" expected_gates="$4"
+  local event="$1" ref="$2" expected_rc="$3" expected_gates="$4" expected_bind="$5"
   : >"$classifier_output"
   (
     cd "$WORKSPACE_ROOT"
@@ -209,21 +209,22 @@ check_classification() {
   )
   grep -Fxq "is_rc=$expected_rc" "$classifier_output" || die "unsafe RC classification: $event $ref"
   grep -Fxq "run_release_gates=$expected_gates" "$classifier_output" || die "wrong candidate gates: $event $ref"
+  grep -Fxq "bind_candidate_ci=$expected_bind" "$classifier_output" || die "wrong candidate binding: $event $ref"
   if [[ "$expected_rc" == false ]] && grep -q '^artifact_name=' "$classifier_output"; then
     die "verification-only candidate creates a publication artifact: $event $ref"
   fi
 }
 
-check_classification push refs/tags/v0.6.0-rc.1 true true
-check_classification push refs/tags/v0.6.0 false true
-check_classification push refs/heads/codex/v06-candidate false true
-check_classification push refs/heads/codex/v0.7.0-rc.1 false true
-check_classification push refs/heads/v0.6.0-rc.1 false false
-check_classification push refs/heads/main false false
-check_classification workflow_dispatch refs/heads/main false true
-check_classification workflow_dispatch refs/tags/v0.6.0-rc.1 false true
-check_classification schedule refs/heads/main false false
-check_classification pull_request refs/pull/1/merge false false
+check_classification push refs/tags/v0.6.0-rc.1 true true false
+check_classification push refs/tags/v0.9.1 false false true
+check_classification push refs/tags/v0.10.0 false false true
+check_classification push refs/heads/v0.6.0-rc.1 false false false
+check_classification push refs/heads/main false false false
+check_classification workflow_dispatch refs/heads/main false true false
+check_classification workflow_dispatch refs/tags/v0.6.0-rc.1 false true false
+check_classification workflow_dispatch refs/tags/v0.9.1 false true false
+check_classification schedule refs/heads/main false false false
+check_classification pull_request refs/pull/1/merge false false false
 
 for job in rc-interop host-hardening fuzz-smoke controlled-network; do
   grep -Fxq "    if: needs.release-metadata.outputs.run_release_gates == 'true'" <<<"$(job_body "$job")" || \
@@ -234,9 +235,31 @@ for job in publish-prerelease; do
     die "$job is not restricted to RC tag publication"
 done
 
-grep -Fxq "    if: needs.release-metadata.outputs.is_rc == 'true' || github.ref == 'refs/tags/v0.6.0' || startsWith(github.ref, 'refs/tags/v0.7.') || startsWith(github.ref, 'refs/tags/v0.8.') || startsWith(github.ref, 'refs/tags/v0.9.')" <<<"$(job_body release-evidence)" || \
-  die "v0.6.0/v0.7/v0.8/v0.9 publication is not gated on release evidence"
+grep -Fxq "    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')" <<<"$(job_body release-evidence)" || \
+  die "a release tag is not gated on release evidence"
 grep -Fq 'bash scripts/check-release-evidence.sh' <<<"$(job_body release-evidence)" || \
   die "release boundary does not revalidate candidate or promotion evidence"
+
+# A stable tag skips exactly the gates its candidate run proved, and only
+# after its own history scan and evidence pass does it bind to that run.
+stable_tag_skip="    if: github.event_name != 'push' || github.ref_type != 'tag' || contains(github.ref_name, '-rc.')"
+for job in rust go-oracles apple android supply-chain; do
+  grep -Fxq "$stable_tag_skip" <<<"$(job_body "$job")" || \
+    die "$job does not run for every event except a stable tag push"
+done
+candidate_job="$(job_body candidate-ci)"
+grep -Fxq "    if: needs.release-metadata.outputs.bind_candidate_ci == 'true'" <<<"$candidate_job" || \
+  die "candidate binding is not restricted to stable tags"
+for job in release-metadata release-evidence secrets; do
+  grep -Fxq "      - $job" <<<"$candidate_job" || die "candidate binding does not wait for $job"
+done
+grep -Fq 'python3 scripts/verify-candidate-ci.py . "$RELEASE_TAG"' <<<"$candidate_job" || \
+  die "candidate binding does not verify the candidate run"
+grep -Fq 'name: source-tag-validation' <<<"$candidate_job" || \
+  die "candidate binding does not retain its source verification record"
+secrets_job="$(job_body secrets)"
+grep -Fq -- '--log-opts="$log_opts"' <<<"$secrets_job" || die "secret scan scope is not selected per event"
+grep -Fxq '          log_opts=--all' <<<"$secrets_job" || die "branch secret scan does not cover all branches"
+grep -Fxq '            log_opts=HEAD' <<<"$secrets_job" || die "tag secret scan does not cover the tag ancestry"
 
 echo "verified idempotent source-only prerelease workflow policy and candidate isolation"
