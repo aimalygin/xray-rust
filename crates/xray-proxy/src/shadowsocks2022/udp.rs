@@ -2,10 +2,7 @@ use super::{
     crypto::{self, Aead},
     *,
 };
-use chacha20poly1305::{
-    aead::{AeadInOut, KeyInit},
-    XChaCha20Poly1305,
-};
+use crate::aead::XChaChaKey;
 use rand::RngCore;
 use std::sync::Arc;
 
@@ -116,9 +113,8 @@ impl UdpSession {
         if self.method.cipher == Cipher::ChaCha20Poly1305 {
             let mut plain = Zeroizing::new(separate.to_vec());
             plain.extend_from_slice(&body);
-            XChaCha20Poly1305::new_from_slice(self.method.psk())
-                .unwrap()
-                .encrypt_in_place((&nonce).into(), &[], &mut *plain)
+            XChaChaKey::new(self.method.psk())
+                .seal(&nonce, &[], &mut plain)
                 .map_err(|_| invalid("Shadowsocks 2022 encryption failed"))?;
             let mut wire = nonce.to_vec();
             wire.extend_from_slice(&plain);
@@ -152,9 +148,8 @@ impl UdpSession {
         let mut separate = [0; 16];
         if self.method.cipher == Cipher::ChaCha20Poly1305 {
             body = Zeroizing::new(wire[24..].to_vec());
-            XChaCha20Poly1305::new_from_slice(self.method.psk())
-                .unwrap()
-                .decrypt_in_place(wire[..24].try_into().unwrap(), &[], &mut *body)
+            XChaChaKey::new(self.method.psk())
+                .open(wire[..24].try_into().unwrap(), &[], &mut body)
                 .map_err(|_| invalid("Shadowsocks 2022 authentication failed"))?;
             if body.len() < 16 {
                 return Err(invalid("truncated Shadowsocks 2022 packet"));
@@ -320,6 +315,11 @@ mod tests {
         if session.method.cipher == Cipher::ChaCha20Poly1305 {
             separate.extend(body);
             let nonce = [7; 24];
+            use chacha20poly1305::{
+                aead::{AeadInOut, KeyInit},
+                XChaCha20Poly1305,
+            };
+            // The portable AEAD stays as an independent reference here.
             XChaCha20Poly1305::new_from_slice(session.method.psk())
                 .unwrap()
                 .encrypt_in_place((&nonce).into(), &[], &mut separate)
