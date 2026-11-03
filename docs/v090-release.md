@@ -88,14 +88,15 @@ limitations and publish the evidence, the owner answered “Да, публику
    repositories' CI.~~ Done in
    [xray-rust-mobile#42](https://github.com/aimalygin/xray-rust-mobile/pull/42),
    SDK candidate `9e030609c5734616cf79ee900abeaddfea0cfe0a`.
-4. Run full core release CI, collect the candidate-bound device and host
-   evidence, and pass `v09-release-evidence.yml` on that exact commit. Release
-   CI passed on the candidate
+4. ~~Run full core release CI, collect the candidate-bound device and host
+   evidence, and pass `v09-release-evidence.yml` on that exact commit.~~
+   Release CI passed on the candidate
    ([run 41445033781](https://github.com/aimalygin/xray-rust/actions/runs/41445033781)).
    The device and host evidence is in the
    [2026-11-02 report](device-results/2026-11-02-v090-candidate/README.md) and
-   the [archive record](releases/v0.9.0-device-evidence.json); the workflow
-   validation is pending.
+   the [archive record](releases/v0.9.0-device-evidence.json);
+   `v09-release-evidence.yml` validated the archive on the candidate
+   ([run 41562578452](https://github.com/aimalygin/xray-rust/actions/runs/41562578452)).
 5. Verify and publish the annotated core tag, then the SDK tag, XCFramework,
    four-ABI AAR and Maven artifacts; resolve the published packages from clean
    external consumers.

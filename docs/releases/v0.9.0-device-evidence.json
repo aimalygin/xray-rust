@@ -5,7 +5,8 @@
   "archiveSHA256": "59d0c75810984d53d6685b320f083233a2816e219071dda4e0194c306e07a228",
   "schemaVersion": 4,
   "localValidation": "passed with unchanged exact-candidate schema-4 validator",
-  "workflowValidation": "pending",
+  "workflowValidation": "passed",
   "publication": "authorized; pending validation and canonical artifacts",
-  "scope": "Physical iPhone and Samsung runs, iPhone WAN against a pinned Xray-core reference, and the 13 schema-4 performance metrics, under explicit 0.9.0 owner decisions; all original failures retained."
+  "scope": "Physical iPhone and Samsung runs, iPhone WAN against a pinned Xray-core reference, and the 13 schema-4 performance metrics, under explicit 0.9.0 owner decisions; all original failures retained.",
+  "workflowRun": "https://github.com/aimalygin/xray-rust/actions/runs/41562578452"
 }
