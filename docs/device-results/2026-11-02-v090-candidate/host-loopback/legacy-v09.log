@@ -1,0 +1,10 @@
+{"case": "vless-reality", "format": "vless", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "xhttp-h1", "format": "vless", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "xhttp-h2", "format": "vless", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "xhttp-h3", "format": "vless", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "wireguard", "format": "wireguard", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "hysteria2", "format": "hysteria2", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "trojan", "format": "trojan", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "shadowsocks2022", "format": "shadowsocks2022", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"case": "vmess", "format": "vmess", "checks": ["ipv4-tcp", "ipv6-tcp", "ipv4-udp", "ipv6-udp", "routed-dns", "domain-destination"], "result": "passed"}
+{"suite": "legacy-v09", "cases": 9, "failed": 0, "fixtureSecretsRemoved": true, "scope": "host loopback through SOCKS ingress; not device evidence"}
