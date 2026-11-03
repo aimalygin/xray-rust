@@ -1,6 +1,10 @@
 //! DNS selection, static hosts, fake IP and DNS outbound configuration.
 use super::*;
 
+fn is_special_dns_server(address: &str) -> bool {
+    address.eq_ignore_ascii_case("localhost") || address.eq_ignore_ascii_case("fakedns")
+}
+
 pub(super) fn is_tun_reserved_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => matches!(ip, TUN_DNS_ANCHOR | TUN_CLIENT_IPV4),
@@ -667,7 +671,7 @@ impl Parser<'_> {
             }
             return Some(DnsServerEndpoint::Ip(SocketAddr::new(ip, port)));
         }
-        if address.eq_ignore_ascii_case("localhost") || address.eq_ignore_ascii_case("fakedns") {
+        if is_special_dns_server(address) {
             self.error(
                 path,
                 format!("special dns server `{address}` is not supported yet"),
@@ -771,6 +775,13 @@ impl Parser<'_> {
         }
         if server.trim() != server {
             self.error(path, "dns server must not contain surrounding whitespace");
+            return None;
+        }
+        if is_special_dns_server(server) {
+            self.error(
+                path,
+                format!("special dns server `{server}` is not supported yet"),
+            );
             return None;
         }
 
