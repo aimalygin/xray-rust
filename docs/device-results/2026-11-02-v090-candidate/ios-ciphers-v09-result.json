@@ -1,0 +1,3958 @@
+[
+  {
+    "event" : "abi",
+    "major" : 1,
+    "minor" : 15,
+    "protocol" : "setup",
+    "time" : "2026-11-02T15:50:15Z"
+  },
+  {
+    "event" : "invalid-import-redaction",
+    "format" : "shadowsocks2022",
+    "protocol" : "shadowsocks-aead",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:15Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:15Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "seconds" : 0.25084400177001953,
+    "time" : "2026-11-02T15:50:16Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:16Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.90328162489458919,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.17413408332504332,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.098572083283215761,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.050758041674271226,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:17Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.048836625181138515,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:17Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380872.7031896668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380873.7637572917"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4490888,
+    "inboundPackets" : 212,
+    "outboundPackets" : 182,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29802496,
+    "runtime" : "8d1273e1-ddc5-4ad6-8569-d3221db04ba2",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:17Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      4,
+      5,
+      6,
+      7
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:17Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      4,
+      5,
+      6,
+      7
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      8
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "seconds" : 2.1101377916056663,
+    "time" : "2026-11-02T15:50:19Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380872.7031896668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380873.7637572917"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4163208,
+    "inboundPackets" : 217,
+    "outboundPackets" : 189,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 30113792,
+    "runtime" : "8d1273e1-ddc5-4ad6-8569-d3221db04ba2",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:20Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.09346483345143497,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.2287064166739583,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.097851250087842345,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.053287666523829103,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.048650166718289256,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380872.7031896668"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380873.7637572917"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:20Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4261512,
+    "inboundPackets" : 402,
+    "outboundPackets" : 357,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 30310400,
+    "runtime" : "8d1273e1-ddc5-4ad6-8569-d3221db04ba2",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:20Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:21Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "seconds" : 0.22585594654083252,
+    "time" : "2026-11-02T15:50:21Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:21Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.33166479179635644,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.093171499902382493,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10961420810781419,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.14768274989910424,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:22Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049744083546102047,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:22Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380878.2233715835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4327048,
+    "inboundPackets" : 180,
+    "outboundPackets" : 170,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29278208,
+    "runtime" : "a2d052d0-3935-4967-9400-b1ae6455afff",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:22Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:22Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "seconds" : 2.1064878331962973,
+    "time" : "2026-11-02T15:50:24Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380878.2233715835"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380880.3221712918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380880.7640987502"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:24Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4130440,
+    "inboundPackets" : 190,
+    "outboundPackets" : 183,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29786112,
+    "runtime" : "a2d052d0-3935-4967-9400-b1ae6455afff",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:25Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.15760429156944156,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.087338791694492102,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1001936667598784,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.1607463750988245,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.05413875007070601,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380878.2233715835"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380880.3221712918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380880.7640987502"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:25Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4195976,
+    "inboundPackets" : 369,
+    "outboundPackets" : 350,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29999104,
+    "runtime" : "a2d052d0-3935-4967-9400-b1ae6455afff",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:25Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:26Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "seconds" : 0.22489094734191895,
+    "time" : "2026-11-02T15:50:26Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:26Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.29981662495993078,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.20163670834153891,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10232933331280947,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049131583189591765,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:27Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.048650125041604042,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:27Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380883.2434297916"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380883.3881307917"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4245128,
+    "inboundPackets" : 181,
+    "outboundPackets" : 168,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29229056,
+    "runtime" : "83825258-787f-4451-a11a-c1d309151811",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:27Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:27Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "seconds" : 2.095118208322674,
+    "time" : "2026-11-02T15:50:29Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380883.2434297916"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380883.3881307917"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380884.4120096667"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:29Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4097672,
+    "inboundPackets" : 189,
+    "outboundPackets" : 178,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29687808,
+    "runtime" : "83825258-787f-4451-a11a-c1d309151811",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:30Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1033330000936985,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.084666250040754676,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.14272874989546835,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.052603416610509157,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049064625054597855,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380883.2434297916"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380883.3881307917"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380884.4120096667"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:30Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4130440,
+    "inboundPackets" : 377,
+    "outboundPackets" : 346,
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "rss" : 29868032,
+    "runtime" : "83825258-787f-4451-a11a-c1d309151811",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:30Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-128-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:31Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:31Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 0.1784520149230957,
+    "time" : "2026-11-02T15:50:31Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:31Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.14681583340279758,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:31Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:31Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.22677399986423552,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.094947916688397527,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049183791736140847,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:32Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.048600041773170233,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:32Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380888.10789175"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4523656,
+    "inboundPackets" : 203,
+    "outboundPackets" : 183,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29655040,
+    "runtime" : "49cc6814-9fc0-4f62-9abc-de6c25623f01",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:32Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:32Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      8
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 2.1441986667923629,
+    "time" : "2026-11-02T15:50:34Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380888.10789175"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380891.0180529167"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:34Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4179592,
+    "inboundPackets" : 214,
+    "outboundPackets" : 196,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 30064640,
+    "runtime" : "49cc6814-9fc0-4f62-9abc-de6c25623f01",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:34Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:34Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10328620811924338,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:34Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:34Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.21618300001136959,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.090548249892890453,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.04932654183357954,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:35Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049032874871045351,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:35Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380888.10789175"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380891.0180529167"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380891.8894167917"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:35Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4327048,
+    "inboundPackets" : 397,
+    "outboundPackets" : 363,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 30343168,
+    "runtime" : "49cc6814-9fc0-4f62-9abc-de6c25623f01",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:35Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 0.22351205348968506,
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.097480125026777387,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.16448191669769585,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.13487604167312384,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:36Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.051549124997109175,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:37Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:37Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.1549165416508913,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:37Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:37Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380892.9394132502"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:37Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4277872,
+    "inboundPackets" : 191,
+    "outboundPackets" : 171,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29212672,
+    "runtime" : "29d73d26-68f1-4948-9838-e91d0e9e87ef",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:37Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:37Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 2.1355887500103563,
+    "time" : "2026-11-02T15:50:39Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380892.9394132502"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380895.1049379585"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:39Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4146800,
+    "inboundPackets" : 195,
+    "outboundPackets" : 178,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29753344,
+    "runtime" : "29d73d26-68f1-4948-9838-e91d0e9e87ef",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:39Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:39Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.27488733339123428,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:39Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12503079161979258,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.26341670844703913,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.058991083409637213,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:40Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.057697041658684611,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:40Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380892.9394132502"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380895.1049379585"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:40Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4195952,
+    "inboundPackets" : 382,
+    "outboundPackets" : 346,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29900800,
+    "runtime" : "29d73d26-68f1-4948-9838-e91d0e9e87ef",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:40Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:41Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 0.23235595226287842,
+    "time" : "2026-11-02T15:50:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:41Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.18990116659551859,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:41Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.13487508334219456,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:41Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12349520833231509,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.059656208381056786,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:42Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.17544883349910378,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:42Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380898.1027865417"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4179592,
+    "inboundPackets" : 183,
+    "outboundPackets" : 170,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29163520,
+    "runtime" : "ebea00d8-01ba-4901-8752-c37b7ce24afa",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:42Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:42Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "seconds" : 2.0929515417665243,
+    "time" : "2026-11-02T15:50:44Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380898.1027865417"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:44Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4081288,
+    "inboundPackets" : 188,
+    "outboundPackets" : 177,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29687808,
+    "runtime" : "ebea00d8-01ba-4901-8752-c37b7ce24afa",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:44Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:44Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.24679429153911769,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.111961041809991,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12304783333092928,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.14873358327895403,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.052604708354920149,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380898.1027865417"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:45Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4114056,
+    "inboundPackets" : 372,
+    "outboundPackets" : 344,
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "rss" : 29835264,
+    "runtime" : "ebea00d8-01ba-4901-8752-c37b7ce24afa",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:50:45Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:aes-256-gcm",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:46Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:46Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "seconds" : 0.19362998008728027,
+    "time" : "2026-11-02T15:50:46Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:46Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.19732300005853176,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:46Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:46Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.3050047499127686,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.18712074984796345,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.13932591676712036,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:47Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.075767624890431762,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:47Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380903.2197312918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380903.63918125"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:47Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4277896,
+    "inboundPackets" : 203,
+    "outboundPackets" : 179,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29278208,
+    "runtime" : "503a11a4-c4ff-467b-82eb-255edb2ee360",
+    "stage" : "after-traffic",
+    "tcp" : 2,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:47Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:48Z"
+  },
+  {
+    "closedIDs" : [
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "seconds" : 2.1205442498903722,
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380903.2197312918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380903.63918125"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4097672,
+    "inboundPackets" : 210,
+    "outboundPackets" : 188,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29589504,
+    "runtime" : "503a11a4-c4ff-467b-82eb-255edb2ee360",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:50Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.15439354162663221,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.12438058317638934,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.084475874900817871,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.10772279161028564,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:50Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:50Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.053399499971419573,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:50Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:51Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:51Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380903.2197312918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380903.63918125"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:51Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4097672,
+    "inboundPackets" : 391,
+    "outboundPackets" : 354,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29753344,
+    "runtime" : "503a11a4-c4ff-467b-82eb-255edb2ee360",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:51Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:51Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "seconds" : 0.21659004688262939,
+    "time" : "2026-11-02T15:50:51Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:51Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11576937511563301,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.13817508332431316,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.24357900000177324,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.054582000011578202,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:52Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.052430624840781093,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:52Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380908.4040429168"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4327048,
+    "inboundPackets" : 187,
+    "outboundPackets" : 170,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29147136,
+    "runtime" : "f470956e-b05a-4193-be0a-95cf9296d045",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:52Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:52Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "seconds" : 2.1510207499377429,
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380908.4040429168"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3982984,
+    "inboundPackets" : 195,
+    "outboundPackets" : 180,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29491200,
+    "runtime" : "f470956e-b05a-4193-be0a-95cf9296d045",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:55Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10488287499174476,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.095599333290010691,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.16892558336257935,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049167125020176172,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.050172208342701197,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380908.4040429168"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:50:55Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 3982984,
+    "inboundPackets" : 383,
+    "outboundPackets" : 348,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29655040,
+    "runtime" : "f470956e-b05a-4193-be0a-95cf9296d045",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:55Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:56Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "seconds" : 0.21307909488677979,
+    "time" : "2026-11-02T15:50:56Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:56Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10523674986325204,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:56Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:56Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10115599981509149,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.16178649989888072,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.05006595840677619,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:57Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.04923745826818049,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:57Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380913.2438128751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380913.424882875"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4654728,
+    "inboundPackets" : 203,
+    "outboundPackets" : 173,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29523968,
+    "runtime" : "1e78c625-16a4-44ca-b12d-895d4fcde896",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:57Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:57Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "seconds" : 2.1520941667258739,
+    "time" : "2026-11-02T15:50:59Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380913.2438128751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380913.424882875"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:50:59Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4245128,
+    "inboundPackets" : 207,
+    "outboundPackets" : 180,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 29900800,
+    "runtime" : "1e78c625-16a4-44ca-b12d-895d4fcde896",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:50:59Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 0
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:50:59Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10421587503515184,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:50:59Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.095898916712030768,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.19038187502883375,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.051376958377659321,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:00Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.050047000171616673,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:00Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380913.2438128751"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380913.424882875"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:51:00Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4277896,
+    "inboundPackets" : 389,
+    "outboundPackets" : 345,
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "rss" : 30064640,
+    "runtime" : "1e78c625-16a4-44ca-b12d-895d4fcde896",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:51:00Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 2
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:chacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:01Z"
+  },
+  {
+    "event" : "import",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:01Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "seconds" : 0.20361602306365967,
+    "time" : "2026-11-02T15:51:01Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:01Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.37290504155680537,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:01Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:01Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.10846229153685272,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11281258333474398,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.16124987509101629,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:02Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.053767874836921692,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:02Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380917.9994987918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380918.2640695835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4589192,
+    "inboundPackets" : 198,
+    "outboundPackets" : 178,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29540352,
+    "runtime" : "eecab2ab-961b-4516-9100-898aa584976b",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:51:02Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 1,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:02Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "cycle" : 1,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      8
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "seconds" : 2.147077624918893,
+    "time" : "2026-11-02T15:51:04Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380917.9994987918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380918.2640695835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:51:04Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4163208,
+    "inboundPackets" : 203,
+    "outboundPackets" : 185,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29900800,
+    "runtime" : "eecab2ab-961b-4516-9100-898aa584976b",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:51:04Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:04Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11220887489616871,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.094914666609838605,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.091967666521668434,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.1459568333812058,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.050303999800235033,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "cycle" : 1,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380917.9994987918"
+      },
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380918.2640695835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:51:05Z"
+  },
+  {
+    "cycle" : 1,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4228744,
+    "inboundPackets" : 387,
+    "outboundPackets" : 352,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 30081024,
+    "runtime" : "eecab2ab-961b-4516-9100-898aa584976b",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:51:05Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 1,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:06Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "seconds" : 0.21195399761199951,
+    "time" : "2026-11-02T15:51:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.23136120848357677,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:06Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:06Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.26807258324697614,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.13044829154387116,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.052415375132113695,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:07Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.049637916730716825,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:07Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380923.0570555835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4327048,
+    "inboundPackets" : 194,
+    "outboundPackets" : 171,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29147136,
+    "runtime" : "f298e118-e14e-48aa-8bcd-8dfa59f661c7",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:51:07Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 2,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:07Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle" : 2,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      7
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "seconds" : 2.1342842082958668,
+    "time" : "2026-11-02T15:51:09Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380923.0570555835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:51:09Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4032136,
+    "inboundPackets" : 199,
+    "outboundPackets" : 178,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29655040,
+    "runtime" : "f298e118-e14e-48aa-8bcd-8dfa59f661c7",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 11,
+    "time" : "2026-11-02T15:51:09Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:09Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1106221666559577,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.1988146249204874,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.089451458537951112,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.050378833431750536,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.04965341673232615,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "cycle" : 2,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380923.0570555835"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:51:10Z"
+  },
+  {
+    "cycle" : 2,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4179592,
+    "inboundPackets" : 376,
+    "outboundPackets" : 343,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29933568,
+    "runtime" : "f298e118-e14e-48aa-8bcd-8dfa59f661c7",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 11,
+    "time" : "2026-11-02T15:51:10Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 2,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "connected",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "seconds" : 0.21750402450561523,
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11835358338430524,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.15118704154156148,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:11Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.13717870833352208,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:12Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:12Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.056029208470135927,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:12Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:12Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.14612716669216752,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:12Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:12Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380928.0580066252"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-traffic",
+    "time" : "2026-11-02T15:51:12Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4441736,
+    "inboundPackets" : 195,
+    "outboundPackets" : 171,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29179904,
+    "runtime" : "6523587d-2bda-45a4-8979-a75fa8a4b7d4",
+    "stage" : "after-traffic",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:51:12Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 3
+  },
+  {
+    "cycle" : 3,
+    "event" : "connection-close-request",
+    "ids" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:12Z"
+  },
+  {
+    "closedIDs" : [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "cycle" : 3,
+    "event" : "connection-close-verified",
+    "newIDs" : [
+      7
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "seconds" : 2.1745761248748749,
+    "time" : "2026-11-02T15:51:14Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380928.0580066252"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-close",
+    "time" : "2026-11-02T15:51:14Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4048520,
+    "inboundPackets" : 201,
+    "outboundPackets" : 178,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 29720576,
+    "runtime" : "6523587d-2bda-45a4-8979-a75fa8a4b7d4",
+    "stage" : "after-close",
+    "tcp" : 0,
+    "threads" : 10,
+    "time" : "2026-11-02T15:51:14Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 1
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:14Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.17848845827393234,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.11689308332279325,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "event" : "tcp-start",
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "bytes" : 65536,
+    "event" : "tcp",
+    "exchangeSeconds" : 0.27433591661974788,
+    "host" : "v07-probe-b840f6c4e38c.test",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp-start",
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "bytes" : 1392,
+    "event" : "udp",
+    "exchangeSeconds" : 0.055560125038027763,
+    "host" : "198.51.100.7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z",
+    "transition" : "ipv4-udp"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp-start",
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "bytes" : 1372,
+    "event" : "udp",
+    "exchangeSeconds" : 0.051263374974951148,
+    "host" : "2001:db8::7",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z",
+    "transition" : "ipv6-udp"
+  },
+  {
+    "event" : "dns-anchor",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "cycle" : 3,
+    "event" : "traffic-after-close",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "event" : "network-observer",
+    "events" : [
+      {
+        "interface" : "en0",
+        "kind" : "unchanged",
+        "uptime" : "1380928.0580066252"
+      }
+    ],
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "stage" : "after-recovery",
+    "time" : "2026-11-02T15:51:15Z"
+  },
+  {
+    "cycle" : 3,
+    "droppedPackets" : 0,
+    "event" : "sample",
+    "footprint" : 4261512,
+    "inboundPackets" : 397,
+    "outboundPackets" : 347,
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "rss" : 30081024,
+    "runtime" : "6523587d-2bda-45a4-8979-a75fa8a4b7d4",
+    "stage" : "after-recovery",
+    "tcp" : 3,
+    "threads" : 10,
+    "time" : "2026-11-02T15:51:15Z",
+    "tunFDReadLoopExits" : 0,
+    "tunFDWriteLoopExits" : 0,
+    "udp" : 4
+  },
+  {
+    "cycle" : 3,
+    "event" : "disconnected",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:16Z"
+  },
+  {
+    "event" : "complete",
+    "protocol" : "shadowsocks-aead:xchacha20-poly1305",
+    "result" : "passed",
+    "time" : "2026-11-02T15:51:16Z"
+  }
+]

@@ -1,0 +1,4786 @@
+{
+  "binarySha256": {
+    "candidate": "6e378c68d0326d631b44cab20a884128cec7e0918611018f3c6980de2cf4a77b",
+    "harness": "b12c70fc0d72ddfcef81a4ac6d643fd38e7d2d3fea2067a1b189383396166267",
+    "xray": "186ab2062fe347d513bfa41d4afebc1cd4c7f70e0675e523648eb34049f68ebb"
+  },
+  "candidate": {
+    "dirty": false,
+    "revision": "30928ad51b4a434546cf143f8e385a8746523172",
+    "tree": "e55a6c3f021643bd507a611c247f2781aaabbb83"
+  },
+  "clean": true,
+  "collectorSha256": "46e55970e9846ff4c35399c6de757d3dae06cf341584335afe64eebd429bee76",
+  "finished": 1793661369.341543,
+  "measurementGroups": {
+    "http": [
+      "http-basic",
+      "http-basic-tls"
+    ],
+    "shadowsocks-aead": [
+      "ss-aes128gcm",
+      "ss-aes256gcm",
+      "ss-chacha20",
+      "ss-xchacha20"
+    ],
+    "socks": [
+      "socks-auth"
+    ]
+  },
+  "profile": "release",
+  "referenceCommit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+  "repeats": 5,
+  "runs": [
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661018.4552479
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661019.5160651
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.7143208980560303,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661020.1708019
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661021.2056892
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661022.2664452
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.807621955871582,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661024.0324569
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661025.084137
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661026.13095
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.7731668949127197,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661026.80864
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661027.864823
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.69814133644104,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661029.575754
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661030.626549
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.728569746017456,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661031.3079062
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661032.3470862
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661033.4058418
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.7522060871124268,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661035.1125708
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661036.171875
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661037.221002
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.7530763149261475,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661037.867572
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661038.912385
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.6917870044708252,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661040.621118
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661041.6765099
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.6974050998687744,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661042.322614
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661043.368192
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661044.426872
+          }
+        ]
+      },
+      "case": "socks-auth-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.756787061691284,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661046.124016
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661047.1764
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661048.236505
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.2240278720855713,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661048.34921
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661049.380453
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.14174485206604,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661050.537181
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661051.5949981
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2058379650115967,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661051.7447271
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661052.7845418
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661053.84322
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.1772119998931885,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661054.9576168
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661056.005943
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661057.0628521
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.2307610511779785,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661057.189775
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661058.2255611
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.155555009841919,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661059.3863318
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661060.425246
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.1630549430847168,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661060.5508502
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661061.587863
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661062.6467268
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.1790192127227783,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661063.768543
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661064.825713
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661065.878815
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.229463815689087,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661065.9998899
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661067.0362098
+          }
+        ]
+      },
+      "case": "socks-auth-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/socks-auth-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1480512619018555,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661068.192832
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661069.2528472
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.688032865524292,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661069.883685
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661070.9284968
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661071.983498
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.7291860580444336,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661073.6768289
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661074.735326
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661075.799753
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.7623579502105713,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661076.4426198
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661077.4919639
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.702821969985962,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661079.202888
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661080.2372081
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.6926720142364502,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661080.899125
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661081.947548
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661083.007339
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.7654776573181152,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661084.734036
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661085.792284
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661086.839927
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.770366907119751,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661087.506173
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661088.544322
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.7056140899658203,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661090.2564569
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661091.293301
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.6966578960418701,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661091.954346
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661092.985013
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661094.042269
+          }
+        ]
+      },
+      "case": "http-basic-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.7606589794158936,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661095.77838
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661096.835999
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661097.899023
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.2248189449310303,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661098.004745
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661099.039008
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.1551408767700195,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661100.208979
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661101.265131
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.1623737812042236,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661101.3729558
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661102.4082408
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661103.445555
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.1969010829925537,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661104.6116202
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661105.6515682
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661106.7135959
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.219799757003784,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661106.833216
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661107.868012
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.151163101196289,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661109.0278761
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661110.070712
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.149716854095459,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661110.178614
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661111.205826
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661112.268183
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.172736883163452,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661113.391532
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661114.445148
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661115.475712
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.2231180667877197,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661115.616999
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661116.654305
+          }
+        ]
+      },
+      "case": "http-basic-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1467630863189697,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661117.843863
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661118.900915
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.786045789718628,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661119.633842
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661120.6815958
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.9007518291473389,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661122.632587
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661123.66933
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8378782272338867,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661124.4727192
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661125.510527
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8284051418304443,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661127.404193
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661128.458418
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.8385720252990723,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661129.246948
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661130.298481
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.899832010269165,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661132.24871
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661133.306137
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.9174048900604248,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661134.172718
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661135.222804
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.845531702041626,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661137.1250901
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661138.166522
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.797088861465454,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661138.9262998
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661139.97282
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.9010627269744873,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661141.938018
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661142.9973829
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2602460384368896,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661143.202358
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661144.24673
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.2110719680786133,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661145.518919
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661146.573879
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2096772193908691,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661146.730806
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661147.765044
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2102458477020264,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661149.000931
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661150.0594912
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.259929895401001,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661150.264301
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661151.308811
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2044520378112793,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661152.552364
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661153.611113
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.208803653717041,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661153.764909
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661154.802508
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2115349769592285,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661156.0347352
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661157.091297
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.264531135559082,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661157.30397
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661158.3506272
+          }
+        ]
+      },
+      "case": "http-basic-tls-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/http-basic-tls-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1959679126739502,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661159.5415092
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661160.600729
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.8149311542510986,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661161.359353
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661162.39885
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661163.437688
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.86216402053833,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661165.290645
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661166.3487859
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661167.411283
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.8852858543395996,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661168.183551
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661169.234541
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8453712463378906,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661171.089161
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661172.1500401
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.7901759147644043,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661172.880687
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661173.907872
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661174.969744
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.860960006713867,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661176.7974489
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661177.855625
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661178.918338
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.8692259788513184,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661179.671753
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661180.7205172
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8514959812164307,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661182.595215
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661183.65748
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8343229293823242,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661184.43714
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661185.490579
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661186.540148
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.845850944519043,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661188.347434
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661189.406285
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661190.469972
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.2267839908599854,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661190.5765948
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661191.6103292
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.1540029048919678,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661192.778954
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661193.840714
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.166585922241211,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661193.947967
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661194.983864
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661196.043201
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.2338621616363525,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661197.2282119
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661198.267655
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661199.330455
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.206113815307617,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661199.436706
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661200.4701371
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.1862778663635254,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661201.6731231
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661202.715266
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.20843505859375,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661202.884953
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661203.92292
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661204.969692
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.207206964492798,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661206.1305401
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661207.1883929
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661208.2504609
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.2178618907928467,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661208.350873
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661209.384009
+          }
+        ]
+      },
+      "case": "ss-aes128gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes128gcm-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1438379287719727,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661210.537005
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661211.597337
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.8382267951965332,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661212.378762
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661213.4178329
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661214.4761531
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.8678321838378906,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661216.320395
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661217.379172
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661218.431892
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.8733971118927,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661219.200454
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661220.248401
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.8452961444854736,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661222.0785851
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661223.1405282
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.8600289821624756,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661223.943016
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661224.983031
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661226.025582
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.860610246658325,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661227.8718789
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661228.928991
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661229.9897668
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.870359182357788,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661230.74888
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661231.799189
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.8459692001342773,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661233.661323
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661234.687398
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.8415989875793457,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661235.5088809
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661236.549806
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661237.6098921
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.8808939456939697,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661239.456728
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661240.512608
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661241.546027
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.226033926010132,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661241.688341
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661242.72623
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.1981382369995117,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661243.931944
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661244.989404
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.2098712921142578,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661245.146587
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661246.187114
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661247.2494788
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.235473871231079,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661248.427882
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661249.484649
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661250.548686
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.2218830585479736,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661250.652381
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661251.6846359
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.1463148593902588,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661252.841898
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661253.897385
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.2090160846710205,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661254.055746
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661255.095472
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661256.160507
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.1993942260742188,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661257.2962291
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661258.355875
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661259.4159842
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.2325382232666016,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661259.532471
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661260.56565
+          }
+        ]
+      },
+      "case": "ss-aes256gcm-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-aes256gcm-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.196547031402588,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661261.78882
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661262.847235
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.049266815185547,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661263.840052
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661264.866826
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661265.928577
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.060258150100708,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661267.967689
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661269.025932
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661270.071785
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.0746161937713623,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661271.0489469
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661272.096328
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.0408120155334473,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661274.1571681
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661275.18215
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.034518003463745,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661276.20291
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661277.2546718
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661278.298074
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.110200881958008,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661280.374172
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661281.4282
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661282.465962
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661283.494933
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.1736061573028564,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661283.550549
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661284.5798101
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661285.605482
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.05804705619812,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661286.700705
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661287.752555
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.058228015899658,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661288.767075
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661289.815786
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661290.870943
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.0768492221832275,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661292.910927
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661293.963304
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661295.0153291
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.221143960952759,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661295.135372
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661296.165529
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.197261095046997,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661297.387257
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661298.440894
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.1920409202575684,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661298.58354
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661299.6213949
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661300.682334
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.2227587699890137,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661301.853085
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661302.905875
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661303.953047
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.2569217681884766,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661304.115181
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661305.154646
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.1502699851989746,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661306.308052
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661307.3533618
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.1631228923797607,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661307.474609
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661308.5112169
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661309.573427
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.2188611030578613,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661310.738898
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661311.797156
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661312.8619268
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.2432730197906494,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661312.986351
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661314.023963
+          }
+        ]
+      },
+      "case": "ss-chacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-chacha20-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1955387592315674,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661315.2409852
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661316.2995389
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661317.329761
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-candidate-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.3668437004089355,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661317.615086
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661318.667275
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661319.7330408
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-xray-1.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 3.1048648357391357,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661321.793237
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661322.859083
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661323.9067268
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-xray-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 3.134769916534424,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661324.935165
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661325.977726
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661327.014851
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-candidate-2.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.3549020290374756,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661328.3666801
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661329.4247081
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661330.46081
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-candidate-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.3705191612243652,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661330.745616
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661331.800653
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661332.8686788
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-xray-3.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 3.092790126800537,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661334.900866
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661335.934617
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661336.9901068
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-xray-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 3.0935468673706055,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661338.002153
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661339.0437398
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661340.081943
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-candidate-4.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.3610520362854004,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661341.440586
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661342.4985988
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661343.537796
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-candidate-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.3596479892730713,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661343.8077471
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661344.858177
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661345.916113
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-full-duplex-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-full-duplex-1-xray-5.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 3.1025028228759766,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661347.9742458
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661349.033636
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661350.092895
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-xray-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 2.2589879035949707,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661350.238763
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661351.282676
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-candidate-1.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 1,
+      "returncode": 0,
+      "seconds": 1.159677267074585,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661352.450645
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661353.510006
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-candidate-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 1.1791601181030273,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661353.637595
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661354.6787899
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661355.741962
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-xray-2.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 2,
+      "returncode": 0,
+      "seconds": 2.1984288692474365,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661356.88347
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661357.943833
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661359.006477
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-xray-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 2.243197202682495,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661359.130582
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661360.1696541
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-candidate-3.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 3,
+      "returncode": 0,
+      "seconds": 1.2063591480255127,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661361.405441
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661362.4662552
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-candidate-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 1.22127103805542,
+      "surviving_process_group": false,
+      "version": "candidate"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661362.630947
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661363.674389
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661364.739747
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-xray-4.json"
+      ],
+      "order": [
+        "candidate",
+        "xray"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 4,
+      "returncode": 0,
+      "seconds": 2.2080330848693848,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661365.887383
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661366.950742
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661368.0126321
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-xray-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 2.254863739013672,
+      "surviving_process_group": false,
+      "version": "xray"
+    },
+    {
+      "ambient_cpu": {
+        "compiler_load_detected": [],
+        "observer_errors": [],
+        "samples": [
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661368.146715
+          },
+          {
+            "compiler_load_detected": [],
+            "unix": 1793661369.1834629
+          }
+        ]
+      },
+      "case": "ss-xchacha20-socks-tcp-latency-1",
+      "command": [
+        "<repo>/target/release-090/host/cargo/release/xray-bench",
+        "protocol-run",
+        "<repo>/target/release-090/campaign.noindex/performance-protocols/ss-xchacha20-socks-tcp-latency-1-candidate-5.json"
+      ],
+      "order": [
+        "xray",
+        "candidate"
+      ],
+      "process_group_empty_after_run": true,
+      "repeat": 5,
+      "returncode": 0,
+      "seconds": 1.1891148090362549,
+      "surviving_process_group": false,
+      "version": "candidate"
+    }
+  ],
+  "scope": "single-flow loopback SOCKS ingress; v0.9 profiles; paired pinned Xray-core comparison",
+  "started": 1793661017.4262881,
+  "status": "pass"
+}

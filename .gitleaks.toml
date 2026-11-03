@@ -3,6 +3,48 @@ title = "xray-rust secret scanning"
 [extend]
 useDefault = true
 
+# Rehashed from the retained 0.9.0 candidate CLI and Xray-core v26.10.21
+# reference; the feature harness recorded the key-generator digest from the
+# temporary executable it built. These are exact binarySha256 fields.
+[[allowlists]]
+description = "Verified 0.9.0 pinned protocol reference binary SHA256"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^docs/device-results/2026-11-02-v090-candidate/performance-protocols/manifest\.json$''',
+  '''^docs/device-results/2026-11-02-v090-candidate/failed/performance-protocols-attempt1/manifest\.json$''',
+]
+regexes = ['''^\s*"xray": "186ab2062fe347d513bfa41d4afebc1cd4c7f70e0675e523648eb34049f68ebb",?\s*$''']
+
+[[allowlists]]
+description = "Harness-recorded 0.9.0 feature key-generator executable SHA256"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-02-v090-candidate/performance-features/build-manifest\.json$''']
+regexes = ['''^\s*"keys": "ed4d84815c37c854e9c14d1c0d9cd94138183f479860b3aefc987de3f9f08929",?\s*$''']
+
+[[allowlists]]
+description = "Verified 0.9.0 feature benchmark client executable SHA256 fields"
+targetRules = ["jfrog-identity-token"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-02-v090-candidate/performance-features/build-manifest\.json$''']
+regexes = [
+  '''^\s*"xray-core": "186ab2062fe347d513bfa41d4afebc1cd4c7f70e0675e523648eb34049f68ebb",?\s*$''',
+  '''^\s*"xray-rust": "6e378c68d0326d631b44cab20a884128cec7e0918611018f3c6980de2cf4a77b",?\s*$''',
+]
+
+# The generic rule reads the case id after "socks-password" as its value.
+[[allowlists]]
+description = "0.9.0 UDP cancellation collector case-id filter"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/device-results/2026-11-02-v090-candidate/tools/udp_cancel_v09\.py$''']
+regexes = ['''^\s*for case in \[c for c in env\['cases'\] if c\['caseId'\] in \('socks-password','shadowsocks-aead-aes-256-gcm'\)\]:  # HTTP carries no UDP$''']
+
 # Rehashed from the retained candidate/reference binaries; the two temporary
 # feature tools were independently rebuilt with the original benchmark harness.
 # These are exact binarySha256 fields, not credential values.

@@ -1,0 +1,1 @@
+iPhone WAN SOCKS in a container whose ephemeral port range was narrowed to 53060-53069 (UDP to those ports open at the provider). The Wi-Fi baseline recovered after one retry; the network-transition steps then failed after repeated retries. Attempt 2 isolated the cause.

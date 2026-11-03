@@ -1,0 +1,57 @@
+{
+  "release": "0.9.0",
+  "recordedDate": "2026-11-02",
+  "ownerQuestion": "Выпускать 0.9.0 с этими ограничениями и публиковать доказательства?",
+  "ownerInstruction": "Да, публикуй",
+  "publicationRequested": true,
+  "status": "accepted by the owner on 2026-11-02 with the decisions and known limitations below",
+  "candidateCommit": "30928ad51b4a434546cf143f8e385a8746523172",
+  "decisions": [
+    {
+      "id": "v09-android-network-lock",
+      "recordedDate": "2026-11-01",
+      "releaseRequirement": "not-tested-by-owner-decision",
+      "scope": "Android Wi-Fi/cellular and lock/wake transitions were not run for the v0.9 protocols. They are not tested, not successful, and the v0.9 gate excludes them from the Android protocol scenarios.",
+      "source": "scripts/check-v09-release-evidence.py ANDROID_OWNER_SKIPPED_TRANSITIONS"
+    },
+    {
+      "id": "v09-http-udp-refused",
+      "recordedDate": "2026-11-01",
+      "releaseRequirement": "negative-control",
+      "scope": "HTTP CONNECT relays no UDP, here or in Xray-core. HTTP shows each IPv4 and IPv6 UDP probe refused as a negative control instead of claiming UDP transitions.",
+      "source": "scripts/check-v09-release-evidence.py HTTP_UDP_REFUSALS"
+    },
+    {
+      "id": "v09-performance-minimal",
+      "recordedDate": "2026-11-02",
+      "ownerWords": "давай минимальный, а потом уже в 0.9.1 сделаем полный",
+      "releaseRequirement": "scoped-by-owner-for-0.9.0",
+      "scope": "Only the 13 schema-4 metrics: four common process/VLESS-encryption/IP-on-demand/XHTTP metrics and throughput, p95 latency and memory for SOCKS, HTTP and Shadowsocks AEAD against pinned Xray-core v26.10.21. No non-regression claim against 0.8.1 for the pre-0.9 protocols or for the changes merged after 0.8.1; the full run is planned for 0.9.1.",
+      "regressionFreeClaim": false
+    }
+  ],
+  "knownLimitations": [
+    {
+      "id": "reality-mlkem-fingerprints",
+      "scope": "REALITY servers on Xray-core v26.10.21 (xtls/reality 20261014) reject a ClientHello without an X25519MLKEM768 key share placed before X25519. The xray-rust uTLS profiles ios, edge, qq, android, 360 and the older hello* identifiers do not send it, so they fail against such servers, as upstream Xray clients with the same fingerprints do. chrome, firefox, safari, hellochrome_131 and hellorandomized send it."
+    },
+    {
+      "id": "socks-udp-relay-ports",
+      "scope": "Xray-core's SOCKS inbound opens one UDP relay socket per association on an ephemeral port and accepts datagrams only from the TCP peer's address. SOCKS UDP therefore needs the server's ephemeral UDP range reachable. The iPhone WAN SOCKS run passed while the provider firewall temporarily allowed UDP 32768-60999; the earlier attempts with only the TCP port open are retained as failures."
+    },
+    {
+      "id": "shadowsocks-xchacha20-throughput",
+      "scope": "Shadowsocks AEAD xchacha20-poly1305 reached a median 59% of paired Xray-core single-flow throughput (about 680 versus 1140 MiB/s); aes-128-gcm, aes-256-gcm and chacha20-poly1305 reached 95-100%. It passes the 50% gate; the gap is left for 0.9.1."
+    },
+    {
+      "id": "harness-only-changes",
+      "scope": "Device runs used campaign-local harness fixes, none in the native library or the production provider: a 10 s REALITY fixture warm-up in the Android driver, an iOS probe close check on a held idle TCP flow plus FakeDNS hooks, a LAN bind for the XHTTP download bridge, and Debug sample-provider observation hooks for the iOS projection runs. Host and probe apps are Debug harness builds. Patches and tools are published with the report."
+    }
+  ],
+  "unchangedRequirements": [
+    "Preserve all original measurements, failures, fixture conditions and exact build identities.",
+    "Unchanged schema-4 validation and all unrelated CI and interoperability checks.",
+    "Verified immutable annotated tags, exact SDK/core pins and canonical artifact checksums.",
+    "Clean consumers of published Apple and Android packages."
+  ]
+}

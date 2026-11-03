@@ -1,0 +1,17 @@
+{
+  "protocol": "http",
+  "unit": "xray-release-090-wan-http.service",
+  "remotePath": "/tmp/xray-release-090-wan-30928ad/http",
+  "start": 1793635775.9985878,
+  "port": 53053,
+  "referenceSha256": "9200fc92278c0f56269c0ee748acfb842c6b138fdfa73117c729e081c72da398",
+  "referenceCommit": "1b1647cd9ddf0abc34b981d4611fc03bcac1ca74",
+  "candidate": "30928ad51b4a434546cf143f8e385a8746523172",
+  "automaticRestoration": [
+    "xray-apple-device-probe-server.service",
+    "xray-xhttp-device-test.service"
+  ],
+  "fixtureSeconds": 840,
+  "unitRuntimeMaxSeconds": 900,
+  "mode": "transitions"
+}

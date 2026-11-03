@@ -1,0 +1,184 @@
+{
+  "bytes_received": 268435456,
+  "bytes_sent": 268435456,
+  "client_cpu_total_millis": 110,
+  "client_env": {},
+  "client_preface": true,
+  "client_startup_cpu_millis": 10,
+  "client_startup_seconds": 0.030648542,
+  "concurrent_flows": 1,
+  "connections": 1,
+  "cpu_millis": 100,
+  "engine_binary": "<repo>/target/release-090/host/cargo/release/xray-rust",
+  "engine_sha256": "6e378c68d0326d631b44cab20a884128cec7e0918611018f3c6980de2cf4a77b",
+  "final_footprint_kib": 2592,
+  "idle_connections": 0,
+  "iterations": 4096,
+  "latency_us": null,
+  "path": "socks",
+  "payload_size": 65536,
+  "peak_footprint_kib": 2592,
+  "peak_rss_kib": 5888,
+  "prepare_client": false,
+  "ready_latency_us": null,
+  "samples": [
+    {
+      "cpu_millis": 10,
+      "elapsed_ms": 3,
+      "phase": "startup",
+      "rss_kib": 5520,
+      "threads": null
+    },
+    {
+      "cpu_millis": 10,
+      "elapsed_ms": 111,
+      "phase": "startup",
+      "rss_kib": 5520,
+      "threads": null
+    },
+    {
+      "cpu_millis": 10,
+      "elapsed_ms": 220,
+      "phase": "startup",
+      "rss_kib": 5520,
+      "threads": null
+    },
+    {
+      "cpu_millis": 10,
+      "elapsed_ms": 330,
+      "phase": "startup",
+      "rss_kib": 5520,
+      "threads": null
+    },
+    {
+      "cpu_millis": 10,
+      "elapsed_ms": 439,
+      "phase": "startup",
+      "rss_kib": 5520,
+      "threads": null
+    },
+    {
+      "cpu_millis": 40,
+      "elapsed_ms": 543,
+      "phase": "traffic",
+      "rss_kib": 5856,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 647,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 751,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 855,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 963,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1071,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1178,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1284,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1392,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1500,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1608,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    },
+    {
+      "cpu_millis": 110,
+      "elapsed_ms": 1619,
+      "phase": "settle",
+      "rss_kib": 5888,
+      "threads": null
+    }
+  ],
+  "setup": {
+    "socks_connect_us": {
+      "median": 722,
+      "min": 722,
+      "p95": 722,
+      "p99": 722
+    },
+    "socks_method_us": {
+      "median": 166,
+      "min": 166,
+      "p95": 166,
+      "p99": 166
+    },
+    "socks_setup_us": {
+      "median": 893,
+      "min": 893,
+      "p95": 893,
+      "p99": 893
+    },
+    "tcp_connect_us": {
+      "median": 258,
+      "min": 258,
+      "p95": 258,
+      "p99": 258
+    },
+    "total_us": {
+      "median": 2231,
+      "min": 2231,
+      "p95": 2231,
+      "p99": 2231
+    }
+  },
+  "status": "pass",
+  "throughput_mib_s": 5087.341354315251,
+  "traffic": "full-duplex",
+  "transfer_seconds": 0.100641959,
+  "tun_fd_buffers": null,
+  "wall_seconds": 0.605675667,
+  "warmup": true
+}

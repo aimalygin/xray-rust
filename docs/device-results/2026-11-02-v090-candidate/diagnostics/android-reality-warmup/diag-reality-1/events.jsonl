@@ -1,0 +1,5 @@
+{"hostTime": 1793630075.38491, "kind": "matrix-start", "caseCount": 1, "backends": ["file-descriptor", "packet-pump"]}
+{"hostTime": 1793630075.385063, "kind": "case-start", "case": "vless-reality", "backend": "file-descriptor", "udp": "echo"}
+{"hostTime": 1793630076.749506, "kind": "share-link-import", "case": "vless-reality", "backend": "file-descriptor", "passed": true}
+{"hostTime": 1793630077.920094, "kind": "running", "case": "vless-reality", "backend": "file-descriptor", "status": {"state": "running", "detail": null, "runtime-generation": "1", "fatal-tun-errors": "0"}}
+{"hostTime": 1793630085.408832, "kind": "case-fail", "case": "vless-reality", "backend": "file-descriptor", "error": "HTTP failure: ipv4 {\"running\": \"false\", \"http-failed\": \"1\", \"udp-failed\": \"0\", \"http-passed\": \"0\", \"udp-passed\": \"1\"}"}
